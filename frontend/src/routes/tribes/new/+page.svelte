@@ -32,7 +32,7 @@
   }
 </script>
 
-<Page title="New tribe" description="You add members on the next page." width="form">
+<Page title="New tribe" description="You add members on the next page.">
   <form onsubmit={submit}>
     <Panel title="Tribe">
       <Field label="Name" id="name" placeholder="Platform" error={fields.name} bind:value={name} />

@@ -48,7 +48,7 @@
   }
 </script>
 
-<Page title="New LLM family" description="One provider endpoint and its key. Add every model id it serves." width="form">
+<Page title="New LLM family" description="One provider endpoint and its key. Add every model id it serves.">
   <form onsubmit={submit}>
     <Panel title="Family">
       <FamilyForm bind:family {fields} />

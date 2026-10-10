@@ -97,7 +97,6 @@
 <Page
   title={email || 'Account'}
   description="Your sign-in and your own GitHub identity. Project bot and deploy tokens live in project settings."
-  width="form"
 >
   {#snippet meta()}
     {#if role}<Badge>{roleLabel(role)}</Badge>{/if}

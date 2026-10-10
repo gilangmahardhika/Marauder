@@ -31,7 +31,7 @@
   });
 </script>
 
-<Page title="Trace" description={`Events for ${cardId}, oldest first.`} width="form">
+<Page title="Trace" description={`Events for ${cardId}, oldest first.`}>
   {#snippet actions()}
     <Button href={`/cards/${cardId}`}>Back to card</Button>
   {/snippet}

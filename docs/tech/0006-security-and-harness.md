@@ -385,7 +385,7 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestParallelProjects` | Two projects can implement at the same time |
 | `TestLeadDeploy` | A Lead Developer member moves `approved` to `deploying_dev` |
 | `TestOwnerApproveStops` | A Product Owner approval leaves the card in `approved` |
-| `TestAcceptByOwner` | A Product Owner member can accept. A Lead Developer member cannot |
+| `TestAcceptSeniorRoles` | Lead Developer, Senior Developer, QA Lead, and Product Owner members can accept. Developer and QA members get `403` (RFC-053) |
 | `TestDeveloperRunOnly` | A Developer member can start a run and cannot approve or deploy |
 | `TestActorOnTransition` | A new transition event stores `actorId` and does not change older rows |
 | `TestCompanyGitHubTokenNeverReturned` | `GET` and `PUT /api/settings/github` return `tokenSet` and no token, and the row holds ciphertext |

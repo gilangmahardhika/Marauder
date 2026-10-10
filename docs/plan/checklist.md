@@ -216,7 +216,7 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestParallelProjects`
 - [x] `TestLeadDeploy`
 - [x] `TestOwnerApproveStops`
-- [x] `TestAcceptByOwner`
+- [x] `TestAcceptByOwner` (replaced by `TestAcceptSeniorRoles` in Sprint 16)
 - [x] `TestDeveloperRunOnly`
 - [x] `TestActorOnTransition`
 - [x] `TestCloudBind`
@@ -256,3 +256,14 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReadLinkedFileReadOnly`
 - [x] `TestLinkedContextIsUntrusted`
 - [x] `TestModelSettingsAdminOnly`
+
+## Sprint 16: Requirements by hand
+
+- [x] A member adds, edits, and deletes a manual requirement. A blank id takes the next free `REQ-` number.
+- [x] Ingest keeps manual rows and reports the skipped ids.
+- [x] Lead Developer, Senior Developer, QA Lead, and Product Owner members accept. Developer and QA do not.
+- [x] UI: Add requirement, edit and delete pages, Manual badge, Accept only when `canAccept`.
+- [x] `TestManualRequirementAdd`
+- [x] `TestManualRequirementEdit`
+- [x] `TestIngestKeepsManual`
+- [x] `TestAcceptSeniorRoles`

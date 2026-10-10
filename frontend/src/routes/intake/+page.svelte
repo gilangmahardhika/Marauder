@@ -1,9 +1,9 @@
 <script lang="ts">
   import { ApiError, acceptRequirements, getIntake, ingest, unreachable } from '$lib/api';
+  import IntakeActions from '$lib/components/IntakeActions.svelte';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { Intake } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
-  import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Icon from '$lib/ui/Icon.svelte';
   import Notice from '$lib/ui/Notice.svelte';
@@ -11,6 +11,7 @@
   import Panel from '$lib/ui/Panel.svelte';
 
   let intake = $state<Intake | null>(null);
+  let skipped = $state<string[]>([]);
   let message = $state('Loading intake');
   let busy = $state(false);
 
@@ -42,6 +43,8 @@
     message = 'Reading docs/prd and docs/rfc';
     try {
       intake = await ingest();
+      skipped = intake.skipped ?? [];
+      message = 'Intake';
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -55,6 +58,7 @@
     message = 'Saving acceptance';
     try {
       intake = await acceptRequirements(intake.requirements.filter((item) => !item.accepted).map((item) => item.id));
+      message = 'Intake';
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -69,8 +73,7 @@
 
 <Page
   title="Intake"
-  description="Requirements and decisions read from the PRD and RFCs. Cards are built only from accepted requirements."
-  width="form"
+  description="Requirements read from the PRD and RFCs, or added by hand, and the decisions from the RFCs. Cards are built only from accepted requirements."
 >
   {#snippet meta()}
     {#if intake && intake.requirements.length > 0}
@@ -80,21 +83,33 @@
     {/if}
   {/snippet}
   {#snippet actions()}
-    <Button type="button" variant="secondary" disabled={busy} onclick={() => void readDocs()}>Ingest</Button>
-    <Button type="button" variant="primary" disabled={busy || Boolean(intake?.draftPending)} onclick={() => void accept()}>
-      Accept unaccepted ids
-    </Button>
+    <IntakeActions {intake} {busy} oningest={() => void readDocs()} onaccept={() => void accept()} />
   {/snippet}
   <div class="flex flex-col gap-4">
     {#if intake?.planError}<Notice tone="danger">{intake.planError}</Notice>{/if}
     {#if intake?.draftPending}<Notice>The planner is drafting requirement ids. This page refreshes on its own.</Notice>{/if}
+    {#if skipped.length > 0}
+      <Notice>
+        {skipped.join(', ')}
+        {skipped.length === 1 ? 'is' : 'are'} also in the repository. The text added by hand was kept.
+      </Notice>
+    {/if}
+    {#if intake && !intake.canAccept && intake.requirements.some((item) => !item.accepted)}
+      <Notice>A Lead Developer, Senior Developer, QA Lead, or Product Owner accepts requirements.</Notice>
+    {/if}
     {#if intake && intake.requirements.length === 0}
-      <EmptyState title="No requirements yet" description="Ingest reads the PRD and RFCs for this project." />
+      <EmptyState
+        title="No requirements yet"
+        description="Ingest reads the PRD and RFCs for this project, or add a requirement by hand."
+        href="/intake/new"
+        link="Add requirement"
+      />
     {/if}
     {#each intake?.requirements ?? [] as requirement (requirement.id)}
       <Panel title={requirement.id} mono>
         {#snippet actions()}
           {#if requirement.sourceKind === 'draft'}<Badge tone="amber">Draft</Badge>{/if}
+          {#if requirement.sourceKind === 'manual'}<Badge>Manual</Badge>{/if}
           <Badge tone={requirement.accepted ? 'green' : 'default'}>{requirement.accepted ? 'Accepted' : 'Not accepted'}</Badge>
         {/snippet}
         <p class="text-sm leading-relaxed text-ink">{requirement.statement}</p>
@@ -109,7 +124,16 @@
           </ul>
         {/if}
         {#snippet footer()}
-          <span class="mr-auto font-mono text-xs text-muted">{requirement.sourcePath}</span>
+          {#if requirement.sourceKind === 'manual'}
+            <span class="mr-auto text-xs text-muted">Added by {requirement.createdBy ?? 'a former user'}</span>
+            <a
+              class="inline-flex min-h-11 items-center px-1 text-sm font-medium text-accent hover:underline"
+              href={`/intake/${encodeURIComponent(requirement.id)}`}
+              aria-label={`Edit ${requirement.id}`}>Edit</a
+            >
+          {:else}
+            <span class="mr-auto font-mono text-xs text-muted">{requirement.sourcePath}</span>
+          {/if}
           {#each requirement.linkedCards as id}
             <a class="inline-flex min-h-11 items-center px-1 font-mono text-xs text-accent underline" href={`/cards/${id}`}>{id}</a>
           {/each}

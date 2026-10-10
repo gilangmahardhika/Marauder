@@ -37,7 +37,7 @@
   });
 </script>
 
-<Page title="Tribes" description="A tribe groups people with the projects they can see." width="wide">
+<Page title="Tribes" description="A tribe groups people with the projects they can see.">
   {#snippet actions()}
     {#if shell.admin}<Button variant="primary" href="/tribes/new">New tribe</Button>{/if}
   {/snippet}

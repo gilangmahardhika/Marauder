@@ -12,6 +12,7 @@ type IngestResult struct {
 	Requirements int
 	Decisions    int
 	DraftPending bool
+	Skipped      []string
 }
 
 // Ingest parses the PRD and RFC paths from configDir/config.yaml inside repo
@@ -33,13 +34,15 @@ func Ingest(ctx context.Context, db *sql.DB, projectID, repo, configDir string) 
 	if err != nil {
 		return IngestResult{}, err
 	}
-	if err := intake.Apply(ctx, db, projectID, parsed); err != nil {
+	skipped, err := intake.Apply(ctx, db, projectID, parsed)
+	if err != nil {
 		return IngestResult{}, err
 	}
 	return IngestResult{
 		Requirements: len(parsed.Requirements),
 		Decisions:    len(parsed.Decisions),
 		DraftPending: parsed.DraftPending,
+		Skipped:      skipped,
 	}, nil
 }
 

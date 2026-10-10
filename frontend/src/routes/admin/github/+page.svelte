@@ -7,7 +7,6 @@
   import Field from '$lib/ui/Field.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
-  import SaveBar from '$lib/ui/SaveBar.svelte';
 
   let host = $state('github.com');
   let org = $state('');
@@ -81,7 +80,6 @@
 <Page
   title="Company GitHub"
   description="One account for the whole company. Every project clones, pushes, and opens pull requests through it."
-  width="form"
 >
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
@@ -100,13 +98,15 @@
           </p>
         </div>
         {#snippet footer()}
-          {#if result}<span class="mr-auto text-sm text-muted">{result}</span>{/if}
+          {#if result || !tokenSet}
+            <span class="mr-auto text-sm text-muted">{result || 'Save a token, then test the connection.'}</span>
+          {/if}
           <Button type="button" variant="secondary" disabled={busy || !tokenSet} onclick={() => void test()}>
             Test connection
           </Button>
+          <Button variant="primary" type="submit" disabled={busy}>Save</Button>
         {/snippet}
       </Panel>
     </div>
-    <SaveBar {busy} note={tokenSet ? '' : 'Save a token, then test the connection.'} />
   </form>
 </Page>

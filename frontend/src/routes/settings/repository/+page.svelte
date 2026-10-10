@@ -91,7 +91,6 @@
 <Page
   title="Repository"
   description="The one repository this project works in. The service clones it with the company GitHub account."
-  width="form"
 >
   {#if view && view.org === ''}
     <div class="mb-6">

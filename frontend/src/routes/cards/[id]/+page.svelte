@@ -64,11 +64,11 @@
 {/snippet}
 
 {#if missing}
-  <Page title="Card not found" width="form">
+  <Page title="Card not found">
     <EmptyState title="This card is not on the board for this project." href="/" link="Back to the board" />
   </Page>
 {:else if card}
-  <Page title={card.title} width="wide">
+  <Page title={card.title}>
     {#snippet meta()}
       <Badge tone={tone(card!)}>{card!.status}</Badge>
     {/snippet}

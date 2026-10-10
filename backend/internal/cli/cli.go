@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -71,6 +72,9 @@ func Execute(opts Options) int {
 					return err
 				}
 				fmt.Fprintf(opts.Stdout, "requirements %d\ndecisions %d\ndraftPending %t\n", result.Requirements, result.Decisions, result.DraftPending)
+				if len(result.Skipped) > 0 {
+					fmt.Fprintf(opts.Stdout, "skipped %s (manual)\n", strings.Join(result.Skipped, " "))
+				}
 				return nil
 			})
 		},

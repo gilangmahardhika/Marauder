@@ -38,7 +38,6 @@
 <Page
   title="LLM APIs"
   description="Model families every project can route work to. Each family has one endpoint, one key, and any number of models."
-  width="wide"
 >
   {#snippet actions()}
     <Button variant="primary" href="/admin/llm/new">Add family</Button>

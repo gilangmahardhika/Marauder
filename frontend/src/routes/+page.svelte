@@ -87,7 +87,7 @@
   showShell(() => ({ title: 'Board', message }));
 </script>
 
-<Page title="Board" description={summary} width="full">
+<Page title="Board" description={summary}>
   {#snippet actions()}
     <Button variant="primary" type="button" disabled={!canRun || running || busy} onclick={() => void run()}>Run</Button>
   {/snippet}

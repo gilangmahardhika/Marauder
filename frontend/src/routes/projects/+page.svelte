@@ -40,7 +40,7 @@
   });
 </script>
 
-<Page title="Projects" description="Each project is one repository with its own board and settings." width="wide">
+<Page title="Projects" description="Each project is one repository with its own board and settings.">
   {#snippet actions()}
     {#if shell.admin}<Button variant="primary" href="/projects/new">New project</Button>{/if}
   {/snippet}

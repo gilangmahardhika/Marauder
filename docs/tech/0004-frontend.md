@@ -84,6 +84,8 @@ frontend/
   src/routes/login/+page.svelte
   src/routes/+page.svelte                      board
   src/routes/intake/+page.svelte
+  src/routes/intake/new/+page.svelte
+  src/routes/intake/[id]/+page.svelte
   src/routes/cards/[id]/+page.svelte
   src/routes/cards/[id]/trace/+page.svelte
   src/routes/account/+page.svelte
@@ -130,8 +132,12 @@ frontend/
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
   src/lib/components/FamilyForm.svelte
+  src/lib/components/RequirementForm.svelte
+  src/lib/components/IntakeActions.svelte
+  src/lib/requirements.ts
   src/lib/api.test.ts
   src/lib/components/CardActions.test.ts
+  src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
 ```
@@ -151,6 +157,8 @@ frontend/
 | `/login` | Email and password |
 | `/` | Board for the selected project |
 | `/intake` | Ingest and accept for the selected project |
+| `/intake/new` | Add a requirement by hand |
+| `/intake/[id]` | Edit or delete a manual requirement |
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
 | `/account` | Password and the caller's GitHub settings |
@@ -257,11 +265,13 @@ A link "Trace" goes to `/cards/{id}/trace`.
 
 ## Intake
 
-`GET /api/intake`.
+`GET /api/projects/{projectId}/intake`.
 
-Each requirement is a block: id, accepted or not, a "Drafted by the planner" note when `sourceKind` is `draft`, statement, acceptance lines, source path, and links to `linkedCards`. Decisions are a list under them: id and statement.
+Each requirement is a block: id, accepted or not, a "Draft" badge when `sourceKind` is `draft`, a "Manual" badge when it is `manual`, statement, acceptance lines, source path or "Added by" with `createdBy`, and links to `linkedCards`. A manual block has an Edit link to `/intake/[id]`. Decisions are a list under them: id and statement.
 
-Button "Ingest" POSTs `/api/ingest` and replaces the list. Button "Accept unaccepted ids" POSTs `/api/accept` with the ids on screen whose `accepted` is false. It is disabled while `draftPending` is true.
+Button "Ingest" POSTs `ingest` and replaces the list. When the response has `skipped`, a notice names those ids and says the manual text was kept. Button "Add requirement" links to `/intake/new`. Button "Accept unaccepted ids" POSTs `accept` with the ids on screen whose `accepted` is false. It renders only when `canAccept` is true, and it is disabled while `draftPending` is true (RFC-053).
+
+`/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no form. Field errors come from the API `fields`.
 
 While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Saving acceptance".
 
@@ -299,7 +309,7 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 ### Company GitHub
 
-`src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows the bot login on success or `message` on `ok: false`. The saved bot login shows as read-only text.
+`src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows the bot login on success or `message` on `ok: false` in the Bot account panel footer, next to Save. The saved bot login shows as read-only text.
 
 ### Repository
 
@@ -367,11 +377,11 @@ The product name is Marauder. `src/app.css` imports Tailwind CSS 4 and defines t
 
 Shared controls live in `src/lib/ui/`. One primary button on a page. `.danger` is for blocked status. `.error` is for a field error. Inputs and buttons are at least 44px tall. `:focus-visible` keeps a 2px ink outline. Do not remove outlines. Do not put layout in a `style` attribute.
 
-The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Page measures are `max-w-form` (42rem) for forms and settings, `max-w-wide` (72rem) for tables, and full width for the board. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`.
+The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`.
 
 Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the live status line. It holds no page actions.
 
-Buttons size to their label and never stretch. `full` is only for the login submit. `Panel` has a title row with an optional `actions` snippet and an optional `footer` snippet. The footer is a right-aligned action bar. Settings pages that hold more than one panel end in `SaveBar`, a bar that sticks to the bottom of the viewport with the primary Save. `FieldGroup` groups related controls under one legend. `Row` is one entry in a bordered list, such as one model id, with a remove button. Tables use `Table` and the `th`, `tr`, and `td` classes from `src/lib/ui/control.ts`: an 11px uppercase header and 48px rows.
+Buttons size to their label and never stretch. `full` is only for the login submit. `Panel` has a title row with an optional `actions` snippet and an optional `footer` snippet. The footer is a right-aligned action bar. Admin settings pages (Company GitHub, Router, and an LLM family) put the primary Save in the last panel's footer, after "Test connection" where the page has one. Project settings pages and the user edit page end in `SaveBar`, a bar that sticks to the bottom of the viewport with the primary Save. `FieldGroup` groups related controls under one legend. `Row` is one entry in a bordered list, such as one model id, with a remove button. Tables use `Table` and the `th`, `tr`, and `td` classes from `src/lib/ui/control.ts`: an 11px uppercase header and 48px rows.
 
 `SearchSelect` is the shared searchable select for long lists: the project switcher, Router models, and tribe member search. It is an ARIA combobox. Typing filters options by label and detail, arrow keys move, Enter picks, and Escape closes and restores the selected label. An optional `emptyLabel` adds a first option that clears the value. `onchange` fires only when a pick changes the value. Short fixed lists, such as protocol or role, keep the native `Select`.
 

@@ -27,7 +27,7 @@ Decision headings use `RFC-001` and up. The first paragraph under each heading i
 | RFC-015 | Startup reconciles an in-flight deploy first |
 | RFC-016 | The v1 control surface is the CLI. Superseded by RFC-035 |
 | RFC-017 | The router is a function of card facts and config |
-| RFC-018 | A person accepts extracted ids before any worktree. Who accepts superseded by RFC-046 |
+| RFC-018 | A person accepts extracted ids before any worktree. Who accepts superseded by RFC-046 and RFC-053. Manual ids added by RFC-053 |
 | RFC-019 | An edit to an accepted requirement stops affected cards |
 | RFC-020 | Budgets end in blocked, and models cannot raise them. Release sentence superseded by RFC-041 |
 | RFC-021 | The event log is append-only and redacted |
@@ -263,6 +263,8 @@ Consequences: `ingest` and `accept` are separate commands. Re-parse of unchanged
 Requirements: REQ-001, REQ-002, REQ-003.
 
 Superseded in part by RFC-046 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). A Product Owner who is a member of the project accepts. The gate before any worktree stays.
+
+Superseded in part by RFC-053 in [0008-manual-requirements.md](0008-manual-requirements.md). A member may also add a requirement by hand, and ingest keeps it. Any senior role who is a member accepts. The gate before any worktree stays.
 
 ## RFC-019 An edit to an accepted requirement stops affected cards
 

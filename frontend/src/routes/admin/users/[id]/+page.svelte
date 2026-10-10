@@ -73,7 +73,7 @@
   }
 </script>
 
-<Page title={email || 'Edit user'} width="form">
+<Page title={email || 'Edit user'}>
   {#snippet meta()}
     {#if disabled}<Badge tone="red">Disabled</Badge>{/if}
   {/snippet}

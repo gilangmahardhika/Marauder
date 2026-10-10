@@ -95,7 +95,7 @@
   }
 </script>
 
-<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings. Only a Lead Developer can save." width="form">
+<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings. Only a Lead Developer can save.">
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
       <Panel title="Dev server" hint="Empty values can be saved. Deploy stops with deploy_config until they are set.">

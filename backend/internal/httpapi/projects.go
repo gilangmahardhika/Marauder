@@ -184,7 +184,7 @@ func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.DB == nil {
-		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "requirements": []any{}, "decisions": []any{}})
+		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "canAccept": false, "requirements": []any{}, "decisions": []any{}})
 		return
 	}
 	s.writeIntake(w, r, projectID)
@@ -216,11 +216,20 @@ func (s *Server) projectIngest(w http.ResponseWriter, r *http.Request) {
 		writeFields(w, 422, "validation", "the project has no clone", map[string]string{"repo": "sync the repository first"})
 		return
 	}
-	if _, err := app.Ingest(r.Context(), s.DB, projectID, project.RepoPath, settings.ProjectDir(s.Data, projectID)); err != nil {
+	result, err := app.Ingest(r.Context(), s.DB, projectID, project.RepoPath, settings.ProjectDir(s.Data, projectID))
+	if err != nil {
 		writeErr(w, 422, "validation", err.Error())
 		return
 	}
-	s.writeIntake(w, r, projectID)
+	payload, err := intakeBody(r, s.DB, projectID)
+	if err != nil {
+		writeErr(w, 500, "internal", "intake")
+		return
+	}
+	if len(result.Skipped) > 0 {
+		payload["skipped"] = result.Skipped
+	}
+	writeJSON(w, 200, payload)
 }
 
 func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
@@ -229,7 +238,7 @@ func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
-	if user.Role != "product_owner" {
+	if !canAccept(user.Role) {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
 	}
@@ -249,6 +258,72 @@ func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeIntake(w, r, projectID)
+}
+
+type requirementBody struct {
+	ID         string   `json:"id"`
+	Statement  string   `json:"statement"`
+	Acceptance []string `json:"acceptance"`
+}
+
+// projectRequirements adds a manual requirement. Any member may call it (RFC-053).
+func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	var body requirementBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	user, _ := app.CurrentUser(r.Context())
+	if _, err := intake.Add(r.Context(), s.DB, projectID, user.ID, body.ID, intake.Draft{Statement: body.Statement, Acceptance: body.Acceptance}); err != nil {
+		writeIntakeErr(w, err)
+		return
+	}
+	s.writeIntake(w, r, projectID)
+}
+
+// projectRequirement edits or deletes one manual requirement.
+func (s *Server) projectRequirement(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	id := r.PathValue("id")
+	var err error
+	if r.Method == http.MethodDelete {
+		err = intake.Delete(r.Context(), s.DB, projectID, id)
+	} else {
+		var body requirementBody
+		if decodeErr := json.NewDecoder(r.Body).Decode(&body); decodeErr != nil {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		err = intake.Update(r.Context(), s.DB, projectID, id, intake.Draft{Statement: body.Statement, Acceptance: body.Acceptance})
+	}
+	if err != nil {
+		writeIntakeErr(w, err)
+		return
+	}
+	s.writeIntake(w, r, projectID)
+}
+
+func writeIntakeErr(w http.ResponseWriter, err error) {
+	var invalid *intake.Invalid
+	switch {
+	case errors.As(err, &invalid):
+		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
+	case errors.Is(err, intake.ErrNotFound):
+		writeErr(w, 404, "not_found", err.Error())
+	case errors.Is(err, intake.ErrDuplicate):
+		writeFields(w, 409, "conflict", err.Error(), map[string]string{"id": "This id is already used in this project."})
+	case errors.Is(err, intake.ErrNotManual), errors.Is(err, intake.ErrInUse):
+		writeErr(w, 409, "conflict", err.Error())
+	default:
+		writeErr(w, 500, "internal", "requirement")
+	}
 }
 
 func (s *Server) writeIntake(w http.ResponseWriter, r *http.Request, projectID string) {

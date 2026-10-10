@@ -90,6 +90,9 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestRouterConfig` | An empty `implement` model blocks the card with `router_config` |
 | `TestPlanCards` | Planner cards link only accepted ids, get checks from settings, and a dependency cycle is refused |
 | `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
+| `TestManualRequirementAdd` | A Developer member adds with a blank id after `REQ-001` and gets `REQ-002`, unaccepted. A typed `REQ-010` is stored. A duplicate id is `409`. A bad id or empty statement is `422`. A non-member is `404` |
+| `TestManualRequirementEdit` | An edit of an accepted manual row clears acceptance. Editing or deleting a parsed row is `409`. Deleting a manual id a card lists is `409`. Deleting an unused manual row removes it |
+| `TestIngestKeepsManual` | A manual `REQ-001`, then ingest of a PRD that defines `REQ-001`. The row stays manual with its text, and `Skipped` is `[REQ-001]` |
 | `TestSecretOmitted` | GET of the company GitHub, LLM, and project deploy settings has no token or key substring from the secrets file |
 | `TestModelSettingsAdminOnly` | A Lead Developer who is not an admin reads LLM and router settings, and gets `403` on PUT and on a family test. An admin saves them, and no response has the saved key |
 | `TestSecretKeep` | A project deploy PUT without the token leaves that project's `secrets.json` bytes unchanged |
@@ -213,7 +216,7 @@ This pass is manual. The automated locks for buttons are `TestActionsEmpty`, `Te
 
 The cases in [0006-security-and-harness.md](0006-security-and-harness.md) are part of `go test ./...`. A build that skips `TestCheckOnExport`, `TestHookNotRun`, `TestFsmonitorOff`, `TestHealthLinkLocal`, `TestEventsImmutable`, `TestPushURL`, or `TestDataDirInsideRepo` is not a release candidate.
 
-Sprints 11–13 add `TestPasswordLogin`, `TestWrongPassword`, `TestSessionLockout`, `TestBearerExpiry`, `TestLastAdmin`, `TestUserGitHubOmitted`, `TestNonAdminForbidden`, `TestMemberSeesProject`, `TestOutsiderMissesProject`, `TestReqIdsPerProject`, `TestBranchPerProject`, `TestAdminManagesMembership`, `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner`, `TestDeveloperRunOnly`, `TestActorOnTransition`, and `TestCloudBind`. `TestLoopbackOnly` still passes when `ORCHESTRATOR_CLOUD` is unset. The REQ-043 fixture stays one project. Those new tests add a second project beside it. They are not part of the fixture's nine steps.
+Sprints 11–13 add `TestPasswordLogin`, `TestWrongPassword`, `TestSessionLockout`, `TestBearerExpiry`, `TestLastAdmin`, `TestUserGitHubOmitted`, `TestNonAdminForbidden`, `TestMemberSeesProject`, `TestOutsiderMissesProject`, `TestReqIdsPerProject`, `TestBranchPerProject`, `TestAdminManagesMembership`, `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner` (Sprint 16 replaces it with `TestAcceptSeniorRoles`), `TestDeveloperRunOnly`, `TestActorOnTransition`, and `TestCloudBind`. `TestLoopbackOnly` still passes when `ORCHESTRATOR_CLOUD` is unset. The REQ-043 fixture stays one project. Those new tests add a second project beside it. They are not part of the fixture's nine steps.
 
 ## Release order
 

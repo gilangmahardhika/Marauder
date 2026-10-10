@@ -10,7 +10,7 @@ If a field here and a PRD acceptance check disagree, the PRD wins. See [../READM
 
 - Times are UTC RFC3339 strings.
 - Ids are text. Cards use `card_` plus 12 hex chars. Attempts use `att_`, events `evt_`, runs `run_`, users `user_`, sessions `ses_`, tribes `tribe_`, and projects `proj_`, each plus 12 hex chars.
-- Requirement ids and decision ids are copied from markdown headings (`REQ-001`, `RFC-001`). The harness does not renumber them. Drafted ids from the planner use the same `REQ-` form and are stored with `source_kind = 'draft'`.
+- Requirement ids and decision ids are copied from markdown headings (`REQ-001`, `RFC-001`). The harness does not renumber them. Drafted ids from the planner use the same `REQ-` form and are stored with `source_kind = 'draft'`. Ids added by hand use the same form and are stored with `source_kind = 'manual'` (RFC-053). A blank id on add gets the next free number in that project.
 - SHAs are lowercase hex, 40 or 64 chars.
 - PostgreSQL booleans are `true` and `false`. JSON booleans are `true` and `false`.
 - Without `ORCHESTRATOR_CLOUD`, the API listens on `127.0.0.1:8787`. CORS allows the exact `--ui-origin`, default `http://127.0.0.1:4173`. The `Host` header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`. Anything else is `403`.
@@ -408,6 +408,8 @@ CREATE TABLE project_links (
 
 `approvals.approver` stores the user's GitHub login. `requirements.accepted_by` stores the user id.
 
+`00008` widens the `requirements.source_kind` check to `('prd', 'rfc', 'draft', 'manual')` and adds `requirements.created_by TEXT`, the user id that added a manual row (RFC-053). It is null for parsed and drafted rows. A manual row has `source_path = ''` and `heading` equal to its id.
+
 ## Accounts and membership API
 
 `POST /api/session`
@@ -573,6 +575,7 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
 {
   "draftPending": false,
   "planError": null,
+  "canAccept": true,
   "requirements": [
     {
       "id": "REQ-001",
@@ -582,6 +585,7 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
       "statement": "The orchestrator reads markdown PRDs and RFCs.",
       "acceptance": ["A fixture PRD yields one record per id."],
       "accepted": false,
+      "createdBy": null,
       "linkedCards": []
     }
   ],
@@ -595,7 +599,21 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
 }
 ```
 
-`POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`.
+`POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
+
+`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added a manual row, and `null` for other rows.
+
+`POST /api/projects/{projectId}/requirements` adds a manual requirement. Any member may call it.
+
+```json
+{ "id": "", "statement": "Export the board as CSV.", "acceptance": ["The file has one row per card."] }
+```
+
+`id` is optional. A non-empty id must match `^REQ-[0-9]+$`. A blank id gets one above the highest `REQ-` number in the project, at least three digits. The number is chosen while holding the project's `intake_state` row, so two adds do not take the same id. `statement` is required, at most 4000 characters. `acceptance` is a list of non-empty lines, at most 50. The row is not accepted. The response is the intake shape. A bad field is `422` with `fields` keyed `id`, `statement`, or `acceptance`. An id that already exists in that project is `409`.
+
+`PUT /api/projects/{projectId}/requirements/{id}` takes `{ "statement": "...", "acceptance": [] }` with the same rules. It changes only a manual row. A changed statement or acceptance list clears `accepted_at` and `accepted_by` (REQ-004). A row parsed from the repository or drafted by the planner is `409`. An unknown id is `404`.
+
+`DELETE /api/projects/{projectId}/requirements/{id}` removes a manual row and returns the intake shape. A row that is not manual, or a manual row that a card in that project lists in `requirementIds`, is `409`. An unknown id is `404`.
 
 `POST /api/projects/{projectId}/accept`
 
@@ -603,7 +621,7 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
 { "requirementIds": ["REQ-001", "REQ-002"] }
 ```
 
-Allowed for a Product Owner member. Anyone else is `403`, or `404` when they are not a member. Stores that user's id and the time on those ids, then inserts a `runs` row with trigger `accept` so the planner can create cards. Ids absent from the body are left as they are. Unknown ids are `422`.
+Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member (RFC-053). A Developer or QA member is `403`, and a non-member is `404`. Stores that user's id and the time on those ids, then inserts a `runs` row with trigger `accept` so the planner can create cards. Ids absent from the body are left as they are. Unknown ids are `422`.
 
 ## Runs and human gates
 

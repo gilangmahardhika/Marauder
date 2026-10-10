@@ -12,10 +12,12 @@ import (
 
 var ErrUnknownID = errors.New("unknown requirement id")
 
-func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) error {
+// Apply upserts parsed records on projectID. A manual row is never
+// overwritten. Its id is returned in skipped (RFC-053).
+func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) (skipped []string, err error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback()
 	for _, req := range result.Requirements {
@@ -25,9 +27,9 @@ func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) err
 		}
 		encoded, err := json.Marshal(acceptance)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		_, err = tx.ExecContext(ctx, `
+		res, err := tx.ExecContext(ctx, `
 			INSERT INTO requirements (
 				id, source_kind, source_path, heading, statement,
 				acceptance_json, non_goals_json, content_hash, project_id
@@ -47,11 +49,19 @@ func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) err
 				accepted_by = CASE
 					WHEN requirements.content_hash IS NOT DISTINCT FROM EXCLUDED.content_hash THEN requirements.accepted_by
 					ELSE NULL
-				END`,
+				END
+			WHERE requirements.source_kind <> 'manual'`,
 			req.ID, req.SourceKind, req.SourcePath, req.Heading, req.Statement, string(encoded), req.Hash, projectID,
 		)
 		if err != nil {
-			return err
+			return nil, err
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if n == 0 {
+			skipped = append(skipped, req.ID)
 		}
 	}
 	for _, dec := range result.Decisions {
@@ -65,14 +75,14 @@ func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) err
 			dec.ID, dec.SourcePath, dec.Statement, dec.Hash, projectID,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	_, err = tx.ExecContext(ctx, `UPDATE intake_state SET draft_pending = $1 WHERE project_id = $2`, result.DraftPending, projectID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit()
+	return skipped, tx.Commit()
 }
 
 func Accept(ctx context.Context, db *sql.DB, projectID, operator string, ids []string) error {

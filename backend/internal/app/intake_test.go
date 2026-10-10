@@ -109,6 +109,35 @@ func TestDraftIds(t *testing.T) {
 	})
 }
 
+func TestIngestKeepsManual(t *testing.T) {
+	db := boardtest.Open(t)
+	repo := t.TempDir()
+	data := t.TempDir()
+	ctx := context.Background()
+	if _, err := intake.Add(ctx, db, "proj_default", "user_0123456789ab", "REQ-001", intake.Draft{Statement: "Typed by hand.", Acceptance: []string{"Kept."}}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, "docs", "prd", "one.md"), "### REQ-001 From the repo\n\nThe repo text.\n\n### REQ-002 Second\n\nAnother.\n")
+
+	result, err := app.Ingest(ctx, db, "proj_default", repo, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Skipped) != 1 || result.Skipped[0] != "REQ-001" {
+		t.Fatalf("skipped = %v", result.Skipped)
+	}
+	var kind, statement string
+	if err := db.QueryRow(`SELECT source_kind, statement FROM requirements WHERE project_id = 'proj_default' AND id = 'REQ-001'`).Scan(&kind, &statement); err != nil {
+		t.Fatal(err)
+	}
+	if kind != "manual" || statement != "Typed by hand." {
+		t.Fatalf("REQ-001 = %s %q", kind, statement)
+	}
+	if !hasRequirement(t, db, "REQ-002") {
+		t.Fatal("REQ-002 was not ingested")
+	}
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

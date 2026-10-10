@@ -16,13 +16,13 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 | --- | --- |
 | Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account, LLM APIs, and router. Does not approve or deploy unless the job role allows it. |
 | Product Owner | Accepts requirements for a project whose tribe they belong to. May request changes, reject, approve, and unblock. Does not deploy. |
-| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, and deploy settings. |
-| QA Lead | May request changes, reject, and approve. Does not accept requirements or deploy. |
-| Senior Developer | May start a run and request changes. Does not accept, approve, reject, or deploy. |
+| Lead Developer | Accepts requirements. May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, and deploy settings. |
+| QA Lead | Accepts requirements. May request changes, reject, and approve. Does not deploy. |
+| Senior Developer | Accepts requirements. May start a run and request changes. Does not approve, reject, or deploy. |
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 | QA | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 
-A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver. Jobs use the company GitHub account instead (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
+Every member of a project's tribe may add a requirement to that project by hand (REQ-055). A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver. Jobs use the company GitHub account instead (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
 
 Models are workers the harness calls. They are not users, and they do not hold the board.
 
@@ -30,7 +30,7 @@ Models are workers the harness calls. They are not users, and they do not hold t
 
 A member can give the orchestrator a markdown PRD and its RFCs and get this result:
 
-1. Requirement and decision records exist, and no code is written until a Product Owner who is a member accepts them.
+1. Requirement and decision records exist, and no code is written until a member with a senior role (Lead Developer, Senior Developer, QA Lead, or Product Owner) accepts them.
 2. Accepted requirements become kanban cards with dependencies, risk, and check commands.
 3. Each card is implemented in its own worktree by a routed model, then opened as one pull request.
 4. A reviewer model comments. A Lead Developer, QA Lead, or Product Owner who is a member approves a specific commit.
@@ -97,6 +97,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-052 | The company has one GitHub account |
 | REQ-053 | A project is one repository that the service clones |
 | REQ-054 | A project can read context from linked projects |
+| REQ-055 | A member can add a requirement by hand |
 
 ## Requirements
 
@@ -128,7 +129,7 @@ The operator accepts the requirement list as a recorded gate. Until that gate ex
 #### Acceptance
 
 - `run-next` before acceptance creates no worktree, no branch, and no pull request.
-- Acceptance stores the accepting user's id and the set of requirement ids accepted. A caller who is not a Product Owner member is rejected.
+- Acceptance stores the accepting user's id and the set of requirement ids accepted. A Developer or QA member is rejected (RFC-053).
 - After acceptance, cards may be created for those ids only.
 
 ### REQ-004 A source edit invalidates acceptance for the changed ids
@@ -701,7 +702,7 @@ The server allows a human action only when the caller is a member of the project
 
 #### Acceptance
 
-- A Product Owner member can accept requirements. A Lead Developer member cannot.
+- A Product Owner, Lead Developer, Senior Developer, or QA Lead member can accept requirements. A Developer or QA member cannot.
 - A Lead Developer member can start deploy from `approved`. A Product Owner member who approved the same SHA cannot.
 - A Developer member can start a run and cannot approve, reject, request changes, or deploy.
 - A QA Lead member can approve. A QA member cannot.
@@ -788,6 +789,21 @@ A Lead Developer member links their project to other projects in the same tribe.
 - The implementer pack contains the linked project's accepted requirement statements, marked untrusted.
 - `read_linked_file` rejects `..`, an absolute path, and `.git`.
 
+### REQ-055 A member can add a requirement by hand
+
+A member of the project's tribe adds a requirement on the Intake page or through the API: an optional id, a statement, and acceptance lines. A blank id gets the next free `REQ-` number in that project. The requirement is not accepted until a senior member accepts it. A member may edit or delete a requirement that was added by hand. A requirement parsed from the repository is edited in the repository. Ingest never overwrites a requirement that was added by hand (RFC-053).
+
+#### Acceptance
+
+- Adding with a blank id after `REQ-001` stores `REQ-002`.
+- Adding an id that already exists in that project is rejected. The same id on another project is allowed.
+- A new requirement is not accepted.
+- Editing the statement of an accepted manual requirement clears acceptance.
+- Editing or deleting a requirement parsed from the repository is rejected.
+- Deleting a manual requirement that a card lists is rejected.
+- Ingest of a PRD that defines an id already added by hand keeps the manual text and reports the id as skipped.
+- A user outside the tribe receives `404`.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -823,7 +839,7 @@ Git host default is GitHub. The card store is PostgreSQL, reached by `databaseUr
 
 ### Happy path
 
-A member runs `ingest` from the CLI or the Intake page. A Product Owner member reads the draft and accepts it. The planner has written two cards, B depending on A. `run-next` locks A, routes `implement` or `implement_hard`, and creates `orch/A`. The inner loop commits and the local check exits 0. One pull request opens. CI goes green. The reviewer model recommends approval. A permitted member approves the head SHA from the CLI or the card page. A Lead Developer member starts deploy. The deployer ships that SHA, health passes, the dev check exits 0, and A is `done`. A later `run-next` may start B.
+A member runs `ingest` from the CLI or the Intake page, or adds requirements by hand. A Product Owner member reads the draft and accepts it. The planner has written two cards, B depending on A. `run-next` locks A, routes `implement` or `implement_hard`, and creates `orch/A`. The inner loop commits and the local check exits 0. One pull request opens. CI goes green. The reviewer model recommends approval. A permitted member approves the head SHA from the CLI or the card page. A Lead Developer member starts deploy. The deployer ships that SHA, health passes, the dev check exits 0, and A is `done`. A later `run-next` may start B.
 
 ### Reviewer requests changes
 
@@ -885,3 +901,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 11. The data directory and the settings API (REQ-045, REQ-044), then the web UI (REQ-042).
 12. Accounts, tribes, and per-project workers (REQ-046 through REQ-051).
 13. The company GitHub account, project repositories, and linked projects (REQ-052 through REQ-054).
+14. Manual requirements and senior accept (REQ-055).

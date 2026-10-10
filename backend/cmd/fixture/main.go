@@ -175,7 +175,7 @@ func step1(ctx context.Context, db *sql.DB, data string) error {
 	if len(parsed.Requirements) != 2 {
 		return fmt.Errorf("step 1: requirements = %d", len(parsed.Requirements))
 	}
-	if err := intake.Apply(ctx, db, "proj_default", parsed); err != nil {
+	if _, err := intake.Apply(ctx, db, "proj_default", parsed); err != nil {
 		return err
 	}
 	n, err := board.CountCards(ctx, db)

@@ -29,7 +29,7 @@
   });
 </script>
 
-<Page title="Users" description="People who can sign in. Admin access is separate from job role." width="wide">
+<Page title="Users" description="People who can sign in. Admin access is separate from job role.">
   {#snippet actions()}
     {#if shell.admin}<Button variant="primary" href="/admin/users/new">New user</Button>{/if}
   {/snippet}

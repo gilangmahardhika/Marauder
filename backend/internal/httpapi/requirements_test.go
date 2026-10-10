@@ -1,0 +1,169 @@
+package httpapi_test
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"testing"
+
+	"orchestrator/backend/internal/app"
+	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/httpapi"
+)
+
+type intakeRequirement struct {
+	ID         string   `json:"id"`
+	SourceKind string   `json:"sourceKind"`
+	Statement  string   `json:"statement"`
+	Acceptance []string `json:"acceptance"`
+	Accepted   bool     `json:"accepted"`
+	CreatedBy  *string  `json:"createdBy"`
+}
+
+type intakeReply struct {
+	Requirements []intakeRequirement `json:"requirements"`
+}
+
+func TestManualRequirementAdd(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	seedRequirement(t, srv, "REQ-001", "prd")
+	path := "/api/projects/proj_default/requirements"
+
+	blank := postJSON(t, srv, path, dev, map[string]any{"id": "", "statement": "Export the board.", "acceptance": []string{"One row per card."}})
+	if blank.Code != 200 {
+		t.Fatalf("blank id add = %d %s", blank.Code, blank.Body.String())
+	}
+	added := find(t, blank.Body.Bytes(), "REQ-002")
+	if added.SourceKind != "manual" || added.Accepted || added.CreatedBy == nil || *added.CreatedBy != "dev@example.com" {
+		t.Fatalf("REQ-002 = %+v", added)
+	}
+	if len(added.Acceptance) != 1 || added.Acceptance[0] != "One row per card." {
+		t.Fatalf("acceptance = %v", added.Acceptance)
+	}
+
+	typed := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-010", "statement": "Typed id.", "acceptance": []string{}})
+	if typed.Code != 200 {
+		t.Fatalf("typed id add = %d %s", typed.Code, typed.Body.String())
+	}
+	find(t, typed.Body.Bytes(), "REQ-010")
+	next := postJSON(t, srv, path, dev, map[string]any{"statement": "After the typed one."})
+	find(t, next.Body.Bytes(), "REQ-011")
+
+	if rec := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-001", "statement": "Duplicate."}); rec.Code != 409 {
+		t.Fatalf("duplicate = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, path, dev, map[string]any{"id": "req-1", "statement": "Bad id."}); rec.Code != 422 {
+		t.Fatalf("bad id = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, path, dev, map[string]any{"statement": "  "}); rec.Code != 422 {
+		t.Fatalf("empty statement = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, path, dev, map[string]any{"statement": "Blank line.", "acceptance": []string{""}}); rec.Code != 422 {
+		t.Fatalf("empty acceptance line = %d %s", rec.Code, rec.Body.String())
+	}
+
+	seedUser(t, srv, "out@example.com", "password-long-3", "product_owner", false)
+	outsider := loginToken(t, srv, "out@example.com", "password-long-3")
+	if rec := postJSON(t, srv, path, outsider, map[string]any{"statement": "Not mine."}); rec.Code != 404 {
+		t.Fatalf("outsider add = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestManualRequirementEdit(t *testing.T) {
+	srv, dev, lead := manualServer(t)
+	seedRequirement(t, srv, "REQ-001", "prd")
+	path := "/api/projects/proj_default/requirements"
+	if rec := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-005", "statement": "First text."}); rec.Code != 200 {
+		t.Fatalf("add = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, "/api/projects/proj_default/accept", lead, map[string]any{"requirementIds": []string{"REQ-005"}}); rec.Code != 200 {
+		t.Fatalf("accept = %d %s", rec.Code, rec.Body.String())
+	}
+
+	same := putJSON(t, srv, path+"/REQ-005", dev, map[string]any{"statement": "First text.", "acceptance": []string{}})
+	if same.Code != 200 || !find(t, same.Body.Bytes(), "REQ-005").Accepted {
+		t.Fatalf("unchanged edit = %d %s", same.Code, same.Body.String())
+	}
+	edited := putJSON(t, srv, path+"/REQ-005", dev, map[string]any{"statement": "Second text.", "acceptance": []string{"Checked."}})
+	if edited.Code != 200 {
+		t.Fatalf("edit = %d %s", edited.Code, edited.Body.String())
+	}
+	if got := find(t, edited.Body.Bytes(), "REQ-005"); got.Accepted || got.Statement != "Second text." {
+		t.Fatalf("edited = %+v", got)
+	}
+
+	if rec := putJSON(t, srv, path+"/REQ-001", dev, map[string]any{"statement": "Rewrite."}); rec.Code != 409 {
+		t.Fatalf("edit repo row = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := sendJSON(t, srv, http.MethodDelete, path+"/REQ-001", dev, nil); rec.Code != 409 {
+		t.Fatalf("delete repo row = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putJSON(t, srv, path+"/REQ-404", dev, map[string]any{"statement": "Missing."}); rec.Code != 404 {
+		t.Fatalf("edit missing = %d %s", rec.Code, rec.Body.String())
+	}
+
+	card, err := board.InsertCard(context.Background(), srv.DB, board.Card{Status: "backlog", RequirementIDs: []string{"REQ-005"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := sendJSON(t, srv, http.MethodDelete, path+"/REQ-005", dev, nil); rec.Code != 409 {
+		t.Fatalf("delete used row = %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := srv.DB.Exec(`DELETE FROM cards WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	gone := sendJSON(t, srv, http.MethodDelete, path+"/REQ-005", dev, nil)
+	if gone.Code != 200 {
+		t.Fatalf("delete = %d %s", gone.Code, gone.Body.String())
+	}
+	var reply intakeReply
+	if err := json.Unmarshal(gone.Body.Bytes(), &reply); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range reply.Requirements {
+		if req.ID == "REQ-005" {
+			t.Fatal("REQ-005 still listed")
+		}
+	}
+}
+
+// manualServer returns a server with a developer and a lead developer who
+// are members of tribe_default, and their bearers.
+func manualServer(t *testing.T) (*httpapi.Server, string, string) {
+	t.Helper()
+	srv := accountServer(t)
+	admin := seedUser(t, srv, "ada@example.com", "password-long-0", "product_owner", true)
+	for _, u := range []struct{ email, role string }{{"dev@example.com", "developer"}, {"lead@example.com", "lead_developer"}} {
+		user := seedUser(t, srv, u.email, "password-long-1", u.role, false)
+		if err := app.AddMember(context.Background(), srv.DB, admin, "tribe_default", user.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return srv, loginToken(t, srv, "dev@example.com", "password-long-1"), loginToken(t, srv, "lead@example.com", "password-long-1")
+}
+
+func seedRequirement(t *testing.T, srv *httpapi.Server, id, kind string) {
+	t.Helper()
+	if _, err := srv.DB.Exec(`
+		INSERT INTO requirements (
+			id, project_id, source_kind, source_path, heading, statement,
+			acceptance_json, non_goals_json, content_hash
+		) VALUES ($1, 'proj_default', $2, 'docs/prd/one.md', $1, 'text', '[]', '[]', 'hash')`, id, kind); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func find(t *testing.T, body []byte, id string) intakeRequirement {
+	t.Helper()
+	var reply intakeReply
+	if err := json.Unmarshal(body, &reply); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	for _, req := range reply.Requirements {
+		if req.ID == id {
+			return req
+		}
+	}
+	t.Fatalf("%s not in %s", id, body)
+	return intakeRequirement{}
+}

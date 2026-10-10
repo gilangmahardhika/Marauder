@@ -44,13 +44,19 @@ export type TraceEvent = {
 
 export type Requirement = {
   id: string;
-  sourceKind: string;
+  sourceKind: 'prd' | 'rfc' | 'draft' | 'manual';
   sourcePath: string;
   heading: string;
   statement: string;
   acceptance: string[];
   accepted: boolean;
+  createdBy: string | null;
   linkedCards: string[];
+};
+
+export type RequirementDraft = {
+  statement: string;
+  acceptance: string[];
 };
 
 export type Decision = {
@@ -62,6 +68,8 @@ export type Decision = {
 export type Intake = {
   draftPending: boolean;
   planError: string | null;
+  canAccept: boolean;
+  skipped?: string[];
   requirements: Requirement[];
   decisions: Decision[];
 };

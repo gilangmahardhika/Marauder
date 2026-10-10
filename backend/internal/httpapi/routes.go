@@ -345,8 +345,10 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		return nil, err
 	}
 	rows, err := db.QueryContext(r.Context(), `
-		SELECT id, source_kind, source_path, heading, statement, acceptance_json, accepted_at IS NOT NULL
-		FROM requirements WHERE project_id = $1 ORDER BY id`, projectID)
+		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
+			q.accepted_at IS NOT NULL, u.email
+		FROM requirements q LEFT JOIN users u ON u.id = q.created_by
+		WHERE q.project_id = $1 ORDER BY q.id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +357,8 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	for rows.Next() {
 		var id, kind, path, heading, statement, acceptance string
 		var accepted bool
-		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted); err != nil {
+		var createdBy sql.NullString
+		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy); err != nil {
 			return nil, err
 		}
 		var lines []string
@@ -365,7 +368,8 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		}
 		reqs = append(reqs, map[string]any{
 			"id": id, "sourceKind": kind, "sourcePath": path, "heading": heading,
-			"statement": statement, "acceptance": lines, "accepted": accepted, "linkedCards": []any{},
+			"statement": statement, "acceptance": lines, "accepted": accepted,
+			"createdBy": nullString(createdBy.String), "linkedCards": []any{},
 		})
 	}
 	decisions := []any{}
@@ -385,7 +389,20 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	if planError.Valid {
 		plan = planError.String
 	}
-	return map[string]any{"draftPending": draft, "planError": plan, "requirements": reqs, "decisions": decisions}, nil
+	user, _ := app.CurrentUser(r.Context())
+	return map[string]any{
+		"draftPending": draft, "planError": plan, "canAccept": canAccept(user.Role),
+		"requirements": reqs, "decisions": decisions,
+	}, nil
+}
+
+// canAccept reports whether a job role may accept requirements (RFC-053).
+func canAccept(role string) bool {
+	switch role {
+	case "lead_developer", "senior_developer", "qa_lead", "product_owner":
+		return true
+	}
+	return false
 }
 
 func nonNil(values []string) []string {

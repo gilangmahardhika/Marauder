@@ -7,6 +7,6 @@
   showShell(() => ({ title: String($page.status), message: '' }));
 </script>
 
-<Page title="Something went wrong" description={`Error ${$page.status}`} width="form">
+<Page title="Something went wrong" description={`Error ${$page.status}`}>
   <EmptyState title={$page.error?.message ?? 'Unknown error'} href="/" link="Back to the board" />
 </Page>

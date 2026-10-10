@@ -79,7 +79,6 @@
 <Page
   title="New project"
   description="A project is one repository in the company GitHub organization. Members of its tribe can see its board."
-  width="form"
 >
   <form onsubmit={submit}>
     <Panel title="Project">

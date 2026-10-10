@@ -13,7 +13,7 @@ Module path: `orchestrator/backend`.
 | `internal/machine` | Legal edges, evidence checks, compare-and-swap `Transition` | Call git, models, or HTTP |
 | `internal/trace` | Append events, redact, list by card | Update a row in place |
 | `internal/board` | PostgreSQL reads and writes for cards, attempts, locks, runs | Choose the next status |
-| `internal/intake` | goldmark parse, hashes, accept, drafts | Create a worktree |
+| `internal/intake` | goldmark parse, hashes, accept, drafts, manual rows | Create a worktree |
 | `internal/settings` | `config.yaml`, `secrets.json`, validation, snapshots | Return a secret to HTTP |
 | `internal/router` | Task class and model choice | Call a provider |
 | `internal/contextpack` | Build the four packs | Include the author transcript in the reviewer pack |
@@ -216,7 +216,10 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 | `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected` |
 | `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
 | `Unblock(actor, card, reset)` | `blocked` | Member, role may unblock, `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
-| `Accept(actor, project, ids)` | intake | Member, role is Product Owner | `accepted_by` is the user id, `runs` row |
+| `Accept(actor, project, ids)` | intake | Member, role is Lead Developer, Senior Developer, QA Lead, or Product Owner (RFC-053) | `accepted_by` is the user id, `runs` row |
+| `AddRequirement(actor, project, id, statement, acceptance)` | intake | Member. A blank id takes the next free `REQ-` number under the project's `intake_state` row lock | `source_kind = 'manual'`, `created_by` is the user id, not accepted |
+| `UpdateRequirement(actor, project, id, statement, acceptance)` | intake | Member, row is manual | A changed hash clears `accepted_at` and `accepted_by` |
+| `DeleteRequirement(actor, project, id)` | intake | Member, row is manual, no card in the project lists the id | Row removed |
 
 HTTP passes the session user. The break-glass CLI passes `--as`. A missing permission returns `app.ErrActionNotListed` when the name is not in `actions`, and `403` when the route is not a card action. A non-member is `404`.
 
@@ -393,5 +396,6 @@ Stop at the end of a step until its tests in [0005-verification.md](0005-verific
 | 13 | Users, sessions, account GitHub (Sprint 11) | Tribes |
 | 14 | Tribes, projects, `project_id` (Sprint 12) | Per-project workers |
 | 15 | Project workers, role gates, Lead deploy (Sprint 13) | |
+| 16 | Manual requirements in `intake`, senior accept (Sprint 16) | |
 
 The first frontend starts after step 12. Account, tribe, and project pages land with steps 13 to 15.

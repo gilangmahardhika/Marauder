@@ -84,7 +84,6 @@
 <Page
   title={tribeName || 'Tribe'}
   description={`${members.length} ${members.length === 1 ? 'member' : 'members'}`}
-  width="wide"
 >
   {#snippet actions()}
     <Button href="/tribes">All tribes</Button>

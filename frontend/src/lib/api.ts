@@ -11,6 +11,7 @@ import type {
   ProjectLink,
   ProjectRecord,
   Repository,
+  RequirementDraft,
   RouterSettings,
   SessionUser,
   TraceEvent,
@@ -167,6 +168,21 @@ export function ingest() {
 
 export function acceptRequirements(requirementIds: string[]) {
   return request<Intake>(`${projectPrefix()}/accept`, { method: 'POST', body: JSON.stringify({ requirementIds }) });
+}
+
+export function addRequirement(body: RequirementDraft & { id: string }) {
+  return request<Intake>(`${projectPrefix()}/requirements`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateRequirement(id: string, body: RequirementDraft) {
+  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
+}
+
+export function deleteRequirement(id: string) {
+  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
 export function startRun() {

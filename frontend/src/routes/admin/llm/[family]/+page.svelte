@@ -96,11 +96,11 @@
 </script>
 
 {#if missing}
-  <Page title="Family not found" width="form">
+  <Page title="Family not found">
     <EmptyState title={`There is no LLM family named ${familyId}.`} href="/admin/llm" link="All families" />
   </Page>
 {:else if family}
-  <Page title={familyId} width="form">
+  <Page title={familyId}>
     {#snippet meta()}
       <Badge>{protocolLabel(family!.protocol)}</Badge>
     {/snippet}

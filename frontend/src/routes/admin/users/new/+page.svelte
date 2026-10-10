@@ -38,7 +38,7 @@
   }
 </script>
 
-<Page title="New user" description="The user signs in with this email and password, then can change the password on their account page." width="form">
+<Page title="New user" description="The user signs in with this email and password, then can change the password on their account page.">
   <form onsubmit={submit}>
     <div class="flex flex-col gap-6">
       <Panel title="Sign-in">

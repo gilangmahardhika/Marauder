@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -58,16 +59,9 @@ func TestOwnerApproveStops(t *testing.T) {
 	}
 }
 
-func TestAcceptByOwner(t *testing.T) {
+func TestAcceptSeniorRoles(t *testing.T) {
 	srv := accountServer(t)
-	owner := seedUser(t, srv, "owner@example.com", "password-long-1", "product_owner", true)
-	lead := seedUser(t, srv, "lead@example.com", "password-long-2", "lead_developer", false)
-	if err := app.AddMember(context.Background(), srv.DB, owner, "tribe_default", owner.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := app.AddMember(context.Background(), srv.DB, owner, "tribe_default", lead.ID); err != nil {
-		t.Fatal(err)
-	}
+	admin := seedUser(t, srv, "ada@example.com", "password-long-0", "product_owner", true)
 	if _, err := srv.DB.Exec(`
 		INSERT INTO requirements (
 			id, project_id, source_kind, source_path, heading, statement,
@@ -75,15 +69,29 @@ func TestAcceptByOwner(t *testing.T) {
 		) VALUES ('REQ-001', 'proj_default', 'prd', 'docs/prd', 'REQ-001', 'text', '[]', '[]', 'hash')`); err != nil {
 		t.Fatal(err)
 	}
-	leadToken := loginToken(t, srv, "lead@example.com", "password-long-2")
-	denied := postJSON(t, srv, "/api/projects/proj_default/accept", leadToken, map[string]any{"requirementIds": []string{"REQ-001"}})
-	if denied.Code != 403 {
-		t.Fatalf("lead accept = %d %s", denied.Code, denied.Body.String())
+	cases := []struct {
+		role string
+		code int
+	}{
+		{"lead_developer", 200}, {"senior_developer", 200}, {"qa_lead", 200}, {"product_owner", 200},
+		{"developer", 403}, {"qa", 403},
 	}
-	ownerToken := loginToken(t, srv, "owner@example.com", "password-long-1")
-	ok := postJSON(t, srv, "/api/projects/proj_default/accept", ownerToken, map[string]any{"requirementIds": []string{"REQ-001"}})
-	if ok.Code != 200 {
-		t.Fatalf("owner accept = %d %s", ok.Code, ok.Body.String())
+	for _, c := range cases {
+		email := c.role + "@example.com"
+		user := seedUser(t, srv, email, "password-long-1", c.role, false)
+		if err := app.AddMember(context.Background(), srv.DB, admin, "tribe_default", user.ID); err != nil {
+			t.Fatal(err)
+		}
+		token := loginToken(t, srv, email, "password-long-1")
+		rec := postJSON(t, srv, "/api/projects/proj_default/accept", token, map[string]any{"requirementIds": []string{"REQ-001"}})
+		if rec.Code != c.code {
+			t.Fatalf("%s accept = %d %s", c.role, rec.Code, rec.Body.String())
+		}
+		intake := getAuth(t, srv, "/api/projects/proj_default/intake", token)
+		want := fmt.Sprintf(`"canAccept":%t`, c.code == 200)
+		if !strings.Contains(intake.Body.String(), want) {
+			t.Fatalf("%s intake lacks %s: %s", c.role, want, intake.Body.String())
+		}
 	}
 }
 

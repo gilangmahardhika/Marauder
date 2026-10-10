@@ -55,6 +55,8 @@ Superseded in part by RFC-049 in [0006-company-github-and-linked-projects.md](00
 
 Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-models-and-router.md). LLM APIs and the router are one company setting. An admin edits them, and a Lead Developer does not.
 
+Superseded in part by RFC-053 in [0008-manual-requirements.md](0008-manual-requirements.md). A Lead Developer, Senior Developer, QA Lead, or Product Owner member may accept requirements. Any member may add a requirement by hand.
+
 ## RFC-047 A tribe owns its projects
 
 Users, sessions, tribes, membership, and projects live in one PostgreSQL database. The connection string is `databaseUrl` in the service `secrets.json`. The API does not return it. A project belongs to one tribe. A tribe has one or more projects. A user may belong to several tribes. The user sees a project's cards, intake, and settings only as a member of that tribe. A non-member, and a request for an unknown project id, gets `404`. Admin manages user, tribe, membership, and project records. Each project has its own repo, settings, worktrees, and intake rows. Requirement ids and decision ids are unique per project.

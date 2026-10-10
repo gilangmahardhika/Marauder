@@ -94,7 +94,6 @@
 <Page
   title="Linked projects"
   description="Projects in the same tribe whose context this project reads. The implementer sees their accepted requirements, decisions, and shared paths, read only."
-  width="form"
 >
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">

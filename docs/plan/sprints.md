@@ -27,8 +27,11 @@ flowchart LR
   s13[Sprint13_Projects]
   s14[Sprint14_CompanyRepos]
   s15[Sprint15_LinkedProjects]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15
+  s16[Sprint16_ManualIntake]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16
 ```
+
+Sprint 16 implements [../rfc/0008-manual-requirements.md](../rfc/0008-manual-requirements.md).
 
 Sprints 14 and 15 implement [../rfc/0006-company-github-and-linked-projects.md](../rfc/0006-company-github-and-linked-projects.md).
 
@@ -207,7 +210,7 @@ Goal: Each project has its own data directory, settings, bot token, worker lock,
 - `ORCHESTRATOR_CLOUD=1` may bind a non-loopback address. Without that variable, `TestLoopbackOnly` still passes.
 - Reconcile and the deploy lock stay inside one project.
 
-Done when: `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner`, `TestDeveloperRunOnly`, `TestActorOnTransition`, `TestCloudBind`, and `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`.
+Done when: `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner` (replaced by `TestAcceptSeniorRoles` in Sprint 16), `TestDeveloperRunOnly`, `TestActorOnTransition`, `TestCloudBind`, and `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`.
 
 ## Sprint 14: One company account, one repo per project
 
@@ -238,3 +241,17 @@ Migration `00007` creates `project_links`. Packages: `internal/tenancy`, `intern
 - LLM APIs and Router are company settings (RFC-052). Only an admin saves them or runs a family test. UI: they move under Admin.
 
 Done when: `TestProjectLinkSameTribeOnly`, `TestProjectLinkNoSelf`, `TestProjectLinkOutsiderMisses`, `TestPackIncludesLinkedRequirements`, `TestSharedPathConfined`, `TestReadLinkedFileReadOnly`, `TestLinkedContextIsUntrusted`, `TestModelSettingsAdminOnly`.
+
+## Sprint 16: Requirements by hand
+
+Goal: A member adds a requirement to a project without a document in the repository. Every senior role can accept. Ingest never overwrites a requirement added by hand.
+
+Migration `00008` adds `manual` to `requirements.source_kind` and adds `requirements.created_by`. Packages: `internal/intake`, `internal/app`, `internal/httpapi`.
+
+- `POST /api/projects/{id}/requirements`, and `PUT` and `DELETE /api/projects/{id}/requirements/{reqId}`. Any member. A blank id takes the next free `REQ-` number. Only manual rows change. A row a card lists is not deleted.
+- Ingest skips ids that are manual and returns them in `skipped`.
+- Accept is allowed for Lead Developer, Senior Developer, QA Lead, and Product Owner members. `TestAcceptSeniorRoles` replaces `TestAcceptByOwner`.
+- The intake response adds `canAccept` and `createdBy`.
+- UI: Add requirement, `/intake/new`, `/intake/[id]`, a Manual badge, and the Accept button only when `canAccept`.
+
+Done when: `TestManualRequirementAdd`, `TestManualRequirementEdit`, `TestIngestKeepsManual`, `TestAcceptSeniorRoles`.

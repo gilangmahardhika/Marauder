@@ -2,11 +2,11 @@
   import { ApiError, getLLM, getRouter, putRouter, unreachable } from '$lib/api';
   import { showShell } from '$lib/shell.svelte';
   import type { Family, RouteChoice } from '$lib/types';
+  import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
-  import SaveBar from '$lib/ui/SaveBar.svelte';
   import SearchSelect, { type SearchOption } from '$lib/ui/SearchSelect.svelte';
 
   const names = ['plan', 'implement', 'implement_hard', 'review', 'triage'];
@@ -85,7 +85,7 @@
   }
 </script>
 
-<Page title="Router" description="Which model handles each class of work, and how much each card may spend. Applies to every project." width="form">
+<Page title="Router" description="Which model handles each class of work, and how much each card may spend. Applies to every project.">
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
       <Notice>
@@ -139,8 +139,11 @@
           <Field label="Max tokens" id="tokens" type="number" width="sm" hint="Per card" bind:value={maxTokens} />
           <Field label="Max wall minutes" id="minutes" type="number" width="sm" hint="Per attempt" bind:value={maxMinutes} />
         </div>
+        {#snippet footer()}
+          {#if result}<span class="mr-auto text-sm text-muted">{result}</span>{/if}
+          <Button variant="primary" type="submit" disabled={busy}>Save</Button>
+        {/snippet}
       </Panel>
     </div>
-    <SaveBar {busy} note={result} />
   </form>
 </Page>
