@@ -38,7 +38,7 @@
       }
       await putLLM({ families: [...current.families.map(keepKey), fromDraft(family)] });
       message = 'Family created';
-      await goto('/settings/llm');
+      await goto('/admin/llm');
     } catch (error) {
       fields = error instanceof ApiError ? error.fields : {};
       message = error instanceof ApiError ? error.message : unreachable();
@@ -53,7 +53,7 @@
     <Panel title="Family">
       <FamilyForm bind:family {fields} />
       {#snippet footer()}
-        <Button variant="ghost" href="/settings/llm">Cancel</Button>
+        <Button variant="ghost" href="/admin/llm">Cancel</Button>
         <Button variant="primary" type="submit" disabled={busy}>Create family</Button>
       {/snippet}
     </Panel>

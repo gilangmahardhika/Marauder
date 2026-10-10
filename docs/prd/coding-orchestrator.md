@@ -14,9 +14,9 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 
 | Person | What they do |
 | --- | --- |
-| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account. Does not approve or deploy unless the job role allows it. |
+| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account, LLM APIs, and router. Does not approve or deploy unless the job role allows it. |
 | Product Owner | Accepts requirements for a project whose tribe they belong to. May request changes, reject, approve, and unblock. Does not deploy. |
-| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, router, models, and deploy settings. |
+| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, and deploy settings. |
 | QA Lead | May request changes, reject, and approve. Does not accept requirements or deploy. |
 | Senior Developer | May start a run and request changes. Does not accept, approve, reject, or deploy. |
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
@@ -648,7 +648,7 @@ v1 is acceptable when the following script passes on a fixture repo and the same
 
 ### REQ-044 Settings are edited through the API, and secrets stay write-only
 
-A Lead Developer member edits project settings from the web UI, through the JSON API. An admin edits the company GitHub account. Each user edits their own GitHub settings. There is no approver list and no operator login.
+A Lead Developer member edits project settings from the web UI, through the JSON API. An admin edits the company GitHub account, LLM APIs, and router, which every project uses (RFC-052). Each user edits their own GitHub settings. There is no approver list and no operator login.
 
 | Section | Fields | Who saves |
 | --- | --- | --- |
@@ -656,8 +656,8 @@ A Lead Developer member edits project settings from the web UI, through the JSON
 | Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
 | Project repository | Repo in the company organization, base branch | Lead Developer member |
 | Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member |
-| LLM | Families, each with protocol, base URL, model ids, and an API key | Lead Developer member |
-| Router | Model and fallback per task class, review independence, budgets | Lead Developer member |
+| LLM | Families, each with protocol, base URL, model ids, and an API key. One list for the company | Admin |
+| Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
 | Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member |
 
 No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
@@ -667,6 +667,7 @@ No response contains a secret value. A response says whether each secret is set.
 - `GET` on each settings section returns `tokenSet` or `keySet` flags and no secret.
 - Saving the account GitHub section with an empty token keeps the stored token.
 - A Developer member who saves project deploy settings is rejected.
+- A Lead Developer who is not an admin and saves LLM or router settings is rejected.
 - A router model id that no family lists is rejected.
 - An implementer attempt running while the router is saved finishes on the route it started with.
 
@@ -773,6 +774,7 @@ A project names one repository in the company organization and one base branch. 
 - Ingest on one project does not add requirements to another project.
 - Deploy settings saved on one project are not returned for another project.
 - A Developer member who saves project deploy settings is rejected.
+- A Lead Developer who is not an admin and saves LLM or router settings is rejected.
 
 ### REQ-054 A project can read context from linked projects
 

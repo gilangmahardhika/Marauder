@@ -153,7 +153,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:4173/` and sign in with email and password (REQ-046). Fill account GitHub, then the project's GitHub, LLM APIs, Router, and Deploy. A target repo may use Node for its own `localCheck`. That command runs in the sandbox and is not the harness.
+Open `http://127.0.0.1:4173/` and sign in with email and password (REQ-046). Fill account GitHub. As an admin, fill Company GitHub, LLM APIs, and Router. Then, as a Lead Developer member, fill the project's Repository, Linked projects, and Deploy. A target repo may use Node for its own `localCheck`. That command runs in the sandbox and is not the harness.
 
 ## Implementation order
 
@@ -169,7 +169,7 @@ Open `http://127.0.0.1:4173/` and sign in with email and password (REQ-046). Fil
 10. Worker: lock, passes, plan job, dependencies, deploy lock.
 11. REQ-043 fixture.
 12. JSON API for every route in 0002.
-13. SvelteKit app: layout and session, work pages, then the GitHub, LLM, Router, and Deploy settings.
+13. SvelteKit app: layout and session, work pages, then the admin settings (Company GitHub, LLM APIs, Router) and the project settings (Repository, Linked projects, Deploy).
 14. Accounts, tribes, and per-project workers (Sprints 11–13, RFC-045 through RFC-048).
 
 Each step's tests are in 0005. Do not start a step until the previous step's tests pass.

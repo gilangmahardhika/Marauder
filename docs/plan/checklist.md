@@ -247,6 +247,7 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Packs add linked requirements, decisions, and shared files inside the untrusted markers.
 - [x] `read_linked_file` reads a linked export and cannot write.
 - [x] An event records the linked project ids and SHAs for each attempt.
+- [x] LLM APIs and Router are company settings that only an admin saves.
 - [x] `TestProjectLinkSameTribeOnly`
 - [x] `TestProjectLinkNoSelf`
 - [x] `TestProjectLinkOutsiderMisses`
@@ -254,3 +255,4 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestSharedPathConfined`
 - [x] `TestReadLinkedFileReadOnly`
 - [x] `TestLinkedContextIsUntrusted`
+- [x] `TestModelSettingsAdminOnly`

@@ -235,5 +235,6 @@ Migration `00007` creates `project_links`. Packages: `internal/tenancy`, `intern
 - `read_linked_file` reads from an export of the linked base SHA through `safePath`. The tool list snapshot changes in this sprint.
 - One event per attempt lists the linked project ids and SHAs.
 - UI: the Linked projects page.
+- LLM APIs and Router are company settings (RFC-052). Only an admin saves them or runs a family test. UI: they move under Admin.
 
-Done when: `TestProjectLinkSameTribeOnly`, `TestProjectLinkNoSelf`, `TestProjectLinkOutsiderMisses`, `TestPackIncludesLinkedRequirements`, `TestSharedPathConfined`, `TestReadLinkedFileReadOnly`, `TestLinkedContextIsUntrusted`.
+Done when: `TestProjectLinkSameTribeOnly`, `TestProjectLinkNoSelf`, `TestProjectLinkOutsiderMisses`, `TestPackIncludesLinkedRequirements`, `TestSharedPathConfined`, `TestReadLinkedFileReadOnly`, `TestLinkedContextIsUntrusted`, `TestModelSettingsAdminOnly`.

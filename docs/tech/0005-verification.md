@@ -91,6 +91,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestPlanCards` | Planner cards link only accepted ids, get checks from settings, and a dependency cycle is refused |
 | `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
 | `TestSecretOmitted` | GET of the company GitHub, LLM, and project deploy settings has no token or key substring from the secrets file |
+| `TestModelSettingsAdminOnly` | A Lead Developer who is not an admin reads LLM and router settings, and gets `403` on PUT and on a family test. An admin saves them, and no response has the saved key |
 | `TestSecretKeep` | A project deploy PUT without the token leaves that project's `secrets.json` bytes unchanged |
 | `TestUnknownModel` | Router PUT with model id `missing` returns `422` and the yaml is unchanged |
 | `TestModelIdUnique` | The same model id in two families is `422` |

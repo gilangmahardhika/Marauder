@@ -50,8 +50,7 @@ type ProjectConfig struct {
 
 // ProjectSecrets is <data>/projects/<id>/secrets.json. It is never encoded to a client.
 type ProjectSecrets struct {
-	DeployToken string            `json:"deployToken"`
-	LLMKeys     map[string]string `json:"llmKeys,omitempty"`
+	DeployToken string `json:"deployToken"`
 }
 
 // Deploy is the flat shape of the project deploy route.

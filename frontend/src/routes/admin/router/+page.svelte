@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ApiError, getLLM, getRouter, putRouter, unreachable } from '$lib/api';
-  import { shell, showShell } from '$lib/shell.svelte';
+  import { showShell } from '$lib/shell.svelte';
   import type { Family, RouteChoice } from '$lib/types';
   import Field from '$lib/ui/Field.svelte';
   import Notice from '$lib/ui/Notice.svelte';
@@ -44,7 +44,6 @@
   showShell(() => ({ title: 'Router', message }));
 
   $effect(() => {
-    if (shell.projectId === '') return;
     void Promise.all([getRouter(), getLLM()])
       .then(([router, llm]) => {
         routes = router.routes;
@@ -86,7 +85,7 @@
   }
 </script>
 
-<Page title="Router" description="Which model handles each class of work, and how much each card may spend." width="form">
+<Page title="Router" description="Which model handles each class of work, and how much each card may spend. Applies to every project." width="form">
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
       <Notice>

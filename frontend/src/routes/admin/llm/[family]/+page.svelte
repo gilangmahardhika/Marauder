@@ -4,7 +4,7 @@
   import { ApiError, getLLM, putLLM, testLLM, unreachable } from '$lib/api';
   import FamilyForm from '$lib/components/FamilyForm.svelte';
   import { fromDraft, keepKey, protocolLabel, toDraft, type FamilyDraft } from '$lib/llm';
-  import { shell, showShell } from '$lib/shell.svelte';
+  import { showShell } from '$lib/shell.svelte';
   import type { Family } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -32,7 +32,7 @@
 
   $effect(() => {
     const id = familyId;
-    if (id === '' || shell.projectId === '') return;
+    if (id === '') return;
     void getLLM()
       .then((body) => {
         pick(body.families);
@@ -85,7 +85,7 @@
       const current = await getLLM();
       await putLLM({ families: current.families.filter((item) => item.id !== familyId).map(keepKey) });
       message = 'Family deleted';
-      await goto('/settings/llm');
+      await goto('/admin/llm');
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -97,7 +97,7 @@
 
 {#if missing}
   <Page title="Family not found" width="form">
-    <EmptyState title={`There is no LLM family named ${familyId} in this project.`} href="/settings/llm" link="All families" />
+    <EmptyState title={`There is no LLM family named ${familyId}.`} href="/admin/llm" link="All families" />
   </Page>
 {:else if family}
   <Page title={familyId} width="form">
@@ -105,7 +105,7 @@
       <Badge>{protocolLabel(family!.protocol)}</Badge>
     {/snippet}
     {#snippet actions()}
-      <Button href="/settings/llm">All families</Button>
+      <Button href="/admin/llm">All families</Button>
     {/snippet}
     <div class="flex flex-col gap-6">
       <form onsubmit={save}>

@@ -327,7 +327,7 @@ If `cards.pr_url` is already set, skip `pr create`. The unique index is the seco
 
 ## Settings
 
-`settings.SaveLLM`, `SaveRouter`, and `SaveProjectDeploy` validate against the 0002 rules for one project and the current state of that project's other sections. A Lead Developer member may call them. Then they write that project's `config.yaml` and, only for secret fields that were sent, that project's `secrets.json`. `company.Save` writes the company GitHub account and is admin only. The project repository and links are rows, saved by `tenancy.SaveRepository` and `tenancy.SaveLinks`. Files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names and `actorId`.
+`settings.SaveLLM` and `SaveRouter` validate against the 0002 rules and the current state of the other section. Only an admin may call them (RFC-052). They write the service `config.yaml` and, only for keys that were sent, the service `secrets.json`. `settings.SaveProjectDeploy` validates against the 0002 rules for one project. A Lead Developer member may call it. It writes that project's `config.yaml` and, only when the deploy token was sent or cleared, that project's `secrets.json`. `company.Save` writes the company GitHub account and is admin only. The project repository and links are rows, saved by `tenancy.SaveRepository` and `tenancy.SaveLinks`. Files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names and `actorId`.
 
 `settings.SaveUserGitHub` writes ciphertext for that user only. `settings.View*` copies config into response structs that have no secret fields, so `json.Marshal` cannot leak one.
 

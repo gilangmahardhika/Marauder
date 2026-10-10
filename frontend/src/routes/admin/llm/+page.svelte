@@ -1,7 +1,7 @@
 <script lang="ts">
   import { ApiError, getLLM, unreachable } from '$lib/api';
   import { protocolLabel } from '$lib/llm';
-  import { shell, showShell } from '$lib/shell.svelte';
+  import { showShell } from '$lib/shell.svelte';
   import type { Family } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -17,7 +17,6 @@
   showShell(() => ({ title: 'LLM APIs', message }));
 
   $effect(() => {
-    if (shell.projectId === '') return;
     void getLLM()
       .then((body) => {
         families = body.families;
@@ -38,15 +37,15 @@
 
 <Page
   title="LLM APIs"
-  description="Model families this project can route work to. Each family has one endpoint, one key, and any number of models."
+  description="Model families every project can route work to. Each family has one endpoint, one key, and any number of models."
   width="wide"
 >
   {#snippet actions()}
-    <Button variant="primary" href="/settings/llm/new">Add family</Button>
+    <Button variant="primary" href="/admin/llm/new">Add family</Button>
   {/snippet}
   {#if loaded && families.length === 0}
     <EmptyState title="No LLM families yet" description="Add a family for each provider endpoint, then list the models it serves.">
-      <Button variant="primary" href="/settings/llm/new">Add family</Button>
+      <Button variant="primary" href="/admin/llm/new">Add family</Button>
     </EmptyState>
   {:else if families.length > 0}
     <Table label="LLM families">
@@ -74,7 +73,7 @@
             <td class="{td} text-right">
               <a
                 class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
-                href={`/settings/llm/${encodeURIComponent(family.id)}`}
+                href={`/admin/llm/${encodeURIComponent(family.id)}`}
                 aria-label={`Edit ${family.id}`}>Edit</a
               >
             </td>

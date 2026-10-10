@@ -139,6 +139,9 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPut {
+		if !requireAdmin(w, r) {
+			return
+		}
 		var body struct {
 			Families []struct {
 				ID       string   `json:"id"`
@@ -175,6 +178,11 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 		}
 		cfg = saved
 		_, secrets, _ = s.loadSettings()
+		fields := []string{"families"}
+		if len(keys) > 0 {
+			fields = append(fields, "apiKey")
+		}
+		s.configChanged(r, "", "llm", fields)
 	}
 	out := []any{}
 	for _, family := range cfg.LLM.Families {
@@ -194,6 +202,9 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) llmTest(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -204,6 +215,9 @@ func (s *Server) routerSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPut {
+		if !requireAdmin(w, r) {
+			return
+		}
 		var body struct {
 			Routes map[string]struct {
 				Model    string `json:"model"`
@@ -240,6 +254,7 @@ func (s *Server) routerSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg = saved
+		s.configChanged(r, "", "router", []string{"routes", "budgets"})
 	}
 	routes := map[string]any{}
 	for _, name := range []string{"plan", "implement", "implement_hard", "review", "triage"} {
@@ -266,6 +281,17 @@ func (s *Server) routerSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"routes": routes, "budgets": budgets, "reviewIndependentPossible": independent,
 	})
+}
+
+// requireAdmin writes 403 unless the caller is an admin. LLM APIs and the
+// router are company settings (RFC-052).
+func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	user, ok := app.CurrentUser(r.Context())
+	if !ok || !user.Admin {
+		writeErr(w, 403, "forbidden", "forbidden")
+		return false
+	}
+	return true
 }
 
 func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {

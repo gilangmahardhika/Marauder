@@ -11,6 +11,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0004-postgres.md](rfc/0004-postgres.md) | Decision `RFC-044`. The board is PostgreSQL |
 | [rfc/0005-teams-and-cloud.md](rfc/0005-teams-and-cloud.md) | Decisions `RFC-045` to `RFC-048`. Accounts, job roles, tribes, and per-project workers |
 | [rfc/0006-company-github-and-linked-projects.md](rfc/0006-company-github-and-linked-projects.md) | Decisions `RFC-049` to `RFC-051`. Company GitHub account, project repositories, linked projects |
+| [rfc/0007-global-models-and-router.md](rfc/0007-global-models-and-router.md) | Decision `RFC-052`. LLM APIs and the router are one company setting |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -53,6 +53,8 @@ Requirements: REQ-003, REQ-030, REQ-032, REQ-047, REQ-051.
 
 Superseded in part by RFC-049 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). The bot login an approver may not use is the company bot login. Admin edits the company GitHub account. A Lead Developer edits the project's repository, links, checks, and deploy settings.
 
+Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-models-and-router.md). LLM APIs and the router are one company setting. An admin edits them, and a Lead Developer does not.
+
 ## RFC-047 A tribe owns its projects
 
 Users, sessions, tribes, membership, and projects live in one PostgreSQL database. The connection string is `databaseUrl` in the service `secrets.json`. The API does not return it. A project belongs to one tribe. A tribe has one or more projects. A user may belong to several tribes. The user sees a project's cards, intake, and settings only as a member of that tribe. A non-member, and a request for an unknown project id, gets `404`. Admin manages user, tribe, membership, and project records. Each project has its own repo, settings, worktrees, and intake rows. Requirement ids and decision ids are unique per project.
@@ -66,6 +68,8 @@ Consequences: board queries include `project_id`. Unique keys for a branch and a
 Requirements: REQ-044, REQ-045, REQ-048, REQ-049, REQ-051.
 
 Superseded in part by RFC-049 and RFC-050 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). Jobs use the company token, not a project bot token. A project names a repository in the company organization, and the service clones it. A user's GitHub token stays ciphertext. Deploy tokens stay in the project secrets file.
+
+Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-models-and-router.md). Model keys are in the service secrets file, not the project secrets file.
 
 ## RFC-048 Workers run per project
 

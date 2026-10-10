@@ -7,8 +7,6 @@
   const links = [
     { href: '/settings/repository', label: 'Repository' },
     { href: '/settings/links', label: 'Linked projects' },
-    { href: '/settings/llm', label: 'LLM APIs' },
-    { href: '/settings/router', label: 'Router' },
     { href: '/settings/deploy', label: 'Deploy' }
   ];
 

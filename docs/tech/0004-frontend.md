@@ -91,6 +91,10 @@ frontend/
   src/routes/admin/users/new/+page.svelte
   src/routes/admin/users/[id]/+page.svelte
   src/routes/admin/github/+page.svelte
+  src/routes/admin/llm/+page.svelte
+  src/routes/admin/llm/new/+page.svelte
+  src/routes/admin/llm/[family]/+page.svelte
+  src/routes/admin/router/+page.svelte
   src/routes/tribes/+page.svelte
   src/routes/tribes/new/+page.svelte
   src/routes/tribes/[id]/+page.svelte
@@ -99,10 +103,6 @@ frontend/
   src/routes/settings/+layout.svelte
   src/routes/settings/repository/+page.svelte
   src/routes/settings/links/+page.svelte
-  src/routes/settings/llm/+page.svelte
-  src/routes/settings/llm/new/+page.svelte
-  src/routes/settings/llm/[family]/+page.svelte
-  src/routes/settings/router/+page.svelte
   src/routes/settings/deploy/+page.svelte
   src/lib/api.ts
   src/lib/session.ts
@@ -158,6 +158,10 @@ frontend/
 | `/admin/users/new` | Create a user |
 | `/admin/users/[id]` | Edit role, admin, disabled, and an optional password |
 | `/admin/github` | Company GitHub account |
+| `/admin/llm` | LLM families for the company |
+| `/admin/llm/new` | Create an LLM family |
+| `/admin/llm/[family]` | Edit, test, or delete one LLM family |
+| `/admin/router` | Router for the company |
 | `/tribes` | Tribes |
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
@@ -165,13 +169,9 @@ frontend/
 | `/projects/new` | Create a project |
 | `/settings/repository` | Project repository, base branch, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
-| `/settings/llm` | LLM families for the project |
-| `/settings/llm/new` | Create an LLM family |
-| `/settings/llm/[family]` | Edit, test, or delete one LLM family |
-| `/settings/router` | Router settings for the project |
 | `/settings/deploy` | Deploy and checks for the project |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, LLM APIs, Router, Deploy), and Admin (Users, Tribes, Company GitHub). Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router). LLM APIs and Router are company settings (RFC-052), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
@@ -311,19 +311,19 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 ### LLM APIs
 
-`src/routes/settings/llm/+page.svelte` lists the families from GET `/api/projects/{id}/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/settings/llm/new`.
+`src/routes/admin/llm/+page.svelte` lists the company families from GET `/api/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/admin/llm/new`.
 
 `src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
 
-`src/routes/settings/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/settings/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
+`src/routes/admin/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/admin/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
 
 The API has no per-family write. Create, Save, and Delete each GET the current list, change one entry, and PUT the whole families list. The other families are sent without `apiKey` or `clear`, so their saved keys stay.
 
-"Test connection" calls `POST /api/projects/{id}/settings/llm/{family}/test` and shows the result in the panel footer.
+"Test connection" calls `POST /api/settings/llm/{family}/test` and shows the result in the panel footer.
 
 ### Router
 
-`src/routes/settings/router/+page.svelte`. GET and PUT `/api/projects/{id}/settings/router`. Also GET that project's LLM settings so the selects can list saved model ids.
+`src/routes/admin/router/+page.svelte`. GET and PUT `/api/settings/router`. Also GET `/api/settings/llm` so the selects can list saved model ids. The routes apply to every project.
 
 A list of five rows: `plan`, `implement`, `implement_hard`, `review`, `triage`. Each row has a model `SearchSelect` and a fallback `SearchSelect`. Options are every model id from LLM APIs, each with its family id as the detail line, and the search matches either. Both pickers start with `None`, which saves an empty value. The review model picker also lists `different-family-from-author` first. A saved model that no family lists any more still shows, marked "Not in LLM APIs". From 640px the rows are three columns: class, model, fallback. Below that each row stacks and the picker labels show.
 

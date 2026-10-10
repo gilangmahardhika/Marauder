@@ -32,8 +32,6 @@
         { href: '/projects', label: 'Projects', icon: 'projects' },
         { href: '/settings/repository', label: 'Repository', icon: 'git' },
         { href: '/settings/links', label: 'Linked projects', icon: 'link' },
-        { href: '/settings/llm', label: 'LLM APIs', icon: 'spark' },
-        { href: '/settings/router', label: 'Router', icon: 'router' },
         { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' }
       ]
     },
@@ -43,7 +41,9 @@
       items: [
         { href: '/admin/users', label: 'Users', icon: 'users' },
         { href: '/tribes', label: 'Tribes', icon: 'shield' },
-        { href: '/admin/github', label: 'Company GitHub', icon: 'building' }
+        { href: '/admin/github', label: 'Company GitHub', icon: 'building' },
+        { href: '/admin/llm', label: 'LLM APIs', icon: 'spark' },
+        { href: '/admin/router', label: 'Router', icon: 'router' }
       ]
     }
   ];

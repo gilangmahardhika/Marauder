@@ -14,7 +14,7 @@ A model call is a step inside a state. It is not the workflow.
 
 This is the refined prompt the design started from. It is kept as history. The PRD replaced it as the requirements source, and later decisions added the following:
 
-- A SvelteKit web UI beside the CLI, with account GitHub settings and per-project settings for the repo, model APIs, the router, and deploy (RFC-035, RFC-045, RFC-047).
+- A SvelteKit web UI beside the CLI, with account GitHub settings, company settings for GitHub, model APIs, and the router, and per-project settings for the repository, linked projects, and deploy (RFC-035, RFC-045, RFC-049, RFC-052).
 - A service data directory outside every target repo (RFC-036). The board is one PostgreSQL database, named by `databaseUrl` in that directory (RFC-044, RFC-047). Each project has its own worker (RFC-048).
 - Checks that run on exported copies, with network only for dev checks (RFC-037).
 - Deploy scripts that live outside the repo (RFC-038).

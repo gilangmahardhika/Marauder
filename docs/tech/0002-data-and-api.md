@@ -719,7 +719,9 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 | `projectId` | Another project in the same tribe. Not this project. Unknown is `422` |
 | `sharedPaths` | At most 20 per link. Each is relative, has no `..`, and is not under `.git` or `.orchestrator` |
 
-`GET /api/projects/{projectId}/settings/llm`
+LLM APIs and the router are one company setting (RFC-052). Every signed-in user may GET them. Only an admin may PUT them or run a family test. Anyone else gets `403`. A successful PUT appends `config_changed` with the field names and `actorId`.
+
+`GET /api/settings/llm`
 
 ```json
 {
@@ -735,7 +737,7 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/llm`
+`PUT /api/settings/llm`
 
 ```json
 {
@@ -762,9 +764,9 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 
 Removing a family whose models are used by the router is `422` on `families`.
 
-`POST /api/projects/{projectId}/settings/llm/{family}/test` returns `{ "ok": true }` or `{ "ok": false, "message": "..." }` with `200`. Unknown family is `404`. A family that needs a key and has none is `422`.
+`POST /api/settings/llm/{family}/test` is admin only. It returns `{ "ok": true }` or `{ "ok": false, "message": "..." }` with `200`. Unknown family is `404`. A family that needs a key and has none is `422`.
 
-`GET /api/projects/{projectId}/settings/router`
+`GET /api/settings/router`
 
 ```json
 {
@@ -787,7 +789,7 @@ Removing a family whose models are used by the router is `422` on `families`.
 
 `reviewIndependentPossible` is true when two or more families each have at least one model and are usable.
 
-`PUT /api/projects/{projectId}/settings/router` sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
+`PUT /api/settings/router` is admin only. It sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
 
 `GET /api/projects/{projectId}/settings/deploy`
 
@@ -834,6 +836,7 @@ The service data directory defaults to `~/.orchestrator/service` (RFC-047). Each
 
 ```text
 <data>/                                      mode 0700
+<data>/config.yaml                           mode 0600   LLM families and router
 <data>/secrets.json                          mode 0600
 <data>/projects/<project-id>/                mode 0700
 <data>/projects/<project-id>/config.yaml     mode 0600
@@ -852,7 +855,7 @@ The service data directory defaults to `~/.orchestrator/service` (RFC-047). Each
 
 The board is not a file in this directory. It is the PostgreSQL database named by `databaseUrl` in the service secrets file (RFC-044, RFC-047).
 
-`config.yaml`:
+Service `config.yaml` holds the company LLM families and router:
 
 ```yaml
 llm:
@@ -877,6 +880,11 @@ router:
     maxModelTurnsPerAttempt: 12
     maxTokensPerCard: 200000
     maxWallMinutesPerAttempt: 30
+```
+
+Project `config.yaml`:
+
+```yaml
 deploy:
   environment: dev
   devUrl: ""
@@ -903,15 +911,7 @@ The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, a
 ```json
 {
   "databaseUrl": "",
-  "tokenKey": ""
-}
-```
-
-Project `secrets.json`:
-
-```json
-{
-  "deployToken": "",
+  "tokenKey": "",
   "llmKeys": {
     "anthropic": "",
     "openai": ""
@@ -919,7 +919,15 @@ Project `secrets.json`:
 }
 ```
 
-`databaseUrl` is the PostgreSQL URL for every project's board (RFC-047). `tokenKey` encrypts user GitHub tokens and the company GitHub token. Empty string means unset. The API never returns either value. No GitHub token is in either secrets file. The repository and base branch are project columns, not `config.yaml` keys. Both secret files are written to a temp file in the same directory, synced, and renamed. The API never decodes a secrets file into a struct that is encoded to the client. Edit a project's `config.yaml` by hand only while that project's worker is stopped. Startup validates it with the same rules as the PUT routes.
+Project `secrets.json`:
+
+```json
+{
+  "deployToken": ""
+}
+```
+
+`databaseUrl` is the PostgreSQL URL for every project's board (RFC-047). `tokenKey` encrypts user GitHub tokens and the company GitHub token. `llmKeys` are the company model keys. Empty string means unset. The API never returns these values. No GitHub token is in either secrets file. The repository and base branch are project columns, not `config.yaml` keys. Both secret files are written to a temp file in the same directory, synced, and renamed. The API never decodes a secrets file into a struct that is encoded to the client. Edit a project's `config.yaml` by hand only while that project's worker is stopped. Startup validates it with the same rules as the PUT routes.
 
 ## CLI twins
 
