@@ -1,0 +1,220 @@
+# Verification
+
+Status: Accepted for implementation. Date: 2026-10-10. Revised after review.
+
+This is how you know the backend in [0003-backend.md](0003-backend.md) and the frontend in [0004-frontend.md](0004-frontend.md) match the contract in [0002-data-and-api.md](0002-data-and-api.md). The release bar is PRD REQ-043. Live model keys are not required for that bar. A fake provider replays scripts. A real dev server is a later run of the same health and deploy steps.
+
+## Layout
+
+```text
+backend/
+  internal/machine/transition_test.go
+  internal/contextpack/testdata/reviewer.json
+  internal/providers/fake/fake.go
+  testdata/fixture-repo/          small git repo, enables fixture mode
+  testdata/scripts/               fake provider transcripts
+  testdata/bin/deploy-stub        copied to a temp dir outside the repo by the runner
+  testdata/prd/fixture.md
+  testdata/rfc/fixture.md
+  cmd/fixture/main.go             REQ-043 runner
+frontend/
+  src/lib/**/*.test.ts            Vitest with @testing-library/svelte
+```
+
+Run backend tests from `backend/`:
+
+```text
+go test ./...
+```
+
+The fixture command:
+
+```text
+go run ./cmd/fixture
+```
+
+It exits `0` only when all nine REQ-043 steps pass. It does not call Anthropic or OpenAI. It creates a temporary data directory outside the repo and copies the deploy stub to a temporary directory with mode `0700`, so RFC-036 and RFC-038 hold during the run.
+
+## Fake provider
+
+`internal/providers/fake` implements the provider interface. A script is a list of responses keyed by task class and attempt number. Each response is text, a tool call, or an error.
+
+```json
+{
+  "plan": [
+    { "tool": "create_card", "ref": "a", "title": "Hello", "requirementIds": ["REQ-001"], "risk": "low" },
+    { "tool": "create_card", "ref": "b", "title": "World", "requirementIds": ["REQ-002"], "dependsOn": ["a"], "risk": "low" }
+  ],
+  "implement": [
+    { "tool": "edit_file", "path": "hello.txt", "text": "ok\n" },
+    { "tool": "commit", "message": "Make the check pass" }
+  ],
+  "review": [
+    { "tool": "verdict", "value": "recommend_approve" }
+  ],
+  "triage": [
+    { "text": "hello.txt did not contain ok" }
+  ]
+}
+```
+
+The fake records the system and user strings it received. Tests read that record. The reviewer record must contain the diff and must not contain `author-transcript`.
+
+Transport failure is a script entry `{ "error": "transport" }`. The router test uses two entries: primary fails twice, fallback succeeds.
+
+## Unit tests
+
+| Test | Asserts |
+| --- | --- |
+| `TestEdgesMatchPRD` | The edge map equals the REQ-006 table, and `done` has no outbound edge |
+| `TestIllegalDeploySkip` | `in_progress` to `deploying_dev` returns `ErrIllegal` and writes `transition_rejected` |
+| `TestEvidenceRequired` | `approved` without a SHA returns `ErrEvidence` |
+| `TestTransitionCAS` | Two transitions from the same read status: one wins, the other returns `ErrConflict` and writes no event or gate |
+| `TestApprovedHeadMoved` | `approved` with a new head goes to `human_review` and clears the approval row |
+| `TestRequestChangesFromApproved` | Request-changes on `approved` clears approval and writes an `approver` note |
+| `TestRejectFromApproved` | Reject on `approved` blocks with `rejected` and runs no deploy |
+| `TestCapFromChangesRequested` | `changes_requested` at the cap goes to `blocked` with `attempt_cap` |
+| `TestUnblockDestinations` | `health`, `deploy_failed`, and `deploy_config` go to `human_review`. `turn_cap` goes to `ready` |
+| `TestUnblockAtCap` | Release at the cap with the default policy raises `max_attempts` by one. One attempt runs, then the card blocks again |
+| `TestUnblockReset` | `resetAttempts` sets `attempts_used` to 0. `attempts.n` keeps increasing |
+| `TestUnblockSourceChanged` | `unblockTo` is null and unblock is `422` while a linked id is unaccepted |
+| `TestReviewNotCounted` | A review and a triage call leave `attempts_used` unchanged |
+| `TestRedact` | A payload containing the fixture deploy token is stored as `[redacted]` |
+| `TestReviewerPack` | Fixture JSON has the diff and lacks `author-transcript` |
+| `TestImplementerTools` | Tool list has no `deploy` and no `verdict` |
+| `TestFallbackOnce` | Primary transport error, one retry, one fallback, then `blocked` with `provider_error` if the fallback also fails |
+| `TestRouteClass` | Low risk and zero attempts select `implement`. High risk or any used attempt selects `implement_hard` |
+| `TestNoDeployClass` | `Decide` rejects task class `deploy` |
+| `TestRouterConfig` | An empty `implement` model blocks the card with `router_config` |
+| `TestPlanCards` | Planner cards link only accepted ids, get checks from settings, and a dependency cycle is refused |
+| `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
+| `TestSecretOmitted` | GET of GitHub, LLM, and deploy settings has no token or key substring from the secrets file |
+| `TestSecretKeep` | PUT without the secret field leaves the file bytes for that slot unchanged |
+| `TestUnknownModel` | Router PUT with model id `missing` returns `422` and the yaml is unchanged |
+| `TestModelIdUnique` | The same model id in two families is `422` |
+| `TestBotApprover` | PUT GitHub with the bot login in `approvers` returns `422` |
+| `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
+| `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
+| `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |
+| `TestActionsApproved` | Card JSON for `approved` has `request_changes` and `reject` only |
+| `TestApproveSha` | Wrong SHA returns `422` and `approved_sha` stays null |
+| `TestApproveIdempotent` | The same SHA twice inserts one `approvals` row |
+| `TestCORS` | Origin `http://127.0.0.1:9999` is `403`. `http://127.0.0.1:4173` is allowed |
+| `TestWorkerLock` | A second `serve` exits. `run-next` while `serve` runs inserts a `runs` row and exits `0` without running a job |
+
+## Runtime tests
+
+These use `testdata/fixture-repo`, a git repository with one file and a check script.
+
+| Test | Asserts |
+| --- | --- |
+| `TestWorktreeOnce` | Two implement jobs for one card create one branch and one worktree |
+| `TestCheckExit` | Gating exit `0` can open a pull request. Exit `1` cannot. A model message that says the tests passed does not override exit `1` |
+| `TestToolCheckDoesNotMove` | `run_local_check` exit `0` inside an attempt does not change status |
+| `TestNoCommitAttempt` | An attempt that ends without a commit counts, writes a `no_commit` note, and the next pass starts a new attempt |
+| `TestCommandAllowlist` | A tool call that names a command does not exec it |
+| `TestEnvScrub` | The sandbox env has no `GH_TOKEN`, model key, or `DEPLOY_TOKEN` |
+| `TestVerifyAtDeployedSHA` | An uncommitted edit left in the worktree is absent from the dev check export |
+| `TestPROnce` | Calling ensure-PR twice leaves one `pr_url` |
+| `TestMetadataRewrite` | The second push updates the metadata block and keeps the summary block |
+| `TestCIPending` | A pending required check keeps the card in `agent_review`. A later pass moves it when the check passes |
+| `TestCIRed` | A failed required check moves the card to `changes_requested` with a `ci` note |
+| `TestStaleSHA` | A new commit after approval clears `approved_sha` and returns the card to `human_review` |
+| `TestDeployFailed` | Deploy stub exits `1`. Rollback runs. Card is `blocked` with `deploy_failed` |
+| `TestHealthFail` | Stub health returns 500. Rollback runs once. Card is `blocked` with `health`. No `verify` event |
+| `TestHealthOnly` | Empty `dev_check` and a healthy probe mark the card `done` with verify payload `mode: health_only` |
+| `TestDevFailThenPass` | First dev exit `1` goes to `changes_requested` on the same `pr_url`, and the next implementer pack has the failure note. The second cycle exits `0` and marks `done` |
+| `TestDependency` | Card B stays out of `in_progress` until card A is `done` |
+| `TestDeployLock` | Two approved cards produce non-overlapping `deploy` events |
+| `TestCap` | The third counted attempt failing on a card with `max_attempts` 3 ends `blocked` and opens no other attempt |
+| `TestCommitIdentity` | Commits use the bot login and carry the three trailers |
+| `TestReconcileDeploy` | Kill after the `deploy` event and before `health`. Restart probes or rolls back and does not exec deploy again first |
+| `TestReconcileCommit` | Kill after a commit and before the gating check. Restart runs the check without a model call and makes no second commit |
+
+The health stub is an `httptest.Server` on `127.0.0.1`, allowed by fixture mode. It is not a public URL.
+
+## REQ-043 runner
+
+`go run ./cmd/fixture` performs the nine steps against a temporary data directory and `testdata/fixture-repo`.
+
+| Step | What the runner checks |
+| --- | --- |
+| 1 | Ingest of a two-requirement PRD. `run-next` before accept creates no card and no worktree |
+| 2 | After accept, the plan job creates two cards. The second `depends_on` the first |
+| 3 | Card 1 has a worktree, a gating exit `0`, and one pull request URL |
+| 4 | The reviewed attempt has `review_independent = 1` with two families in the fixture config. The recorded reviewer prompt has no `author-transcript` |
+| 5 | Approve the head SHA. A new commit before deploy clears the SHA and sets `human_review`. Approve the new head |
+| 6 | Health stub fails. Rollback ran. Card is `blocked` with `health`. No verify event. `unblockTo` is `human_review` |
+| 7 | Unblock. The card is in `human_review` and no implementer attempt started. Re-approve the same head. The stub now passes health and the dev check fails. New attempt, same pull request, failure note stored |
+| 8 | Health pass and dev exit `0` mark card 1 `done`. Only then does card 2 enter `in_progress` |
+| 9 | Process stopped after `deploy` and before `health`. New process reconciles before a second deploy exec |
+
+Step 6 uses the stub. The runner does not need a real dev server. After this command exits `0`, a person may point the same deploy and health code at one real dev target. That run is recorded by hand and is not part of `go test`.
+
+The fixture config uses two families and two model ids so step 4 can require `review_independent = 1`. The fake provider serves both ids. No network.
+
+After step 9, the runner runs `git status --porcelain` in the fixture repo and requires empty output (REQ-045).
+
+## CLI checks
+
+| Command | Expected |
+| --- | --- |
+| `orchestrator status` on an empty data dir | Exit `0`, stdout contains `board is empty` and `orchestrator ingest` |
+| `orchestrator approve card_x` without `--sha` | Exit `1`, no `approvals` row |
+| `orchestrator approve card_x --sha wrong` | Exit `1`, stderr has the validation message |
+| `orchestrator run-next` when idle | Exit `0`, stdout contains `no card is ready` |
+| `orchestrator unblock card_x --reset-attempts` on a `turn_cap` card | Exit `0`, card `ready`, `attemptsUsed` 0 |
+| `orchestrator serve --data <repo>/.orchestrator` | Exit `1` before listen |
+
+## Frontend checks
+
+From `frontend/`:
+
+```text
+npm ci
+npm run check
+npm run test
+npm run build
+npm audit --omit=dev
+```
+
+The Vitest cases are listed in [0004-frontend.md](0004-frontend.md). `npm audit` with no runtime dependencies should report nothing. Any finding blocks the release until it is read and recorded.
+
+## Browser pass
+
+Run this after `orchestrator serve` and `npm run dev` are up. Use the fixture data dir so the board has a known `in_progress` card, a known `human_review` card, a known `approved` card, and a known `blocked` card.
+
+| Check | Pass |
+| --- | --- |
+| Open the UI without a token | Login form is the only page |
+| Wrong token | Live region shows the error, no board |
+| Six wrong tokens | Live region says to wait one minute |
+| Empty data dir | "No cards yet" and a link to Intake |
+| `in_progress` card | No action controls |
+| `human_review` card | Approve form shows `headSha`. Submitting another SHA shows the field error and the card stays in `human_review` |
+| `approved` card | Request changes and Reject only |
+| `blocked` card with `health` | Unblock text says the card returns to human review |
+| Approve in the UI while the CLI approves the same card | One approval row. The second action gets a reload or the same card back |
+| Settings GET after a token was saved | Password field is empty. Placeholder says a value is saved. The network response has no token |
+| Deploy settings with a repo-relative command | Field error on the command |
+| Router with one family | The independence sentence from the API is visible |
+| Router save of an unknown model | Field error, yaml unchanged |
+| Leave the board while a poll is active | No further card requests after navigation |
+| Built page | Response `index.html` has the CSP meta tag. The console shows no CSP violation |
+| Keyboard | Tab reaches nav, Run, and the settings submit. Focus outline is visible |
+
+This pass is manual. The automated locks for buttons are `TestActionsEmpty`, `TestActionsApproved`, and the `CardActions` Vitest cases.
+
+## Hardening tests
+
+The cases in [0006-security-and-harness.md](0006-security-and-harness.md) are part of `go test ./...`. A build that skips `TestCheckOnExport`, `TestHookNotRun`, `TestFsmonitorOff`, `TestHealthLinkLocal`, `TestEventsImmutable`, `TestPushURL`, or `TestDataDirInsideRepo` is not a release candidate.
+
+## Release order
+
+1. `go test ./...` in `backend/`.
+2. `go run ./cmd/fixture` exits `0`.
+3. Frontend checks.
+4. Browser pass on the fixture cards.
+5. Optional: one real dev target for health failure and health success, using the same deploy code paths, with secrets only in the data directory's `secrets.json`.
+
+Stop at the first failure. A green browser pass does not substitute for the fixture command.
