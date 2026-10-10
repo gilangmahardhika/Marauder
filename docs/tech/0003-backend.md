@@ -35,31 +35,31 @@ Module path: `orchestrator/backend`.
 
 | Flag | Default |
 | --- | --- |
-| `--repo` | Current directory |
-| `--data` | `~/.orchestrator/<repo-name>-<hash8>` (0002) |
+| `--repo` | On a local run, the repo to attach to a project. Cloud `serve` loads project repo paths from the database |
+| `--data` | `~/.orchestrator/service` (0002) |
 | `--addr` | `127.0.0.1:8787` |
-| `--ui-origin` | `http://127.0.0.1:4173` |
+| `--ui-origin` | `http://127.0.0.1:4173`, or the configured origin when `ORCHESTRATOR_CLOUD=1` |
 
 Every command runs these steps before its own work:
 
-1. Resolve `--repo` and `--data` to absolute paths with symlinks evaluated. Exit `1` when either contains the other (RFC-036).
-2. Create the data directory with mode `0700`, plus `empty-hooks/`, `empty-gh/`, `askpass/`, `worktrees/`, `exports/`, and `logs/`. Exit if an existing data directory is group or world accessible.
-3. Fixture mode is on only when the resolved repo path ends with `/testdata/fixture-repo`.
+1. Resolve `--data` to an absolute path with symlinks evaluated. Exit `1` when the service root contains a project repo or a project repo contains its project directory (RFC-036).
+2. Create the service directory with mode `0700`. Exit if it is group or world accessible. Each project directory is created when the project is created, with `empty-hooks/`, `empty-gh/`, `askpass/`, `worktrees/`, `exports/`, and `logs/`.
+3. Fixture mode is on only when a project's resolved repo path ends with `/testdata/fixture-repo`.
 4. Resolve absolute paths for `git`, `gh`, and the sandbox engine once. A later `PATH` change does not change them.
-5. Load `secrets.json`. On the first start, when the file is missing, seed it from `ORCHESTRATOR_DATABASE_URL`, `GH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `DEPLOY_TOKEN` if they are set. After that the file wins over the environment. Exit before opening the database when `databaseUrl` is empty.
+5. Load the service `secrets.json`. On the first start, when the file is missing, seed `databaseUrl` from `ORCHESTRATOR_DATABASE_URL` and generate `tokenKey`. After that the file wins over the environment. Exit before opening the database when `databaseUrl` or `tokenKey` is empty.
 6. Open PostgreSQL with that URL and run goose migrations using the postgres dialect.
-7. Load and validate `config.yaml` with the same rules as the PUT routes.
+7. Load and validate each project's `config.yaml` with the same rules as the PUT routes. A project whose file is invalid does not start its worker. The others still start.
 
-`serve` then refuses a non-loopback `--addr`, takes the worker lock (exits if held), runs `Reconcile`, starts the worker, generates a 32-byte UI token, prints `UI token: <hex>` once, and listens.
+`serve` refuses a non-loopback `--addr` unless `ORCHESTRATOR_CLOUD=1` (RFC-045). It does not print a UI token. It starts one worker per project.
 
 ## Worker lock
 
-`internal/worker` takes an exclusive, non-blocking `flock` on `<data>/worker.lock` (RFC-043). The lock is released when the process exits, including on a crash.
+`internal/worker` takes an exclusive, non-blocking `flock` on `<data>/projects/<project-id>/worker.lock` (RFC-048). The lock is released when that worker stops, including on a crash. Two projects lock different files.
 
 | Command | Lock behavior |
 | --- | --- |
-| `serve` | Takes it. Exits `1` with `another worker is running` when held |
-| `run-next` | Inserts a `runs` row. If the lock is free, takes it, runs `Reconcile`, processes until idle, exits. If held, prints `queued for the running server` and exits `0` |
+| `serve` | Takes each project's lock and runs that worker. A project whose lock is already held is logged and skipped. The process still serves the others |
+| `run-next --project` | Inserts a `runs` row for that project. If that project's lock is free, takes it, runs `Reconcile` for that project, processes until idle, exits. If held, prints `queued for the running server` and exits `0` |
 | Human gates, `ingest`, `accept`, `status`, `trace` | Do not take it |
 
 ## Transition
@@ -90,9 +90,9 @@ Edges that clear `approved_sha`, and mark the live approval row `cleared_at`: in
 
 ## Reconcile
 
-Runs only in the process that holds the worker lock, before any job. No model calls.
+Runs only in the worker that holds that project's lock, before any job for that project. No model calls. Other projects are left alone.
 
-1. Delete every `locks` row and reset `deploy_lock`. No job is alive.
+1. Delete `locks` rows for that project's cards and reset that project's `deploy_lock`. No job of that project is alive.
 2. For each card whose latest `deploy` event has no later `health` event: probe health. Pass writes `health` and moves `deploying_dev -> verifying`. Fail runs rollback and moves to `blocked` with `health`.
 3. For each attempt with `ended_at` null: if `commit_sha` is set and the card is `in_progress`, transition to `self_check`, and the next pass runs the gating check without a model call. Otherwise end the attempt with outcome `cancelled`, which does not count.
 4. Delete leftover directories under `exports/`.
@@ -100,9 +100,9 @@ Runs only in the process that holds the worker lock, before any job. No model ca
 
 ## Worker
 
-One loop goroutine ticks every 2 seconds. While an unprocessed `runs` row exists, each tick runs a pass. When a pass starts nothing, no job is running, and no card waits on CI, the loop sets `processed_at` on every open `runs` row. The board is then idle until the next row.
+One loop goroutine per project ticks every 2 seconds. Projects run those loops at the same time (RFC-048). While an unprocessed `runs` row exists for that project, each tick runs a pass. When a pass starts nothing, no job is running for that project, and no card of that project waits on CI, the loop sets `processed_at` on that project's open `runs` rows. The project is then idle until the next row.
 
-Jobs run in goroutines beside the loop. Implement and plan jobs are capped by `scheduler.implementationCap`. At most one deploy job runs. Review and verify jobs are capped at 2 each. Every job takes its card lock with a fresh random holder and releases it with that holder.
+Jobs run in goroutines beside that project's loop. Implement and plan jobs are capped by that project's `scheduler.implementationCap`. At most one deploy job runs per project. Review and verify jobs are capped at 2 each, per project. Every job takes its card lock with a fresh random holder and releases it with that holder. The job uses that project's repo and that project's data directory.
 
 Each pass, in order:
 
@@ -113,11 +113,11 @@ Each pass, in order:
 5. Start a plan job when `draftPending` is set, or when an accepted requirement has no linked card. One plan job at a time.
 6. Start a review job for each `pr_open` card.
 7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
-8. Start a deploy job for the oldest `approved` card when the deploy lock is free.
+8. Start a deploy job for a card in `approved` only when a Lead Developer member has requested deploy and that project's deploy lock is free. Reaching `approved` does not start deploy.
 9. Start a verify job for each `verifying` card.
 10. Start implement jobs while running implement jobs are under the cap: oldest first among `ready`, `changes_requested`, and `in_progress` with no open attempt, whose requirements are accepted, dependencies are `done`, and `attempts_used < max_attempts`.
 
-Every job snapshots settings at start and uses that snapshot to the end.
+Every job snapshots that project's settings at start and uses that snapshot to the end. The push uses the project bot token from that snapshot, not the user's token.
 
 ### Plan job
 
@@ -207,10 +207,14 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 
 | Function | From | Checks | Result |
 | --- | --- | --- | --- |
-| `Approve(card, sha)` | `human_review` | `operatorLogin` set, on `approvers`, not `botLogin`. `sha` equals the refreshed head | `approved`, one approval row, `runs` row |
-| `RequestChanges(card)` | `human_review`, `approved` | `operatorLogin` on `approvers` | `changes_requested`, approval cleared, note with source `approver`, `runs` row |
-| `Reject(card)` | `human_review`, `approved` | Same | `blocked` with `rejected` |
-| `Unblock(card, reset)` | `blocked` | `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
+| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the project bot. `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy |
+| `RequestChanges(actor, card)` | `human_review`, `approved` | Member, role may request changes | `changes_requested`, approval cleared, note with source `approver`, `runs` row |
+| `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected` |
+| `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
+| `Unblock(actor, card, reset)` | `blocked` | Member, role may unblock, `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
+| `Accept(actor, project, ids)` | intake | Member, role is Product Owner | `accepted_by` is the user id, `runs` row |
+
+HTTP passes the session user. The break-glass CLI passes `--as`. A missing permission returns `app.ErrActionNotListed` when the name is not in `actions`, and `403` when the route is not a card action. A non-member is `404`.
 
 Approving the same SHA twice finds the live approval row by the unique index and returns the card unchanged.
 
@@ -319,11 +323,11 @@ If `cards.pr_url` is already set, skip `pr create`. The unique index is the seco
 
 ## Settings
 
-`settings.SaveGitHub`, `SaveLLM`, `SaveRouter`, and `SaveDeploy` validate against the 0002 rules and the current state of the other sections. Then they write `config.yaml` and, only for secret fields that were sent, `secrets.json`. Both files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names.
+`settings.SaveGitHub`, `SaveLLM`, `SaveRouter`, and `SaveDeploy` validate against the 0002 rules for one project and the current state of that project's other sections. A Lead Developer member may call them. Then they write that project's `config.yaml` and, only for secret fields that were sent, that project's `secrets.json` or the bot-token ciphertext. Files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names and `actorId`.
 
-`settings.View*` copies the config into response structs that have no secret fields, so `json.Marshal` cannot leak one.
+`settings.SaveUserGitHub` writes ciphertext for that user only. `settings.View*` copies config into response structs that have no secret fields, so `json.Marshal` cannot leak one.
 
-`settings.Snapshot()` returns an immutable copy of config and secrets for one job.
+`settings.Snapshot(projectID)` returns an immutable copy of that project's config and secrets for one job.
 
 Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks cards past `backlog` (except `done`) with `source_changed`.
 
@@ -337,11 +341,12 @@ Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks card
 | `settings.ErrValidation` | 422 `validation` |
 | `board.ErrNotFound` | 404 `not_found` |
 | `board.ErrLocked`, `board.ErrConflict` | 409 `conflict` |
+| `app.ErrForbidden` | 403 `forbidden` |
 | `httpapi.errHost`, `httpapi.errOrigin` | 403 `forbidden` |
 | `httpapi.errBody` | 413 `too_large` |
 | `httpapi.errPaused` | 429 `rate_limited` |
 
-Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, handler. CORS sends `Access-Control-Allow-Origin` with the exact `--ui-origin`, allows `Authorization` and `Content-Type`, and allows `GET`, `POST`, `PUT`, and `OPTIONS`. A request with an `Origin` that does not match is `403`.
+Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, project membership when the path has a project id, handler. The bearer lookup loads the user and rejects an expired or disabled session. CORS sends `Access-Control-Allow-Origin` with the exact configured origin, allows `Authorization` and `Content-Type`, and allows `GET`, `POST`, `PUT`, `DELETE`, and `OPTIONS`. A request with an `Origin` that does not match is `403`. Do not log passwords, bearer tokens, `tokenKey`, or GitHub tokens.
 
 The worker runs on a context that is not the request context.
 
@@ -349,10 +354,12 @@ The worker runs on a context that is not the request context.
 
 Cobra commands are thin. Example flow for approve:
 
-1. Require `--sha`.
-2. Call `app.Approve(ctx, cardID, sha)`.
+1. Require `--project` and `--sha`.
+2. Call `app.Approve(ctx, actor, cardID, sha)`.
 3. Print the returned status and the SHA.
 4. On error, print the message and exit `1`.
+
+`users bootstrap` reads `ORCHESTRATOR_ADMIN_EMAIL` and `ORCHESTRATOR_ADMIN_PASSWORD`, refuses a short password, and inserts one admin only when `users` is empty.
 
 `status` with zero cards prints:
 
@@ -379,5 +386,8 @@ Stop at the end of a step until its tests in [0005-verification.md](0005-verific
 | 10 | `worker`: lock, passes, plan job, dependencies, deploy lock | |
 | 11 | REQ-043 command | |
 | 12 | `httpapi` for every route in 0002 | |
+| 13 | Users, sessions, account GitHub (Sprint 11) | Tribes |
+| 14 | Tribes, projects, `project_id` (Sprint 12) | Per-project workers |
+| 15 | Project workers, role gates, Lead deploy (Sprint 13) | |
 
-The frontend starts after step 12.
+The first frontend starts after step 12. Account, tribe, and project pages land with steps 13 to 15.

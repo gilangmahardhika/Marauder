@@ -2,7 +2,7 @@
 
 Status: Accepted for v1. Date: 2026-10-10.
 
-This RFC adds decisions `RFC-024` through `RFC-034`. It does not rewrite [RFC-0001](0001-v1-architecture.md). Parts of RFC-028 and RFC-029 are superseded by [RFC-0003](0003-review-corrections.md). The implementation is [../tech/0006-security-and-harness.md](../tech/0006-security-and-harness.md).
+This RFC adds decisions `RFC-024` through `RFC-034`. It does not rewrite [RFC-0001](0001-v1-architecture.md). Parts of RFC-028 and RFC-029 are superseded by [RFC-0003](0003-review-corrections.md). Parts of RFC-030 and RFC-032 are superseded by [RFC-0005](0005-teams-and-cloud.md). The implementation is [../tech/0006-security-and-harness.md](../tech/0006-security-and-harness.md).
 
 The first paragraph under each heading is the statement.
 
@@ -16,9 +16,9 @@ The first paragraph under each heading is the statement.
 | RFC-027 | Subprocesses are argv, scrubbed env, timeout, and an output cap |
 | RFC-028 | The sandbox has no host socket, no host home, and no network. Network and mount clauses superseded by RFC-037 |
 | RFC-029 | The health probe allows only an operator-listed URL. Address clause superseded by RFC-039 |
-| RFC-030 | Secrets live in the secrets file and are redacted before packs and events |
+| RFC-030 | Secrets live in the secrets file and are redacted before packs and events. GitHub token store superseded in part by RFC-047 |
 | RFC-031 | The event log is insert-only |
-| RFC-032 | The API binds to loopback and sessions expire |
+| RFC-032 | The API binds to loopback and sessions expire. Session superseded by RFC-045; bind superseded in cloud mode |
 | RFC-033 | Git runs without repo hooks and without the user config |
 | RFC-034 | A harness push updates only `orch/<card-id>` |
 
@@ -110,6 +110,8 @@ Consequences: `trace.Append` and `contextpack.Build` both call `redact`. A unit 
 
 Requirements: REQ-016, REQ-041.
 
+Superseded in part by RFC-047 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). User GitHub tokens and the project bot token are ciphertext in PostgreSQL. `databaseUrl` and `tokenKey` stay in the service secrets file. Redaction of plaintext stays.
+
 ## RFC-031 The event log is insert-only
 
 `events` has triggers that abort `UPDATE` and `DELETE`. Corrections are new events. The application role used by the harness has no code path that updates an event.
@@ -133,6 +135,8 @@ Set aside: binding `0.0.0.0` behind a note in the README. The flag parser is the
 Consequences: `--addr 0.0.0.0:8787` exits before listen. Session tests cover a wrong token, the lockout, and an expired bearer.
 
 Requirements: REQ-030, REQ-042.
+
+Superseded in part by RFC-045 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). Login is email and password. The bearer is a hash in PostgreSQL. Loopback remains the default. `ORCHESTRATOR_CLOUD=1` is the only non-loopback bind.
 
 ## RFC-033 Git runs without repo hooks and without the user config
 

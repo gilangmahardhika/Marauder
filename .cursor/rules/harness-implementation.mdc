@@ -11,6 +11,7 @@ Read the current sprint in `docs/plan/sprints.md` and the package table in `docs
 - One use case lives on `internal/app`. The CLI and the HTTP handler both call it.
 - Card status changes only inside `machine.Transition`, in the same transaction as its gate and event. `RowsAffected` of 0 returns `board.ErrConflict` and stops the side effect.
 - A new JSON field updates `docs/tech/0002-data-and-api.md` and `frontend/src/lib/types.ts` in the same change.
+- A running attempt keeps the project settings snapshot it started with. Human gates use the session user, not a settings login.
 - Model tools stay on the lists in `docs/tech/0003-backend.md`. `run_local_check` returns an exit code and does not move the card.
 - Add the test named for that behavior in `docs/tech/0005-verification.md` or `docs/tech/0006-security-and-harness.md`.
 

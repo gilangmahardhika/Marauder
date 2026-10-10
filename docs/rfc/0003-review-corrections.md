@@ -2,7 +2,7 @@
 
 Status: Accepted for v1. Date: 2026-10-10.
 
-This RFC adds decisions `RFC-035` through `RFC-043`. Four of them supersede earlier statements, in whole or in part. The superseded entries stay in their files with a pointer here.
+This RFC adds decisions `RFC-035` through `RFC-043`. Four of them supersede earlier statements, in whole or in part. The superseded entries stay in their files with a pointer here. Parts of RFC-035, RFC-036, and RFC-043 are superseded by [0005-teams-and-cloud.md](0005-teams-and-cloud.md).
 
 Wording fixes made in place, which do not change a decision:
 
@@ -14,15 +14,15 @@ Wording fixes made in place, which do not change a decision:
 
 | Id | Decision | Supersedes |
 | --- | --- | --- |
-| RFC-035 | The CLI and a local web UI share one service layer | RFC-016 |
-| RFC-036 | Orchestrator state lives in a data directory outside the target repo | |
+| RFC-035 | The CLI and a local web UI share one service layer. Loopback UI and operator-login check superseded in part by RFC-045 and RFC-046 | RFC-016 |
+| RFC-036 | Orchestrator state lives in a data directory outside the target repo. Shared-board sentence superseded by RFC-047 | |
 | RFC-037 | Checks run on an exported copy, and only dev checks get network | RFC-028, network and mount clauses |
 | RFC-038 | Deploy and rollback commands are operator files outside the repo | |
 | RFC-039 | Probes target listed dev hosts and refuse link-local and loopback | RFC-029, address clause |
 | RFC-040 | A transition is a compare-and-swap on the stored status | |
 | RFC-041 | Release names where the card goes and how many attempts remain | RFC-020, release sentence |
 | RFC-042 | The attempt cap counts implementer attempts only | |
-| RFC-043 | One process holds the worker at a time | |
+| RFC-043 | One process holds the worker at a time. One worker for every project superseded by RFC-048 | |
 
 ## RFC-035 The CLI and a local web UI share one service layer
 
@@ -35,6 +35,8 @@ Set aside: a board that moves cards by drag and drop. Dragging is a status write
 Consequences: REQ-042 covers both clients. NG-006 narrows to "a UI that writes status". The API returns `actions` and `unblockTo` for each card. The UI builds as a static site.
 
 Requirements: REQ-042, REQ-044. Non-goal: NG-006.
+
+Superseded in part by RFC-045 and RFC-046 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). Both clients still call the same service, and the UI still renders only `actions`. Cloud mode may serve the UI off loopback. Operator login is not checked against an approver list.
 
 ## RFC-036 Orchestrator state lives in a data directory outside the target repo
 
@@ -49,6 +51,8 @@ Consequences: a team that wants shared settings copies `config.yaml` by hand, ou
 Requirements: REQ-045.
 
 Superseded in part by RFC-044 in [0004-postgres.md](0004-postgres.md). The words "the SQLite board" in the statement no longer apply. Config, secrets, worktrees, exports, and logs stay in the data directory. The board is PostgreSQL, named by `databaseUrl` in `secrets.json`.
+
+Superseded in part by RFC-047 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). Projects share one database. Each project still has its own data directory outside its repo.
 
 ## RFC-037 Checks run on an exported copy, and only dev checks get network
 
@@ -133,3 +137,5 @@ Set aside: letting the CLI and the server both schedule jobs and relying on card
 Consequences: the CLI and the UI both work while `serve` runs. Only one of them executes jobs.
 
 Requirements: REQ-008, REQ-009, REQ-040.
+
+Superseded in part by RFC-048 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). The lock file is per project. One service may run those workers together. Reconcile still runs only in the holder of that project's lock.

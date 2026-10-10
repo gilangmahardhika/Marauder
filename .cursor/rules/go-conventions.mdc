@@ -10,9 +10,9 @@ Module `orchestrator/backend`. Package limits are in `docs/tech/0003-backend.md`
 
 - `internal/cli` and `internal/httpapi` call `internal/app`. They do not run SQL or encode a second error shape.
 - `internal/machine` does not call git, models, or HTTP. `internal/router` does not call a provider.
-- Map sentinels only as the HTTP table in `docs/tech/0003-backend.md`. Middleware order is Host, CORS, body cap, bearer, handler.
+- Map sentinels only as the HTTP table in `docs/tech/0003-backend.md`. Middleware order is Host, CORS, body cap, bearer, project membership, handler.
 - `execChild` takes an argv slice. Refuse `sh` and `bash`. Never run a model string in a shell.
-- Do not log bodies, tokens, model keys, or `databaseUrl`.
+- Do not log bodies, passwords, bearers, tokens, model keys, `tokenKey`, or `databaseUrl`.
 
 ```go
 // BAD

@@ -2,7 +2,7 @@
 
 Status: v1 draft, revised after review. Date: 2026-10-10.
 
-This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0003. Implementation guides are in `docs/tech/`.
+This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0005. Implementation guides are in `docs/tech/`.
 
 ## Problem
 
@@ -12,22 +12,29 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 
 ## Users
 
-| Person | What they do in v1 |
+| Person | What they do |
 | --- | --- |
-| Operator | Points the orchestrator at a repo, edits settings, accepts the extracted requirements, runs the scheduler, reads status, and releases blocked cards. Uses the CLI or the local web UI. |
-| Approver | Reviews the pull request and approves one commit, requests changes, or rejects the card. The operator and the approver may be the same person. The orchestrator bot is never an approver. |
+| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, and creates projects. Does not approve or deploy unless the job role allows it. |
+| Product Owner | Accepts requirements for a project whose tribe they belong to. May request changes, reject, approve, and unblock. Does not deploy. |
+| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repo settings, checks, router, models, and deploy settings. |
+| QA Lead | May request changes, reject, and approve. Does not accept requirements or deploy. |
+| Senior Developer | May start a run and request changes. Does not accept, approve, reject, or deploy. |
+| Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
+| QA | May start a run. Does not accept, approve, reject, request changes, or deploy. |
+
+A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token. A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
 
 Models are workers the harness calls. They are not users, and they do not hold the board.
 
 ## v1 outcome
 
-An operator can give the orchestrator a markdown PRD and its RFCs and get this result:
+A member can give the orchestrator a markdown PRD and its RFCs and get this result:
 
-1. Requirement and decision records exist, and no code is written until the operator accepts them.
+1. Requirement and decision records exist, and no code is written until a Product Owner who is a member accepts them.
 2. Accepted requirements become kanban cards with dependencies, risk, and check commands.
 3. Each card is implemented in its own worktree by a routed model, then opened as one pull request.
-4. A reviewer model comments. An approver approves a specific commit.
-5. The harness deploys that commit to the dev server, checks health, and runs the card's dev tests.
+4. A reviewer model comments. A Lead Developer, QA Lead, or Product Owner who is a member approves a specific commit.
+5. A Lead Developer who is a member starts deploy of that commit. The harness sends it to the project's dev server, checks health, and runs the card's dev tests.
 6. A failed dev test starts a new attempt on the same pull request. A passed dev test marks the card done and unblocks cards that depend on it.
 
 The operator can stop the process in the middle and start it again without a second deploy of an unknown commit.
@@ -65,11 +72,11 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-027 | The reviewer model sees a cold pack |
 | REQ-028 | Review verdicts map to two states |
 | REQ-029 | The reviewer model cannot approve, edit, or deploy |
-| REQ-030 | Human approval is an allowlisted person and one SHA |
+| REQ-030 | Human approval is a permitted member and one SHA |
 | REQ-031 | A new commit clears approval |
 | REQ-032 | Request-changes and reject are explicit |
 | REQ-033 | Deploy sends the approved SHA to dev |
-| REQ-034 | One deploy runs at a time |
+| REQ-034 | One deploy runs at a time in a project |
 | REQ-035 | Failed health rolls back and blocks |
 | REQ-036 | Dev tests run only after health passes |
 | REQ-037 | A failed check produces a triage note for the next attempt |
@@ -81,6 +88,12 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-043 | The fixture script is the release check |
 | REQ-044 | Settings are edited through the API, and secrets stay write-only |
 | REQ-045 | Orchestrator state lives outside the target repo |
+| REQ-046 | A person signs in with email and password |
+| REQ-047 | A job role and an admin flag gate human actions |
+| REQ-048 | A tribe has members |
+| REQ-049 | A project is visible to its tribe |
+| REQ-050 | The worker runs per project |
+| REQ-051 | Each user has their own GitHub settings |
 
 ## Requirements
 
@@ -112,7 +125,7 @@ The operator accepts the requirement list as a recorded gate. Until that gate ex
 #### Acceptance
 
 - `run-next` before acceptance creates no worktree, no branch, and no pull request.
-- Acceptance stores the operator identity and the set of requirement ids accepted.
+- Acceptance stores the accepting user's id and the set of requirement ids accepted. A caller who is not a Product Owner member is rejected.
 - After acceptance, cards may be created for those ids only.
 
 ### REQ-004 A source edit invalidates acceptance for the changed ids
@@ -204,13 +217,14 @@ A card has one worktree and one lock. A second worker cannot edit that card's br
 
 ### REQ-009 The scheduler starts ready work and serializes deploys
 
-`run-next` starts cards that are `ready`, continues cards whose next harness step needs no model, and queues deploys. Implementation worktrees may run in parallel up to a configured cap. Deploys do not run in parallel in v1.
+`run-next` starts cards that are `ready`, continues cards whose next harness step needs no model, and queues work for that project. Implementation worktrees may run in parallel up to a configured cap, inside one project. Deploys do not run in parallel inside one project. Two projects may deploy at the same time (RFC-048). A card in `approved` waits until a Lead Developer starts deploy.
 
 #### Acceptance
 
-- With the implementation cap set to 2, a third ready card stays `ready` until one of the first two leaves `in_progress`.
-- Two cards that both reach `approved` deploy one after the other.
-- `run-next` on an empty board exits 0 and reports that no card is ready.
+- With the implementation cap set to 2, a third ready card in that project stays `ready` until one of the first two leaves `in_progress`.
+- Two cards in one project that both reach `approved` deploy one after the other, and only after a Lead Developer starts each deploy.
+- Two projects may deploy at the same time.
+- `run-next` on an empty project exits 0 and reports that no card is ready.
 
 ### REQ-010 The router chooses a task class from card facts
 
@@ -448,16 +462,17 @@ The reviewer verdict is a recommendation. It is not the approval gate in REQ-030
 - No deploy event is written as a result of the reviewer verdict alone.
 - The reviewer tool list matches REQ-017.
 
-### REQ-030 Human approval is an allowlisted person and one SHA
+### REQ-030 Human approval is a permitted member and one SHA
 
-An approver listed in settings may approve the current pull request head. The approval stores the person and the SHA. The orchestrator bot identity is rejected even if the git host would accept its approval.
+A Lead Developer, QA Lead, or Product Owner who is a member of the project may approve the current pull request head. The approval stores that user's GitHub login and the SHA. The user must have a GitHub login saved, and that login must not be the project bot. The orchestrator bot identity is rejected even if the git host would accept its approval.
 
-v1 accepts the approval from the CLI and from the local web UI. Both call the same service. A git host webhook may deliver the same facts later, through the same checks.
+v1 accepts the approval from the CLI and from the web UI. Both call the same service. A git host webhook may deliver the same facts later, through the same checks. Approval does not start deploy (REQ-050).
 
 #### Acceptance
 
-- Approval by a login on `approvers`, for the current head SHA, moves the card to `approved` and stores that SHA.
-- Approval by the bot login is rejected and the card stays in `human_review`.
+- Approval by a permitted member, for the current head SHA, moves the card to `approved` and stores that SHA. It does not start deploy.
+- Approval by a Developer, Senior Developer, or QA is rejected and the card stays in `human_review`.
+- Approval by the bot login, or by a member with no GitHub login, is rejected and the card stays in `human_review`.
 - Approval that names a SHA other than the current head is rejected.
 - Approving the same SHA twice, from the CLI, the UI, or both, results in one approval record.
 
@@ -478,7 +493,7 @@ An approver may request changes or reject a card in `human_review` or `approved`
 #### Acceptance
 
 - Request-changes on an approved SHA clears `approvedSha` and does not deploy.
-- Reject does not deploy and does not start a new attempt until the operator releases the card.
+- Reject does not deploy and does not start a new attempt until a member allowed to unblock releases the card.
 - Both actions record the approver identity.
 
 ### REQ-033 Deploy sends the approved SHA to dev
@@ -495,14 +510,15 @@ The deploy command, rollback command, health URL, and dev host list come from or
 - Missing `devCommand`, `rollbackCommand`, `healthUrl`, or dev hosts blocks the card and does not invoke a command.
 - A deploy command path inside the target repo is refused when settings are saved and again before deploy.
 
-### REQ-034 One deploy runs at a time
+### REQ-034 One deploy runs at a time in a project
 
-v1 takes one global deploy lock. A second approved card waits. Parallel worktrees are unaffected.
+Each project takes one deploy lock. A second approved card in that project waits. Another project's deploy is not blocked by that lock. Parallel worktrees are unaffected. Deploy starts only when a Lead Developer member requests it (REQ-050).
 
 #### Acceptance
 
-- Two approved cards produce non-overlapping deploy events.
-- A card that is still in `in_progress` can proceed while another card holds the deploy lock.
+- Two approved cards in one project produce non-overlapping deploy events.
+- Two approved cards in different projects may deploy at the same time.
+- A card that is still in `in_progress` can proceed while another card in the same project holds the deploy lock.
 
 ### REQ-035 Failed health rolls back and blocks
 
@@ -587,7 +603,8 @@ v1 ships these commands:
 | `orchestrator ingest` | Runs REQ-001 and, when needed, REQ-002. |
 | `orchestrator accept` | Records REQ-003 for the current draft. |
 | `orchestrator run-next` | Advances the board per REQ-009. When `serve` is running, it queues the run for the server. |
-| `orchestrator serve` | Starts the loopback JSON API and the worker for the web UI. |
+| `orchestrator serve` | Starts the JSON API and one worker per project. Without `ORCHESTRATOR_CLOUD`, the API binds loopback. With `ORCHESTRATOR_CLOUD=1`, it may bind the configured address (RFC-045). |
+| `orchestrator users bootstrap` | Creates the first admin when the user table is empty (REQ-046). |
 | `orchestrator status` | Lists cards, status, attempt, pull request URL, approved SHA, deployed SHA. |
 | `orchestrator status CARD` | Prints one card, including checks, requirement ids, and the latest failure reason. |
 | `orchestrator trace CARD` | Prints the event log for the card. |
@@ -628,34 +645,105 @@ v1 is acceptable when the following script passes on a fixture repo and the same
 
 ### REQ-044 Settings are edited through the API, and secrets stay write-only
 
-The operator edits these settings from the web UI, through the JSON API:
+A Lead Developer member edits project settings from the web UI, through the JSON API. Each user edits their own GitHub settings. There is no approver list and no operator login.
 
-| Section | Fields |
-| --- | --- |
-| GitHub | Host, owner, repo, base branch, approver logins, bot login, token |
-| LLM | Families, each with protocol, base URL, model ids, and an API key |
-| Router | Model and fallback per task class, review independence, budgets |
-| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths, operator login |
+| Section | Fields | Who saves |
+| --- | --- | --- |
+| Account GitHub | Host, login, token | That user |
+| Project GitHub | Host, owner, repo, base branch, bot login, bot token | Lead Developer member |
+| LLM | Families, each with protocol, base URL, model ids, and an API key | Lead Developer member |
+| Router | Model and fallback per task class, review independence, budgets | Lead Developer member |
+| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member |
 
-No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job and never to an attempt in flight. The bot login cannot be an approver. The operator login must be an approver. A settings change writes an event that names the section and the fields, never the values.
+No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The project bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
 
 #### Acceptance
 
 - `GET` on each settings section returns `tokenSet` or `keySet` flags and no secret.
-- Saving the GitHub section with an empty token keeps the stored token.
-- Saving the bot login into the approver list is rejected with a field error.
+- Saving the account GitHub section with an empty token keeps the stored token.
+- A Developer member who saves project deploy settings is rejected.
 - A router model id that no family lists is rejected.
 - An implementer attempt running while the router is saved finishes on the route it started with.
 
 ### REQ-045 Orchestrator state lives outside the target repo
 
-Settings, secrets, worktrees, check exports, and logs live in one data directory outside the target repo. The board is a PostgreSQL database. The connection string is `databaseUrl` in `secrets.json` in that directory (RFC-044). Startup refuses a data directory inside the repo, and a repo inside the data directory. The data directory is mode `0700`. The secrets file is mode `0600`.
+The service data directory holds `secrets.json` with `databaseUrl` and `tokenKey`. Each project has its own directory under that root, outside that project's repo, for settings, project secrets, the worker lock, worktrees, check exports, and logs. Every project uses the one PostgreSQL database named by `databaseUrl` (RFC-044, RFC-047). Startup refuses a project data directory inside that project's repo, and a repo inside its project data directory. The service directory and each project directory are mode `0700`. Secret files are mode `0600`.
 
 #### Acceptance
 
-- Starting with `--data` inside `--repo` exits non-zero before opening the database.
-- After a full fixture run, `git status` in the target repo shows no orchestrator files.
-- The secrets file is created with mode `0600`.
+- Starting with a project data directory inside that project's repo exits non-zero before opening the database.
+- After a full fixture run, `git status` in the fixture repo shows no orchestrator files.
+- The service secrets file is created with mode `0600`.
+- Two projects in one database do not share a worker lock or a deploy lock.
+
+### REQ-046 A person signs in with email and password
+
+An admin creates a user with an email, a password, and one job role. The user signs in with that email and password and receives a bearer. The bearer names that user. A password shorter than 12 characters is rejected. Five bad passwords for one email pause that email for one minute. `orchestrator users bootstrap` creates the first admin from `ORCHESTRATOR_ADMIN_EMAIL` and `ORCHESTRATOR_ADMIN_PASSWORD` when no user exists. The last admin cannot be removed or disabled.
+
+#### Acceptance
+
+- A correct email and password returns a bearer. Later requests with that bearer run as that user.
+- A wrong password returns `401` and does not return a bearer.
+- The sixth bad password for that email inside the pause window returns `429`.
+- A bearer older than 12 hours is `401`.
+- Disabling the last admin is rejected.
+- A non-admin who creates a user is rejected.
+
+### REQ-047 A job role and an admin flag gate human actions
+
+The server allows a human action only when the caller is a member of the project's tribe and the job role allows it, as in RFC-046. Admin does not add approve or deploy. The `actions` list on a card is that allowed subset. The same check runs on the POST that would perform the action.
+
+#### Acceptance
+
+- A Product Owner member can accept requirements. A Lead Developer member cannot.
+- A Lead Developer member can start deploy from `approved`. A Product Owner member who approved the same SHA cannot.
+- A Developer member can start a run and cannot approve, reject, request changes, or deploy.
+- A QA Lead member can approve. A QA member cannot.
+- A Senior Developer member can request changes and cannot approve.
+- An action omitted from `actions` is rejected when called directly.
+
+### REQ-048 A tribe has members
+
+An admin creates a tribe and adds users to it. A user may be in more than one tribe. Removing a member hides that tribe's projects from them. The membership row is the only visibility grant.
+
+#### Acceptance
+
+- An admin can create a tribe and add a user.
+- A non-admin cannot create a tribe or change its members.
+- A user in two tribes is a member of both.
+
+### REQ-049 A project is visible to its tribe
+
+An admin creates a project on one tribe. The project names one target repo. Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
+
+#### Acceptance
+
+- A member lists the project and its cards.
+- A user outside the tribe receives `404` for that project and for one of its cards.
+- An unknown project id returns the same `404`.
+- The same requirement id may exist on two projects.
+- The same branch name may exist on two projects.
+
+### REQ-050 The worker runs per project
+
+Each project has its own worker lock and its own deploy lock. The service may run those workers at the same time. Inside one project, implementation stays under that project's cap, and one deploy runs at a time. `approved` does not deploy by itself.
+
+#### Acceptance
+
+- Two projects can have an implement job in progress at the same time.
+- A card left in `approved` does not move to `deploying_dev` until a Lead Developer member starts deploy.
+- Reconcile on one project does not clear the other project's deploy lock.
+
+### REQ-051 Each user has their own GitHub settings
+
+Each user stores a GitHub host, login, and token. The token is write-only. The project stores owner, repo, base branch, bot login, and bot token for the worker. The worker pushes and opens pull requests with the project bot token. It does not use the signed-in user's token. A user can test their own token. The API returns whether a token is set and never returns the token.
+
+#### Acceptance
+
+- `GET` of the caller's GitHub settings returns `tokenSet` and no token.
+- One user cannot read or replace another user's token.
+- A job's push uses the project bot token.
+- Approval is rejected when the caller's GitHub login is empty.
 
 ## Non-goals
 
@@ -663,14 +751,14 @@ Settings, secrets, worktrees, check exports, and logs live in one data directory
 - NG-002 Auto-merge. Merging to the default branch is a separate human action. Dev deploy does not merge.
 - NG-003 More than one writer on a card.
 - NG-004 A model choosing card status, model route, or budget.
-- NG-005 A preview environment per pull request. Deploy records include `environment` and `url` so a later version can change the lock key without changing gate order. v1 uses one shared dev server.
+- NG-005 A preview environment per pull request. Deploy records include `environment` and `url` so a later version can change the lock key without changing gate order. Each project uses one shared dev server.
 - NG-006 A UI that writes card status itself, including drag and drop between columns. The web UI shows status and calls the same transitions as the CLI.
 - NG-007 The model grading its own tests. Exit code and the health probe are the oracles.
 - NG-008 Continuing a model conversation across attempts.
 
 ## Configuration defaults
 
-Settings live in `config.yaml` and `secrets.json` in the data directory (REQ-045). The operator edits them from the settings pages (REQ-044). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
+Project settings live in that project's `config.yaml` and secrets (REQ-045). A Lead Developer member edits them from the settings pages (REQ-044). Each user edits their own GitHub settings (REQ-051). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
 
 | Setting | v1 default |
 | --- | --- |
@@ -684,7 +772,7 @@ Settings live in `config.yaml` and `secrets.json` in the data directory (REQ-045
 | Sandbox engine | Podman |
 | Environment | `dev` only |
 
-Model ids, approver logins, dev hosts, deploy and rollback scripts, the sandbox image digest, and check commands have no default. Each is chosen per repo. A card whose job needs a missing setting blocks with a reason that names the section.
+Model ids, the project bot login, dev hosts, deploy and rollback scripts, the sandbox image digest, and check commands have no default. Each is chosen per project. A card whose job needs a missing setting blocks with a reason that names the section.
 
 Git host default is GitHub. The card store is PostgreSQL, reached by `databaseUrl` in the data directory (RFC-044). The git host stores the pull request. It does not store card status as the source of truth.
 
@@ -692,7 +780,7 @@ Git host default is GitHub. The card store is PostgreSQL, reached by `databaseUr
 
 ### Happy path
 
-The operator runs `ingest` from the CLI or the Intake page, reads the draft, and accepts it. The planner has written two cards, B depending on A. `run-next` locks A, routes `implement` or `implement_hard`, and creates `orch/A`. The inner loop commits and the local check exits 0. One pull request opens. CI goes green. The reviewer model recommends approval. The approver approves the head SHA from the CLI or the card page. The deployer ships that SHA, health passes, the dev check exits 0, and A is `done`. A later `run-next` may start B.
+A member runs `ingest` from the CLI or the Intake page. A Product Owner member reads the draft and accepts it. The planner has written two cards, B depending on A. `run-next` locks A, routes `implement` or `implement_hard`, and creates `orch/A`. The inner loop commits and the local check exits 0. One pull request opens. CI goes green. The reviewer model recommends approval. A permitted member approves the head SHA from the CLI or the card page. A Lead Developer member starts deploy. The deployer ships that SHA, health passes, the dev check exits 0, and A is `done`. A later `run-next` may start B.
 
 ### Reviewer requests changes
 
@@ -726,11 +814,14 @@ Startup sees a deploy without a health event. It probes or rolls back before ope
 | Card | One unit of work on the board, linked to requirement ids. |
 | Attempt | One implementer conversation on a card. A new attempt is a new conversation. Review and triage calls attach to the attempt they serve. |
 | Gate | Evidence the harness requires before a transition, such as exit code 0 or an approval record. |
-| Context pack | The fixed set of documents and fields a role receives. |
+| Context pack | The fixed set of documents and fields a model profile receives. |
 | Inner loop | Edit, local check, and commit in the worktree. It ends at one pull request. |
 | Outer loop | Review, human approval, dev deploy, health, and dev tests. |
 | Cold review | A review whose prompt excludes the author's transcript. |
-| Data directory | Where settings, secrets, worktrees, and logs live. Outside the target repo. The board is the PostgreSQL database named by `databaseUrl` in that directory. |
+| Job role | One of Lead Developer, Senior Developer, Developer, QA Lead, QA, and Product Owner. Not a model profile. |
+| Tribe | A team. Members see that tribe's projects. |
+| Project | One target repo and its cards, settings, and worker. |
+| Data directory | The service root, plus one directory per project outside that project's repo. The board is the PostgreSQL database named by `databaseUrl` in the service secrets file. |
 | Export | A fresh copy of one SHA, or of the working tree without `.git`, that a check runs against. |
 
 ## Reading order for implementation
@@ -746,5 +837,6 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 7. SHA-bound approval (REQ-030, REQ-031).
 8. Deploy stub, health failure, and dev-check pass and fail (REQ-033, REQ-035, REQ-036).
 9. Router, fallback, and family flag (REQ-011, REQ-012, REQ-013).
-10. Dependencies and the single deploy lock (REQ-007, REQ-034), then the fixture script (REQ-043).
+10. Dependencies and the per-project deploy lock (REQ-007, REQ-034), then the fixture script (REQ-043).
 11. The data directory and the settings API (REQ-045, REQ-044), then the web UI (REQ-042).
+12. Accounts, tribes, and per-project workers (REQ-046 through REQ-051).

@@ -9,22 +9,23 @@ If a field here and a PRD acceptance check disagree, the PRD wins. See [../READM
 ## Conventions
 
 - Times are UTC RFC3339 strings.
-- Ids are text. Cards use `card_` plus 12 hex chars. Attempts use `att_`, events `evt_`, runs `run_`, each plus 12 hex chars.
+- Ids are text. Cards use `card_` plus 12 hex chars. Attempts use `att_`, events `evt_`, runs `run_`, users `user_`, sessions `ses_`, tribes `tribe_`, and projects `proj_`, each plus 12 hex chars.
 - Requirement ids and decision ids are copied from markdown headings (`REQ-001`, `RFC-001`). The harness does not renumber them. Drafted ids from the planner use the same `REQ-` form and are stored with `source_kind = 'draft'`.
 - SHAs are lowercase hex, 40 or 64 chars.
 - PostgreSQL booleans are `true` and `false`. JSON booleans are `true` and `false`.
-- The API listens on `127.0.0.1:8787`. CORS allows the exact `--ui-origin`, default `http://127.0.0.1:4173`.
-- The `Host` header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`. Anything else is `403`. This blocks DNS rebinding.
-- Every route except `POST /api/session` requires `Authorization: Bearer <token>`.
+- Without `ORCHESTRATOR_CLOUD`, the API listens on `127.0.0.1:8787`. CORS allows the exact `--ui-origin`, default `http://127.0.0.1:4173`. The `Host` header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`. Anything else is `403`.
+- With `ORCHESTRATOR_CLOUD=1`, the API may bind the configured address. TLS is terminated in front of the process. The `Host` header must be on the configured allowlist. CORS allows the configured UI origin. A missing cloud flag still refuses a non-loopback `--addr` (RFC-045).
+- Every route except `POST /api/session` requires `Authorization: Bearer <token>`. The bearer names a user.
+- Board, intake, run, card, and project-settings routes are under `/api/projects/{projectId}/`. A caller who is not a member of that project's tribe gets `404`. An unknown project id gets the same `404`.
 - JSON errors use one shape. Handlers do not invent a second shape.
 
 ```json
 {
   "error": {
     "code": "validation",
-    "message": "operatorLogin is not an approver",
+    "message": "password must be at least 12 characters",
     "fields": {
-      "operatorLogin": "operatorLogin is not an approver"
+      "password": "password must be at least 12 characters"
     }
   }
 }
@@ -34,31 +35,33 @@ If a field here and a PRD acceptance check disagree, the PRD wins. See [../READM
 
 | HTTP | `error.code` | When |
 | --- | --- | --- |
-| 401 | `unauthenticated` | Missing, unknown, or expired bearer, or a wrong startup token |
-| 403 | `forbidden` | `Host` or `Origin` not allowed |
-| 404 | `not_found` | Unknown card, family, or route |
+| 401 | `unauthenticated` | Missing, unknown, or expired bearer, or a wrong password |
+| 403 | `forbidden` | `Host` or `Origin` not allowed, or the caller's role cannot perform the action |
+| 404 | `not_found` | Unknown card or family, or a project the caller cannot see |
 | 409 | `conflict` | A lock is held, or the card status changed after it was read (RFC-040) |
 | 413 | `too_large` | Body over 1 MiB |
 | 422 | `validation` | Body failed a field check |
 | 422 | `transition_rejected` | The action is not listed for the card, or evidence is missing |
-| 429 | `rate_limited` | Session exchange paused after 5 failures |
+| 429 | `rate_limited` | That email is paused after 5 bad passwords |
 
 A successful body never includes `error`.
 
 ## Statuses, groups, and actions
 
-`group`, `actions`, and `unblockTo` are computed by the server on every read. The client displays them and does not recompute legality.
+`group`, `actions`, and `unblockTo` are computed by the server on every read. The client displays them and does not recompute legality. The status table is the maximum set. The server then drops every name the caller's job role cannot use (RFC-046). A non-member does not receive the card.
 
-| Status | `group` | `actions` |
+| Status | `group` | `actions`, before the role filter |
 | --- | --- | --- |
 | `backlog`, `ready` | `waiting` | `[]` |
 | `in_progress`, `self_check` | `running` | `[]` |
 | `pr_open`, `agent_review`, `changes_requested` | `review` | `[]` |
 | `human_review` | `review` | `approve`, `request_changes`, `reject` |
-| `approved` | `shipping` | `request_changes`, `reject` |
+| `approved` | `shipping` | `request_changes`, `reject`, `deploy` |
 | `deploying_dev`, `verifying` | `shipping` | `[]` |
 | `done` | `finished` | `[]` |
 | `blocked` | `stopped` | `unblock`, unless release is refused |
+
+`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member. `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member.
 
 ## Blocked reasons
 
@@ -284,7 +287,7 @@ DROP TABLE decisions;
 DROP TABLE requirements;
 ```
 
-v1 ships one migration. A later schema change is `00002_*.sql`. Do not edit `00001` after the first release.
+`00001_init.sql` and `00002_intake_state.sql` stay as shipped. Do not edit them. Identity, tribes, and projects are later migrations, starting at `00003`. Those migrations add `project_id` and replace the global unique indexes above with `(project_id, branch)` and `(project_id, pr_url)`. Requirement and decision primary keys become `(project_id, id)`. `runs.trigger` gains `deploy`.
 
 `draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
 
@@ -316,14 +319,137 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `route` | `taskClass`, `modelId`, `fallback`, `familyFlag`, `reason` |
 | `model_call` | `role`, `modelId`, `promptHash`, `inputTokens`, `outputTokens`, `stopReason` |
 | `tool_call` | `name`, `ok`, `rejected`, `summary` |
-| `transition` | `from`, `to`, `evidence`, plus `resetAttempts` and `maxAttempts` on release |
+| `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
 | `assertion_failed` | `name`, `detail` |
 
-Every payload passes through `redact` before insert.
+Every payload passes through `redact` before insert. A new transition may include `actorId`. Existing rows stay as stored. Nothing updates an event to backfill it.
+
+## Identity, tribes, and projects
+
+Migration `00003` and any later file in that series. Passwords use argon2id. A password shorter than 12 characters is `422`. User GitHub tokens and project bot tokens are AES-256-GCM ciphertext. The key is `tokenKey` in the service `secrets.json`, 32 bytes, and the API never returns it.
+
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN (
+    'lead_developer', 'senior_developer', 'developer',
+    'qa_lead', 'qa', 'product_owner')),
+  admin BOOLEAN NOT NULL DEFAULT false,
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  bearer_hash TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE user_github (
+  user_id TEXT PRIMARY KEY REFERENCES users(id),
+  host TEXT NOT NULL,
+  login TEXT NOT NULL DEFAULT '',
+  token_ciphertext TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE tribes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE tribe_members (
+  tribe_id TEXT NOT NULL REFERENCES tribes(id),
+  user_id TEXT NOT NULL REFERENCES users(id),
+  PRIMARY KEY (tribe_id, user_id)
+);
+
+CREATE TABLE projects (
+  id TEXT PRIMARY KEY,
+  tribe_id TEXT NOT NULL REFERENCES tribes(id),
+  name TEXT NOT NULL,
+  repo_path TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
+
+`project_id TEXT NOT NULL REFERENCES projects(id)` is added to `requirements`, `decisions`, `cards`, `attempts`, `locks`, `gates`, `events`, `approvals`, `failure_notes`, `runs`, `intake_state`, and `deploy_lock`. `events.actor_id` is nullable text. `intake_state` and `deploy_lock` use `project_id` as their primary key, one row each per project. Child rows that already reference `card_id` keep that id and also store `project_id` so a list does not join through every card.
+
+`approvals.approver` stores the user's GitHub login. `requirements.accepted_by` stores the user id.
+
+## Accounts and membership API
+
+`POST /api/session`
+
+```json
+{ "email": "ada@example.com", "password": "a long passphrase" }
+```
+
+```json
+{
+  "bearer": "<random>",
+  "expiresAt": "2026-10-10T17:00:00Z",
+  "user": {
+    "id": "user_0123456789ab",
+    "email": "ada@example.com",
+    "role": "lead_developer",
+    "admin": false
+  }
+}
+```
+
+A wrong password is `401`. Five wrong passwords for that email pause further attempts for one minute with `429`. A disabled user is `401`. The bearer is 32 random bytes. The row stores its SHA-256. The process checks the hash and `expires_at` on every request. `DELETE /api/session` requires the bearer and deletes that row.
+
+`GET /api/me` returns the `user` object plus `githubLogin` and `githubTokenSet`.
+
+`PUT /api/me/password`
+
+```json
+{ "currentPassword": "a long passphrase", "newPassword": "another long passphrase" }
+```
+
+A wrong current password is `401`. A short new password is `422` on `newPassword`.
+
+`GET /api/me/github` and `PUT /api/me/github` are the caller's GitHub settings.
+
+```json
+{ "host": "github.com", "login": "ada", "tokenSet": false }
+```
+
+PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and token rules as a secret field apply. One user cannot call this route for someone else.
+
+`GET /api/users` and `POST /api/users` require the admin flag. A non-admin is `403`.
+
+```json
+{
+  "email": "ada@example.com",
+  "password": "a long passphrase",
+  "role": "product_owner",
+  "admin": false
+}
+```
+
+`PUT /api/users/{id}` accepts `role`, `admin`, `disabled`, and optional `password`. The response user object has no password and no token. Removing or disabling the last admin is `422`.
+
+`GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
+
+`POST /api/tribes/{id}/members` with `{ "userId": "user_0123456789ab" }` and `DELETE /api/tribes/{id}/members/{userId}` require admin. A non-admin is `403`. A missing tribe is `404`.
+
+`GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires admin.
+
+```json
+{ "tribeId": "tribe_0123456789ab", "name": "Widget", "repoPath": "/srv/widget" }
+```
+
+`repoPath` must be an absolute directory outside the service data root and outside every other project's repo. The server creates `<data>/projects/<project-id>/` at mode `0700`.
 
 ## Card JSON
 
@@ -334,6 +460,7 @@ Every payload passes through `redact` before insert.
   "status": "human_review",
   "group": "review",
   "actions": ["approve", "request_changes", "reject"],
+  "projectId": "proj_0123456789ab",
   "unblockTo": null,
   "requirementIds": ["REQ-001"],
   "decisionIds": ["RFC-018"],
@@ -361,23 +488,11 @@ Every payload passes through `redact` before insert.
 
 `reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call.
 
-## Session
-
-`POST /api/session`
-
-```json
-{ "token": "<token printed by serve>" }
-```
-
-```json
-{ "bearer": "<random>", "expiresAt": "2026-10-10T17:00:00Z" }
-```
-
-The startup token is compared in constant time. The bearer is random, stored only in process memory, and dies when the process exits or after 12 hours. A wrong startup token is `401`. Five wrong tokens pause new exchanges for one minute with `429`.
-
 ## Board and intake
 
-`GET /api/cards`
+Routes in this section include `/api/projects/{projectId}/`. A non-member is `404` before the handler reads the card.
+
+`GET /api/projects/{projectId}/cards`
 
 ```json
 {
@@ -389,11 +504,11 @@ The startup token is compared in constant time. The bearer is random, stored onl
 
 An empty store returns `canRun: false`, `running: false`, and `cards: []`. It does not return an error.
 
-`canRun` is true when the worker could start something now: a planning job is needed, a `backlog` card can be promoted, a `ready` or `changes_requested` card is under the cap, a `pr_open` card awaits review, an `approved` card has a free deploy lock, or a `verifying` card awaits its check. `running` is true while an unprocessed `runs` row exists.
+`canRun` is true when that project's worker could start something now: a planning job is needed, a `backlog` card can be promoted, a `ready` or `changes_requested` card is under the cap, a `pr_open` card awaits review, or a `verifying` card awaits its check. An `approved` card does not set `canRun`. Deploy waits for a Lead Developer. `running` is true while an unprocessed `runs` row exists for that project.
 
-`GET /api/cards/{id}` returns one card object. Unknown id is `404`.
+`GET /api/projects/{projectId}/cards/{id}` returns one card object. Unknown id, or a card in another project, is `404`.
 
-`GET /api/cards/{id}/trace`
+`GET /api/projects/{projectId}/cards/{id}/trace`
 
 ```json
 {
@@ -409,9 +524,9 @@ An empty store returns `canRun: false`, `running: false`, and `cards: []`. It do
 }
 ```
 
-Oldest first. Payload is the redacted JSON already stored.
+Oldest first. Payload is the redacted JSON already stored. New transition payloads may include `actorId`.
 
-`GET /api/intake`
+`GET /api/projects/{projectId}/intake`
 
 ```json
 {
@@ -439,19 +554,19 @@ Oldest first. Payload is the redacted JSON already stored.
 }
 ```
 
-`POST /api/ingest` has an empty body. It reparses the configured PRD and RFC paths and returns the `GET /api/intake` shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan.
+`POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`.
 
-`POST /api/accept`
+`POST /api/projects/{projectId}/accept`
 
 ```json
 { "requirementIds": ["REQ-001", "REQ-002"] }
 ```
 
-Stores the operator login and the time on those ids, then inserts a `runs` row with trigger `accept` so the planner can create cards. Ids absent from the body are left as they are. Unknown ids are `422`.
+Allowed for a Product Owner member. Anyone else is `403`, or `404` when they are not a member. Stores that user's id and the time on those ids, then inserts a `runs` row with trigger `accept` so the planner can create cards. Ids absent from the body are left as they are. Unknown ids are `422`.
 
 ## Runs and human gates
 
-`POST /api/runs` has an empty body. It inserts a `runs` row and returns immediately. The worker processes it until idle (0003).
+`POST /api/projects/{projectId}/runs` has an empty body. A Lead Developer, Senior Developer, Developer, or QA member may call it. Anyone else is `403`. It inserts a `runs` row for that project and returns immediately. That project's worker processes it until idle (0003).
 
 ```json
 { "runId": "run_0123456789ab", "canRun": true }
@@ -463,17 +578,19 @@ When nothing can move, the response is still `200`:
 { "runId": "run_0123456789ab", "canRun": false, "reason": "no card is ready" }
 ```
 
-`POST /api/cards/{id}/approve`
+`POST /api/projects/{projectId}/cards/{id}/approve`
 
 ```json
 { "sha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c" }
 ```
 
-The approver is `operatorLogin` from settings. The server refreshes the head from GitHub, checks the allowlist, rejects the bot login, and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. An empty `operatorLogin` is `422` with `fields.operatorLogin`.
+The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the project bot token, rejects a missing GitHub login, rejects the project bot login, and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
 
-`POST /api/cards/{id}/request-changes` and `POST /api/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved`. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`.
+`POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`.
 
-`POST /api/cards/{id}/unblock`
+`POST /api/projects/{projectId}/cards/{id}/deploy` has an empty body. It is allowed when `deploy` is in `actions`. The card moves from `approved` toward `deploying_dev` through `machine.Transition`, and a `runs` row with trigger `deploy` wakes that project's worker.
+
+`POST /api/projects/{projectId}/cards/{id}/unblock`
 
 ```json
 { "resetAttempts": false }
@@ -481,7 +598,7 @@ The approver is `operatorLogin` from settings. The server refreshes the head fro
 
 The body is optional. The card goes to `unblockTo`. With `resetAttempts: false`, `attemptsUsed` stays, and `maxAttempts` rises to `attemptsUsed + 1` when the count is already at the cap. With `resetAttempts: true`, `attemptsUsed` becomes `0` and `maxAttempts` returns to the router budget.
 
-Approve, request-changes, and unblock insert a `runs` row with the matching trigger so the board continues without a second click. Each route returns the card object. An action not listed for the card is `422` `transition_rejected`. A status change between read and write is `409` `conflict`.
+Approve, request-changes, deploy, and unblock insert a `runs` row with the matching trigger so the board continues without a second click. Each route returns the card object. An action not listed for the card is `422` `transition_rejected`. A status change between read and write is `409` `conflict`. A role that cannot perform the action is `403`.
 
 ## Settings
 
@@ -494,10 +611,13 @@ Secret fields are write-only.
 | PUT field with a new string | Stored secret is replaced. Minimum 8 characters |
 | PUT `clear: true` | Stored secret is deleted and the flag becomes false |
 | Event | `config_changed` records the section and the field names, not the values |
-| In-flight job | Keeps the settings snapshot it started with |
+| In-flight job | Keeps that project's settings snapshot it started with |
 | Failure | `422` with `fields`. Files on disk are unchanged |
+| Caller | Lead Developer member for project sections. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
 
-`GET /api/settings/github`
+Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` uses the caller's stored token and returns `{ "ok": true, "login": "octocat" }` or `{ "ok": false, "message": "authentication failed" }`.
+
+`GET /api/projects/{projectId}/settings/github`
 
 ```json
 {
@@ -505,25 +625,23 @@ Secret fields are write-only.
   "owner": "",
   "repo": "",
   "baseBranch": "main",
-  "approvers": [],
   "botLogin": "",
   "tokenSet": false
 }
 ```
 
-`PUT /api/settings/github` accepts the same fields plus optional `token` and `clear`.
+`PUT /api/projects/{projectId}/settings/github` accepts the same fields plus optional `token` and `clear`. The token is the project bot token.
 
 | Field | Rule |
 | --- | --- |
 | `host` | Hostname only, no scheme or path |
 | `owner`, `repo` | `^[A-Za-z0-9._-]+$` |
 | `baseBranch` | Valid by `git check-ref-format --branch`, and not `orch/*` |
-| `approvers` | Unique logins. Must not contain `botLogin` |
-| `botLogin` | Required before a real repo job runs. Used for the commit identity |
+| `botLogin` | Required before a real repo job runs. Used for the commit identity. Must not equal a login that is asked to approve |
 
-`POST /api/settings/github/test` uses the stored token and returns `{ "ok": true, "login": "octocat" }` or `{ "ok": false, "message": "authentication failed" }`. The token is in neither body. A completed check is `200`, including `ok: false`. No stored token is `422`.
+`POST /api/projects/{projectId}/settings/github/test` uses the stored bot token and returns the same shape as the account test. The token is in neither body. A completed check is `200`, including `ok: false`. No stored token is `422`.
 
-`GET /api/settings/llm`
+`GET /api/projects/{projectId}/settings/llm`
 
 ```json
 {
@@ -539,7 +657,7 @@ Secret fields are write-only.
 }
 ```
 
-`PUT /api/settings/llm`
+`PUT /api/projects/{projectId}/settings/llm`
 
 ```json
 {
@@ -566,9 +684,9 @@ Secret fields are write-only.
 
 Removing a family whose models are used by the router is `422` on `families`.
 
-`POST /api/settings/llm/{family}/test` returns `{ "ok": true }` or `{ "ok": false, "message": "..." }` with `200`. Unknown family is `404`. A family that needs a key and has none is `422`.
+`POST /api/projects/{projectId}/settings/llm/{family}/test` returns `{ "ok": true }` or `{ "ok": false, "message": "..." }` with `200`. Unknown family is `404`. A family that needs a key and has none is `422`.
 
-`GET /api/settings/router`
+`GET /api/projects/{projectId}/settings/router`
 
 ```json
 {
@@ -591,9 +709,9 @@ Removing a family whose models are used by the router is `422` on `families`.
 
 `reviewIndependentPossible` is true when two or more families each have at least one model and are usable.
 
-`PUT /api/settings/router` sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
+`PUT /api/projects/{projectId}/settings/router` sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
 
-`GET /api/settings/deploy`
+`GET /api/projects/{projectId}/settings/deploy`
 
 ```json
 {
@@ -611,12 +729,11 @@ Removing a family whose models are used by the router is `422` on `families`.
   "sandboxImage": "",
   "implementationCap": 2,
   "prdPath": "docs/prd",
-  "rfcPath": "docs/rfc",
-  "operatorLogin": ""
+  "rfcPath": "docs/rfc"
 }
 ```
 
-`PUT /api/settings/deploy` accepts those fields plus optional `deployToken` and `clear`.
+`PUT /api/projects/{projectId}/settings/deploy` accepts those fields plus optional `deployToken` and `clear`.
 
 | Field | Rule when non-empty |
 | --- | --- |
@@ -629,30 +746,31 @@ Removing a family whose models are used by the router is `422` on `families`.
 | `sandboxEngine` | `podman` or `docker` |
 | `sandboxImage` | Contains `@sha256:` followed by 64 hex chars |
 | `implementationCap` | Integer from 1 to 8 |
-| `prdPath`, `rfcPath` | Relative, no `..`, inside the target repo |
-| `operatorLogin` | In the saved approver list |
+| `prdPath`, `rfcPath` | Relative, no `..`, inside the project's repo |
 
 Empty deploy fields may be saved. A deploy then blocks with `deploy_config` and runs no command. A non-empty `devCheck` with an empty `devUrl` is also `deploy_config` at deploy time. Changing `localCheck` or `devCheck` applies the rule in 0006 to existing cards.
 
 ## Files on disk
 
-The data directory defaults to `~/.orchestrator/<repo-name>-<hash8>`, where `hash8` is the first 8 hex chars of SHA-256 of the absolute repo path (RFC-036).
+The service data directory defaults to `~/.orchestrator/service` (RFC-047). Each project directory must sit outside that project's repo (RFC-036, RFC-048).
 
 ```text
-<data>/                     mode 0700
-<data>/config.yaml          mode 0600
-<data>/secrets.json         mode 0600
-<data>/worker.lock
-<data>/empty-hooks/
-<data>/empty-gh/
-<data>/askpass/
-<data>/worktrees/<card-id>/
-<data>/exports/<card-id>-<sha>/   deleted after each check
-<data>/logs/<attempt-id>.log
-<data>/logs/<attempt-id>-review.json
+<data>/                                      mode 0700
+<data>/secrets.json                          mode 0600
+<data>/projects/<project-id>/                mode 0700
+<data>/projects/<project-id>/config.yaml     mode 0600
+<data>/projects/<project-id>/secrets.json    mode 0600
+<data>/projects/<project-id>/worker.lock
+<data>/projects/<project-id>/empty-hooks/
+<data>/projects/<project-id>/empty-gh/
+<data>/projects/<project-id>/askpass/
+<data>/projects/<project-id>/worktrees/<card-id>/
+<data>/projects/<project-id>/exports/<card-id>-<sha>/   deleted after each check
+<data>/projects/<project-id>/logs/<attempt-id>.log
+<data>/projects/<project-id>/logs/<attempt-id>-review.json
 ```
 
-The board is not a file in this directory. It is the PostgreSQL database named by `databaseUrl` (RFC-044).
+The board is not a file in this directory. It is the PostgreSQL database named by `databaseUrl` in the service secrets file (RFC-044, RFC-047).
 
 `config.yaml`:
 
@@ -662,7 +780,6 @@ github:
   owner: ""
   repo: ""
   baseBranch: main
-  approvers: []
   botLogin: ""
 llm:
   families:
@@ -705,15 +822,21 @@ scheduler:
 paths:
   prd: docs/prd
   rfc: docs/rfc
-operatorLogin: ""
 ```
 
-The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `paths`, and `operatorLogin` into one object, as shown above. `secrets.json`:
+The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, and `paths` into one object, as shown above. Service `secrets.json`:
 
 ```json
 {
   "databaseUrl": "",
-  "githubToken": "",
+  "tokenKey": ""
+}
+```
+
+Project `secrets.json`:
+
+```json
+{
   "deployToken": "",
   "llmKeys": {
     "anthropic": "",
@@ -722,7 +845,7 @@ The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `
 }
 ```
 
-`databaseUrl` is a PostgreSQL URL for this target repo's board (RFC-044). Empty string means unset. The API never returns it. Both files are written to a temp file in the same directory, synced, and renamed. The API never decodes `secrets.json` into a struct that is encoded to the client. Edit `config.yaml` by hand only while `serve` is stopped. Startup validates it with the same rules as the PUT routes.
+`databaseUrl` is the PostgreSQL URL for every project's board (RFC-047). `tokenKey` encrypts user GitHub tokens and project bot tokens. Empty string means unset. The API never returns either value. The project bot token is not in this file. Both secret files are written to a temp file in the same directory, synced, and renamed. The API never decodes a secrets file into a struct that is encoded to the client. Edit a project's `config.yaml` by hand only while that project's worker is stopped. Startup validates it with the same rules as the PUT routes.
 
 ## CLI twins
 
@@ -730,16 +853,19 @@ The CLI calls the same `internal/app` functions, not the HTTP API. It prints the
 
 | CLI | API |
 | --- | --- |
-| `orchestrator ingest` | `POST /api/ingest` |
-| `orchestrator accept` | `POST /api/accept` with every current unaccepted id |
-| `orchestrator run-next` | `POST /api/runs`, and runs the worker itself when `serve` is not running (RFC-043) |
-| `orchestrator status` | `GET /api/cards` |
-| `orchestrator status CARD` | `GET /api/cards/{id}` |
-| `orchestrator trace CARD` | `GET /api/cards/{id}/trace` |
-| `orchestrator approve CARD --sha SHA` | `POST /api/cards/{id}/approve` |
-| `orchestrator request-changes CARD` | `POST /api/cards/{id}/request-changes` |
-| `orchestrator reject CARD` | `POST /api/cards/{id}/reject` |
-| `orchestrator unblock CARD [--reset-attempts]` | `POST /api/cards/{id}/unblock` |
-| `orchestrator serve` | Starts the API and the worker |
+| `orchestrator users bootstrap` | Creates the first admin when `users` is empty. No HTTP twin |
+| `orchestrator ingest --project ID` | `POST /api/projects/{id}/ingest` |
+| `orchestrator accept --project ID` | `POST /api/projects/{id}/accept` with every current unaccepted id |
+| `orchestrator run-next --project ID` | `POST /api/projects/{id}/runs`, and runs that project's worker when its lock is free (RFC-048) |
+| `orchestrator status --project ID` | `GET /api/projects/{id}/cards` |
+| `orchestrator status --project ID CARD` | `GET /api/projects/{id}/cards/{card}` |
+| `orchestrator trace --project ID CARD` | `GET /api/projects/{id}/cards/{card}/trace` |
+| `orchestrator approve --project ID CARD --sha SHA` | `POST /api/projects/{id}/cards/{card}/approve` |
+| `orchestrator request-changes --project ID CARD` | `POST /api/projects/{id}/cards/{card}/request-changes` |
+| `orchestrator reject --project ID CARD` | `POST /api/projects/{id}/cards/{card}/reject` |
+| `orchestrator unblock --project ID CARD [--reset-attempts]` | `POST /api/projects/{id}/cards/{card}/unblock` |
+| `orchestrator serve` | Starts the API and one worker per project |
 
-`approve` without `--sha` exits `1` before any transition. `status` with no cards prints `board is empty` and the next command `orchestrator ingest`. Settings have no CLI twin in v1. Use the UI, or edit `config.yaml` while `serve` is stopped.
+Break-glass CLI commands that can read the service data directory attribute the actor from `--as EMAIL` when the command is a human gate. HTTP gates use the session user. The fixture may omit `--as` and use the fixture user.
+
+`approve` without `--sha` exits `1` before any transition. `status` with no cards prints `board is empty` and the next command `orchestrator ingest`. Project settings have no CLI twin. Use the UI, or edit that project's `config.yaml` while its worker is stopped.

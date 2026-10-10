@@ -188,13 +188,14 @@ Run this after `orchestrator serve` and `npm run dev` are up. Use the fixture da
 
 | Check | Pass |
 | --- | --- |
-| Open the UI without a token | Login form is the only page |
-| Wrong token | Live region shows the error, no board |
-| Six wrong tokens | Live region says to wait one minute |
+| Open the UI without a bearer | Login form is the only page |
+| Wrong password | Live region shows the error, no board |
+| Six wrong passwords for one email | Live region says to wait one minute |
 | Empty data dir | "No cards yet" and a link to Intake |
 | `in_progress` card | No action controls |
 | `human_review` card | Approve form shows `headSha`. Submitting another SHA shows the field error and the card stays in `human_review` |
-| `approved` card | Request changes and Reject only |
+| `approved` card for a Lead Developer | Request changes, Reject, and Deploy |
+| `approved` card for a Product Owner | Request changes and Reject, and no Deploy |
 | `blocked` card with `health` | Unblock text says the card returns to human review |
 | Approve in the UI while the CLI approves the same card | One approval row. The second action gets a reload or the same card back |
 | Settings GET after a token was saved | Password field is empty. Placeholder says a value is saved. The network response has no token |
@@ -210,6 +211,8 @@ This pass is manual. The automated locks for buttons are `TestActionsEmpty`, `Te
 ## Hardening tests
 
 The cases in [0006-security-and-harness.md](0006-security-and-harness.md) are part of `go test ./...`. A build that skips `TestCheckOnExport`, `TestHookNotRun`, `TestFsmonitorOff`, `TestHealthLinkLocal`, `TestEventsImmutable`, `TestPushURL`, or `TestDataDirInsideRepo` is not a release candidate.
+
+Sprints 11–13 add `TestPasswordLogin`, `TestWrongPassword`, `TestSessionLockout`, `TestBearerExpiry`, `TestLastAdmin`, `TestUserGitHubOmitted`, `TestNonAdminForbidden`, `TestMemberSeesProject`, `TestOutsiderMissesProject`, `TestReqIdsPerProject`, `TestBranchPerProject`, `TestAdminManagesMembership`, `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner`, `TestDeveloperRunOnly`, `TestActorOnTransition`, and `TestCloudBind`. `TestLoopbackOnly` still passes when `ORCHESTRATOR_CLOUD` is unset. The REQ-043 fixture stays one project. Those new tests add a second project beside it. They are not part of the fixture's nine steps.
 
 ## Release order
 

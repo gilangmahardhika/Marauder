@@ -15,11 +15,11 @@ CSP stays hash mode. Do not add `'unsafe-inline'` or `'unsafe-eval'`. Put styles
 
 ## Data
 
-`src/lib/api.ts` has one function per route in `docs/tech/0002-data-and-api.md`. It sends the bearer, parses `error` into `ApiError`, and on `401` clears `sessionStorage` key `orchestrator.bearer` and goes to `/login`. It does not log bodies.
+`src/lib/api.ts` has one function per route in `docs/tech/0002-data-and-api.md`. It sends the bearer, parses `error` into `ApiError`, and on `401` clears `sessionStorage` key `orchestrator.bearer` and goes to `/login`. It does not log bodies. Login is email and password. There is no UI token field.
 
 `src/lib/types.ts` matches the JSON. A new API field is added there in the same change.
 
-`sessionStorage` holds the bearer only. GitHub tokens, model keys, `databaseUrl`, and the deploy token are not stored in the browser.
+`sessionStorage` holds the bearer and the selected project id (`orchestrator.project`). GitHub tokens, passwords, model keys, `databaseUrl`, `tokenKey`, and the deploy token are not stored in the browser. Card buttons still come only from `actions`. Admin links come from `GET /api/me`, not from a client-side role matrix.
 
 ## Pages
 

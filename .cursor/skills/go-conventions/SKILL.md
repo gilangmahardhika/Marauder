@@ -16,7 +16,7 @@ Put code in the package whose "Must not" column allows it. In particular:
 - `internal/router` does not call a provider. `internal/providers` does not choose a fallback.
 - `internal/app` does not encode HTML.
 
-`cmd/orchestrator/main.go` wires the database, settings, and logger. Tests build `app` with fakes for the provider, git, `gh`, the sandbox engine, and the clock.
+`cmd/orchestrator/main.go` wires the database, the service secrets, and the logger. Project settings load per project. Tests build `app` with fakes for the provider, git, `gh`, the sandbox engine, and the clock.
 
 ## Errors
 
@@ -29,7 +29,7 @@ Return the sentinel from the package that owns the failure. `internal/httpapi` m
 | `board.ErrNotFound` | 404 `not_found` |
 | `board.ErrLocked`, `board.ErrConflict` | 409 `conflict` |
 
-Middleware order: `Host`, CORS and `Origin`, body cap, bearer, handler. A successful body has no `error` field.
+Middleware order: `Host`, CORS and `Origin`, body cap, bearer, project membership when the path has a project id, handler. The bearer loads the user. A successful body has no `error` field.
 
 ## Processes
 
@@ -43,4 +43,4 @@ exec.Command("bash", "-lc", modelText)
 execx.Command(ctx, []string{name, arg}, env)
 ```
 
-Do not log request bodies, `databaseUrl`, tokens, or model keys.
+Do not log request bodies, passwords, bearers, `databaseUrl`, `tokenKey`, GitHub tokens, or model keys.

@@ -14,12 +14,13 @@ A model call is a step inside a state. It is not the workflow.
 
 This is the refined prompt the design started from. It is kept as history. The PRD replaced it as the requirements source, and later decisions added the following:
 
-- A local SvelteKit web UI beside the CLI, with settings pages for GitHub, model APIs, the router, and deploy (RFC-035).
-- A data directory outside the target repo (RFC-036). The board is PostgreSQL, named by the connection string in that directory (RFC-044).
+- A SvelteKit web UI beside the CLI, with account GitHub settings and per-project settings for the repo, model APIs, the router, and deploy (RFC-035, RFC-045, RFC-047).
+- A service data directory outside every target repo (RFC-036). The board is one PostgreSQL database, named by `databaseUrl` in that directory (RFC-044, RFC-047). Each project has its own worker (RFC-048).
 - Checks that run on exported copies, with network only for dev checks (RFC-037).
 - Deploy scripts that live outside the repo (RFC-038).
 - Probes that can reach private dev hosts but not link-local or loopback addresses (RFC-039).
-- Compare-and-swap transitions (RFC-040), an explicit release policy (RFC-041), an attempt cap that counts implementer attempts only (RFC-042), and one worker process (RFC-043).
+- Compare-and-swap transitions (RFC-040), an explicit release policy (RFC-041), an attempt cap that counts implementer attempts only (RFC-042), and one worker lock per project (RFC-043, RFC-048).
+- Email and password sessions, job roles, tribes, and projects that run in parallel (RFC-045 through RFC-048).
 
 ```text
 Build a coding orchestrator that turns a PRD and its RFCs into reviewed, tested changes on a dev server.
@@ -35,8 +36,8 @@ Required behavior:
 5. Inner loop, on the worktree only: edit, run local checks, read the failure, try again. Cap attempts, tokens, and wall time. This loop never deploys. A check passes only when the command exits 0.
 6. When local checks pass, open one pull request for the card. If a PR already exists, push to the same branch and update that PR. The idempotency key is the card id.
 7. Run a reviewer model on the PR. Prefer a different provider family from the author. Give the reviewer the linked requirements, the diff, and the check output. Omit the author's transcript and tool trace.
-8. A person reviews the same PR. The reviewer model may request changes or recommend approval. Only a person on the approver list can approve, and the approval is bound to the PR head SHA. A new commit invalidates it.
-9. When the head SHA is approved and required checks are green, deploy that SHA to the dev server. Deploy the approved SHA, not whatever the default branch points at later. Take one deploy lock for v1 so two cards cannot deploy over each other. If the health check fails, roll back, record the failure, and block the card. Do not start tests against an unhealthy deploy.
+8. A person reviews the same PR. The reviewer model may request changes or recommend approval. A Lead Developer, QA Lead, or Product Owner who is a member of the project can approve, and the approval is bound to the PR head SHA. A new commit invalidates it.
+9. When a Lead Developer starts deploy of that approved SHA, deploy it to the project's dev server. Deploy the approved SHA, not whatever the default branch points at later. Take one deploy lock per project so two cards in that project cannot deploy over each other. Another project may deploy at the same time. If the health check fails, roll back, record the failure, and block the card. Do not start tests against an unhealthy deploy.
 10. The harness runs the card's dev tests against that deployment. Pass and fail come from the command exit code. On pass, mark the card done. On fail, store the log, write a triage note with a model if you need one, and move the card to changes requested. Start a new attempt. After the attempt cap, block the card for a person.
 11. Repeat from the next ready card. A failed verify starts a new attempt from the card, the diff, and the failure log. It does not continue the old model conversation.
 
@@ -46,7 +47,7 @@ Harness invariants, required in v1:
 - Side effects are idempotent. PR create, PR comment, and deploy use a stable key.
 - A crashed process resumes from the last recorded gate.
 - Planner, implementer, reviewer, and triage each get a fixed context pack. Deploy has no model.
-- Tool allowlists and credentials differ by role.
+- Tool allowlists and credentials differ by model profile. A person's job role is separate and gates human actions.
 - Every model call, tool call, gate result, and route decision is appended to an event log with model id, prompt hash, and token use.
 - Attempt, token, and time budgets end in Blocked, waiting for a person.
 
@@ -73,6 +74,7 @@ flowchart TD
   pr[Open or update one PR]
   agent[Reviewer model and required CI]
   human[Person approves a SHA]
+  approved[Approved and waiting]
   deploy[Deploy that SHA to dev]
   health[Health check]
   verify[Dev check on the deployed SHA]
@@ -84,7 +86,9 @@ flowchart TD
   agent -->|request changes or red CI| again
   agent -->|recommend approve, CI green| human
   human -->|request changes| again
-  human -->|approve SHA| deploy --> health
+  human -->|approve SHA| approved
+  approved -->|Lead starts deploy| deploy
+  deploy --> health
   health -->|fail, rollback| blocked
   blocked -->|release after health failure| human
   health -->|pass| verify
@@ -102,22 +106,22 @@ flowchart TD
 4. **Exit codes and health are the oracles.** A check passes when the process exits 0. Health passes when the configured probe returns 200. Triage may explain a failure. It does not grade it.
 5. **One card, one worktree, one writer.** A card lock with a holder id stops a second job from editing the same branch.
 6. **One PR per card.** Retries push to `orch/<card-id>`. Create and update are idempotent on the card id.
-7. **Approval is a SHA, plus a person.** The approver is on an allowlist. The bot's review is a recommendation. A push after approval clears `approvedSha`.
+7. **Approval is a SHA, plus a member.** The approver's job role allows it, and their GitHub login is not the project bot. The bot's review is a recommendation. A push after approval clears `approvedSha`. Approval does not deploy by itself.
 8. **Cold review.** The reviewer pack has the diff, the requirements, and the check output. It does not have the author's transcript.
 9. **Different family on review when you have one.** The attempt stores whether the reviewer family differed.
 10. **Pin the deploy.** The deployer ships the approved SHA, and the dev check runs on an export of that SHA.
 11. **Health before tests.** A failed health check rolls back and blocks. Release sends the card back to human review, not to the implementer.
-12. **One deploy at a time in v1.** The deploy lock serializes the shared dev server. Implementers keep working on other cards.
+12. **One deploy at a time in a project.** The project's deploy lock serializes that project's dev server. Another project may deploy at the same time. Implementers keep working on other cards.
 13. **Resume at the last gate.** Startup reconciles an in-flight deploy first, then continues from the stored status.
-14. **Role-scoped tools and credentials.** The implementer cannot deploy. The reviewer cannot edit. The deployer has no model. Repo content is untrusted input.
+14. **Profile-scoped tools and credentials.** The implementer cannot deploy. The reviewer cannot edit. The deployer has no model. Repo content is untrusted input. A job role is a person, not a model profile.
 15. **Budgets stop the loop.** The attempt, token, turn, and wall-clock caps all end in `blocked` with the reason stored. A person releases the card. The loop does not raise its own cap.
 16. **Routes are versioned.** Model id, fallback id, prompt hash, and system hash are on the attempt. A settings change applies to the next job, not to one in flight.
 17. **Requirement ids thread end to end.** They start at intake, sit on the card, appear in the PR body, and are the reviewer's checklist.
 18. **The scheduler respects dependencies.** A card becomes `ready` only when every card it depends on is `done`. The planner proposes the edges. The harness enforces them.
 19. **Transitions are compare-and-swap.** Two clients acting at once cannot both win.
-20. **State lives outside the repo.** Settings and tokens sit in the data directory, where no pull request can reach them. The board is the PostgreSQL database named by the connection string in that directory.
+20. **State lives outside the repo.** Each project has a data directory the pull request cannot reach. The board for every project is the PostgreSQL database named by `databaseUrl` in the service secrets file.
 21. **Checks never touch the worktree.** They run on an exported copy, so a test cannot rewrite git metadata the host will trust.
-22. **What deploy runs is operator-owned.** Deploy and rollback scripts are absolute paths outside the repo.
+22. **What deploy runs is chosen by a Lead Developer.** Deploy and rollback scripts are absolute paths outside the repo.
 23. **The UI renders what the server allows.** Buttons come from the `actions` list. The client never computes legality.
 
 ## Where the details live
@@ -130,6 +134,7 @@ flowchart TD
 | Hardening decisions | [rfc/0002-hardening.md](rfc/0002-hardening.md) |
 | Corrections from review | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) |
 | PostgreSQL board | [rfc/0004-postgres.md](rfc/0004-postgres.md) |
+| Accounts, tribes, and project workers | [rfc/0005-teams-and-cloud.md](rfc/0005-teams-and-cloud.md) |
 | Stack and tools | [tech/0001-implementation.md](tech/0001-implementation.md) |
 | Schema, API, settings shape | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) |
 | Worker, jobs, router, git | [tech/0003-backend.md](tech/0003-backend.md) |

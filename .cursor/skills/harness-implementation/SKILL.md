@@ -21,4 +21,5 @@ Read the sprint task in `docs/plan/sprints.md` and the matching section of `docs
 - Deploy, merge, or push to the default branch from the implementer.
 - Grade a check from model prose. Exit code 0 is pass.
 - Count a review or triage call toward `attempts_used`.
-- Apply a settings save to an attempt already running. The snapshot on the attempt stands.
+- Apply a settings save to an attempt already running. The project's snapshot on the attempt stands.
+- Treat a job role as a model profile. Model profiles stay the tool lists. Human gates use the session user and RFC-046.

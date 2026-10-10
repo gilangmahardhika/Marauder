@@ -8,8 +8,9 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 
 | Source | Trust | May influence |
 | --- | --- | --- |
-| Operator settings and the secrets file | Trusted to name commands, hosts, images, and tokens | Deploy argv, dev hosts, check argv, image digest |
-| CLI, and the loopback API after a live bearer | Trusted as the operator | Approve, settings writes, unblock |
+| Project settings and the service secrets file | Trusted to name commands, hosts, images, and tokens | Deploy argv, dev hosts, check argv, image digest |
+| CLI that can read the service data directory | Trusted as break-glass for bootstrap and the fixture | Bootstrap, and a gate only with `--as` |
+| Loopback or cloud API after a live bearer | Trusted as that user, and only for the actions their role and membership allow | The gates in RFC-046 |
 | Target repo files, diffs, PR comments, CI output, logs | Untrusted | Text inside a pack |
 | Model output | Untrusted | Tool name and arguments, which the harness then filters |
 | Check processes, local and dev | Untrusted code | Their own exit code and output, from inside the sandbox |
@@ -32,8 +33,8 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | `devHosts` empty, or a URL host not listed | `deploy_config`, no probe |
 | Resolved health address is loopback, link-local, multicast, or unspecified | Probe fails, rollback runs |
 | Secret appears in a pack or event | Write the redacted bytes, or refuse the pack if redaction cannot run |
-| `--addr` is not loopback | Process exits before listen |
-| `Host` header not loopback | `403` |
+| `--addr` is not loopback, and `ORCHESTRATOR_CLOUD` is unset | Process exits before listen |
+| `Host` header not allowed | `403` |
 | Push refspec destination is not the card branch | No network call |
 | Event `UPDATE` or `DELETE` | Postgres trigger aborts the statement |
 | Deploy SHA is not 40 or 64 hex digits | `deploy_config`, no exec |
@@ -194,7 +195,7 @@ func probe(raw string, hosts []string, fixture bool) error
 
 ## Secrets
 
-Load secrets once per job into the snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, the GitHub token, each model key, and the deploy token. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
+Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the project bot token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
 
 - event payloads
 - pack user strings
@@ -231,26 +232,29 @@ A release that matches zero rows appends `assertion_failed`. It does not delete 
 ```sql
 UPDATE deploy_lock
 SET card_id = $1, holder = $2, acquired_at = $3
-WHERE id = 1 AND card_id IS NULL;
+WHERE project_id = $4 AND card_id IS NULL;
 ```
 
-Release sets the three columns to null `WHERE id = 1 AND holder = $4`.
+Release sets the three columns to null `WHERE project_id = $4 AND holder = $5`. Another project's row is not updated.
 
-Transitions are compare-and-swap (0003). Only the worker lock holder runs `Reconcile`, which is the only code that clears locks it does not hold (RFC-043).
+Transitions are compare-and-swap on `id` and `status`, and the `WHERE` also includes `project_id` (0003). Only the holder of that project's worker lock runs `Reconcile` for that project, which is the only code that clears locks it does not hold (RFC-048).
 
 ## API session
 
 | Control | Value |
 | --- | --- |
-| Listen | `127.0.0.1` or `::1` only |
-| `Host` header | `127.0.0.1:<port>`, `localhost:<port>`, `[::1]:<port>`, else `403` |
-| UI token | 32 bytes from `crypto/rand`, hex printed once |
-| Compare | `subtle.ConstantTimeCompare` on SHA-256 digests |
-| Failures | 5 bad exchanges, then `429` for 1 minute |
-| Bearer | 32 bytes from `crypto/rand`, memory map, 12 hour absolute expiry |
+| Listen | `127.0.0.1` or `::1` unless `ORCHESTRATOR_CLOUD=1` |
+| Cloud bind | Configured address. TLS terminates in front of the process |
+| `Host` header | Loopback names, or the configured allowlist in cloud mode, else `403` |
+| Password | argon2id hash. Minimum 12 characters. Never logged |
+| Compare | `subtle.ConstantTimeCompare` on bearer SHA-256, and a password verifier that does not branch on secret length in the HTTP response |
+| Failures | 5 bad passwords for one email, then `429` for 1 minute |
+| Bearer | 32 bytes from `crypto/rand`. The row stores SHA-256. 12 hour absolute expiry, checked on every request |
+| GitHub tokens | AES-256-GCM with `tokenKey` from the service secrets file. GET returns `tokenSet` only |
 | Body cap | 1 MiB, then `413` |
 | Header timeout | 30 seconds on the HTTP server |
-| CORS | Exact `--ui-origin`, no `*`. A mismatched `Origin` is `403` |
+| CORS | Exact configured origin, no `*`. A mismatched `Origin` is `403` |
+| Hidden project | `404` for a non-member and for an unknown project id |
 
 The worker uses a context that is not the HTTP request context, so the 30 second cap does not kill a check.
 
@@ -362,9 +366,27 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestShortSecret` | A 4 character token PUT returns `422` |
 | `TestEventsImmutable` | `UPDATE events` and `DELETE events` fail |
 | `TestLockHolder` | A release with the wrong holder leaves the row and appends `assertion_failed` |
-| `TestLoopbackOnly` | `--addr 0.0.0.0:8787` exits non-zero |
-| `TestHostHeader` | `Host: evil.example:8787` is `403` |
-| `TestSessionLockout` | The 6th bad token within the pause window is `429` |
+| `TestLoopbackOnly` | Without `ORCHESTRATOR_CLOUD`, `--addr 0.0.0.0:8787` exits non-zero |
+| `TestCloudBind` | With `ORCHESTRATOR_CLOUD=1`, a non-loopback `--addr` listens, and a `Host` outside the allowlist is `403` |
+| `TestHostHeader` | `Host: evil.example:8787` is `403` when that name is not allowed |
+| `TestPasswordLogin` | A correct email and password returns a bearer that loads that user |
+| `TestWrongPassword` | A wrong password is `401` and creates no session |
+| `TestSessionLockout` | The 6th bad password for one email inside the pause window is `429`. A different email is not paused |
+| `TestBearerExpiry` | A bearer older than 12 hours is `401` |
+| `TestLastAdmin` | Disabling or removing the admin flag from the last admin is `422` |
+| `TestUserGitHubOmitted` | `GET /api/me/github` has `tokenSet` and no token |
+| `TestNonAdminForbidden` | A non-admin `POST /api/users` is `403` |
+| `TestMemberSeesProject` | A member lists the project and its cards |
+| `TestOutsiderMissesProject` | A non-member receives `404` for the project and for a card |
+| `TestReqIdsPerProject` | Two projects can both store `REQ-001` |
+| `TestBranchPerProject` | Two projects can both store the same branch name |
+| `TestAdminManagesMembership` | An admin adds a member. A non-admin cannot |
+| `TestParallelProjects` | Two projects can implement at the same time |
+| `TestLeadDeploy` | A Lead Developer member moves `approved` to `deploying_dev` |
+| `TestOwnerApproveStops` | A Product Owner approval leaves the card in `approved` |
+| `TestAcceptByOwner` | A Product Owner member can accept. A Lead Developer member cannot |
+| `TestDeveloperRunOnly` | A Developer member can start a run and cannot approve or deploy |
+| `TestActorOnTransition` | A new transition event stores `actorId` and does not change older rows |
 | `TestHookNotRun` | A fixture `pre-commit` hook is not executed |
 | `TestFsmonitorOff` | A repo config with `core.fsmonitor` set to a command does not run it |
 | `TestPushURL` | A remote named `origin` pointing elsewhere is ignored. The push goes to the settings URL with the card refspec only |
@@ -382,8 +404,9 @@ These stay outside the program.
 | Install deploy and rollback scripts outside the repo | RFC-038 refuses any other location |
 | List dev hosts | The probe refuses an empty list |
 | Keep the data directory off shared or synced disks | It holds tokens and the board |
-| Run `serve` on the operator machine | Loopback is the v1 network boundary |
-| Treat the printed UI token as a secret | It can approve and can write tokens |
+| Leave `ORCHESTRATOR_CLOUD` unset on a laptop | Loopback stays the default bind |
+| Set cloud mode only behind TLS | RFC-045 refuses a public bind without that flag |
+| Keep `tokenKey` in the service secrets file | It decrypts every GitHub token |
 | Review what dev checks reach | Dev check egress is open in v1 |
 
 A production credential is still out of scope (NG-001). Hardening v1 does not add a safe place to put one.

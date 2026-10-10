@@ -2,7 +2,7 @@
 
 Status: Accepted for v1. Date: 2026-10-10.
 
-This RFC records the decisions that the v1 PRD depends on. Hardening decisions RFC-024 through RFC-034 are in [0002-hardening.md](0002-hardening.md). Decisions RFC-035 through RFC-043, including the ones that supersede RFC-016 and part of RFC-020, are in [0003-review-corrections.md](0003-review-corrections.md). RFC-044, which supersedes the store engine in RFC-002 and RFC-022 and the SQLite phrase in RFC-036, is in [0004-postgres.md](0004-postgres.md). Requirements and acceptance checks live in [docs/prd/coding-orchestrator.md](../prd/coding-orchestrator.md). Implementation guides live in [docs/tech/](../tech/). [docs/README.md](../README.md) lists every document and which one wins when two disagree.
+This RFC records the decisions that the v1 PRD depends on. Hardening decisions RFC-024 through RFC-034 are in [0002-hardening.md](0002-hardening.md). Decisions RFC-035 through RFC-043, including the ones that supersede RFC-016 and part of RFC-020, are in [0003-review-corrections.md](0003-review-corrections.md). RFC-044, which supersedes the store engine in RFC-002 and RFC-022 and the SQLite phrase in RFC-036, is in [0004-postgres.md](0004-postgres.md). RFC-045 through RFC-048, which supersede parts of RFC-006, RFC-010, RFC-018, RFC-030, RFC-032, RFC-035, RFC-036, RFC-043, and RFC-044, are in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). Requirements and acceptance checks live in [docs/prd/coding-orchestrator.md](../prd/coding-orchestrator.md). Implementation guides live in [docs/tech/](../tech/). [docs/README.md](../README.md) lists every document and which one wins when two disagree.
 
 Decision headings use `RFC-001` and up. The first paragraph under each heading is the statement. A later RFC supersedes a decision by naming its id. It does not rewrite the statement in place.
 
@@ -15,11 +15,11 @@ Decision headings use `RFC-001` and up. The first paragraph under each heading i
 | RFC-003 | The inner loop and the outer loop stay separate |
 | RFC-004 | Exit codes and the health probe grade the work |
 | RFC-005 | One card has one worktree, one branch, and one pull request |
-| RFC-006 | Approval binds an allowlisted person to one SHA |
+| RFC-006 | Approval binds an allowlisted person to one SHA. Allowlist sentence superseded by RFC-046 |
 | RFC-007 | The reviewer does not see the author transcript |
 | RFC-008 | Review prefers a different provider family |
 | RFC-009 | Deploy is harness code, and v1 stops at dev |
-| RFC-010 | One global lock covers the shared dev server |
+| RFC-010 | One global lock covers the shared dev server. Service-wide lock superseded by RFC-048 |
 | RFC-011 | Failed health rolls back and blocks |
 | RFC-012 | A new attempt is a new conversation |
 | RFC-013 | Packs and tool lists are fixed per role |
@@ -27,7 +27,7 @@ Decision headings use `RFC-001` and up. The first paragraph under each heading i
 | RFC-015 | Startup reconciles an in-flight deploy first |
 | RFC-016 | The v1 control surface is the CLI. Superseded by RFC-035 |
 | RFC-017 | The router is a function of card facts and config |
-| RFC-018 | A person accepts extracted ids before any worktree |
+| RFC-018 | A person accepts extracted ids before any worktree. Who accepts superseded by RFC-046 |
 | RFC-019 | An edit to an accepted requirement stops affected cards |
 | RFC-020 | Budgets end in blocked, and models cannot raise them. Release sentence superseded by RFC-041 |
 | RFC-021 | The event log is append-only and redacted |
@@ -108,6 +108,8 @@ Consequences: `orchestrator approve CARD --sha SHA` checks the allowlist and the
 
 Requirements: REQ-029, REQ-030, REQ-031.
 
+Superseded in part by RFC-046 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). The allowlist sentence no longer decides who may approve. The SHA binding and the bot exclusion stay.
+
 ## RFC-007 The reviewer does not see the author transcript
 
 The reviewer pack contains the linked requirements, the linked decisions, the diff, the check output, the pull request body, and human comments already on the pull request. It excludes the author's messages and tool trace.
@@ -155,6 +157,8 @@ Set aside: a preview environment per pull request in v1. The deploy record alrea
 Consequences: two cards in `approved` deploy one after the other. A card in `in_progress` is not blocked by the deploy lock. Operators waiting on a queue see it in `status`.
 
 Requirements: REQ-009, REQ-034. Non-goal: NG-005.
+
+Superseded in part by RFC-048 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). The lock is per project. One project still deploys one card at a time.
 
 ## RFC-011 Failed health rolls back and blocks
 
@@ -255,6 +259,8 @@ Set aside: starting cards from the first model summary of the PRD. Faster, and t
 Consequences: `ingest` and `accept` are separate commands. Re-parse of unchanged files does not duplicate records. Cards reference requirement ids and decision ids from this RFC series and from the PRD.
 
 Requirements: REQ-001, REQ-002, REQ-003.
+
+Superseded in part by RFC-046 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). A Product Owner who is a member of the project accepts. The gate before any worktree stays.
 
 ## RFC-019 An edit to an accepted requirement stops affected cards
 

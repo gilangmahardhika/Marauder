@@ -2,7 +2,7 @@
 
 Go module `orchestrator/backend`. This tree is the harness: the PostgreSQL board, compare-and-swap transitions, the insert-only event log, and process startup.
 
-Sprint 1 is the board and the gate. `serve` migrates and returns. It does not listen, and it does not run a worker.
+`serve` migrates the board, starts one worker per project, and listens. Without `ORCHESTRATOR_CLOUD`, the address is loopback. Login is email and password after Sprint 11. Until that sprint, `serve` still prints a UI token. Setup for the API and the client is in the repository root [README](../README.md).
 
 ## Requirements
 
@@ -34,7 +34,7 @@ go test ./...
 
 ## Serve
 
-`--data` must be outside `--repo`. `--addr` must be `127.0.0.1` or `::1`. The default address is `127.0.0.1:8787`. The default data directory is `~/.orchestrator/<repo-name>-<hash8>`.
+A project directory must sit outside that project's repo. `--addr` must be `127.0.0.1` or `::1` unless `ORCHESTRATOR_CLOUD=1`. The default address is `127.0.0.1:8787`. After Sprint 13 the service data directory defaults to `~/.orchestrator/service`. Until then the default is `~/.orchestrator/<repo-name>-<hash8>`.
 
 ```text
 go run ./cmd/orchestrator serve --repo /path/to/target-repo --data /path/outside/the/repo

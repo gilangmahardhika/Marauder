@@ -16,4 +16,6 @@ Set aside: staying on SQLite. Also set aside: putting `databaseUrl` in the targe
 
 Consequences: each data directory names its own database, so two target repos do not share a board. `orchestrator status` reads PostgreSQL. Losing that database loses the board even if the pull requests remain. Migrations use goose with the postgres dialect. The Go driver is `github.com/jackc/pgx/v5/stdlib` behind `database/sql`. `databaseUrl` joins the RFC-030 secret list and is redacted from packs and events. Tests use `ORCHESTRATOR_TEST_DATABASE_URL` and do not embed a database engine.
 
+Superseded in part by RFC-047 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). One service `databaseUrl` stores every project. `databaseUrl` is still absent from the API. The driver, the dialect, and the test URL stay.
+
 Requirements: REQ-005, REQ-039, REQ-042, REQ-045.

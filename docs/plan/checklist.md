@@ -173,3 +173,51 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Built `index.html` has the CSP meta and no `unsafe-inline`
 - [x] Manual browser pass on fixture cards, from the table in the verification guide
 - [ ] Optional, after that pass: one real dev host using the same deploy code, with secrets only in `secrets.json`. That run is recorded by hand and is not part of `go test`
+
+## Sprint 11: A person is an account
+
+- [ ] Store passwords as argon2id hashes. Reject a password shorter than 12 characters.
+- [ ] `POST /api/session` takes email and password and returns a bearer bound to that user. The row stores the bearer hash. Expiry is 12 hours and is checked on every request. `DELETE /api/session` drops that bearer.
+- [ ] Five bad passwords for one email pause that email for one minute. A different email is not paused.
+- [ ] `orchestrator users bootstrap` creates the first admin from `ORCHESTRATOR_ADMIN_EMAIL` and `ORCHESTRATOR_ADMIN_PASSWORD` when `users` is empty. The last admin cannot be removed or disabled.
+- [ ] Admin `POST /api/users` and `PUT /api/users/{id}`. A non-admin receives `403`.
+- [ ] `GET` and `PUT /api/me/github` and `POST /api/me/github/test`. The token is ciphertext under `tokenKey`. GET returns `tokenSet` only.
+- [ ] Login page: email and password. Account page: password change and GitHub settings.
+- [ ] `TestPasswordLogin`
+- [ ] `TestWrongPassword`
+- [ ] `TestSessionLockout`
+- [ ] `TestBearerExpiry`
+- [ ] `TestLastAdmin`
+- [ ] `TestUserGitHubOmitted`
+- [ ] `TestNonAdminForbidden`
+
+## Sprint 12: A tribe hides its projects
+
+- [ ] Migration for tribes, members, projects, and `project_id` on board rows. Per-project intake state and deploy lock. Unique requirement ids, branch names, and pull request URLs are per project.
+- [ ] Admin can create a tribe, add or remove a member, and create a project. A non-admin is `403`.
+- [ ] A member lists the project and its cards. A non-member, and an unknown project id, get `404`.
+- [ ] Board, intake, run, and card routes live under `/api/projects/{projectId}/`.
+- [ ] Project switcher stores the project id and no secret.
+- [ ] `TestMemberSeesProject`
+- [ ] `TestOutsiderMissesProject`
+- [ ] `TestReqIdsPerProject`
+- [ ] `TestBranchPerProject`
+- [ ] `TestAdminManagesMembership`
+
+## Sprint 13: Work follows the project
+
+- [ ] Each project has a data directory outside its repo, with settings, project secrets, a worker lock, and worktrees.
+- [ ] Project GitHub settings hold the repo and the bot token. Push uses that token, not the signed-in user's token.
+- [ ] `actions` follows the job role. Accept is Product Owner only. Deploy is Lead Developer only.
+- [ ] A card in `approved` stays there until a Lead Developer member starts deploy.
+- [ ] Two projects may implement and deploy at the same time. One project still deploys one card at a time.
+- [ ] New transition events include `actorId`. Old events are not updated.
+- [ ] `ORCHESTRATOR_CLOUD=1` may bind off loopback. The default bind stays loopback.
+- [ ] `TestParallelProjects`
+- [ ] `TestLeadDeploy`
+- [ ] `TestOwnerApproveStops`
+- [ ] `TestAcceptByOwner`
+- [ ] `TestDeveloperRunOnly`
+- [ ] `TestActorOnTransition`
+- [ ] `TestCloudBind`
+- [ ] `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`

@@ -2,7 +2,7 @@
 
 Status: Accepted for implementation. Date: 2026-10-10.
 
-This is the build schedule. It follows the order in [../tech/0003-backend.md](../tech/0003-backend.md) (steps 1 to 12, then the frontend). Tests are the ones named in [../tech/0005-verification.md](../tech/0005-verification.md) and [../tech/0006-security-and-harness.md](../tech/0006-security-and-harness.md). Contract fields come from [../tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The UI comes from [../tech/0004-frontend.md](../tech/0004-frontend.md).
+This is the build schedule. It follows the order in [../tech/0003-backend.md](../tech/0003-backend.md) (steps 1 to 12, then the frontend, then steps 13 to 15). Tests are the ones named in [../tech/0005-verification.md](../tech/0005-verification.md) and [../tech/0006-security-and-harness.md](../tech/0006-security-and-harness.md). Contract fields come from [../tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The UI comes from [../tech/0004-frontend.md](../tech/0004-frontend.md).
 
 If this file disagrees with a PRD acceptance check, an RFC statement, or a tech guide, the other document wins. See [../README.md](../README.md).
 
@@ -22,8 +22,13 @@ flowchart LR
   s8[Sprint8_Worker]
   s9[Sprint9_API]
   s10[Sprint10_UI]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10
+  s11[Sprint11_Accounts]
+  s12[Sprint12_Tribes]
+  s13[Sprint13_Projects]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13
 ```
+
+Sprints 11–13 implement [../rfc/0005-teams-and-cloud.md](../rfc/0005-teams-and-cloud.md). Do not start Sprint 11 while a required Sprint 10 test fails. The optional real-host box does not block Sprint 11. The REQ-043 fixture stays one project. New tests add a second project beside that run.
 
 ## Sprint 1: The board cannot skip a gate
 
@@ -156,3 +161,46 @@ Done when, in order:
 - Vitest: `CardActions` empty, approved, and `unblockTo: null`; `SecretField` omits the secret; `api` clears the bearer on 401; built `index.html` has the CSP meta and no `unsafe-inline`.
 - Manual browser pass on fixture cards, from the table in the verification guide.
 - Optional, after that pass: one real dev host using the same deploy code, with secrets only in `secrets.json`. That run is recorded by hand and is not part of `go test`.
+
+## Sprint 11: A person is an account
+
+Goal: Email and password replace the printed UI token. An admin can create a user. Each user stores their own GitHub host, login, and token. The board may still be the one existing project.
+
+Backend and the login and account pages. Packages: a new identity store used by `internal/httpapi` and `internal/app`, migration `00003` for `users`, `sessions`, and `user_github`.
+
+- Store passwords as argon2id hashes. Reject a password shorter than 12 characters.
+- `POST /api/session` takes email and password and returns a bearer bound to that user. The row stores the bearer hash. Expiry is 12 hours and is checked on every request. `DELETE /api/session` drops that bearer.
+- Five bad passwords for one email pause that email for one minute. A different email is not paused.
+- `orchestrator users bootstrap` creates the first admin from `ORCHESTRATOR_ADMIN_EMAIL` and `ORCHESTRATOR_ADMIN_PASSWORD` when `users` is empty. The last admin cannot be removed or disabled.
+- Admin `POST /api/users` and `PUT /api/users/{id}`. A non-admin receives `403`.
+- `GET` and `PUT /api/me/github` and `POST /api/me/github/test`. The token is ciphertext under `tokenKey` from the service secrets file. GET returns `tokenSet` only.
+- Login page: email and password. Account page: password change and GitHub settings. `sessionStorage` holds the bearer and no secret.
+
+Done when: `TestPasswordLogin`, `TestWrongPassword`, `TestSessionLockout`, `TestBearerExpiry`, `TestLastAdmin`, `TestUserGitHubOmitted`, `TestNonAdminForbidden`.
+
+## Sprint 12: A tribe hides its projects
+
+Goal: An admin creates tribes, adds members, and creates projects. A member sees that tribe's projects. Anyone else receives `404`, including for an unknown project id.
+
+Migration for `tribes`, `tribe_members`, `projects`, and `project_id` on board rows. Per-project `intake_state` and `deploy_lock`. Unique `(project_id, id)` for requirements and decisions. Unique `(project_id, branch)` and `(project_id, pr_url)`.
+
+- `GET` and `POST /api/tribes`, member add and remove. Non-admin is `403`.
+- `GET` and `POST /api/projects`. Admin receives every project record. Card and intake routes still require membership.
+- Board, intake, run, and card routes move under `/api/projects/{projectId}/`.
+- Project switcher in the layout stores `orchestrator.project` and no secret.
+- The same `REQ-001` and the same branch name may exist on two projects.
+
+Done when: `TestMemberSeesProject`, `TestOutsiderMissesProject`, `TestReqIdsPerProject`, `TestBranchPerProject`, `TestAdminManagesMembership`.
+
+## Sprint 13: Work follows the project
+
+Goal: Each project has its own data directory, settings, bot token, worker lock, and deploy lock. Two projects may implement and deploy at the same time. Inside one project, one deploy runs at a time. `approved` does not deploy until a Lead Developer member starts it.
+
+- Project directory `<data>/projects/<project-id>/` outside that repo, with `config.yaml`, project secrets, `worker.lock`, and worktrees.
+- Project GitHub settings are owner, repo, base branch, bot login, and bot token. Push and pull requests use the bot token. They do not use the signed-in user's token.
+- `actions` is the status list filtered by RFC-046. Accept is Product Owner only. Deploy is Lead Developer only. A Developer can start a run and cannot approve or deploy.
+- New transition events include `actorId`. Old events are not updated.
+- `ORCHESTRATOR_CLOUD=1` may bind a non-loopback address. Without that variable, `TestLoopbackOnly` still passes.
+- Reconcile and the deploy lock stay inside one project.
+
+Done when: `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner`, `TestDeveloperRunOnly`, `TestActorOnTransition`, `TestCloudBind`, and `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`.

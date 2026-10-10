@@ -10,7 +10,7 @@ More specific procedures live in `go-conventions`, `harness-implementation`, `bo
 ## Before editing
 
 1. Read `docs/README.md` for which document wins.
-2. Read the current sprint in `docs/plan/sprints.md`. Do not start the next sprint while the current sprint's named tests fail.
+2. Read the current sprint in `docs/plan/sprints.md`. Do not start the next sprint while the current sprint's named tests fail. Sprints 11–13 schedule accounts, tribes, and per-project workers. Do not start them while Sprint 10's required tests fail. The optional real-host box does not block Sprint 11.
 3. Read the contract section you will change in `docs/tech/0002-data-and-api.md` before writing SQL, JSON, or a route.
 
 Precedence, highest first: PRD acceptance checks, RFC statements (a later RFC wins only where it names the superseded id), `docs/tech/0002-data-and-api.md`, then the other guides (`0006` over `0003`, `0004`, and `0005`, which win over `0001`), then `docs/ai-coding-orchestrator.md`. The sprint plan only schedules work.
@@ -20,6 +20,7 @@ Precedence, highest first: PRD acceptance checks, RFC statements (a later RFC wi
 - Backend: module `orchestrator/backend` under `backend/`. Package duties are in `docs/tech/0003-backend.md`. Only `internal/app` calls `machine.Transition`.
 - Frontend: `frontend/`, SvelteKit 2 and Svelte 5, client render only, `adapter-static`. Spec is `docs/tech/0004-frontend.md`. No `+server.ts`, no form actions, no React.
 - Security controls in `docs/tech/0006-security-and-harness.md` override a looser sentence in another guide.
+- A board read or write includes `project_id`. HTTP gates use the session user. Job role is not a model profile.
 
 ## Board
 

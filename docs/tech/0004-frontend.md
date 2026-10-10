@@ -16,9 +16,9 @@ export const ssr = false;
 export const prerender = false;
 ```
 
-`@sveltejs/adapter-static` writes a static site with `fallback: 'index.html'`. There is no `+server.ts`, no `hooks.server.ts`, and no SvelteKit form actions. Every read and write is `fetch` from the browser to `http://127.0.0.1:8787`.
+`@sveltejs/adapter-static` writes a static site with `fallback: 'index.html'`. There is no `+server.ts`, no `hooks.server.ts`, and no SvelteKit form actions. Every read and write is `fetch` from the browser to the Go API. Local dev uses `http://127.0.0.1:8787`. A cloud build uses the configured API origin.
 
-The dev and preview servers bind to `127.0.0.1:4173`, which is the origin the Go API allows.
+The dev and preview servers bind to `127.0.0.1:4173`, which is the default origin the Go API allows. Cloud mode uses the configured UI origin (RFC-045).
 
 ```ts
 // vite.config.ts
@@ -56,7 +56,7 @@ export default {
 };
 ```
 
-SvelteKit writes the policy as a `<meta http-equiv>` tag in the built `index.html`, with hashes for its own inline bootstrap script. Do not add `'unsafe-inline'` or `'unsafe-eval'`. If a component needs an inline style, use a class in `app.css`.
+SvelteKit writes the policy as a `<meta http-equiv>` tag in the built `index.html`, with hashes for its own inline bootstrap script. Do not add `'unsafe-inline'` or `'unsafe-eval'`. If a component needs an inline style, use a class in `app.css`. A cloud build replaces `http://127.0.0.1:8787` in `connect-src` with the configured API origin. It still does not add a wildcard.
 
 `package.json` pins exact versions and commits `package-lock.json`:
 
@@ -107,21 +107,25 @@ frontend/
 
 ## Session and routes
 
-`src/lib/session.ts` reads and writes `sessionStorage` key `orchestrator.bearer`. It stores the bearer only. It does not store GitHub tokens, model keys, or the deploy token.
+`src/lib/session.ts` reads and writes `sessionStorage` keys `orchestrator.bearer` and `orchestrator.project`. It stores the bearer and the selected project id. It does not store GitHub tokens, passwords, model keys, `tokenKey`, or the deploy token.
 
 `src/routes/+layout.ts` loads in the browser. When the path is not `/login` and no bearer is stored, it `redirect`s to `/login`.
 
 | Path | Page |
 | --- | --- |
-| `/login` | UI token form |
-| `/` | Board |
-| `/intake` | Ingest and accept |
+| `/login` | Email and password |
+| `/` | Board for the selected project |
+| `/intake` | Ingest and accept for the selected project |
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
-| `/settings/github` | GitHub settings |
-| `/settings/llm` | LLM API settings |
-| `/settings/router` | Router settings |
-| `/settings/deploy` | Deploy and checks |
+| `/account` | Password and the caller's GitHub settings |
+| `/admin/users` | Admin user list and create form |
+| `/tribes` | Tribes and members |
+| `/projects` | Projects for the caller's tribes |
+| `/settings/github` | Project repo and bot token |
+| `/settings/llm` | LLM API settings for the project |
+| `/settings/router` | Router settings for the project |
+| `/settings/deploy` | Deploy and checks for the project |
 
 `+layout.svelte` renders the nav on every page except `/login`.
 
@@ -129,10 +133,14 @@ frontend/
 | --- | --- |
 | Board | `/` |
 | Intake | `/intake` |
+| Account | `/account` |
+| Projects | `/projects` |
 | GitHub | `/settings/github` |
 | LLM APIs | `/settings/llm` |
 | Router | `/settings/router` |
 | Deploy | `/settings/deploy` |
+
+The layout also shows a project `<select>` bound to `orchestrator.project`. Options come from `GET /api/projects`. Changing it stores the id and reloads the board. Admin sees a link "Users" to `/admin/users` and "Tribes" to `/tribes` when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 Unknown paths use SvelteKit's default error page with a link to `/`.
 
@@ -146,7 +154,7 @@ Unknown paths use SvelteKit's default error page with a link to `/`.
 4. On `401`, clears the stored bearer and sends the browser to `/login`.
 5. Does not log the request body. Secret fields must not reach `console`.
 
-Base URL is `http://127.0.0.1:8787`. A failed `fetch` throws a network error the page shows as "API unreachable at http://127.0.0.1:8787". The page does not invent cards or settings in that case.
+Base URL is `http://127.0.0.1:8787` unless the build is given the cloud API origin. A failed `fetch` throws a network error the page shows as "API unreachable at http://127.0.0.1:8787", using the configured origin in cloud mode. The page does not invent cards or settings in that case. Project routes include the selected project id. A `404` on those routes sets the live message to "That project is not available."
 
 ## Markup rules
 
@@ -164,7 +172,7 @@ Pages set `message` to "Loading board", "Running the worker", "Saving GitHub set
 
 ## Login
 
-`src/routes/login/+page.svelte`. One password field labeled "UI token" and a submit button "Open session". Submit calls `POST /api/session`. Success stores the bearer and `goto('/')`. Failure leaves the typed token in the field and sets the live message to `error.message`.
+`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is `type="password"` and `autocomplete="current-password"`.
 
 ## Board
 
@@ -191,6 +199,7 @@ Render a control only when its name is in `actions`:
 | `approve` | Form. SHA input defaulted from `headSha`. Button "Approve SHA". |
 | `request_changes` | Button "Request changes" |
 | `reject` | Button "Reject" |
+| `deploy` | Button "Deploy approved SHA". |
 | `unblock` | Form. Checkbox "Reset attempt counter", unchecked by default. Button "Unblock". Text above the button from `unblockTo` |
 
 `unblockTo` text:
@@ -209,7 +218,7 @@ After a successful POST, replace the page state with the returned card. On `422`
 
 A link "Trace" goes to `/cards/{id}/trace`.
 
-`in_progress` has an empty `actions` array. The page shows the fields and no approve form. An `approved` card shows Request changes and Reject, and no Approve. Those are the checks the verification guide looks for.
+`in_progress` has an empty `actions` array. The page shows the fields and no approve form. An `approved` card shows Deploy only when `actions` includes `deploy`, plus Request changes and Reject when those names are present, and no Approve. Those are the checks the verification guide looks for. The page does not show Deploy because the status is `approved`.
 
 ## Intake
 
@@ -239,27 +248,41 @@ A list, oldest first. Each item shows time, kind, attempt id, and the payload in
 
 Disable the submit button and set the live message while the PUT is in flight. On `422`, paint `fields` under the matching inputs and keep what the operator typed.
 
-### GitHub
+### Account
 
-`src/routes/settings/github/+page.svelte`. GET and PUT `/api/settings/github`.
+`src/routes/account/+page.svelte`. `GET /api/me` and `GET /api/me/github`.
 
-Fields: host, owner, repository, base branch, approvers (textarea, one login per line), bot login, token.
+Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
 
-"Test connection" calls `POST /api/settings/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
+GitHub fieldset: host, login, token. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
+
+### Users and tribes
+
+`src/routes/admin/users/+page.svelte` lists users and has a form for email, password, role, and admin. Submit calls `POST /api/users`. A `403` sets the live message from `error.message`.
+
+`src/routes/tribes/+page.svelte` lists tribes. An admin can create a tribe and add a member by user id. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` and, for an admin, creates one with tribe, name, and repo path.
+
+### Project GitHub
+
+`src/routes/settings/github/+page.svelte`. GET and PUT `/api/projects/{id}/settings/github` for the selected project.
+
+Fields: host, owner, repository, base branch, bot login, bot token.
+
+"Test connection" calls `POST /api/projects/{id}/settings/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
 
 ### LLM APIs
 
-`src/routes/settings/llm/+page.svelte`. GET and PUT `/api/settings/llm`.
+`src/routes/settings/llm/+page.svelte`. GET and PUT `/api/projects/{id}/settings/llm` for the selected project.
 
 One fieldset per family: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
 
 "Add family" appends a fieldset with an empty id. The operator fills the id before save.
 
-"Test" on a family calls `POST /api/settings/llm/{id}/test` and uses the same result line as GitHub.
+"Test" on a family calls `POST /api/projects/{id}/settings/llm/{family}/test` and uses the same result line as GitHub.
 
 ### Router
 
-`src/routes/settings/router/+page.svelte`. GET and PUT `/api/settings/router`. Also GET `/api/settings/llm` so the selects can list saved model ids.
+`src/routes/settings/router/+page.svelte`. GET and PUT `/api/projects/{id}/settings/router`. Also GET that project's LLM settings so the selects can list saved model ids.
 
 A table of five rows: `plan`, `implement`, `implement_hard`, `review`, `triage`. Each row has a model `<select>` and a fallback `<select>`. The review model select includes `different-family-from-author` plus the saved model ids.
 
@@ -278,7 +301,7 @@ The save result line includes "Applies to the next route decision."
 
 ### Deploy and checks
 
-`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/settings/deploy`.
+`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/projects/{id}/settings/deploy`.
 
 Fields, in three fieldsets:
 
@@ -286,7 +309,7 @@ Fields, in three fieldsets:
 | --- | --- |
 | Dev server | Dev URL, dev hosts (one per line), deploy command, rollback command, health URL, deploy token |
 | Checks | Local check, dev check, allowed executables (one per line), sandbox engine select (`podman`, `docker`), sandbox image |
-| Board | Implementation cap (number, default 2), PRD path, RFC path, operator login |
+| Board | Implementation cap (number, default 2), PRD path, RFC path |
 
 Static help text:
 
@@ -347,7 +370,7 @@ Then, with the API already listening on `127.0.0.1:8787`:
 npm run dev
 ```
 
-Open `http://127.0.0.1:4173/`. Paste the UI token from the server log.
+Open `http://127.0.0.1:4173/`. Sign in with email and password. There is no UI token to paste.
 
 `npm ci` is a frontend step. It is not a step for `backend/`. A target repo may still use Node for its own `localCheck`. That command runs in the sandbox and is not this app.
 

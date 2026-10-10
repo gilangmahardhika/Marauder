@@ -125,7 +125,7 @@ Licenses: Go is BSD-3-Clause. pgx, goose, goldmark, the GitHub CLI, `anthropic-s
 | SvelteKit server routes, form actions, `hooks.server.ts` | A second backend beside the Go API |
 | LiteLLM | Routing stays in `internal/router` |
 | LangChain, langchaingo | Tool allowlists are snapshot-tested in our own loop |
-| Temporal, Redis, NATS, Kafka | One Postgres database, one worker process, and one deploy lock cover v1 |
+| Temporal, Redis, NATS, Kafka | One Postgres database. One worker and one deploy lock per project (RFC-048) |
 | HTMX, Go templates | They tie the HTML to the API process |
 | A cloud provider SDK | Deploy is an operator script (RFC-038) |
 
@@ -145,7 +145,7 @@ podman or docker   # real repo checks only
 # backend
 cd backend
 go run ./cmd/orchestrator serve --repo /path/to/target-repo
-# prints the UI token and listens on 127.0.0.1:8787
+# loopback by default. ORCHESTRATOR_CLOUD=1 is the only off-loopback bind
 
 # frontend, separate terminal
 cd frontend
@@ -153,7 +153,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://127.0.0.1:4173/` and paste the token from the server log. Fill the settings pages in this order: GitHub, LLM APIs, Router, Deploy. A target repo may use Node for its own `localCheck`. That command runs in the sandbox and is not the harness.
+Open `http://127.0.0.1:4173/` and sign in with email and password (REQ-046). Fill account GitHub, then the project's GitHub, LLM APIs, Router, and Deploy. A target repo may use Node for its own `localCheck`. That command runs in the sandbox and is not the harness.
 
 ## Implementation order
 
@@ -170,5 +170,6 @@ Open `http://127.0.0.1:4173/` and paste the token from the server log. Fill the 
 11. REQ-043 fixture.
 12. JSON API for every route in 0002.
 13. SvelteKit app: layout and session, work pages, then the GitHub, LLM, Router, and Deploy settings.
+14. Accounts, tribes, and per-project workers (Sprints 11–13, RFC-045 through RFC-048).
 
 Each step's tests are in 0005. Do not start a step until the previous step's tests pass.

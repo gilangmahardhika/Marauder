@@ -11,7 +11,8 @@ PostgreSQL 16 or newer. Goose dialect `postgres`. Spec: `docs/tech/0002-data-and
 - Flags are `BOOLEAN`. Counts stay `INTEGER`. Payloads stay `TEXT`.
 - Placeholders are `$1`, `$2`, and so on. No `?`.
 - `events` stays insert-only through `events_immutable`. Do not add an `UPDATE` or `DELETE` path.
-- A status write includes `AND status = $n` for the status that was read. Zero rows is a conflict, not a retry of the side effect.
+- A status write includes `AND status = $n` for the status that was read, and `AND project_id = $n` for the project that was read. Zero rows is a conflict, not a retry of the side effect.
+- The deploy lock is one row per project. Do not take `deploy_lock` for every project in one statement.
 - Do not add a SQLite file or a second database per card.
 
 ```sql
@@ -21,5 +22,5 @@ UPDATE cards SET status = 'approved' WHERE id = $1;
 -- GOOD
 UPDATE cards
 SET status = $1, updated_at = $2
-WHERE id = $3 AND status = $4;
+WHERE id = $3 AND status = $4 AND project_id = $5;
 ```
