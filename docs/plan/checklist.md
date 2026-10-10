@@ -34,22 +34,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 
 ## Sprint 3: Checks cannot rewrite the worktree
 
-- [ ] `execChild`: argv only, built env, timeout, output cap. Refuse `sh` and `bash` (RFC-027).
-- [ ] Sandbox argv: `--network=none` for local checks, digest pin, export mount, no Docker socket, no worktree path (RFC-028, RFC-037). Dev-check argv is specified here but executed in Sprint 7.
-- [ ] Worktree and commit identity without a model. Git runs with hooks off, `core.fsmonitor` off, and a private `GIT_CONFIG_GLOBAL` (RFC-033).
-- [ ] Path rule: reject `../`, absolute paths, `.git/config`, and symlinks that leave the worktree.
-- [ ] `TestWorktreeOnce`
-- [ ] `TestCheckExit`
-- [ ] `TestCommandAllowlist`
-- [ ] `TestEnvScrub`
-- [ ] `TestCheckOnExport`
-- [ ] `TestPathEscape`
-- [ ] `TestSandboxFlags`
-- [ ] `TestNoShell`
-- [ ] `TestHookNotRun`
-- [ ] `TestFsmonitorOff`
-- [ ] `TestTarEscape`
-- [ ] `TestCheckParse`
+- [x] `execChild`: argv only, built env, timeout, output cap. Refuse `sh` and `bash` (RFC-027).
+- [x] Sandbox argv: `--network=none` for local checks, digest pin, export mount, no Docker socket, no worktree path (RFC-028, RFC-037). Dev-check argv is specified here but executed in Sprint 7.
+- [x] Worktree and commit identity without a model. Git runs with hooks off, `core.fsmonitor` off, and a private `GIT_CONFIG_GLOBAL` (RFC-033).
+- [x] Path rule: reject `../`, absolute paths, `.git/config`, and symlinks that leave the worktree.
+- [x] `TestWorktreeOnce`
+- [x] `TestCheckExit`
+- [x] `TestCommandAllowlist`
+- [x] `TestEnvScrub`
+- [x] `TestCheckOnExport`
+- [x] `TestPathEscape`
+- [x] `TestSandboxFlags`
+- [x] `TestNoShell`
+- [x] `TestHookNotRun`
+- [x] `TestFsmonitorOff`
+- [x] `TestTarEscape`
+- [x] `TestCheckParse`
 
 ## Sprint 4: A scripted implementer can commit
 
