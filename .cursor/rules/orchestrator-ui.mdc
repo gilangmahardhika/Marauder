@@ -1,0 +1,27 @@
+---
+description: SvelteKit client rules for the orchestrator board, cards, and settings.
+globs: frontend/**/*.{svelte,ts,css}
+alwaysApply: false
+---
+
+# Orchestrator UI
+
+Follow `docs/tech/0004-frontend.md`. The page calls the API. It does not decide status.
+
+- No `+server.ts`, no `hooks.server.ts`, no `{@html}`, no React.
+- Render a button only when `actions` contains its name. Do not also branch on `status`.
+- `sessionStorage` stores the bearer only. Empty secret fields are omitted from JSON and never logged.
+- On `401`, clear the bearer and go to `/login`. On `409`, reload. On network failure, say the API is unreachable. Do not invent cards.
+- One `.primary` button per page. `.danger` only for blocked. Keep focus outlines. Controls are at least 44px tall.
+
+```svelte
+<!-- BAD -->
+{#if card.status === 'human_review'}
+  <button>Approve SHA</button>
+{/if}
+
+<!-- GOOD -->
+{#if card.actions.includes('approve')}
+  <button class="primary" type="submit">Approve SHA</button>
+{/if}
+```

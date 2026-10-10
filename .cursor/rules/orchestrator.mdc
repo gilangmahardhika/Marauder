@@ -1,0 +1,22 @@
+---
+description: Harness constraints for the AI Coding Orchestrator. Board, gates, stack, and document order.
+alwaysApply: true
+---
+
+# Orchestrator
+
+Follow `docs/README.md` when two docs disagree. `docs/plan/sprints.md` only schedules work. Do not rewrite an accepted RFC statement. Supersede it in a new RFC.
+
+- The harness is Go. Node runs the SvelteKit toolchain only. No server routes, no React, no SQLite.
+- The board is PostgreSQL 16 or newer via `github.com/jackc/pgx/v5/stdlib`. `databaseUrl` stays in `secrets.json` and is never returned by the API.
+- Only `machine.Transition` writes card status, as a compare-and-swap on the stored status. A model tool cannot deploy or set status.
+- A check passes when the process exits 0. The UI renders the `actions` list from the API and does not decide which buttons are legal.
+- Finish the current sprint's named tests before starting the next sprint.
+
+```go
+// BAD: a handler writes status
+card.Status = "approved"
+
+// GOOD: one service calls Transition with evidence
+card, err = machine.Transition(tx, card, "approved", evidence)
+```

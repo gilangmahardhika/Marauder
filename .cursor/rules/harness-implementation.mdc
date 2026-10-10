@@ -1,0 +1,25 @@
+---
+description: How to add orchestrator behavior without a second status writer.
+globs: backend/**/*.go
+alwaysApply: false
+---
+
+# Implementation
+
+Read the current sprint in `docs/plan/sprints.md` and the package table in `docs/tech/0003-backend.md` before adding a behavior.
+
+- One use case lives on `internal/app`. The CLI and the HTTP handler both call it.
+- Card status changes only inside `machine.Transition`, in the same transaction as its gate and event. `RowsAffected` of 0 returns `board.ErrConflict` and stops the side effect.
+- A new JSON field updates `docs/tech/0002-data-and-api.md` and `frontend/src/lib/types.ts` in the same change.
+- Model tools stay on the lists in `docs/tech/0003-backend.md`. `run_local_check` returns an exit code and does not move the card.
+- Add the test named for that behavior in `docs/tech/0005-verification.md` or `docs/tech/0006-security-and-harness.md`.
+
+```go
+// BAD
+if modelSaysPassed { card.Status = "pr_open" }
+
+// GOOD
+if exitCode == 0 {
+    card, err = machine.Transition(tx, card, "pr_open", evidence)
+}
+```
