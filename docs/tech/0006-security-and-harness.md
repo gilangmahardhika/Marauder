@@ -35,7 +35,7 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | `--addr` is not loopback | Process exits before listen |
 | `Host` header not loopback | `403` |
 | Push refspec destination is not the card branch | No network call |
-| Event `UPDATE` or `DELETE` | SQLite abort |
+| Event `UPDATE` or `DELETE` | Postgres trigger aborts the statement |
 | Deploy SHA is not 40 or 64 hex digits | `deploy_config`, no exec |
 | Transition status changed after read | `409`, no side effect |
 | Worker lock held by another process | `serve` exits, `run-next` only queues |
@@ -56,7 +56,7 @@ The user string is sections in this order:
 
 ```text
 CARD
-<card fields from SQLite>
+<card fields from the board>
 
 UNTRUSTED START
 <requirements, diff, files, log tail, comments>
@@ -194,7 +194,7 @@ func probe(raw string, hosts []string, fixture bool) error
 
 ## Secrets
 
-Load secrets once per job into the snapshot, never into a global that HTTP handlers can format. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
+Load secrets once per job into the snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, the GitHub token, each model key, and the deploy token. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
 
 - event payloads
 - pack user strings
@@ -216,25 +216,25 @@ Card lock acquire:
 
 ```sql
 INSERT INTO locks (card_id, holder, acquired_at)
-VALUES (?, ?, ?)
+VALUES ($1, $2, $3)
 ON CONFLICT (card_id) DO NOTHING;
 ```
 
 Proceed only when `RowsAffected` is `1`. `holder` is a new random id for that job. Release:
 
 ```sql
-DELETE FROM locks WHERE card_id = ? AND holder = ?;
+DELETE FROM locks WHERE card_id = $1 AND holder = $2;
 ```
 
 A release that matches zero rows appends `assertion_failed`. It does not delete someone else's lock. The deploy lock:
 
 ```sql
 UPDATE deploy_lock
-SET card_id = ?, holder = ?, acquired_at = ?
+SET card_id = $1, holder = $2, acquired_at = $3
 WHERE id = 1 AND card_id IS NULL;
 ```
 
-Release sets the three columns to null `WHERE id = 1 AND holder = ?`.
+Release sets the three columns to null `WHERE id = 1 AND holder = $4`.
 
 Transitions are compare-and-swap (0003). Only the worker lock holder runs `Reconcile`, which is the only code that clears locks it does not hold (RFC-043).
 

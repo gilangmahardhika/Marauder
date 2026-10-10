@@ -649,7 +649,7 @@ No response contains a secret value. A response says whether each secret is set.
 
 ### REQ-045 Orchestrator state lives outside the target repo
 
-Settings, secrets, the SQLite board, worktrees, check exports, and logs live in one data directory outside the target repo. Startup refuses a data directory inside the repo, and a repo inside the data directory. The data directory is mode `0700`. The secrets file is mode `0600`.
+Settings, secrets, worktrees, check exports, and logs live in one data directory outside the target repo. The board is a PostgreSQL database. The connection string is `databaseUrl` in `secrets.json` in that directory (RFC-044). Startup refuses a data directory inside the repo, and a repo inside the data directory. The data directory is mode `0700`. The secrets file is mode `0600`.
 
 #### Acceptance
 
@@ -686,7 +686,7 @@ Settings live in `config.yaml` and `secrets.json` in the data directory (REQ-045
 
 Model ids, approver logins, dev hosts, deploy and rollback scripts, the sandbox image digest, and check commands have no default. Each is chosen per repo. A card whose job needs a missing setting blocks with a reason that names the section.
 
-Git host default is GitHub. Card store default is SQLite owned by the orchestrator. The git host stores the pull request. It does not store card status as the source of truth.
+Git host default is GitHub. The card store is PostgreSQL, reached by `databaseUrl` in the data directory (RFC-044). The git host stores the pull request. It does not store card status as the source of truth.
 
 ## Flows
 
@@ -730,7 +730,7 @@ Startup sees a deploy without a health event. It probes or rolls back before ope
 | Inner loop | Edit, local check, and commit in the worktree. It ends at one pull request. |
 | Outer loop | Review, human approval, dev deploy, health, and dev tests. |
 | Cold review | A review whose prompt excludes the author's transcript. |
-| Data directory | Where settings, secrets, SQLite, worktrees, and logs live. Outside the target repo. |
+| Data directory | Where settings, secrets, worktrees, and logs live. Outside the target repo. The board is the PostgreSQL database named by `databaseUrl` in that directory. |
 | Export | A fresh copy of one SHA, or of the working tree without `.git`, that a check runs against. |
 
 ## Reading order for implementation

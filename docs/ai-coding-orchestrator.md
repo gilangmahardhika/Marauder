@@ -15,7 +15,7 @@ A model call is a step inside a state. It is not the workflow.
 This is the refined prompt the design started from. It is kept as history. The PRD replaced it as the requirements source, and later decisions added the following:
 
 - A local SvelteKit web UI beside the CLI, with settings pages for GitHub, model APIs, the router, and deploy (RFC-035).
-- A data directory outside the target repo (RFC-036).
+- A data directory outside the target repo (RFC-036). The board is PostgreSQL, named by the connection string in that directory (RFC-044).
 - Checks that run on exported copies, with network only for dev checks (RFC-037).
 - Deploy scripts that live outside the repo (RFC-038).
 - Probes that can reach private dev hosts but not link-local or loopback addresses (RFC-039).
@@ -115,7 +115,7 @@ flowchart TD
 17. **Requirement ids thread end to end.** They start at intake, sit on the card, appear in the PR body, and are the reviewer's checklist.
 18. **The scheduler respects dependencies.** A card becomes `ready` only when every card it depends on is `done`. The planner proposes the edges. The harness enforces them.
 19. **Transitions are compare-and-swap.** Two clients acting at once cannot both win.
-20. **State lives outside the repo.** Settings, tokens, and the board sit in the data directory, where no pull request can reach them.
+20. **State lives outside the repo.** Settings and tokens sit in the data directory, where no pull request can reach them. The board is the PostgreSQL database named by the connection string in that directory.
 21. **Checks never touch the worktree.** They run on an exported copy, so a test cannot rewrite git metadata the host will trust.
 22. **What deploy runs is operator-owned.** Deploy and rollback scripts are absolute paths outside the repo.
 23. **The UI renders what the server allows.** Buttons come from the `actions` list. The client never computes legality.
@@ -129,6 +129,7 @@ flowchart TD
 | Architecture decisions | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) |
 | Hardening decisions | [rfc/0002-hardening.md](rfc/0002-hardening.md) |
 | Corrections from review | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) |
+| PostgreSQL board | [rfc/0004-postgres.md](rfc/0004-postgres.md) |
 | Stack and tools | [tech/0001-implementation.md](tech/0001-implementation.md) |
 | Schema, API, settings shape | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) |
 | Worker, jobs, router, git | [tech/0003-backend.md](tech/0003-backend.md) |

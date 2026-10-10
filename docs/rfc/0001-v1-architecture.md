@@ -2,7 +2,7 @@
 
 Status: Accepted for v1. Date: 2026-10-10.
 
-This RFC records the decisions that the v1 PRD depends on. Hardening decisions RFC-024 through RFC-034 are in [0002-hardening.md](0002-hardening.md). Decisions RFC-035 through RFC-043, including the ones that supersede RFC-016 and part of RFC-020, are in [0003-review-corrections.md](0003-review-corrections.md). Requirements and acceptance checks live in [docs/prd/coding-orchestrator.md](../prd/coding-orchestrator.md). Implementation guides live in [docs/tech/](../tech/). [docs/README.md](../README.md) lists every document and which one wins when two disagree.
+This RFC records the decisions that the v1 PRD depends on. Hardening decisions RFC-024 through RFC-034 are in [0002-hardening.md](0002-hardening.md). Decisions RFC-035 through RFC-043, including the ones that supersede RFC-016 and part of RFC-020, are in [0003-review-corrections.md](0003-review-corrections.md). RFC-044, which supersedes the store engine in RFC-002 and RFC-022 and the SQLite phrase in RFC-036, is in [0004-postgres.md](0004-postgres.md). Requirements and acceptance checks live in [docs/prd/coding-orchestrator.md](../prd/coding-orchestrator.md). Implementation guides live in [docs/tech/](../tech/). [docs/README.md](../README.md) lists every document and which one wins when two disagree.
 
 Decision headings use `RFC-001` and up. The first paragraph under each heading is the statement. A later RFC supersedes a decision by naming its id. It does not rewrite the statement in place.
 
@@ -11,7 +11,7 @@ Decision headings use `RFC-001` and up. The first paragraph under each heading i
 | Id | Decision |
 | --- | --- |
 | RFC-001 | The harness is the only writer of card status |
-| RFC-002 | The card store is the source of truth |
+| RFC-002 | The card store is the source of truth. Store engine superseded by RFC-044 |
 | RFC-003 | The inner loop and the outer loop stay separate |
 | RFC-004 | Exit codes and the health probe grade the work |
 | RFC-005 | One card has one worktree, one branch, and one pull request |
@@ -31,7 +31,7 @@ Decision headings use `RFC-001` and up. The first paragraph under each heading i
 | RFC-019 | An edit to an accepted requirement stops affected cards |
 | RFC-020 | Budgets end in blocked, and models cannot raise them. Release sentence superseded by RFC-041 |
 | RFC-021 | The event log is append-only and redacted |
-| RFC-022 | v1 edges are GitHub, markdown, SQLite, and a deploy command |
+| RFC-022 | v1 edges are GitHub, markdown, SQLite, and a deploy command. Board engine superseded by RFC-044 |
 | RFC-023 | Accepted decision statements stay stable |
 
 ## RFC-001 The harness is the only writer of card status
@@ -57,6 +57,8 @@ Set aside: GitHub Projects, or issues, as the board. Useful as a mirror later. W
 Consequences: `orchestrator status` reads SQLite. Webhooks update the store through the same transition checks as the CLI. Losing the SQLite file loses the board even if the pull requests remain.
 
 Requirements: REQ-005, REQ-039, REQ-042.
+
+Superseded in part by RFC-044 in [0004-postgres.md](0004-postgres.md). The store engine in the statement, and the SQLite sentences in Consequences, no longer apply. The card store is still the harness database. GitHub is still not the board.
 
 ## RFC-003 The inner loop and the outer loop stay separate
 
@@ -304,6 +306,8 @@ Consequences: `config.yaml` in the data directory holds paths, deploy commands, 
 
 Requirements: REQ-001, REQ-033, REQ-042.
 
+Superseded in part by RFC-044 in [0004-postgres.md](0004-postgres.md). The board engine in the statement is PostgreSQL. GitHub, markdown, and the deploy command stand.
+
 ## RFC-023 Accepted decision statements stay stable
 
 The statement of an accepted decision is the first paragraph under its heading. Implementations and cards may cite the id. Changing the meaning requires a new RFC that names the superseded id. Wording fixes that do not change the decision can be made in place and called out at the top of the new RFC.
@@ -312,7 +316,7 @@ Cards store decision ids. If `RFC-006` quietly changes from "SHA" to "branch", o
 
 Set aside: editing this file as a living wiki. Easy to keep current, and impossible to know what an in-flight card was bound to.
 
-Consequences: superseding entries start at `RFC-024` in a new file or at the end of a follow-up RFC. The index in this file marks each superseded entry. RFC-024 to RFC-034 are in 0002, and RFC-035 to RFC-043 are in 0003.
+Consequences: superseding entries start at `RFC-024` in a new file or at the end of a follow-up RFC. The index in this file marks each superseded entry. RFC-024 to RFC-034 are in 0002, RFC-035 to RFC-043 are in 0003, and RFC-044 is in 0004.
 
 ## What stays configurable
 

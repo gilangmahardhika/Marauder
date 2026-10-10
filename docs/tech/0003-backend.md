@@ -12,7 +12,7 @@ Module path: `orchestrator/backend`.
 | --- | --- | --- |
 | `internal/machine` | Legal edges, evidence checks, compare-and-swap `Transition` | Call git, models, or HTTP |
 | `internal/trace` | Append events, redact, list by card | Update a row in place |
-| `internal/board` | SQLite reads and writes for cards, attempts, locks, runs | Choose the next status |
+| `internal/board` | PostgreSQL reads and writes for cards, attempts, locks, runs | Choose the next status |
 | `internal/intake` | goldmark parse, hashes, accept, drafts | Create a worktree |
 | `internal/settings` | `config.yaml`, `secrets.json`, validation, snapshots | Return a secret to HTTP |
 | `internal/router` | Task class and model choice | Call a provider |
@@ -46,8 +46,9 @@ Every command runs these steps before its own work:
 2. Create the data directory with mode `0700`, plus `empty-hooks/`, `empty-gh/`, `askpass/`, `worktrees/`, `exports/`, and `logs/`. Exit if an existing data directory is group or world accessible.
 3. Fixture mode is on only when the resolved repo path ends with `/testdata/fixture-repo`.
 4. Resolve absolute paths for `git`, `gh`, and the sandbox engine once. A later `PATH` change does not change them.
-5. Open SQLite and run goose migrations.
-6. Load and validate settings. On the first start, when `secrets.json` is missing, seed it from `GH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `DEPLOY_TOKEN` if they are set. After that the file wins over the environment.
+5. Load `secrets.json`. On the first start, when the file is missing, seed it from `ORCHESTRATOR_DATABASE_URL`, `GH_TOKEN`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `DEPLOY_TOKEN` if they are set. After that the file wins over the environment. Exit before opening the database when `databaseUrl` is empty.
+6. Open PostgreSQL with that URL and run goose migrations using the postgres dialect.
+7. Load and validate `config.yaml` with the same rules as the PUT routes.
 
 `serve` then refuses a non-loopback `--addr`, takes the worker lock (exits if held), runs `Reconcile`, starts the worker, generates a 32-byte UI token, prints `UI token: <hex>` once, and listens.
 
@@ -67,11 +68,11 @@ Every command runs these steps before its own work:
 
 ```sql
 UPDATE cards
-SET status = ?, updated_at = ?, <edge-specific columns>
-WHERE id = ? AND status = ?;
+SET status = $1, updated_at = $2, <edge-specific columns>
+WHERE id = $3 AND status = $4;
 ```
 
-The second `?` is the status the caller read. `RowsAffected` must be `1`, otherwise `board.ErrConflict`, and the caller does nothing else (RFC-040). The same SQLite transaction appends the `transition` event and inserts the gate row for gated edges:
+The status in the WHERE clause is the status the caller read. `RowsAffected` must be `1`, otherwise `board.ErrConflict`, and the caller does nothing else (RFC-040). The same PostgreSQL transaction appends the `transition` event and inserts the gate row for gated edges:
 
 | Edge into | Gate name |
 | --- | --- |

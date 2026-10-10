@@ -12,7 +12,7 @@ If a field here and a PRD acceptance check disagree, the PRD wins. See [../READM
 - Ids are text. Cards use `card_` plus 12 hex chars. Attempts use `att_`, events `evt_`, runs `run_`, each plus 12 hex chars.
 - Requirement ids and decision ids are copied from markdown headings (`REQ-001`, `RFC-001`). The harness does not renumber them. Drafted ids from the planner use the same `REQ-` form and are stored with `source_kind = 'draft'`.
 - SHAs are lowercase hex, 40 or 64 chars.
-- SQLite booleans are integers `0` and `1`. JSON booleans are `true` and `false`.
+- PostgreSQL booleans are `true` and `false`. JSON booleans are `true` and `false`.
 - The API listens on `127.0.0.1:8787`. CORS allows the exact `--ui-origin`, default `http://127.0.0.1:4173`.
 - The `Host` header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`. Anything else is `403`. This blocks DNS rebinding.
 - Every route except `POST /api/session` requires `Authorization: Bearer <token>`.
@@ -86,9 +86,11 @@ When `unblockTo` is `null` on a blocked card, `actions` is `[]`.
 
 A check that times out or exceeds the output cap is a failed check with exit `124` or `125`. It is not `check_error`.
 
-## SQLite
+## PostgreSQL
 
-One file: `<data>/orchestrator.db`. Open it with foreign keys on, WAL, `busy_timeout=5000`, and one connection per process.
+PostgreSQL 16 or newer. The connection string is `databaseUrl` in `<data>/secrets.json` (RFC-044). The API does not return it. On the first start, when `secrets.json` is missing, startup copies `ORCHESTRATOR_DATABASE_URL` into `databaseUrl` if that variable is set. After that the file wins. An empty `databaseUrl` exits before any connection.
+
+Open it with `database/sql` and `github.com/jackc/pgx/v5/stdlib`. Use a pool of at most 4 connections. One transaction wraps a compare-and-swap status update, its gate insert, and its transition event. Run goose with the postgres dialect.
 
 Migration `backend/migrations/00001_init.sql`:
 
@@ -126,7 +128,7 @@ CREATE TABLE cards (
     'backlog', 'ready', 'in_progress', 'self_check', 'pr_open', 'agent_review',
     'changes_requested', 'human_review', 'approved', 'deploying_dev',
     'verifying', 'done', 'blocked')),
-  manual INTEGER NOT NULL DEFAULT 0,
+  manual BOOLEAN NOT NULL DEFAULT false,
   local_check TEXT,
   dev_check TEXT,
   attempts_used INTEGER NOT NULL DEFAULT 0,
@@ -168,10 +170,10 @@ CREATE TABLE attempts (
   commit_sha TEXT,
   review_model_id TEXT,
   review_prompt_hash TEXT,
-  review_independent INTEGER,
+  review_independent BOOLEAN,
   review_verdict TEXT CHECK (review_verdict IN ('recommend_approve', 'request_changes')),
   reviewed_sha TEXT,
-  ci_required INTEGER,
+  ci_required BOOLEAN,
   started_at TEXT NOT NULL,
   ended_at TEXT,
   outcome TEXT CHECK (outcome IN (
@@ -199,7 +201,7 @@ CREATE TABLE gates (
   attempt_id TEXT,
   name TEXT NOT NULL CHECK (name IN (
     'local_checks', 'agent_review', 'human_approval', 'dev_health', 'dev_tests')),
-  passed INTEGER NOT NULL,
+  passed BOOLEAN NOT NULL,
   evidence_ref TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
@@ -215,17 +217,22 @@ CREATE TABLE events (
 CREATE INDEX events_card_ts ON events(card_id, ts);
 
 -- +goose StatementBegin
-CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+CREATE FUNCTION events_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
 BEGIN
-  SELECT RAISE(ABORT, 'events are insert-only');
+  RAISE EXCEPTION 'events are insert-only';
 END;
+$$;
+
+CREATE TRIGGER events_no_update
+BEFORE UPDATE ON events
+FOR EACH ROW EXECUTE FUNCTION events_immutable();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE TRIGGER events_no_delete BEFORE DELETE ON events
-BEGIN
-  SELECT RAISE(ABORT, 'events are insert-only');
-END;
+CREATE TRIGGER events_no_delete
+BEFORE DELETE ON events
+FOR EACH ROW EXECUTE FUNCTION events_immutable();
 -- +goose StatementEnd
 
 CREATE TABLE approvals (
@@ -264,8 +271,9 @@ CREATE TABLE runs (
 DROP TABLE runs;
 DROP TABLE failure_notes;
 DROP TABLE approvals;
-DROP TRIGGER events_no_delete;
-DROP TRIGGER events_no_update;
+DROP TRIGGER events_no_delete ON events;
+DROP TRIGGER events_no_update ON events;
+DROP FUNCTION events_immutable();
 DROP TABLE events;
 DROP TABLE gates;
 DROP TABLE deploy_lock;
@@ -619,7 +627,6 @@ The data directory defaults to `~/.orchestrator/<repo-name>-<hash8>`, where `has
 <data>/                     mode 0700
 <data>/config.yaml          mode 0600
 <data>/secrets.json         mode 0600
-<data>/orchestrator.db
 <data>/worker.lock
 <data>/empty-hooks/
 <data>/empty-gh/
@@ -629,6 +636,8 @@ The data directory defaults to `~/.orchestrator/<repo-name>-<hash8>`, where `has
 <data>/logs/<attempt-id>.log
 <data>/logs/<attempt-id>-review.json
 ```
+
+The board is not a file in this directory. It is the PostgreSQL database named by `databaseUrl` (RFC-044).
 
 `config.yaml`:
 
@@ -688,6 +697,7 @@ The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `
 
 ```json
 {
+  "databaseUrl": "",
   "githubToken": "",
   "deployToken": "",
   "llmKeys": {
@@ -697,7 +707,7 @@ The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `
 }
 ```
 
-Empty string means unset. Both files are written to a temp file in the same directory, synced, and renamed. The API never decodes `secrets.json` into a struct that is encoded to the client. Edit `config.yaml` by hand only while `serve` is stopped. Startup validates it with the same rules as the PUT routes.
+`databaseUrl` is a PostgreSQL URL for this target repo's board (RFC-044). Empty string means unset. The API never returns it. Both files are written to a temp file in the same directory, synced, and renamed. The API never decodes `secrets.json` into a struct that is encoded to the client. Edit `config.yaml` by hand only while `serve` is stopped. Startup validates it with the same rules as the PUT routes.
 
 ## CLI twins
 

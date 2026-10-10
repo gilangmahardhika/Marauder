@@ -48,6 +48,8 @@ Consequences: a team that wants shared settings copies `config.yaml` by hand, ou
 
 Requirements: REQ-045.
 
+Superseded in part by RFC-044 in [0004-postgres.md](0004-postgres.md). The words "the SQLite board" in the statement no longer apply. Config, secrets, worktrees, exports, and logs stay in the data directory. The board is PostgreSQL, named by `databaseUrl` in `secrets.json`.
+
 ## RFC-037 Checks run on an exported copy, and only dev checks get network
 
 The sandbox never mounts the worktree. The harness copies the files to check into a fresh directory under the data directory and mounts that copy. The gating local check exports the committed SHA. The `run_local_check` tool copies the working tree, excluding `.git`, without following symlinks. The dev check exports the deployed SHA. Local checks run with network none. Dev checks run with the engine's default rootless network and `DEV_URL` set, only after a person approved that SHA. The remaining rules of RFC-028 stand: no host socket, no host home, dropped capabilities, a read-only root, a non-root user, limits, and an image pinned by digest.
@@ -86,7 +88,7 @@ Requirements: REQ-033, REQ-035.
 
 ## RFC-040 A transition is a compare-and-swap on the stored status
 
-A transition updates the card with `WHERE id = ? AND status = ?`, in the same database transaction as its event and gate rows. Zero rows affected means the card changed after it was read. Nothing is written, no side effect follows, and the caller receives a conflict.
+A transition updates the card with `WHERE id = $1 AND status = $2`, in the same database transaction as its event and gate rows. Zero rows affected means the card changed after it was read. Nothing is written, no side effect follows, and the caller receives a conflict.
 
 The approver can request changes from the UI while the deploy job is about to deploy. The CLI and the UI can act at the same moment. A read-then-write without the status in the `WHERE` clause lets both win.
 

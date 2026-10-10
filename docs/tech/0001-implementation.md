@@ -8,7 +8,7 @@ The backend is a Go process that speaks JSON. Node.js is not the server, the wor
 
 | Guide | What it locks |
 | --- | --- |
-| [0002 Data and API](0002-data-and-api.md) | SQLite schema, error shape, every JSON route, settings fields, files on disk |
+| [0002 Data and API](0002-data-and-api.md) | PostgreSQL schema, error shape, every JSON route, settings fields, files on disk |
 | [0003 Backend](0003-backend.md) | Packages, startup, worker, jobs, router, providers, git, CLI |
 | [0004 Frontend](0004-frontend.md) | SvelteKit client, work pages, settings pages, CSP, client tests |
 | [0005 Verification](0005-verification.md) | Fixture repo, automated checks, REQ-043 runner, release order |
@@ -22,8 +22,8 @@ The backend is a Go process that speaks JSON. Node.js is not the server, the wor
 | Backend process | One `orchestrator` binary: CLI, JSON API, worker |
 | HTTP | Standard library `net/http` |
 | CLI | Cobra, calling the same service functions as the API |
-| Board store | SQLite through `database/sql` and `modernc.org/sqlite` |
-| Migrations | goose |
+| Board store | PostgreSQL 16 or newer through `database/sql` and `github.com/jackc/pgx/v5/stdlib` |
+| Migrations | goose, dialect `postgres` |
 | PRD and RFC parse | goldmark, then a small heading walker |
 | Config on disk | `yaml.v3` for settings, a mode `0600` JSON file for tokens, both in the data directory |
 | Models | Official Anthropic and OpenAI Go SDKs, behind an internal provider interface |
@@ -36,21 +36,21 @@ The backend is a Go process that speaks JSON. Node.js is not the server, the wor
 
 Go 1.26 is the target because the current official OpenAI Go SDK (module `github.com/openai/openai-go/v3`) requires it. The official Anthropic SDK (`github.com/anthropics/anthropic-sdk-go`) requires Go 1.24 or newer.
 
-The harness stays in Go because that process owns SQLite, git worktrees, built child environments, and the deploy command. The browser is a client of the JSON API. A Python API could replace the Go server later and keep this frontend. It is a fallback, not a second runtime beside Go.
+The harness stays in Go because that process owns the PostgreSQL board, git worktrees, built child environments, and the deploy command. The browser is a client of the JSON API. A Python API could replace the Go server later and keep this frontend. It is a fallback, not a second runtime beside Go.
 
 ## Processes
 
 | Process | Address | Owns |
 | --- | --- | --- |
-| `orchestrator serve` | `127.0.0.1:8787` | JSON API, the worker lock, SQLite, secrets, git, `gh`, sandbox, deploy |
+| `orchestrator serve` | `127.0.0.1:8787` | JSON API, the worker lock, PostgreSQL, secrets, git, `gh`, sandbox, deploy |
 | `orchestrator <command>` | None | The same `internal/app` functions. `run-next` executes jobs only when `serve` is not running (RFC-043) |
 | SvelteKit dev or preview | `127.0.0.1:4173` | Static pages that call the API with `fetch` |
 
 Rules that hold across processes:
 
 - One process holds the worker at a time (RFC-043). Human gates from either client are safe through compare-and-swap transitions (RFC-040).
-- All state lives in the data directory, outside the target repo (RFC-036).
-- `internal/app` is the only caller of `machine.Transition`. The frontend never writes SQLite, chooses a status, or keeps the board as a source of truth.
+- Settings, secrets, worktrees, exports, and logs live in the data directory, outside the target repo (RFC-036). The board is PostgreSQL, named by `databaseUrl` in that directory (RFC-044).
+- `internal/app` is the only caller of `machine.Transition`. The frontend never writes the board, chooses a status, or keeps the board as a source of truth.
 - The API binds loopback only, checks `Host`, and allows the exact UI origin.
 - Child environments are built, never inherited (0006).
 
@@ -98,9 +98,9 @@ Pin versions in `backend/go.mod` and `frontend/package-lock.json` when each proj
 | Tool | Use here | Required in v1 | Kept out of |
 | --- | --- | --- | --- |
 | [Go](https://go.dev/) | API, CLI, worker | Yes | The frontend |
-| [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite) | CGO-free SQLite driver, name `sqlite` | Yes | |
-| [SQLite](https://sqlite.org/) | Board, attempts, events | Yes | |
-| [goose](https://github.com/pressly/goose) | SQL migrations | Yes | |
+| [PostgreSQL](https://www.postgresql.org/) | Board, attempts, events. Version 16 or newer | Yes | The target repo |
+| [pgx](https://github.com/jackc/pgx) | Go driver, `github.com/jackc/pgx/v5/stdlib` | Yes | |
+| [goose](https://github.com/pressly/goose) | SQL migrations, postgres dialect | Yes | |
 | [Cobra](https://github.com/spf13/cobra) | CLI verbs from REQ-042 | Yes | Card status |
 | [goldmark](https://github.com/yuin/goldmark) | Headings, lists, existing ids | Yes | Card creation before accept |
 | [yaml.v3](https://github.com/go-yaml/yaml) | `config.yaml` | Yes | Tokens |
@@ -114,7 +114,7 @@ Pin versions in `backend/go.mod` and `frontend/package-lock.json` when each proj
 | [Podman](https://github.com/containers/podman) | Check sandbox | For a real repo target | Fixture state-machine tests |
 | [Docker Engine / Moby](https://github.com/moby/moby) | Same sandbox role | Fallback only | |
 
-Licenses: Go and modernc sqlite are BSD-3-Clause. goose, goldmark, the GitHub CLI, `anthropic-sdk-go`, Svelte, SvelteKit, Vite, Vitest, and Testing Library are MIT. Cobra, `openai-go`, and Podman are Apache-2.0. SQLite is public domain. Git is GPL-2.0 and runs as a separate program, not linked into the binary.
+Licenses: Go is BSD-3-Clause. pgx, goose, goldmark, the GitHub CLI, `anthropic-sdk-go`, Svelte, SvelteKit, Vite, Vitest, and Testing Library are MIT. Cobra, `openai-go`, and Podman are Apache-2.0. PostgreSQL is the PostgreSQL License. Git is GPL-2.0 and runs as a separate program, not linked into the binary.
 
 ## Not in this stack
 
@@ -125,7 +125,7 @@ Licenses: Go and modernc sqlite are BSD-3-Clause. goose, goldmark, the GitHub CL
 | SvelteKit server routes, form actions, `hooks.server.ts` | A second backend beside the Go API |
 | LiteLLM | Routing stays in `internal/router` |
 | LangChain, langchaingo | Tool allowlists are snapshot-tested in our own loop |
-| Temporal, Redis, NATS, Kafka | One SQLite file, one worker process, and one deploy lock cover v1 |
+| Temporal, Redis, NATS, Kafka | One Postgres database, one worker process, and one deploy lock cover v1 |
 | HTMX, Go templates | They tie the HTML to the API process |
 | A cloud provider SDK | Deploy is an operator script (RFC-038) |
 

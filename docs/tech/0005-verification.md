@@ -35,6 +35,8 @@ go run ./cmd/fixture
 
 It exits `0` only when all nine REQ-043 steps pass. It does not call Anthropic or OpenAI. It creates a temporary data directory outside the repo and copies the deploy stub to a temporary directory with mode `0700`, so RFC-036 and RFC-038 hold during the run.
 
+`go test` and the fixture need `ORCHESTRATOR_TEST_DATABASE_URL`, a PostgreSQL 16 or newer database (RFC-044). Each test migrates that database and isolates its rows. A missing variable fails the test with that name before any card is written. Tests do not use testcontainers and do not create a SQLite file.
+
 ## Fake provider
 
 `internal/providers/fake` implements the provider interface. A script is a list of responses keyed by task class and attempt number. Each response is text, a tool call, or an error.
@@ -142,7 +144,7 @@ The health stub is an `httptest.Server` on `127.0.0.1`, allowed by fixture mode.
 | 1 | Ingest of a two-requirement PRD. `run-next` before accept creates no card and no worktree |
 | 2 | After accept, the plan job creates two cards. The second `depends_on` the first |
 | 3 | Card 1 has a worktree, a gating exit `0`, and one pull request URL |
-| 4 | The reviewed attempt has `review_independent = 1` with two families in the fixture config. The recorded reviewer prompt has no `author-transcript` |
+| 4 | The reviewed attempt has `review_independent` true with two families in the fixture config. The recorded reviewer prompt has no `author-transcript` |
 | 5 | Approve the head SHA. A new commit before deploy clears the SHA and sets `human_review`. Approve the new head |
 | 6 | Health stub fails. Rollback ran. Card is `blocked` with `health`. No verify event. `unblockTo` is `human_review` |
 | 7 | Unblock. The card is in `human_review` and no implementer attempt started. Re-approve the same head. The stub now passes health and the dev check fails. New attempt, same pull request, failure note stored |
@@ -151,7 +153,7 @@ The health stub is an `httptest.Server` on `127.0.0.1`, allowed by fixture mode.
 
 Step 6 uses the stub. The runner does not need a real dev server. After this command exits `0`, a person may point the same deploy and health code at one real dev target. That run is recorded by hand and is not part of `go test`.
 
-The fixture config uses two families and two model ids so step 4 can require `review_independent = 1`. The fake provider serves both ids. No network.
+The fixture config uses two families and two model ids so step 4 can require `review_independent` true. The fake provider serves both ids. No network.
 
 After step 9, the runner runs `git status --porcelain` in the fixture repo and requires empty output (REQ-045).
 

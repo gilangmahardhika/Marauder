@@ -8,12 +8,14 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
+| [rfc/0004-postgres.md](rfc/0004-postgres.md) | Decision `RFC-044`. The board is PostgreSQL |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
-| [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | SQLite schema, JSON API, settings shape. The contract both processes implement |
+| [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |
 | [tech/0004-frontend.md](tech/0004-frontend.md) | SvelteKit client and settings pages |
 | [tech/0005-verification.md](tech/0005-verification.md) | Tests, fixture runner, release order |
 | [tech/0006-security-and-harness.md](tech/0006-security-and-harness.md) | Security controls and harness assertions |
+| [plan/sprints.md](plan/sprints.md) | Ten sprints, each with a goal, tasks, and the tests that close it |
 | [ai-coding-orchestrator.md](ai-coding-orchestrator.md) | One-page overview and the original brief |
 
 ## When two documents disagree
@@ -23,6 +25,8 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 3. The contract in `tech/0002`.
 4. The guides. `tech/0006` wins over `tech/0003`, `tech/0004`, and `tech/0005`, which win over `tech/0001`.
 5. The overview.
+
+The sprint plan schedules work. It does not override the documents above.
 
 A change that would make two of these disagree updates both in the same commit. Changing the meaning of an accepted RFC statement takes a new RFC (RFC-023).
 
