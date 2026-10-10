@@ -16,6 +16,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [tech/0005-verification.md](tech/0005-verification.md) | Tests, fixture runner, release order |
 | [tech/0006-security-and-harness.md](tech/0006-security-and-harness.md) | Security controls and harness assertions |
 | [plan/sprints.md](plan/sprints.md) | Ten sprints, each with a goal, tasks, and the tests that close it |
+| [plan/checklist.md](plan/checklist.md) | Status of each sprint task and named test |
 | [ai-coding-orchestrator.md](ai-coding-orchestrator.md) | One-page overview and the original brief |
 
 ## When two documents disagree

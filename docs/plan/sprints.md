@@ -8,6 +8,8 @@ If this file disagrees with a PRD acceptance check, an RFC statement, or a tech 
 
 A sprint is done when its tests pass. The next sprint does not start on a failing suite. Live Anthropic or OpenAI keys are not required. The fake provider and the health stub cover the release bar.
 
+Progress is tracked in [checklist.md](checklist.md).
+
 ```mermaid
 flowchart LR
   s1[Sprint1_Board]
