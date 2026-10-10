@@ -15,6 +15,7 @@ Module path: `orchestrator/backend`.
 | `internal/board` | PostgreSQL reads and writes for cards, attempts, locks, runs | Choose the next status |
 | `internal/intake` | goldmark parse, hashes, accept, drafts, manual rows | Create a worktree |
 | `internal/settings` | `config.yaml`, `secrets.json`, validation, snapshots | Return a secret to HTTP |
+| `internal/conventions` | Rule, stack, and skill catalog, revisions, stack detection, a card's rules and skills | Read instructions from the target repo |
 | `internal/router` | Task class and model choice | Call a provider |
 | `internal/contextpack` | Build the four packs | Include the author transcript in the reviewer pack |
 | `internal/providers` | Anthropic and OpenAI clients | Pick a fallback |
@@ -123,8 +124,8 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 1. Route `plan`. No model configured: set `planError` to `router_config` and stop.
 2. When `draftPending`, the planner pack holds the PRD outline. `propose_requirements` writes rows with `source_kind = 'draft'` and `accepted_at` null, then clears `draftPending`.
-3. Otherwise the pack holds accepted requirements without cards, decisions, and existing card titles and dependencies. `create_card` takes `ref`, `title`, `requirementIds`, `decisionIds`, `dependsOn` (card ids or refs from this job), `risk`, and `manual`.
-4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected. The owner is the `created_by` shared by the named requirements. Requirements with different creators are rejected with `ErrOwners`, so the planner splits them. An owner in the arguments is ignored (RFC-054).
+3. Otherwise the pack holds accepted requirements without cards, decisions, existing card titles and dependencies, and the project's enabled skills as `SKILL <slug>: <use when>` lines (RFC-056). `create_card` takes `ref`, `title`, `requirementIds`, `decisionIds`, `dependsOn` (card ids or refs from this job), `risk`, `manual`, and `skillIds`.
+4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected. The owner is the `created_by` shared by the named requirements. Requirements with different creators are rejected with `ErrOwners`, so the planner splits them. An owner in the arguments is ignored (RFC-054). Each `skillIds` entry must be a skill enabled for the project and not disabled, else `ErrSkill` and no card is stored. The card's skills are stored in `card_skills` in the same transaction as the card (RFC-056).
 5. Planner tokens are logged as `model_call` with no card id.
 
 ### Implement job
@@ -134,7 +135,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 3. Record the local `refs/heads/<baseBranch>` SHA for the `base_moved` assertion.
 4. Insert an attempt row: `n` is the card's highest `n` plus one, `parent_attempt_id` is the previous attempt, `base_sha` is the worktree HEAD.
 5. If the card is `ready` or `changes_requested`, transition to `in_progress`. A card already `in_progress` with no open attempt stays there.
-6. Build the implementer pack with the latest failure note and no prior model messages. Run the tool loop.
+6. Read the card's rules and skills once with `conventions.ForCard`: enabled global rules, enabled rules of the project's enabled stacks, then the card's enabled skills. Append one `tool_call` event named `conventions_context` whose `items` field lists each `kind`, `id`, `version`, and `hash` (RFC-055). Build the implementer pack with them, the latest failure note, and no prior model messages. Run the tool loop.
 7. Budget hit: end the attempt with outcome `budget`, add one to `attempts_used`, append `budget_stop`, and block with `turn_cap`, `token_cap`, or `wall_cap`.
 8. No new commit since `base_sha`: end with `no_commit`, add one to `attempts_used`, and write a failure note with source `no_commit`. The card stays `in_progress`, and pass step 4 or step 10 picks it up.
 9. New commit: store `commit_sha`, transition `in_progress -> self_check`, and run the gating check on an export of that SHA (0006).
@@ -160,6 +161,8 @@ The provider receives the tool list for the profile. The harness executes each t
 
 The implementer and reviewer packs add a `LINKED <name>` block per link inside the untrusted markers: that project's accepted requirements as `<project>:REQ-001`, its decisions, and the files named in the link's shared paths, read from the same export. The block is capped at 64 KiB per link, and the whole untrusted section stays under its cap. The attempt writes one `tool_call` event named `linked_context` whose `links` field lists each linked project id and SHA.
 
+The implementer and reviewer packs open the untrusted section with the card's rules and skills (RFC-055, RFC-056). A rule renders as `CONVENTION <title> (<global or stack name>, <category>) v<n>` followed by its body. A skill renders as `SKILL <slug> v<n>: <title>`, a `use when:` line, and its body. Each block is cut at 16 KiB with `truncated: true`. The blocks share a 64 KiB section cap, and a block that does not fit becomes `CONVENTION <title> omitted: the conventions section is full` or the `SKILL` form of that line. The text passes through marker stripping and redaction like every untrusted section. It cannot add a tool: the tool list is the profile's constant.
+
 `read_file` and `edit_file` go through `safePath` (0006). `run_local_check` takes no arguments. It runs the card's `localCheck` on a working-tree export with network none, and returns the exit code and the last 200 lines. It never moves the card. `commit` stages the worktree and commits with the model's message plus fixed trailers:
 
 ```text
@@ -175,9 +178,9 @@ The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt
 ### Review job
 
 1. Take the card lock. Route `review` with the author model id of the latest attempt. Transition `pr_open -> agent_review`.
-2. Build the reviewer pack from linked requirements, decisions, the diff from base to head, the gating check output, the pull request body, and human comments. Omit author messages and tool traces. Write the pack JSON to `logs/<attempt-id>-review.json`.
+2. Build the reviewer pack from the card's rules and skills, read the same way as the implement job, linked requirements, decisions, the diff from base to head, the gating check output, the pull request body, and human comments. Omit author messages and tool traces. Write the pack JSON to `logs/<attempt-id>-review.json`.
 3. Call the model. Store `review_model_id`, `review_prompt_hash`, `review_independent`, `review_verdict`, and `reviewed_sha` on the reviewed attempt.
-4. `request_changes`: write a failure note with source `review` from the review body, then `agent_review -> changes_requested`.
+4. `request_changes`: write a failure note with source `review` from the review body, then `agent_review -> changes_requested`. A breach of a rule or a skill checklist is a `request_changes` that names the rule or skill in the body.
 5. `recommend_approve`: read required checks with `gh pr view --json statusCheckRollup`. No required checks: `human_review` with `ciRequired: false` in the gate. All required pass: `human_review` with `ciRequired: true`. Any required failure: `changes_requested` with a `ci` note. Pending: stay in `agent_review` and let pass step 7 finish it.
 6. Provider failure after retry and fallback: block with `provider_error`.
 
@@ -262,9 +265,9 @@ Each builder returns the fixed system string for the profile and a user string (
 
 | Pack | Sections |
 | --- | --- |
-| Planner | PRD outline, requirement candidates, decision statements, card titles, dependencies |
-| Implementer | This card, linked statements, linked decisions, path list, `localCheck`, last failure note |
-| Reviewer | Linked statements, linked decisions, diff, gating check output, pull request body, human comments |
+| Planner | PRD outline, requirement candidates, decision statements, card titles, dependencies, enabled skills by slug and "use when" |
+| Implementer | This card, the card's rules and skills, linked statements, linked decisions, path list, `localCheck`, last failure note |
+| Reviewer | The card's rules and skills, linked statements, linked decisions, diff, gating check output, pull request body, human comments |
 | Triage | Command, exit code, last 200 log lines, acceptance lines |
 
 Snapshot fixtures live in `backend/internal/contextpack/testdata/`. The reviewer fixture contains the diff and does not contain the string `author-transcript`.
@@ -339,6 +342,10 @@ Push, `pr create`, `pr edit`, and the reviewer request carry the card owner's to
 
 `settings.Snapshot(projectID)` returns an immutable copy of that project's config and secrets for one job.
 
+`conventions.SaveRule`, `SaveStack`, and `SaveSkill` are admin only (RFC-055, RFC-056). Each save validates against the 0002 rules, increments `version`, stores `content_hash`, and appends a `convention_revisions` row in one transaction. `conventions.Delete*` removes an unused item and disables one that a project or card still names. Revisions are never deleted. `conventions.SaveProject` sets a project's stacks added by hand and its enabled skills. A Lead Developer member may call it.
+
+`app.Sync` runs `conventions.Detect` on the clone after a successful checkout. Detection walks the repo root and two directory levels below it. It skips `.git`, `node_modules`, `vendor`, and build output, does not follow links, and reads `package.json`, `pyproject.toml`, and `requirements*.txt` up to 1 MiB each. A stack matches when any of its marker files exists or any of its npm or Python dependencies is named. The sync replaces the project's `detected` rows, keeps its `manual` rows, and appends `stacks_detected` with the stack ids.
+
 Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks cards past `backlog` (except `done`) with `source_changed`.
 
 ## HTTP
@@ -400,5 +407,7 @@ Stop at the end of a step until its tests in [0005-verification.md](0005-verific
 | 14 | Tribes, projects, `project_id` (Sprint 12) | Per-project workers |
 | 15 | Project workers, role gates, Lead deploy (Sprint 13) | |
 | 16 | Manual requirements in `intake`, senior accept (Sprint 16) | |
+| 17 | Card owner, owner pull requests, intake reviewers (Sprint 17) | |
+| 18 | `conventions`, stack detection on Sync, rules and skills in packs (Sprint 18) | |
 
 The first frontend starts after step 12. Account, tribe, and project pages land with steps 13 to 15.

@@ -313,7 +313,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -327,6 +327,9 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `config_changed` | `section`, `fields` |
 | `assertion_failed` | `name`, `detail` |
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
+| `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
+
+A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
 
 Every payload passes through `redact` before insert. A new transition may include `actorId`. Existing rows stay as stored. Nothing updates an event to backfill it.
 
@@ -434,6 +437,91 @@ CREATE UNIQUE INDEX user_github_verified_login ON user_github(host, lower(login)
 
 From `00009`, `requirements.created_by` is also set on a parsed row: the user who ran the ingest that first inserted it. A re-ingest keeps it. A CLI ingest leaves it null. `cards.owner_id` is the `created_by` shared by every requirement the card lists, set by `create_card`. It is null when that value is null. `user_github.verified_at` and `github_id` are set by the token test and cleared when the token or host changes.
 
+`00010` is the company coding rules and integration skills (RFC-055, RFC-056):
+
+```sql
+CREATE TABLE stacks (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  detect_json TEXT NOT NULL DEFAULT '{}',
+  version INTEGER NOT NULL DEFAULT 1,
+  content_hash TEXT NOT NULL,
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX stacks_name ON stacks(lower(name));
+
+CREATE TABLE convention_rules (
+  id TEXT PRIMARY KEY,
+  scope TEXT NOT NULL CHECK (scope IN ('global', 'stack')),
+  stack_id TEXT REFERENCES stacks(id),
+  category TEXT NOT NULL CHECK (category IN ('naming', 'database', 'style', 'framework', 'security', 'testing')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  content_hash TEXT NOT NULL,
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  CHECK ((scope = 'global') = (stack_id IS NULL))
+);
+
+CREATE TABLE skills (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  use_when TEXT NOT NULL,
+  body TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  content_hash TEXT NOT NULL,
+  disabled BOOLEAN NOT NULL DEFAULT false,
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE convention_revisions (
+  kind TEXT NOT NULL CHECK (kind IN ('rule', 'stack', 'skill')),
+  item_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (kind, item_id, version)
+);
+
+CREATE TABLE project_stacks (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  stack_id TEXT NOT NULL REFERENCES stacks(id),
+  source TEXT NOT NULL CHECK (source IN ('detected', 'manual')),
+  added_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, stack_id)
+);
+
+CREATE TABLE project_skills (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  skill_id TEXT NOT NULL REFERENCES skills(id),
+  added_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, skill_id)
+);
+
+CREATE TABLE card_skills (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  skill_id TEXT NOT NULL REFERENCES skills(id),
+  PRIMARY KEY (project_id, card_id, skill_id)
+);
+```
+
+Ids use the prefixes `stk_`, `rule_`, and `skl_`. `detect_json` is `{ "files": [], "npmDeps": [], "pyDeps": [] }`. `content_hash` is the SHA-256 hex of the item's text fields joined by the byte `0x1e`: name and `detect_json` for a stack; scope, stack id, category, title, and body for a rule; slug, title, use when, and body for a skill. A revision stores the text the hash covers: `title` is the name, title, or slug, and `body` is `detect_json`, the rule body, or `use when:` plus the skill body. The migration seeds the stacks Go, TypeScript, SvelteKit, React, Python, and Django with their markers, the global rules "Naming" and "Database tables and columns", and the skill `oauth2-integration`, each at version 1 with a revision row.
+
 ## Accounts and membership API
 
 `POST /api/session`
@@ -529,6 +617,7 @@ A project object is:
   "actions": ["approve", "request_changes", "reject"],
   "projectId": "proj_0123456789ab",
   "owner": { "id": "user_0123456789ab", "email": "ada@example.com", "githubLogin": "ada" },
+  "skills": [{ "id": "skl_0123456789ab", "slug": "oauth2-integration", "title": "OAuth 2.0 integration" }],
   "unblockTo": null,
   "requirementIds": ["REQ-001"],
   "decisionIds": ["RFC-018"],
@@ -554,7 +643,7 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`.
+`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `skills` lists the card's skills, `[]` when it has none (RFC-056).
 
 ## Board and intake
 
@@ -708,7 +797,7 @@ Secret fields are write-only.
 | Event | `config_changed` records the section and the field names, not the values |
 | In-flight job | Keeps that project's settings snapshot it started with |
 | Failure | `422` with `fields`. Files on disk are unchanged |
-| Caller | Lead Developer member for project sections. Admin for the company GitHub account. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
+| Caller | Lead Developer member for project sections. Admin for the company GitHub account and the conventions catalog. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
 
 Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` runs `gh api user` with the caller's stored token in the child environment. On success it stores the login and numeric id GitHub reports, sets `verified_at`, and returns `{ "ok": true, "login": "octocat" }`. A failure returns `{ "ok": false, "message": "authentication failed" }` and leaves the row unverified. A login another user already holds as verified on that host is `{ "ok": false, "message": "login already verified by another user" }`.
 
@@ -844,6 +933,89 @@ Removing a family whose models are used by the router is `422` on `families`.
 `reviewIndependentPossible` is true when two or more families each have at least one model and are usable.
 
 `PUT /api/settings/router` is admin only. It sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
+
+The coding rules, stacks, and integration skills are one company catalog (RFC-055, RFC-056). Every signed-in user may GET it. Only an admin may create, update, or delete an item. Anyone else gets `403`. A successful write appends `config_changed` with section `conventions` and the changed field names.
+
+`GET /api/conventions`
+
+```json
+{
+  "rules": [
+    {
+      "id": "rule_0123456789ab",
+      "scope": "stack",
+      "stackId": "stk_go",
+      "category": "naming",
+      "title": "Go names",
+      "body": "Exported names are MixedCaps ...",
+      "version": 2,
+      "contentHash": "<sha256 hex>",
+      "disabled": false,
+      "updatedBy": "ada@example.com",
+      "updatedAt": "2026-10-10T05:00:00Z"
+    }
+  ],
+  "stacks": [
+    {
+      "id": "stk_go",
+      "name": "Go",
+      "detect": { "files": ["go.mod"], "npmDeps": [], "pyDeps": [] },
+      "version": 1,
+      "contentHash": "<sha256 hex>",
+      "disabled": false,
+      "updatedBy": null,
+      "updatedAt": "2026-10-10T05:00:00Z"
+    }
+  ],
+  "skills": [
+    {
+      "id": "skl_oauth2",
+      "slug": "oauth2-integration",
+      "title": "OAuth 2.0 integration",
+      "useWhen": "A requirement adds sign-in with an outside identity provider",
+      "body": "Steps ...",
+      "version": 1,
+      "contentHash": "<sha256 hex>",
+      "disabled": false,
+      "updatedBy": null,
+      "updatedAt": "2026-10-10T05:00:00Z"
+    }
+  ]
+}
+```
+
+`POST /api/conventions/rules` creates a rule and returns it with `201`. `PUT /api/conventions/rules/{id}` replaces its fields and returns it. The body is `scope`, `stackId`, `category`, `title`, `body`, and `disabled`. Stacks use `POST /api/conventions/stacks` and `PUT /api/conventions/stacks/{id}` with `name`, `detect`, and `disabled`. Skills use `POST /api/conventions/skills` and `PUT /api/conventions/skills/{id}` with `slug`, `title`, `useWhen`, `body`, and `disabled`. A PUT whose hashed fields are unchanged keeps the version. `DELETE /api/conventions/{rules|stacks|skills}/{id}` returns `204`: it deletes an item nothing names, and disables a stack that a rule or project names or a skill that a project or card names. An unknown id is `404`.
+
+| Field | Rule |
+| --- | --- |
+| `scope` | `global` or `stack` |
+| `stackId` | Empty for `global`. An existing stack for `stack` |
+| `category` | `naming`, `database`, `style`, `framework`, `security`, or `testing` |
+| `title` | 1 to 120 characters |
+| `body` | 1 to 8000 characters |
+| `name` | 1 to 60 characters, unique ignoring case |
+| `detect.files` | At most 20 file names or globs, `^[A-Za-z0-9._*+-]+$`, no slash |
+| `detect.npmDeps` | At most 20 npm package names |
+| `detect.pyDeps` | At most 20 Python package names, `^[A-Za-z0-9._-]+$` |
+| `slug` | `^[a-z0-9][a-z0-9-]{1,59}$`, unique |
+| `useWhen` | 1 to 500 characters |
+
+`GET /api/projects/{projectId}/settings/conventions` is the project's stacks, enabled skills, and the rules that apply. Every member may read it.
+
+```json
+{
+  "stacks": [
+    { "id": "stk_go", "name": "Go", "source": "detected" },
+    { "id": "stk_django", "name": "Django", "source": "manual" }
+  ],
+  "skillIds": ["skl_oauth2"],
+  "rules": [
+    { "id": "rule_0123456789ab", "title": "Go names", "scope": "stack", "stackName": "Go", "category": "naming", "version": 2 }
+  ]
+}
+```
+
+`PUT /api/projects/{projectId}/settings/conventions` accepts `{ "manualStackIds": [], "skillIds": [] }`, at most 30 of each, and returns the GET body. Each id must name an enabled stack or skill, else `422` on that field. A manual id that is already detected stays detected. A Lead Developer member may save. Anyone else is `403`. A save appends `config_changed` with section `conventions` for the project.
 
 `GET /api/projects/{projectId}/settings/deploy`
 

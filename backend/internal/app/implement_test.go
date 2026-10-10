@@ -107,11 +107,11 @@ func TestToolNotInProfile(t *testing.T) {
 	var payload string
 	if err := db.QueryRow(`
 		SELECT payload_json FROM events
-		WHERE card_id = $1 AND kind = 'tool_call'
+		WHERE card_id = $1 AND kind = 'tool_call' AND payload_json LIKE '%"name":"deploy"%'
 		ORDER BY ts DESC LIMIT 1`, card.ID).Scan(&payload); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(payload, `"rejected":true`) || !strings.Contains(payload, `"name":"deploy"`) {
+	if !strings.Contains(payload, `"rejected":true`) {
 		t.Fatalf("payload = %s", payload)
 	}
 	cleanupWorktree(t, repo, data, card.ID)

@@ -14,7 +14,8 @@
     disabled = false,
     width = 'md',
     mono = false,
-    placeholder = ''
+    placeholder = '',
+    rows
   }: {
     label: string;
     id: string;
@@ -27,6 +28,7 @@
     width?: Width;
     mono?: boolean;
     placeholder?: string;
+    rows?: number;
   } = $props();
 
   const font = $derived(mono ? 'font-mono text-[13px]' : '');
@@ -36,7 +38,7 @@
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
   <label for={id} class={labelClass}>{label}</label>
   {#if type === 'textarea'}
-    <textarea {id} {disabled} {placeholder} aria-describedby={described} class="{controlBase} py-2.5 {font}" bind:value
+    <textarea {id} {disabled} {placeholder} {rows} aria-describedby={described} class="{controlBase} py-2.5 {font}" bind:value
     ></textarea>
   {:else if type === 'password'}
     <PasswordInput {id} {label} {autocomplete} {disabled} {placeholder} describedby={described} bind:value />

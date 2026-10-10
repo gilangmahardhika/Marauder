@@ -8,6 +8,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/settings"
 )
@@ -329,9 +330,13 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
 		owner = map[string]any{"id": found.ID, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
 	}
+	skills, err := conventions.CardSkills(r.Context(), s.DB, card.ProjectID, card.ID)
+	if err != nil {
+		skills = []conventions.SkillRef{}
+	}
 	return map[string]any{
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
-		"actions": actions, "unblockTo": unblock, "owner": owner,
+		"actions": actions, "unblockTo": unblock, "owner": owner, "skills": skills,
 		"requirementIds": nonNil(card.RequirementIDs), "decisionIds": []string{},
 		"dependsOn": nonNil(card.DependsOn), "risk": card.Risk, "service": "default",
 		"manual": card.Manual, "localCheck": nullString(card.LocalCheck), "devCheck": nullString(card.DevCheck),

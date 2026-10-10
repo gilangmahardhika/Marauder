@@ -12,6 +12,7 @@ function card(partial: Partial<Card>): Card {
     actions: [],
     unblockTo: null,
     owner: null,
+    skills: [],
     requirementIds: [],
     decisionIds: [],
     dependsOn: [],

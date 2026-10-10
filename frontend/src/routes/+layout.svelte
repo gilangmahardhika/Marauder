@@ -32,7 +32,8 @@
         { href: '/projects', label: 'Projects', icon: 'projects' },
         { href: '/settings/repository', label: 'Repository', icon: 'git' },
         { href: '/settings/links', label: 'Linked projects', icon: 'link' },
-        { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' }
+        { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' },
+        { href: '/settings/conventions', label: 'Conventions', icon: 'rules' }
       ]
     },
     {
@@ -43,7 +44,9 @@
         { href: '/tribes', label: 'Tribes', icon: 'shield' },
         { href: '/admin/github', label: 'Company GitHub', icon: 'building' },
         { href: '/admin/llm', label: 'LLM APIs', icon: 'spark' },
-        { href: '/admin/router', label: 'Router', icon: 'router' }
+        { href: '/admin/router', label: 'Router', icon: 'router' },
+        { href: '/admin/conventions', label: 'Conventions', icon: 'rules' },
+        { href: '/admin/skills', label: 'Skills', icon: 'skill' }
       ]
     }
   ];

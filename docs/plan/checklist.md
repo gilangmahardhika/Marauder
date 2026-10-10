@@ -287,3 +287,23 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReviewersSetByCreator`
 - [x] `TestOwnerCannotApprove`
 - [x] `MultiSearchSelect.test.ts`
+
+## Sprint 18: Conventions and skills
+
+- [x] An admin saves rules, stacks, and skills with versions and revisions.
+- [x] Sync detects a project's stacks and keeps stacks added by hand.
+- [x] A Lead Developer adds stacks and enables skills on the project Conventions tab.
+- [x] `create_card` attaches enabled skills to a card.
+- [x] The implementer and reviewer packs carry the card's rules and skills, and the trace names their versions.
+- [x] UI: admin Conventions and Skills pages, project Conventions tab, skills on the card page.
+- [x] `TestConventionCatalogAdminOnly`
+- [x] `TestConventionRevisions`
+- [x] `TestDetectStacks`
+- [x] `TestSyncKeepsManualStacks`
+- [x] `TestProjectConventionsLeadOnly`
+- [x] `TestCreateCardSkills`
+- [x] `TestPackConventions`
+- [x] `TestConventionsCannotAddTool`
+- [x] `TestConventionsContextEvent`
+- [x] `TestReviewerPackConventions`
+- [x] `TestPromptMarkers` with the new system hash

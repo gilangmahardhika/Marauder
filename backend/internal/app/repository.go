@@ -6,11 +6,13 @@ import (
 	"errors"
 
 	"orchestrator/backend/internal/company"
+	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/identity"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/tenancy"
+	"orchestrator/backend/internal/trace"
 )
 
 var ErrSync = errors.New("sync failed")
@@ -99,5 +101,28 @@ func Sync(ctx context.Context, db *sql.DB, key []byte, data, projectID string, t
 	if _, err := git.EnsureCheckout(ctx, project.BaseBranch, runtime.Remote{URL: acct.CloneURL(project.Repo), Token: token}); err != nil {
 		return Repository{}, errors.Join(ErrSync, err)
 	}
+	if err := DetectStacks(ctx, db, projectID, project.RepoPath); err != nil {
+		return Repository{}, err
+	}
 	return RepositoryView(ctx, db, data, projectID, tools)
+}
+
+// DetectStacks replaces the project's detected stacks from its clone and keeps
+// the ones a Lead Developer added by hand (RFC-055).
+func DetectStacks(ctx context.Context, db *sql.DB, projectID, repoPath string) error {
+	stacks, err := conventions.Stacks(ctx, db)
+	if err != nil {
+		return err
+	}
+	ids, err := conventions.Detect(repoPath, stacks)
+	if err != nil {
+		return err
+	}
+	if err := conventions.ReplaceDetected(ctx, db, projectID, ids); err != nil {
+		return err
+	}
+	_, err = trace.Append(ctx, db, trace.Event{
+		ProjectID: projectID, Kind: "stacks_detected", Payload: map[string]any{"stackIds": ids},
+	}, nil)
+	return err
 }

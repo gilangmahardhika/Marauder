@@ -7,7 +7,8 @@
   const links = [
     { href: '/settings/repository', label: 'Repository' },
     { href: '/settings/links', label: 'Linked projects' },
-    { href: '/settings/deploy', label: 'Deploy' }
+    { href: '/settings/deploy', label: 'Deploy' },
+    { href: '/settings/conventions', label: 'Conventions' }
   ];
 
   function active(href: string) {

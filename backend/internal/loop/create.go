@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/contextpack"
+	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/trace"
 )
 
@@ -30,6 +32,25 @@ func latestNote(ctx context.Context, db *sql.DB, cardID string) (string, error) 
 		return "", nil
 	}
 	return note, err
+}
+
+// CardConventions reads a card's rules and skills once for an attempt, with the
+// trace items that name each one by id, version, and hash (RFC-055).
+func CardConventions(ctx context.Context, db *sql.DB, projectID, cardID string) ([]contextpack.Convention, []map[string]any, error) {
+	items, err := conventions.ForCard(ctx, db, projectID, cardID)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]contextpack.Convention, 0, len(items))
+	refs := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		out = append(out, contextpack.Convention{
+			Kind: it.Kind, ID: it.ID, Version: it.Version, Hash: it.Hash, Title: it.Title,
+			Label: it.Label, Category: it.Category, Slug: it.Slug, UseWhen: it.UseWhen, Body: it.Body,
+		})
+		refs = append(refs, map[string]any{"kind": it.Kind, "id": it.ID, "version": it.Version, "hash": it.Hash})
+	}
+	return out, refs, nil
 }
 
 type CreateInput struct {
@@ -60,6 +81,22 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 			return board.Card{}, ErrOwners
 		}
 	}
+	skillIDs := stringList(in.Args["skillIds"])
+	if len(skillIDs) > 0 {
+		enabled, err := conventions.EnabledSkills(ctx, in.DB, in.ProjectID)
+		if err != nil {
+			return board.Card{}, err
+		}
+		ok := map[string]bool{}
+		for _, k := range enabled {
+			ok[k.ID] = true
+		}
+		for _, id := range skillIDs {
+			if !ok[id] {
+				return board.Card{}, ErrSkill
+			}
+		}
+	}
 	if _, ok := in.Args["command"]; ok {
 		if _, err := trace.Append(ctx, in.DB, trace.Event{
 			ProjectID: in.ProjectID,
@@ -76,7 +113,12 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 	}
 	title, _ := in.Args["title"].(string)
 	risk, _ := in.Args["risk"].(string)
-	card, err := board.InsertCard(ctx, in.DB, board.Card{
+	tx, err := in.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return board.Card{}, err
+	}
+	defer tx.Rollback()
+	card, err := board.InsertCard(ctx, tx, board.Card{
 		ProjectID:      in.ProjectID,
 		OwnerID:        owner,
 		Title:          title,
@@ -89,7 +131,10 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 	if err != nil {
 		return board.Card{}, err
 	}
-	return card, nil
+	if err := conventions.SetCardSkills(ctx, tx, in.ProjectID, card.ID, skillIDs); err != nil {
+		return board.Card{}, err
+	}
+	return card, tx.Commit()
 }
 
 func stringList(value any) []string {

@@ -38,6 +38,10 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | Push refspec destination is not the card branch | No network call |
 | Card owner missing, disabled, unverified, or without a token | `owner_github`, no push and no pull request call. The company token is never used instead (RFC-054) |
 | Approver is the card owner | `403`, no approval row |
+| Rule or skill text asks for a tool, a command, or a status | Nothing changes. The text sits inside the untrusted markers, and the tool list is the profile constant (RFC-055) |
+| Rules and skills exceed the 64 KiB section cap | The blocks that do not fit become `omitted` notes. The pack never exceeds its cap |
+| `create_card` names a skill the project has not enabled | No card is stored (RFC-056) |
+| Stack detection meets a symlink or a file over 1 MiB | The link is not followed, and the file is read only to 1 MiB |
 | Event `UPDATE` or `DELETE` | Postgres trigger aborts the statement |
 | Deploy SHA is not 40 or 64 hex digits | `deploy_config`, no exec |
 | Transition status changed after read | `409`, no side effect |
@@ -62,9 +66,12 @@ CARD
 <card fields from the board>
 
 UNTRUSTED START
+<company rules and the card's skills>
 <requirements, diff, files, log tail, comments>
 UNTRUSTED END
 ```
+
+Company rules and skills are written by an admin, not by the target repo, and they still sit inside the markers (RFC-055). They are guidance for the code the model writes. They cannot widen the tool list, name a check command, or move a card. The system string says so in one fixed sentence. Each rule or skill block is capped at 16 KiB, and the blocks together at 64 KiB, inside the 256 KiB untrusted cap.
 
 The system string tells the model that text between the markers is data. Builders strip any copy of the marker lines from untrusted text before wrapping it. They refuse a section over the caps below. They run `redact` on the user string before return. They do not append model text from an older attempt.
 
@@ -416,6 +423,10 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestGitHubLoginVerified` | The account token test stores the login `gh api user` reports. A new token clears it. A second user cannot verify the same login |
 | `TestBaseRefUnchanged` | Local `refs/heads/main` is unchanged after a job, and a forced change blocks with `base_moved` |
 | `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped, and the system hash matches |
+| `TestPackConventions` | Rule and skill blocks sit between the markers before the requirements, a block over 16 KiB ends with `truncated: true`, blocks past 64 KiB become `omitted` notes, and a planted secret is `[redacted]` (RFC-055) |
+| `TestConventionsCannotAddTool` | A rule whose body asks for a `deploy` tool leaves the implementer tool list unchanged, and a scripted `deploy` call is rejected |
+| `TestConventionsContextEvent` | An attempt appends one `conventions_context` event with each rule and skill id, version, and hash |
+| `TestReviewerPackConventions` | The reviewer pack carries the card's rules and skills inside the markers |
 
 ## Operator duties
 

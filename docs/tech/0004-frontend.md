@@ -97,6 +97,12 @@ frontend/
   src/routes/admin/llm/new/+page.svelte
   src/routes/admin/llm/[family]/+page.svelte
   src/routes/admin/router/+page.svelte
+  src/routes/admin/conventions/+page.svelte
+  src/routes/admin/conventions/new/+page.svelte
+  src/routes/admin/conventions/[id]/+page.svelte
+  src/routes/admin/skills/+page.svelte
+  src/routes/admin/skills/new/+page.svelte
+  src/routes/admin/skills/[id]/+page.svelte
   src/routes/tribes/+page.svelte
   src/routes/tribes/new/+page.svelte
   src/routes/tribes/[id]/+page.svelte
@@ -106,11 +112,13 @@ frontend/
   src/routes/settings/repository/+page.svelte
   src/routes/settings/links/+page.svelte
   src/routes/settings/deploy/+page.svelte
+  src/routes/settings/conventions/+page.svelte
   src/lib/api.ts
   src/lib/session.ts
   src/lib/types.ts
   src/lib/roles.ts
   src/lib/llm.ts
+  src/lib/conventions.ts
   src/lib/shell.svelte.ts
   src/lib/ui/Button.svelte
   src/lib/ui/Field.svelte
@@ -137,8 +145,12 @@ frontend/
   src/lib/components/RequirementForm.svelte
   src/lib/components/IntakeActions.svelte
   src/lib/components/ReviewersPanel.svelte
+  src/lib/components/RuleForm.svelte
+  src/lib/components/StackForm.svelte
+  src/lib/components/SkillForm.svelte
   src/lib/requirements.ts
   src/lib/api.test.ts
+  src/lib/conventions.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
@@ -175,6 +187,12 @@ frontend/
 | `/admin/llm/new` | Create an LLM family |
 | `/admin/llm/[family]` | Edit, test, or delete one LLM family |
 | `/admin/router` | Router for the company |
+| `/admin/conventions` | Coding rules by Global and by stack, and a Stacks tab |
+| `/admin/conventions/new` | Add a rule, or a stack with `?kind=stack` |
+| `/admin/conventions/[id]` | Edit or delete one rule or stack |
+| `/admin/skills` | Integration skills |
+| `/admin/skills/new` | Add a skill |
+| `/admin/skills/[id]` | Edit or delete one skill |
 | `/tribes` | Tribes |
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
@@ -183,8 +201,9 @@ frontend/
 | `/settings/repository` | Project repository, base branch, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
 | `/settings/deploy` | Deploy and checks for the project |
+| `/settings/conventions` | The project's stacks, enabled skills, and the rules that apply |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router). LLM APIs and Router are company settings (RFC-052), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
@@ -238,7 +257,7 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-Show title, raw status, owner (login and email, or "None"), requirement ids, decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
+Show title, raw status, owner (login and email, or "None"), requirement ids, decision ids, skills by title (or "None"), risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 
 Render a control only when its name is in `actions`:
 
@@ -356,6 +375,18 @@ Above the table, print the server sentence:
 The page does not calculate that flag itself.
 
 The save result line includes "Applies to the next route decision."
+
+### Conventions and skills
+
+`src/routes/admin/conventions/+page.svelte` reads `GET /api/conventions` (RFC-055). The Rules tab groups rules under Global, then one table per stack by name: title, the first line of the body, category, version, and a Disabled badge. Each group has an "Add ... rule" link that opens `/admin/conventions/new` with the stack chosen. The Stacks tab (`?tab=stacks`) lists each stack with its markers and rule count. Rule and stack text renders as plain text.
+
+`RuleForm.svelte` has "Applies to" (every project or one stack), the stack, category, title, the rule body as a monospace `Field type="textarea"`, and Disabled. `StackForm.svelte` has the name and the marker files, npm dependencies, and Python dependencies as comma separated fields. `/admin/conventions/[id]` picks the form from the id prefix (`stk_` is a stack), shows the version and "Last edited by" the email and time, saves with PUT, and has a delete panel behind an inline confirm. Delete says a stack still named by a rule or project is disabled instead.
+
+`src/routes/admin/skills/+page.svelte` lists skills from the same GET (RFC-056): title, slug, "use when", version. `SkillForm.svelte` has slug, title, "Use when", the procedure as a monospace textarea, and Disabled. New and edit pages follow the rule pages. Field errors come from the API `fields`. A `403` sets the live message.
+
+### Project conventions
+
+`src/routes/settings/conventions/+page.svelte`. GET and PUT `/api/projects/{id}/settings/conventions`, and GET `/api/conventions` for the options. Detected stacks show as badges with a hint to Sync when there are none. "Added by hand" is a `MultiSearchSelect` of enabled stacks that are not detected. "Enabled skills" is a `MultiSearchSelect` of enabled skills, with the slug as the detail line. Both allow 30. A read-only table lists the rules that apply: title, Global or the stack name, category, version. The `SaveBar` note says only a Lead Developer can save.
 
 ### Deploy and checks
 

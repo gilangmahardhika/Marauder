@@ -104,6 +104,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |
 | `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |
 | `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer, an unverified reviewer, or the creator is `422` |
+| `TestConventionCatalogAdminOnly` | Every signed-in user reads `/api/conventions`. A Lead Developer who is not an admin gets `403` on create, update, and delete. An admin save appends `config_changed` with section `conventions` (RFC-055) |
+| `TestConventionRevisions` | Editing a rule increments its version, changes its hash, and keeps the old text in `convention_revisions`. A save with the same text keeps the version |
+| `TestDetectStacks` | A repo with `go.mod`, and a `web/package.json` that depends on `@sveltejs/kit` and `typescript`, is detected as Go, TypeScript, and SvelteKit. `node_modules` and a symlinked directory are not walked |
+| `TestSyncKeepsManualStacks` | A Sync replaces detected stacks, keeps a stack added by hand, and appends `stacks_detected` |
+| `TestProjectConventionsLeadOnly` | A Lead Developer member saves manual stacks and enabled skills. A Developer member is `403`. An unknown or disabled id is `422` |
+| `TestCreateCardSkills` | `create_card` with an enabled skill stores it in `card_skills` and the card JSON lists it. A skill not enabled for the project stores no card (RFC-056) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

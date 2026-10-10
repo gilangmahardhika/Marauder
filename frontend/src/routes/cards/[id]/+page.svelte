@@ -100,6 +100,7 @@
           )}
           {@render item('Requirements', card.requirementIds.join(', ') || '—', true)}
           {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
+          {@render item('Skills', (card.skills ?? []).map((skill) => skill.title).join(', ') || 'None')}
           {@render item('Risk', card.risk)}
           {@render item('Attempts', `${card.attemptsUsed} of ${card.maxAttempts}`)}
           {#if card.branch}{@render item('Branch', card.branch, true)}{/if}

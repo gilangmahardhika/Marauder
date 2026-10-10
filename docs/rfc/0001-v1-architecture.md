@@ -200,6 +200,8 @@ Requirements: REQ-016, REQ-017.
 
 Superseded in part by RFC-051 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). Packs add linked project context, and the implementer adds `read_linked_file`. Each role still has one fixed pack and one tool list.
 
+Superseded in part by RFC-055 and RFC-056 in [0010-conventions-and-skills.md](0010-conventions-and-skills.md). The implementer and reviewer packs add the company coding rules for the project's stacks and the card's skills, inside the untrusted markers. The planner's `create_card` adds `skillIds`. The tool lists do not change.
+
 ## RFC-014 A model turn cannot supply the shell that runs
 
 `localCheck` and `devCheck` are fields on the card, visible before the inner loop starts. The runner executes that stored command with the working directory pinned to the worktree. The executable must be on an allowlist. Text emitted during a model turn is not a command.

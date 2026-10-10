@@ -271,3 +271,18 @@ Migration `00009` adds `cards.owner_id`, `requirement_reviewers`, and `user_gith
 - UI: owner on the board and the card page, a reviewer picker on Intake, and Verified on the account GitHub page.
 
 Done when: `TestIngestRecordsCreator`, `TestCardOwnerFromRequirement`, `TestCreateCardMixedOwners`, `TestGitHubLoginVerified`, `TestCommitIdentityOwner`, `TestPushUsesOwnerToken`, `TestOwnerGitHubBlocks`, `TestRequestReviewers`, `TestReviewersSetByCreator`, `TestOwnerCannotApprove`.
+
+## Sprint 18: Conventions and skills
+
+Goal: An admin keeps the company coding rules by stack and the integration skills. Each project's stacks are detected on Sync, a Lead Developer adds stacks and enables skills, the planner attaches skills to cards, and the implementer and reviewer packs carry the matching rules and skills with their versions in the trace (RFC-055, RFC-056).
+
+Migration `00010` adds `stacks`, `convention_rules`, `skills`, `convention_revisions`, `project_stacks`, `project_skills`, and `card_skills`, with seed stacks, two global rules, and one OAuth skill. Packages: `internal/conventions`, `internal/contextpack`, `internal/loop`, `internal/app`, `internal/trace`, `internal/httpapi`.
+
+- `conventions` saves rules, stacks, and skills with versions, hashes, and revisions. Only an admin may save.
+- `conventions.Detect` reads marker files and dependencies from the clone. `app.Sync` replaces detected stacks and appends `stacks_detected`.
+- `GET` and `PUT /api/projects/{id}/settings/conventions` for manual stacks and enabled skills, Lead Developer only.
+- `create_card` takes `skillIds` from the project's enabled skills and stores them in `card_skills`. The card JSON adds `skills`.
+- The implementer and reviewer packs open the untrusted section with rule and skill blocks, under 16 KiB per block and 64 KiB in total. The attempt appends `conventions_context`.
+- UI: admin Conventions and Skills pages, a project Conventions tab, and skills on the card page.
+
+Done when: `TestConventionCatalogAdminOnly`, `TestConventionRevisions`, `TestDetectStacks`, `TestSyncKeepsManualStacks`, `TestProjectConventionsLeadOnly`, `TestCreateCardSkills`, `TestPackConventions`, `TestConventionsCannotAddTool`, `TestConventionsContextEvent`, `TestReviewerPackConventions`, and `TestPromptMarkers` with the new system hash.

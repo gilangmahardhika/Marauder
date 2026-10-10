@@ -16,9 +16,13 @@ export type IconName =
   | 'link'
   | 'building'
   | 'eye'
-  | 'eye-off';
+  | 'eye-off'
+  | 'rules'
+  | 'skill';
 
 export const iconPaths: Record<IconName, string[]> = {
+  rules: ['M9 6h11', 'M9 12h11', 'M9 18h11', 'M4.5 6h.01', 'M4.5 12h.01', 'M4.5 18h.01'],
+  skill: ['M14.7 6.3a4 4 0 00-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z'],
   board: ['M4 4h5v16H4z', 'M10.5 4h4v10h-4z', 'M16 4h4v14h-4z'],
   intake: ['M12 3l8 4v10l-8 4-8-4V7z', 'M4 7l8 4 8-4', 'M12 11v10'],
   projects: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],

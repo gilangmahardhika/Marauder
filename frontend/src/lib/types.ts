@@ -12,6 +12,7 @@ export type Card = {
   actions: string[];
   unblockTo: string | null;
   owner: CardOwner | null;
+  skills: SkillRef[];
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -33,6 +34,12 @@ export type Card = {
   failureReason: string | null;
   blockedReason: string | null;
   updatedAt: string;
+};
+
+export type SkillRef = {
+  id: string;
+  slug: string;
+  title: string;
 };
 
 export type Board = {
@@ -191,4 +198,73 @@ export type DeploySettings = {
   implementationCap: number;
   prdPath: string;
   rfcPath: string;
+};
+
+export type RuleCategory = 'naming' | 'database' | 'style' | 'framework' | 'security' | 'testing';
+
+export type ConventionRule = {
+  id: string;
+  scope: 'global' | 'stack';
+  stackId: string;
+  category: RuleCategory;
+  title: string;
+  body: string;
+  version: number;
+  contentHash: string;
+  disabled: boolean;
+  updatedBy: string | null;
+  updatedAt: string;
+};
+
+export type StackMarkers = {
+  files: string[];
+  npmDeps: string[];
+  pyDeps: string[];
+};
+
+export type Stack = {
+  id: string;
+  name: string;
+  detect: StackMarkers;
+  version: number;
+  contentHash: string;
+  disabled: boolean;
+  updatedBy: string | null;
+  updatedAt: string;
+};
+
+export type Skill = {
+  id: string;
+  slug: string;
+  title: string;
+  useWhen: string;
+  body: string;
+  version: number;
+  contentHash: string;
+  disabled: boolean;
+  updatedBy: string | null;
+  updatedAt: string;
+};
+
+export type ConventionCatalog = {
+  rules: ConventionRule[];
+  stacks: Stack[];
+  skills: Skill[];
+};
+
+export type RuleInput = {
+  scope: string;
+  stackId: string;
+  category: string;
+  title: string;
+  body: string;
+  disabled: boolean;
+};
+export type StackInput = Pick<Stack, 'name' | 'detect' | 'disabled'>;
+export type SkillInput = Pick<Skill, 'slug' | 'title' | 'useWhen' | 'body' | 'disabled'>;
+
+export type ProjectConventions = {
+  stacks: { id: string; name: string; source: 'detected' | 'manual' }[];
+  skillIds: string[];
+  rules: { id: string; title: string; scope: 'global' | 'stack'; stackName: string; category: RuleCategory; version: number }[];
 };

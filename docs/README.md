@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-058`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-062`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -14,6 +14,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0007-global-models-and-router.md](rfc/0007-global-models-and-router.md) | Decision `RFC-052`. LLM APIs and the router are one company setting |
 | [rfc/0008-manual-requirements.md](rfc/0008-manual-requirements.md) | Decision `RFC-053`. Manual requirements, and every senior role accepts |
 | [rfc/0009-card-owner.md](rfc/0009-card-owner.md) | Decision `RFC-054`. Card owner, owner commits and pull requests, intake reviewers |
+| [rfc/0010-conventions-and-skills.md](rfc/0010-conventions-and-skills.md) | Decisions `RFC-055` and `RFC-056`. Company coding rules by stack, and integration skills |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

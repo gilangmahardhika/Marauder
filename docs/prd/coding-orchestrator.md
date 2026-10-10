@@ -2,7 +2,7 @@
 
 Status: v1 draft, revised after review. Date: 2026-10-10.
 
-This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0009. Implementation guides are in `docs/tech/`.
+This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0010. Implementation guides are in `docs/tech/`.
 
 ## Problem
 
@@ -14,9 +14,9 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 
 | Person | What they do |
 | --- | --- |
-| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account, LLM APIs, and router. Does not approve or deploy unless the job role allows it. |
+| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account, LLM APIs, router, coding rules, stacks, and integration skills. Does not approve or deploy unless the job role allows it. |
 | Product Owner | Accepts requirements for a project whose tribe they belong to. May request changes, reject, approve, and unblock. Does not deploy. |
-| Lead Developer | Accepts requirements. May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, and deploy settings. |
+| Lead Developer | Accepts requirements. May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, deploy settings, added stacks, and enabled skills. |
 | QA Lead | Accepts requirements. May request changes, reject, and approve. Does not deploy. |
 | Senior Developer | Accepts requirements. May start a run and request changes. Does not approve, reject, or deploy. |
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
@@ -101,6 +101,10 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-056 | A card belongs to the person who brought its requirements in |
 | REQ-057 | The owner commits and opens the pull request |
 | REQ-058 | The requirement's creator picks pull request reviewers |
+| REQ-059 | An admin keeps the company coding rules |
+| REQ-060 | A project's stacks are detected, and a Lead Developer may add more |
+| REQ-061 | A project enables integration skills, and the planner attaches them to cards |
+| REQ-062 | Packs carry the rules and skills, and the trace names their versions |
 
 ## Requirements
 
@@ -318,9 +322,9 @@ Pack contents are fixed. A snapshot test locks each pack.
 
 | Pack | Includes | Excludes |
 | --- | --- | --- |
-| Planner | PRD outline, requirement candidates, RFC decisions, existing card titles and dependencies | File diffs, credentials, attempt logs |
-| Implementer | The one card, linked requirement statements, linked decisions, repo path map, local check command, the last failure note if any, and linked project context (REQ-054) | Other cards' diffs, deploy secrets |
-| Reviewer | Linked requirements, linked decisions, the diff, local check output, pull request body, and linked project context (REQ-054) | Author messages, author tool trace |
+| Planner | PRD outline, requirement candidates, RFC decisions, existing card titles and dependencies, and the project's enabled skills by slug and "use when" (REQ-061) | File diffs, credentials, attempt logs |
+| Implementer | The one card, the company rules and the card's skills (REQ-062), linked requirement statements, linked decisions, repo path map, local check command, the last failure note if any, and linked project context (REQ-054) | Other cards' diffs, deploy secrets |
+| Reviewer | The company rules and the card's skills (REQ-062), linked requirements, linked decisions, the diff, local check output, pull request body, and linked project context (REQ-054) | Author messages, author tool trace |
 | Triage | Failing command, exit code, log tail, card acceptance | Any instruction or tool that edits files |
 
 The log tail included in a pack is capped. The default cap is the last 200 lines.
@@ -841,6 +845,47 @@ The member who brought a requirement in, or a Lead Developer member, names revie
 - The reviewer request on the pull request excludes the owner and the bot.
 - A failed reviewer request leaves the card status unchanged.
 
+### REQ-059 An admin keeps the company coding rules
+
+The company has one catalog of coding rules. A rule is global (naming, database tables and columns, style) or belongs to one stack (a language or framework). Each stack lists the marker files and dependencies that identify it. Only an admin creates, edits, or disables rules and stacks. Every signed-in user may read them. Each save increments the version, stores the content hash, and keeps the old text as a revision (RFC-055).
+
+#### Acceptance
+
+- A user who is not an admin cannot create, edit, or disable a rule, a stack, or a skill.
+- Editing a rule increments its version and appends a revision with the previous hash still readable.
+- A rule body longer than 8000 characters is rejected with a field error.
+- A catalog save appends `config_changed` with section `conventions` and field names only.
+
+### REQ-060 A project's stacks are detected, and a Lead Developer may add more
+
+Each Sync detects the project's stacks from the clone's marker files and dependencies, two directory levels deep, without following links. A Lead Developer member may add stacks by hand. A Sync replaces the detected stacks and keeps the added ones. The rules for a card are the global rules plus the rules of the project's stacks (RFC-055).
+
+#### Acceptance
+
+- A repository with `go.mod` and a `package.json` that depends on `@sveltejs/kit` is detected as Go, TypeScript, and SvelteKit.
+- A Sync keeps a stack a Lead Developer added by hand.
+- Saving a project's stacks as a Developer is rejected.
+
+### REQ-061 A project enables integration skills, and the planner attaches them to cards
+
+An admin writes a skill: a slug, when to use it, and a body with steps, configuration, security rules, and a test checklist. A Lead Developer member enables skills for a project. The planner sees the enabled skills and may attach them to a card with `skillIds`. A skill that is not enabled for the project fails the tool call (RFC-056).
+
+#### Acceptance
+
+- `create_card` with an enabled skill stores it on the card, and the card JSON lists it.
+- `create_card` with a skill the project has not enabled stores no card.
+
+### REQ-062 Packs carry the rules and skills, and the trace names their versions
+
+The implementer and reviewer packs carry the card's rules and skills inside the untrusted markers, after the card block. Each item is capped at 16 KiB and the section at 64 KiB, and an item that does not fit is replaced by a note. The text is redacted. An attempt reads the rules once and appends a `conventions_context` event with each id, version, and hash. Rule and skill text cannot add a tool or a command (RFC-055, RFC-056).
+
+#### Acceptance
+
+- The implementer pack places rule and skill blocks between the markers.
+- A section over the cap ends with an `omitted` note, and the pack stays under the pack cap.
+- A rule that asks for a deploy tool leaves the implementer tool list unchanged.
+- An attempt's trace lists the rules and skills it used, with versions and hashes.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -940,3 +985,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 13. The company GitHub account, project repositories, and linked projects (REQ-052 through REQ-054).
 14. Manual requirements and senior accept (REQ-055).
 15. Card owner, owner pull requests, and intake reviewers (REQ-056 through REQ-058).
+16. Coding rules, stacks, and integration skills (REQ-059 through REQ-062).

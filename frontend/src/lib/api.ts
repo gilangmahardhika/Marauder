@@ -5,15 +5,23 @@ import type {
   Card,
   CompanyGitHub,
   CompanyRepo,
+  ConventionCatalog,
+  ConventionRule,
   DeploySettings,
   Intake,
   LLMSettings,
+  ProjectConventions,
   ProjectLink,
   ProjectRecord,
   Repository,
   RequirementDraft,
   RouterSettings,
+  RuleInput,
   SessionUser,
+  Skill,
+  SkillInput,
+  Stack,
+  StackInput,
   TraceEvent,
   TribeRecord
 } from '$lib/types';
@@ -293,6 +301,44 @@ export function getDeploy() {
 
 export function putDeploy(body: Record<string, unknown>) {
   return request<DeploySettings>(`${projectPrefix()}/settings/deploy`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export function getConventions() {
+  return request<ConventionCatalog>('/api/conventions');
+}
+
+export type ConventionKind = 'rules' | 'stacks' | 'skills';
+
+function saveConvention<T>(kind: ConventionKind, id: string, body: unknown) {
+  const path = id ? `/api/conventions/${kind}/${encodeURIComponent(id)}` : `/api/conventions/${kind}`;
+  return request<T>(path, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+}
+
+export function saveRule(id: string, body: RuleInput) {
+  return saveConvention<ConventionRule>('rules', id, body);
+}
+
+export function saveStack(id: string, body: StackInput) {
+  return saveConvention<Stack>('stacks', id, body);
+}
+
+export function saveSkill(id: string, body: SkillInput) {
+  return saveConvention<Skill>('skills', id, body);
+}
+
+export function deleteConvention(kind: ConventionKind, id: string) {
+  return request<void>(`/api/conventions/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export function getProjectConventions() {
+  return request<ProjectConventions>(`${projectPrefix()}/settings/conventions`);
+}
+
+export function putProjectConventions(body: { manualStackIds: string[]; skillIds: string[] }) {
+  return request<ProjectConventions>(`${projectPrefix()}/settings/conventions`, {
+    method: 'PUT',
+    body: JSON.stringify(body)
+  });
 }
 
 export function unreachable() {

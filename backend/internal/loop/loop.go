@@ -30,6 +30,9 @@ var ErrRequirement = errors.New("unknown or unaccepted requirement")
 // ErrOwners rejects a card whose requirements were brought in by different users (RFC-054).
 var ErrOwners = errors.New("requirements have different creators; create one card per creator")
 
+// ErrSkill rejects a card that names a skill the project has not enabled (RFC-056).
+var ErrSkill = errors.New("skill is not enabled for this project")
+
 func ImplementerTools() []providers.Tool {
 	return []providers.Tool{
 		{Name: "read_file"},
@@ -119,6 +122,10 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	convs, convItems, err := CardConventions(ctx, in.DB, card.ProjectID, card.ID)
+	if err != nil {
+		return Result{}, err
+	}
 	system, user, systemHash, err := contextpack.BuildImplementer(contextpack.Input{
 		Card: contextpack.Card{
 			ID: card.ID, Title: card.Title, Status: card.Status, LocalCheck: card.LocalCheck,
@@ -126,6 +133,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		Requirements: statements,
 		FailureNote:  note,
 		Linked:       linked,
+		Conventions:  convs,
 		Secrets:      in.Secrets,
 	})
 	if err != nil {
@@ -150,6 +158,12 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	session := &session{
 		in: in, card: card, wt: wt, attemptID: attemptID,
 		system: system, user: user, linkedRoots: linkedRoots,
+	}
+	if err := session.event(ctx, "tool_call", map[string]any{
+		"name": "conventions_context", "ok": true, "rejected": false,
+		"summary": fmt.Sprintf("%d rules and skills", len(convItems)), "items": convItems,
+	}); err != nil {
+		return Result{}, err
 	}
 	if len(linkedRefs) > 0 {
 		if err := session.event(ctx, "tool_call", map[string]any{
