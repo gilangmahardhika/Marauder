@@ -1,4 +1,5 @@
 const key = 'orchestrator.bearer';
+const projectKey = 'orchestrator.project';
 
 export const session = {
   bearer(): string {
@@ -10,5 +11,13 @@ export const session = {
   },
   clear() {
     sessionStorage.removeItem(key);
+    sessionStorage.removeItem(projectKey);
+  },
+  project(): string {
+    if (typeof sessionStorage === 'undefined') return '';
+    return sessionStorage.getItem(projectKey) ?? '';
+  },
+  setProject(value: string) {
+    sessionStorage.setItem(projectKey, value);
   }
 };

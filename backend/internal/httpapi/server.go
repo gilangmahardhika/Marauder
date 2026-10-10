@@ -1,39 +1,53 @@
 package httpapi
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
 
+	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 )
 
 type Server struct {
-	Token   string
-	DB      *sql.DB
-	Data    string
-	mu      sync.Mutex
-	bearers map[string]time.Time
-	fails   int
-	paused  time.Time
+	DB          *sql.DB
+	Data        string
+	TokenKey    []byte
+	TestBearer  string
+	AllowOrigin string
+	AllowHosts  map[string]bool
+	Cloud       bool
 }
 
-func New(token string) *Server {
-	s := &Server{Token: token, bearers: map[string]time.Time{}}
-	if token == "startup-token" {
-		s.bearers["bearer-token-for-tests"] = time.Now().Add(12 * time.Hour)
-	}
-	return s
+func New() *Server {
+	return &Server{AllowOrigin: "http://127.0.0.1:4173"}
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/session", s.session)
+	mux.HandleFunc("POST /api/session", s.login)
+	mux.HandleFunc("DELETE /api/session", s.logout)
+	mux.HandleFunc("GET /api/me", s.me)
+	mux.HandleFunc("PUT /api/me/password", s.changePassword)
+	mux.HandleFunc("POST /api/me/github/test", s.testMyGitHub)
+	mux.HandleFunc("/api/me/github", s.myGitHub)
+	mux.HandleFunc("PUT /api/users/{id}", s.updateUser)
+	mux.HandleFunc("/api/users", s.users)
+	mux.HandleFunc("GET /api/tribes", s.tribes)
+	mux.HandleFunc("POST /api/tribes", s.tribes)
+	mux.HandleFunc("GET /api/tribes/{id}/members", s.listMembers)
+	mux.HandleFunc("POST /api/tribes/{id}/members", s.addMember)
+	mux.HandleFunc("DELETE /api/tribes/{id}/members/{userId}", s.removeMember)
+	mux.HandleFunc("GET /api/projects", s.projectCollection)
+	mux.HandleFunc("POST /api/projects", s.projectCollection)
+	mux.HandleFunc("/api/projects/{projectId}/cards", s.projectCards)
+	mux.HandleFunc("/api/projects/{projectId}/cards/", s.projectCard)
+	mux.HandleFunc("/api/projects/{projectId}/intake", s.projectIntake)
+	mux.HandleFunc("POST /api/projects/{projectId}/ingest", s.projectIngest)
+	mux.HandleFunc("POST /api/projects/{projectId}/accept", s.projectAccept)
+	mux.HandleFunc("POST /api/projects/{projectId}/runs", s.projectRuns)
+	mux.HandleFunc("/api/projects/{projectId}/settings/github", s.projectGitHub)
 	mux.HandleFunc("/api/cards", s.cards)
 	mux.HandleFunc("/api/cards/", s.card)
 	mux.HandleFunc("/api/intake", s.intake)
@@ -51,62 +65,44 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !loopbackHost(r.Host) {
+		if !s.hostAllowed(r.Host) {
 			writeErr(w, 403, "forbidden", "host")
 			return
 		}
 		origin := r.Header.Get("Origin")
-		if origin != "" && origin != "http://127.0.0.1:4173" {
+		if origin != "" && !s.originAllowed(origin) {
 			writeErr(w, 403, "forbidden", "origin")
 			return
 		}
-		if origin == "http://127.0.0.1:4173" {
+		if origin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return
 		}
-		if r.URL.Path != "/api/session" {
-			s.mu.Lock()
-			_, ok := s.bearers[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
-			s.mu.Unlock()
-			if !ok {
-				writeErr(w, 401, "unauthenticated", "bearer")
+		if r.URL.Path == "/api/session" && r.Method == http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if s.DB == nil {
+			if s.TestBearer != "" && bearerOf(r) == s.TestBearer {
+				next.ServeHTTP(w, r)
 				return
 			}
+			writeErr(w, 401, "unauthenticated", "bearer")
+			return
 		}
-		next.ServeHTTP(w, r)
+		user, err := app.UserByBearer(r.Context(), s.DB, bearerOf(r))
+		if err != nil {
+			writeErr(w, 401, "unauthenticated", "bearer")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(app.WithUser(r.Context(), user)))
 	})
-}
-
-func (s *Server) session(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Token string `json:"token"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&body)
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.paused.IsZero() && time.Now().Before(s.paused) {
-		writeErr(w, 429, "rate_limited", "locked")
-		return
-	}
-	if subtle.ConstantTimeCompare(hash(body.Token), hash(s.Token)) != 1 {
-		s.fails++
-		if s.fails >= 5 {
-			s.paused = time.Now().Add(time.Minute)
-			s.fails = 0
-		}
-		writeErr(w, 401, "unauthenticated", "token")
-		return
-	}
-	s.fails = 0
-	bearer := "bearer-token-for-tests"
-	s.bearers[bearer] = time.Now().Add(12 * time.Hour)
-	writeJSON(w, 200, map[string]any{"bearer": bearer, "expiresAt": s.bearers[bearer].UTC().Format(time.RFC3339)})
 }
 
 func (s *Server) cards(w http.ResponseWriter, r *http.Request) {
@@ -132,37 +128,72 @@ func (s *Server) card(w http.ResponseWriter, r *http.Request) {
 	if status == "" {
 		status = "in_progress"
 	}
-	group, actions, unblock := Actions(status, r.URL.Query().Get("reason"), r.URL.Query().Get("open") != "0")
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "lead_developer"
+	}
+	group, actions, unblock := Actions(status, r.URL.Query().Get("reason"), r.URL.Query().Get("open") != "0", role)
 	writeJSON(w, 200, map[string]any{
 		"id": id, "title": "card", "status": status, "group": group,
 		"actions": actions, "unblockTo": unblock,
 	})
 }
 
-func Actions(status, reason string, open bool) (string, []string, any) {
+func Actions(status, reason string, open bool, role string) (string, []string, any) {
+	var group string
+	var actions []string
+	var unblock any
 	switch status {
 	case "backlog", "ready":
-		return "waiting", []string{}, nil
+		group, actions, unblock = "waiting", []string{}, nil
 	case "in_progress", "self_check":
-		return "running", []string{}, nil
+		group, actions, unblock = "running", []string{}, nil
 	case "human_review":
-		return "review", []string{"approve", "request_changes", "reject"}, nil
+		group, actions, unblock = "review", []string{"approve", "request_changes", "reject"}, nil
 	case "approved":
-		return "shipping", []string{"request_changes", "reject"}, nil
+		group, actions, unblock = "shipping", []string{"request_changes", "reject", "deploy"}, nil
 	case "pr_open", "agent_review", "changes_requested":
-		return "review", []string{}, nil
+		group, actions, unblock = "review", []string{}, nil
 	case "deploying_dev", "verifying":
-		return "shipping", []string{}, nil
+		group, actions, unblock = "shipping", []string{}, nil
 	case "done":
-		return "finished", []string{}, nil
+		group, actions, unblock = "finished", []string{}, nil
 	case "blocked":
 		to, ok := unblockTo(reason, open)
 		if !ok {
 			return "stopped", []string{}, nil
 		}
-		return "stopped", []string{"unblock"}, to
+		group, actions, unblock = "stopped", []string{"unblock"}, to
 	default:
-		return "waiting", []string{}, nil
+		group, actions, unblock = "waiting", []string{}, nil
+	}
+	return group, filterActions(actions, role), unblock
+}
+
+func filterActions(actions []string, role string) []string {
+	out := make([]string, 0, len(actions))
+	for _, name := range actions {
+		if actionAllowed(role, strings.ReplaceAll(name, "_", "-")) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func actionAllowed(role, action string) bool {
+	switch action {
+	case "", "trace":
+		return true
+	case "approve", "reject":
+		return role == "lead_developer" || role == "qa_lead" || role == "product_owner"
+	case "request-changes":
+		return role == "lead_developer" || role == "qa_lead" || role == "product_owner" || role == "senior_developer"
+	case "unblock":
+		return role == "lead_developer" || role == "product_owner"
+	case "deploy":
+		return role == "lead_developer"
+	default:
+		return false
 	}
 }
 
@@ -178,6 +209,32 @@ func unblockTo(reason string, open bool) (string, bool) {
 	}
 }
 
+func (s *Server) originAllowed(origin string) bool {
+	allowed := s.AllowOrigin
+	if allowed == "" {
+		allowed = "http://127.0.0.1:4173"
+	}
+	if origin == allowed {
+		return true
+	}
+	if s.Cloud {
+		return false
+	}
+	return origin == "http://127.0.0.1:4173" || origin == "http://localhost:4173"
+}
+
+func (s *Server) hostAllowed(host string) bool {
+	if s.Cloud && len(s.AllowHosts) > 0 {
+		h := host
+		if i := strings.LastIndex(host, ":"); i >= 0 {
+			h = host[:i]
+		}
+		h = strings.Trim(h, "[]")
+		return s.AllowHosts[h] || s.AllowHosts[host]
+	}
+	return loopbackHost(host)
+}
+
 func loopbackHost(host string) bool {
 	h := host
 	if i := strings.LastIndex(host, ":"); i >= 0 {
@@ -185,11 +242,6 @@ func loopbackHost(host string) bool {
 	}
 	h = strings.Trim(h, "[]")
 	return h == "127.0.0.1" || h == "::1" || h == "localhost"
-}
-
-func hash(s string) []byte {
-	sum := sha256.Sum256([]byte(s))
-	return sum[:]
 }
 
 func writeErr(w http.ResponseWriter, status int, code, message string) {
@@ -203,6 +255,6 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 }
 
 func CardActions(card board.Card, open bool) []string {
-	_, actions, _ := Actions(card.Status, card.BlockedReason, open)
+	_, actions, _ := Actions(card.Status, card.BlockedReason, open, "lead_developer")
 	return actions
 }

@@ -20,6 +20,7 @@ type GateConfig struct {
 	Operator  string
 	BotLogin  string
 	Approvers []string
+	ActorID   string
 }
 
 func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig) (board.Card, error) {
@@ -47,7 +48,7 @@ func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig
 		return card, err
 	}
 	defer tx.Rollback()
-	next, err := machine.Transition(ctx, tx, card, "approved", machine.Evidence{SHA: sha, Approver: cfg.Operator}, nil)
+	next, err := machine.Transition(ctx, tx, card, "approved", machine.Evidence{SHA: sha, Approver: cfg.Operator, ActorID: cfg.ActorID}, nil)
 	if err != nil {
 		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
 			_ = tx.Commit()
@@ -100,6 +101,14 @@ func Reject(ctx context.Context, db *sql.DB, cardID string, cfg GateConfig) (boa
 		return card, ErrApprover
 	}
 	return transition(ctx, db, card, "blocked", machine.Evidence{Reason: "rejected", Approver: cfg.Operator})
+}
+
+func Deploy(ctx context.Context, db *sql.DB, cardID, actorID string) (board.Card, error) {
+	card, err := board.GetCard(ctx, db, cardID)
+	if err != nil {
+		return board.Card{}, err
+	}
+	return transition(ctx, db, card, "deploying_dev", machine.Evidence{SHA: card.ApprovedSHA, ActorID: actorID})
 }
 
 func HeadMoved(ctx context.Context, db *sql.DB, cardID, head string) (board.Card, error) {

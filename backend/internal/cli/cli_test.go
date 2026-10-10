@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,8 +14,62 @@ import (
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/board/boardtest"
 	"orchestrator/backend/internal/cli"
+	"orchestrator/backend/internal/httpapi"
 	"orchestrator/backend/internal/worker"
 )
+
+func TestCloudBind(t *testing.T) {
+	t.Setenv("ORCHESTRATOR_CLOUD", "1")
+	repo := t.TempDir()
+	data := t.TempDir()
+	if err := os.Chmod(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	opened := false
+	var stderr bytes.Buffer
+	code := cli.Execute(cli.Options{
+		Args:   []string{"serve", "--addr", "0.0.0.0:8787", "--repo", repo, "--data", data},
+		Stderr: &stderr,
+		Getenv: func(key string) string {
+			if key == "ORCHESTRATOR_DATABASE_URL" {
+				return "postgres://local/unused"
+			}
+			return os.Getenv(key)
+		},
+		Open: func(string) error {
+			opened = true
+			return nil
+		},
+	})
+	if code != 0 || !opened {
+		t.Fatalf("code = %d opened = %v stderr = %s", code, opened, stderr.String())
+	}
+	srv := httpapi.New()
+	srv.Cloud = true
+	srv.AllowHosts = map[string]bool{"127.0.0.1": true}
+	srv.TestBearer = "bearer-token-for-tests"
+	req := httptest.NewRequest(http.MethodGet, "/api/cards", nil)
+	req.Host = "evil.example:8787"
+	req.Header.Set("Authorization", "Bearer bearer-token-for-tests")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Fatalf("host = %d", rec.Code)
+	}
+}
+
+func TestParallelProjects(t *testing.T) {
+	first, err := worker.Lock(filepath.Join(t.TempDir(), "worker.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	second, err := worker.Lock(filepath.Join(t.TempDir(), "worker.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+}
 
 func TestDataDirInsideRepo(t *testing.T) {
 	t.Run("data inside repo", func(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/httpapi"
 	"orchestrator/backend/internal/worker"
@@ -27,6 +28,7 @@ type resolvedPaths struct {
 
 type secretFile struct {
 	DatabaseURL string            `json:"databaseUrl"`
+	TokenKey    string            `json:"tokenKey,omitempty"`
 	GitHubToken string            `json:"githubToken"`
 	DeployToken string            `json:"deployToken"`
 	LLMKeys     map[string]string `json:"llmKeys"`
@@ -71,31 +73,74 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 		return err
 	}
 	defer lock.Close()
-	url, err := loadDatabaseURL(paths.Data, opts.getenv)
+	secrets, err := loadSecrets(paths.Data, opts.getenv)
 	if err != nil {
 		return err
 	}
 	if opts.Open != nil {
-		return opts.Open(url)
+		return opts.Open(secrets.DatabaseURL)
 	}
-	var buf [16]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return err
-	}
-	token := hex.EncodeToString(buf[:])
-	fmt.Fprintf(opts.Stdout, "UI token: %s\n", token)
-	db, err := board.Open(url)
+	db, err := board.Open(secrets.DatabaseURL)
 	if err != nil {
-		return scrub(err, url)
+		return scrub(err, secrets.DatabaseURL)
 	}
 	defer db.Close()
 	if err := board.Migrate(db); err != nil {
-		return scrub(err, url)
+		return scrub(err, secrets.DatabaseURL)
 	}
-	srv := httpapi.New(token)
+	if err := bootstrapAdmin(opts, db); err != nil {
+		fmt.Fprintf(opts.Stderr, "admin bootstrap: %s\n", err)
+	}
+	key, err := hex.DecodeString(secrets.TokenKey)
+	if err != nil || len(key) != 32 {
+		return errors.New("tokenKey must be 32 bytes")
+	}
+	srv := httpapi.New()
 	srv.DB = db
 	srv.Data = paths.Data
+	srv.TokenKey = key
+	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
+		srv.Cloud = true
+		srv.AllowHosts = hostAllowlist(opts.getenv)
+		if origin := opts.getenv("ORCHESTRATOR_UI_ORIGIN"); origin != "" {
+			srv.AllowOrigin = origin
+		}
+	}
 	return http.ListenAndServe(addr, srv.Handler())
+}
+
+func bootstrapAdmin(opts Options, db *sql.DB) error {
+	email := strings.TrimSpace(opts.getenv("ORCHESTRATOR_ADMIN_EMAIL"))
+	password := opts.getenv("ORCHESTRATOR_ADMIN_PASSWORD")
+	if email == "" && password == "" {
+		return nil
+	}
+	if email == "" || password == "" {
+		return errors.New("set both ORCHESTRATOR_ADMIN_EMAIL and ORCHESTRATOR_ADMIN_PASSWORD")
+	}
+	_, err := app.Bootstrap(context.Background(), db, email, password)
+	if errors.Is(err, app.ErrAdminExists) {
+		return nil
+	}
+	if err == nil {
+		fmt.Fprintln(opts.Stdout, "admin created")
+	}
+	return err
+}
+
+func hostAllowlist(getenv func(string) string) map[string]bool {
+	raw := getenv("ORCHESTRATOR_HOSTS")
+	if raw == "" {
+		raw = "127.0.0.1,localhost"
+	}
+	out := map[string]bool{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out[part] = true
+		}
+	}
+	return out
 }
 
 func resolvePaths(opts Options, repoFlag, dataFlag string) (resolvedPaths, error) {
@@ -189,6 +234,9 @@ func checkLoopback(addr string) error {
 	if err != nil {
 		return fmt.Errorf("refusing non-loopback addr %s", addr)
 	}
+	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
+		return nil
+	}
 	if host != "127.0.0.1" && host != "::1" {
 		return fmt.Errorf("refusing non-loopback addr %s", addr)
 	}
@@ -215,36 +263,76 @@ func prepareDataDir(data string) error {
 }
 
 func loadDatabaseURL(data string, getenv func(string) string) (string, error) {
+	file, err := loadSecrets(data, getenv)
+	if err != nil {
+		return "", err
+	}
+	return file.DatabaseURL, nil
+}
+
+func loadSecrets(data string, getenv func(string) string) (secretFile, error) {
 	path := filepath.Join(data, "secrets.json")
 	body, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		key, err := newTokenKey()
+		if err != nil {
+			return secretFile{}, err
+		}
 		file := secretFile{
 			DatabaseURL: getenv("ORCHESTRATOR_DATABASE_URL"),
+			TokenKey:    key,
 			LLMKeys: map[string]string{
 				"anthropic": "",
 				"openai":    "",
 			},
 		}
-		raw, err := json.MarshalIndent(file, "", "  ")
+		if err := writeSecretFile(path, file); err != nil {
+			return secretFile{}, err
+		}
+		body, err = os.ReadFile(path)
 		if err != nil {
-			return "", err
+			return secretFile{}, err
 		}
-		raw = append(raw, '\n')
-		if err := writeAtomic(path, 0o600, raw); err != nil {
-			return "", err
-		}
-		body = raw
 	} else if err != nil {
-		return "", err
+		return secretFile{}, err
 	}
 	var file secretFile
 	if err := json.Unmarshal(body, &file); err != nil {
-		return "", err
+		return secretFile{}, err
+	}
+	if strings.TrimSpace(file.TokenKey) == "" {
+		key, err := newTokenKey()
+		if err != nil {
+			return secretFile{}, err
+		}
+		file.TokenKey = key
+		if err := writeSecretFile(path, file); err != nil {
+			return secretFile{}, err
+		}
 	}
 	if strings.TrimSpace(file.DatabaseURL) == "" {
-		return "", errors.New("databaseUrl is empty")
+		return secretFile{}, errors.New("databaseUrl is empty")
 	}
-	return file.DatabaseURL, nil
+	if strings.TrimSpace(file.TokenKey) == "" {
+		return secretFile{}, errors.New("tokenKey is empty")
+	}
+	return file, nil
+}
+
+func newTokenKey() (string, error) {
+	var buf [32]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf[:]), nil
+}
+
+func writeSecretFile(path string, file secretFile) error {
+	raw, err := json.MarshalIndent(file, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeAtomic(path, 0o600, append(raw, '\n'))
 }
 
 func writeAtomic(path string, mode os.FileMode, body []byte) error {

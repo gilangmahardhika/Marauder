@@ -66,12 +66,38 @@ export type Intake = {
   decisions: Decision[];
 };
 
+export type SessionUser = {
+  id: string;
+  email: string;
+  role: string;
+  admin: boolean;
+  disabled?: boolean;
+};
+
+export type TribeRecord = {
+  id: string;
+  name: string;
+};
+
+export type ProjectRecord = {
+  id: string;
+  tribeId: string;
+  name: string;
+  repoPath: string;
+};
+
+export type AccountGitHub = {
+  host: string;
+  login: string;
+  tokenSet: boolean;
+};
+
 export type GitHubSettings = {
   host: string;
   owner: string;
   repo: string;
   baseBranch: string;
-  approvers: string[];
+  approvers?: string[];
   botLogin: string;
   tokenSet: boolean;
 };

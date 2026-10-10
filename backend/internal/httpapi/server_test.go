@@ -33,27 +33,16 @@ func TestCORS(t *testing.T) {
 	if ok.Code != 200 || ok.Header().Get("Access-Control-Allow-Origin") != "http://127.0.0.1:4173" {
 		t.Fatalf("allowed = %d %s", ok.Code, ok.Header().Get("Access-Control-Allow-Origin"))
 	}
+	local := request(t, "/api/cards", "127.0.0.1:8787", "http://localhost:4173", bearer())
+	if local.Code != 200 || local.Header().Get("Access-Control-Allow-Origin") != "http://localhost:4173" {
+		t.Fatalf("localhost = %d %s", local.Code, local.Header().Get("Access-Control-Allow-Origin"))
+	}
 }
 
 func TestHostHeader(t *testing.T) {
 	rec := request(t, "/api/cards", "evil.example:8787", "", bearer())
 	if rec.Code != 403 {
 		t.Fatalf("status = %d", rec.Code)
-	}
-}
-
-func TestSessionLockout(t *testing.T) {
-	srv := httpapi.New("startup-token")
-	var last int
-	for i := 0; i < 6; i++ {
-		req := httptest.NewRequest(http.MethodPost, "/api/session", strings.NewReader(`{"token":"nope"}`))
-		req.Host = "127.0.0.1:8787"
-		rec := httptest.NewRecorder()
-		srv.Handler().ServeHTTP(rec, req)
-		last = rec.Code
-	}
-	if last != 429 {
-		t.Fatalf("6th status = %d", last)
 	}
 }
 
@@ -74,7 +63,8 @@ func get(t *testing.T, path, host, token string) string {
 
 func request(t *testing.T, path, host, origin, token string) *httptest.ResponseRecorder {
 	t.Helper()
-	srv := httpapi.New("startup-token")
+	srv := httpapi.New()
+	srv.TestBearer = bearer()
 	if token == "" {
 		token = bearer()
 	}

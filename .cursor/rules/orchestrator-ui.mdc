@@ -12,7 +12,7 @@ Follow `docs/tech/0004-frontend.md`. The page calls the API. It does not decide 
 - Render a button only when `actions` contains its name. Do not also branch on `status`.
 - `sessionStorage` stores the bearer and the selected project id. Empty secret fields are omitted from JSON and never logged. Do not store a password or a GitHub token.
 - On `401`, clear the bearer and go to `/login`. On `409`, reload. On network failure, say the API is unreachable. Do not invent cards. Login is email and password.
-- One `.primary` button per page. `.danger` only for blocked. Keep focus outlines. Controls are at least 44px tall.
+- One primary button per page. `.danger` only for blocked. Keep focus outlines. Controls are at least 44px tall. The shell is Marauder, styled with Tailwind from `src/app.css`.
 
 ```svelte
 <!-- BAD -->
@@ -22,6 +22,6 @@ Follow `docs/tech/0004-frontend.md`. The page calls the API. It does not decide 
 
 <!-- GOOD -->
 {#if card.actions.includes('approve')}
-  <button class="primary" type="submit">Approve SHA</button>
+  <button type="submit">Approve SHA</button>
 {/if}
 ```

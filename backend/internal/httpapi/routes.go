@@ -65,7 +65,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeErr(w, 400, "validation", "body")
 			return
 		}
-		next, err := app.Approve(r.Context(), s.DB, id, body.SHA, s.gate())
+		next, err := app.Approve(r.Context(), s.DB, id, body.SHA, s.gate(r))
 		if err != nil {
 			if errors.Is(err, app.ErrSHA) {
 				writeJSON(w, 422, map[string]any{"error": map[string]any{"code": "validation", "message": err.Error(), "fields": map[string]string{"sha": err.Error()}}})
@@ -76,14 +76,14 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		}
 		writeJSON(w, 200, s.cardBody(r, next))
 	case "request-changes":
-		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate())
+		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r))
 		if err != nil {
 			writeAppErr(w, err)
 			return
 		}
 		writeJSON(w, 200, s.cardBody(r, next))
 	case "reject":
-		next, err := app.Reject(r.Context(), s.DB, id, s.gate())
+		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r))
 		if err != nil {
 			writeAppErr(w, err)
 			return
@@ -523,11 +523,19 @@ func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {
 	return settings.Load(s.Data)
 }
 
-func (s *Server) gate() app.GateConfig {
+func (s *Server) gate(r *http.Request) app.GateConfig {
 	cfg, _, _ := s.loadSettings()
 	operator := cfg.Deploy.OperatorLogin
 	if operator == "" {
 		operator = "ada"
+	}
+	if user, ok := app.CurrentUser(r.Context()); ok {
+		return app.GateConfig{
+			Operator:  user.GitHubLogin,
+			BotLogin:  "bot",
+			Approvers: []string{user.GitHubLogin},
+			ActorID:   user.ID,
+		}
 	}
 	approvers := cfg.GitHub.Approvers
 	if len(approvers) == 0 {
@@ -545,7 +553,11 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 	if card.BlockedReason == "source_changed" {
 		_, open = app.UnblockTo(r.Context(), s.DB, card)
 	}
-	group, actions, unblock := Actions(card.Status, card.BlockedReason, open)
+	role := ""
+	if user, ok := app.CurrentUser(r.Context()); ok {
+		role = user.Role
+	}
+	group, actions, unblock := Actions(card.Status, card.BlockedReason, open, role)
 	return map[string]any{
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
 		"actions": actions, "unblockTo": unblock,
@@ -564,7 +576,7 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 func intakeBody(r *http.Request, db *sql.DB) (map[string]any, error) {
 	var draft bool
 	var planError sql.NullString
-	if err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error FROM intake_state WHERE id = 1`).Scan(&draft, &planError); err != nil {
+	if err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error FROM intake_state WHERE project_id = 'proj_default'`).Scan(&draft, &planError); err != nil {
 		return nil, err
 	}
 	rows, err := db.QueryContext(r.Context(), `

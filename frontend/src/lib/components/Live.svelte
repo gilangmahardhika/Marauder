@@ -1,5 +1,5 @@
 <script lang="ts">
-  let { message = '' }: { message?: string } = $props();
+  let { message = '', class: extra = '' }: { message?: string; class?: string } = $props();
 </script>
 
-<p role="status">{message}</p>
+<p class="text-muted {extra || 'text-sm'}" role="status">{message}</p>

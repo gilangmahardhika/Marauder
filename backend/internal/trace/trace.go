@@ -37,6 +37,7 @@ type Event struct {
 	TS        string
 	CardID    string
 	AttemptID string
+	ActorID   string
 	Kind      string
 	Payload   any
 }
@@ -71,10 +72,14 @@ func Append(ctx context.Context, q queryer, ev Event, secrets []string) (string,
 	if ev.AttemptID != "" {
 		attemptID = ev.AttemptID
 	}
+	var actorID any
+	if ev.ActorID != "" {
+		actorID = ev.ActorID
+	}
 	_, err = q.ExecContext(ctx, `
-		INSERT INTO events (id, ts, card_id, attempt_id, kind, payload_json)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		ev.ID, ev.TS, cardID, attemptID, ev.Kind, stored,
+		INSERT INTO events (id, ts, card_id, attempt_id, kind, payload_json, actor_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		ev.ID, ev.TS, cardID, attemptID, ev.Kind, stored, actorID,
 	)
 	if err != nil {
 		return "", err

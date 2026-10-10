@@ -32,7 +32,7 @@ func Apply(ctx context.Context, db *sql.DB, result Result) error {
 				id, source_kind, source_path, heading, statement,
 				acceptance_json, non_goals_json, content_hash
 			) VALUES ($1, $2, $3, $4, $5, $6, '[]', $7)
-			ON CONFLICT (id) DO UPDATE SET
+			ON CONFLICT (project_id, id) DO UPDATE SET
 				source_kind = EXCLUDED.source_kind,
 				source_path = EXCLUDED.source_path,
 				heading = EXCLUDED.heading,
@@ -58,7 +58,7 @@ func Apply(ctx context.Context, db *sql.DB, result Result) error {
 		_, err = tx.ExecContext(ctx, `
 			INSERT INTO decisions (id, source_path, statement, content_hash)
 			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (id) DO UPDATE SET
+			ON CONFLICT (project_id, id) DO UPDATE SET
 				source_path = EXCLUDED.source_path,
 				statement = EXCLUDED.statement,
 				content_hash = EXCLUDED.content_hash`,
@@ -68,7 +68,7 @@ func Apply(ctx context.Context, db *sql.DB, result Result) error {
 			return err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE intake_state SET draft_pending = $1 WHERE id = 1`, result.DraftPending)
+	_, err = tx.ExecContext(ctx, `UPDATE intake_state SET draft_pending = $1 WHERE project_id = 'proj_default'`, result.DraftPending)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func Accept(ctx context.Context, db *sql.DB, operator string, ids []string) erro
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, id := range ids {
 		res, err := tx.ExecContext(ctx, `
-			UPDATE requirements SET accepted_at = $1, accepted_by = $2 WHERE id = $3`,
+			UPDATE requirements SET accepted_at = $1, accepted_by = $2 WHERE id = $3 AND project_id = 'proj_default'`,
 			now, operator, id,
 		)
 		if err != nil {

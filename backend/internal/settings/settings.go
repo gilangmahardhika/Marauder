@@ -13,6 +13,7 @@ var ErrValidation = errors.New("validation")
 
 type Secrets struct {
 	DatabaseURL string            `json:"databaseUrl"`
+	TokenKey    string            `json:"tokenKey,omitempty"`
 	GitHubToken string            `json:"githubToken"`
 	DeployToken string            `json:"deployToken"`
 	LLMKeys     map[string]string `json:"llmKeys"`

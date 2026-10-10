@@ -1,34 +1,27 @@
 <script lang="ts">
-  import { ApiError, getLLM, putLLM, testLLM, unreachable } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
-  import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
+  import { ApiError, getLLM, unreachable } from '$lib/api';
+  import { protocolLabel } from '$lib/llm';
+  import { shell, showShell } from '$lib/shell.svelte';
+  import type { Family } from '$lib/types';
+  import Badge from '$lib/ui/Badge.svelte';
+  import Button from '$lib/ui/Button.svelte';
+  import { td, th, tr } from '$lib/ui/control';
+  import EmptyState from '$lib/ui/EmptyState.svelte';
+  import Page from '$lib/ui/Page.svelte';
+  import Table from '$lib/ui/Table.svelte';
 
-  type Draft = {
-    id: string;
-    protocol: string;
-    baseUrl: string;
-    models: string[];
-    key: string;
-    clear: boolean;
-    keySet: boolean;
-  };
-
-  let families = $state<Draft[]>([]);
+  let families = $state<Family[]>([]);
+  let loaded = $state(false);
   let message = $state('Loading LLM settings');
-  let busy = $state(false);
+
+  showShell(() => ({ title: 'LLM APIs', message }));
 
   $effect(() => {
+    if (shell.projectId === '') return;
     void getLLM()
       .then((body) => {
-        families = body.families.map((family) => ({
-          id: family.id,
-          protocol: family.protocol || 'anthropic',
-          baseUrl: family.baseUrl,
-          models: family.models.length ? family.models : [''],
-          key: '',
-          clear: false,
-          keySet: family.keySet
-        }));
+        families = body.families;
+        loaded = true;
         message = 'LLM APIs';
       })
       .catch((error: unknown) => {
@@ -36,80 +29,58 @@
       });
   });
 
-  function addFamily() {
-    families = [...families, { id: '', protocol: 'anthropic', baseUrl: '', models: [''], key: '', clear: false, keySet: false }];
-  }
-
-  async function save(event: SubmitEvent) {
-    event.preventDefault();
-    busy = true;
-    message = 'Saving LLM settings';
-    try {
-      const saved = await putLLM({
-        families: families.map((family) => ({
-          id: family.id,
-          protocol: family.protocol,
-          baseUrl: family.baseUrl,
-          models: family.models.map((model) => model.trim()).filter(Boolean),
-          ...omitEmptySecret('apiKey', family.key, family.clear)
-        }))
-      });
-      families = saved.families.map((family) => ({
-        id: family.id,
-        protocol: family.protocol,
-        baseUrl: family.baseUrl,
-        models: family.models.length ? family.models : [''],
-        key: '',
-        clear: false,
-        keySet: family.keySet
-      }));
-      message = 'LLM APIs';
-    } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function test(id: string) {
-    busy = true;
-    try {
-      const result = await testLLM(id);
-      message = result.ok ? 'ok' : (result.message ?? 'failed');
-    } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
-      busy = false;
-    }
+  function models(list: string[]) {
+    if (list.length === 0) return '—';
+    const shown = list.slice(0, 2).join(', ');
+    return list.length > 2 ? `${shown} +${list.length - 2} more` : shown;
   }
 </script>
 
-<h1>LLM APIs</h1>
-<Live {message} />
-<form class="form" onsubmit={save}>
-  {#each families as family, index}
-    <fieldset>
-      <label for={`id-${index}`}>Id <input id={`id-${index}`} bind:value={family.id} /></label>
-      <label for={`protocol-${index}`}>
-        Protocol
-        <select id={`protocol-${index}`} bind:value={family.protocol}>
-          <option value="anthropic">anthropic</option>
-          <option value="openai">openai</option>
-        </select>
-      </label>
-      <label for={`url-${index}`}>Base URL <input id={`url-${index}`} bind:value={family.baseUrl} /></label>
-      {#each family.models as model, modelIndex}
-        <label for={`model-${index}-${modelIndex}`}>
-          Model
-          <input id={`model-${index}-${modelIndex}`} bind:value={family.models[modelIndex]} />
-        </label>
-        <button type="button" onclick={() => (family.models = family.models.filter((_, item) => item !== modelIndex))}>Remove</button>
-      {/each}
-      <button type="button" onclick={() => (family.models = [...family.models, ''])}>Add model</button>
-      <SecretField label="API key" name={`key-${index}`} saved={family.keySet} bind:value={family.key} bind:clear={family.clear} />
-      <button type="button" disabled={busy || family.id === ''} onclick={() => void test(family.id)}>Test</button>
-    </fieldset>
-  {/each}
-  <button type="button" onclick={addFamily}>Add family</button>
-  <button class="primary" type="submit" disabled={busy}>Save</button>
-</form>
+<Page
+  title="LLM APIs"
+  description="Model families this project can route work to. Each family has one endpoint, one key, and any number of models."
+  width="wide"
+>
+  {#snippet actions()}
+    <Button variant="primary" href="/settings/llm/new">Add family</Button>
+  {/snippet}
+  {#if loaded && families.length === 0}
+    <EmptyState title="No LLM families yet" description="Add a family for each provider endpoint, then list the models it serves.">
+      <Button variant="primary" href="/settings/llm/new">Add family</Button>
+    </EmptyState>
+  {:else if families.length > 0}
+    <Table label="LLM families">
+      <thead>
+        <tr class="border-b border-line bg-ground/50">
+          <th class={th} scope="col">Family</th>
+          <th class={th} scope="col">Models</th>
+          <th class={th} scope="col">Key</th>
+          <th class={th} scope="col"><span class="sr-only">Edit</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each families as family (family.id)}
+          <tr class={tr}>
+            <td class="{td} py-2.5">
+              <span class="block break-all font-mono text-[13px] font-medium text-ink">{family.id}</span>
+              <span class="mt-0.5 block break-all text-xs text-muted">
+                {protocolLabel(family.protocol)} · <span class="font-mono">{family.baseUrl || 'no base URL'}</span>
+              </span>
+            </td>
+            <td class="{td} font-mono text-xs text-muted">{models(family.models)}</td>
+            <td class={td}>
+              {#if family.keySet}<Badge tone="green">Saved</Badge>{:else}<Badge>Not set</Badge>{/if}
+            </td>
+            <td class="{td} text-right">
+              <a
+                class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
+                href={`/settings/llm/${encodeURIComponent(family.id)}`}
+                aria-label={`Edit ${family.id}`}>Edit</a
+              >
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </Table>
+  {/if}
+</Page>

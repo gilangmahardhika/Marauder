@@ -1,0 +1,10 @@
+<script lang="ts">
+  import Button from './Button.svelte';
+
+  let { busy = false, label = 'Save', note = '' }: { busy?: boolean; label?: string; note?: string } = $props();
+</script>
+
+<div class="sticky bottom-0 z-10 mt-8 flex items-center justify-between gap-4 border-t border-line bg-ground py-4">
+  <p class="min-w-0 text-sm text-muted">{note}</p>
+  <Button variant="primary" type="submit" disabled={busy}>{label}</Button>
+</div>

@@ -1,7 +1,12 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { showShell } from '$lib/shell.svelte';
+  import EmptyState from '$lib/ui/EmptyState.svelte';
+  import Page from '$lib/ui/Page.svelte';
+
+  showShell(() => ({ title: String($page.status), message: '' }));
 </script>
 
-<h1>{$page.status}</h1>
-<p>{$page.error?.message}</p>
-<a href="/">Board</a>
+<Page title="Something went wrong" description={`Error ${$page.status}`} width="form">
+  <EmptyState title={$page.error?.message ?? 'Unknown error'} href="/" link="Back to the board" />
+</Page>

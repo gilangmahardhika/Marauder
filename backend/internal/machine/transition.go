@@ -26,12 +26,14 @@ type Evidence struct {
 	Reason        string
 	ResetAttempts *bool
 	AttemptID     string
+	ActorID       string
 }
 
 type transitionPayload struct {
 	From     string `json:"from"`
 	To       string `json:"to"`
 	Evidence string `json:"evidence"`
+	ActorID  string `json:"actorId,omitempty"`
 }
 
 // Transition is the only card status write.
@@ -101,12 +103,14 @@ func Transition(ctx context.Context, tx *sql.Tx, card board.Card, to string, ev 
 		}
 	}
 	if _, err := trace.Append(ctx, tx, trace.Event{
-		CardID: card.ID,
-		Kind:   "transition",
+		CardID:  card.ID,
+		ActorID: ev.ActorID,
+		Kind:    "transition",
 		Payload: transitionPayload{
 			From:     card.Status,
 			To:       to,
 			Evidence: evidenceText(ev),
+			ActorID:  ev.ActorID,
 		},
 	}, secrets); err != nil {
 		return card, err

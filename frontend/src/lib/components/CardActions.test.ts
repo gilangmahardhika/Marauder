@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { expect, test } from 'vitest';
 import CardActions from './CardActions.svelte';
 import type { Card } from '$lib/types';
@@ -44,10 +44,11 @@ test('empty actions render no controls', () => {
   expect(screen.queryByRole('button', { name: 'Unblock' })).toBeNull();
 });
 
-test('approved card renders request changes and reject', () => {
+test('approved card renders request changes and reject', async () => {
   render(CardActions, {
     card: card({ status: 'approved', group: 'shipping', actions: ['request_changes', 'reject'] })
   });
+  await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
   expect(screen.getByRole('button', { name: 'Request changes' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Approve SHA' })).toBeNull();

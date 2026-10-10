@@ -1,99 +1,72 @@
-body {
-  margin: 0;
-  font-family: system-ui, sans-serif;
-  color: #1c1917;
-  background: #fafaf9;
+@import 'tailwindcss';
+
+@theme {
+  --color-ground: #f4f1ea;
+  --color-surface: #fffcf8;
+  --color-sidebar: #efeae1;
+  --color-ink: #1c1915;
+  --color-muted: #5c564c;
+  --color-line: #e6dfd4;
+  --color-line-strong: #d3c9b9;
+  --color-accent: #1f4d3a;
+  --font-sans: system-ui, sans-serif;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --container-form: 42rem;
+  --container-wide: 72rem;
+  --container-field-sm: 10rem;
+  --container-field-md: 20rem;
+  --container-field-lg: 32rem;
 }
 
-.contents {
-  display: contents;
-}
+@layer base {
+  html {
+    color-scheme: light;
+  }
 
-.skip {
-  position: absolute;
-  left: 0.5rem;
-  top: 0.5rem;
-}
+  body {
+    margin: 0;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
 
-.wrap {
-  padding: 1.5rem;
-  max-width: 72rem;
-}
+  button,
+  input:not([type='checkbox']),
+  select,
+  textarea {
+    font: inherit;
+    min-height: 44px;
+  }
 
-.nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-}
+  textarea {
+    min-height: 6rem;
+  }
 
-.nav a {
-  color: #1d4e89;
-}
+  :focus-visible {
+    outline: 2px solid #1c1915;
+    outline-offset: 2px;
+  }
 
-.groups {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 1rem;
-}
+  .skip {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 50;
+    transform: translateY(-150%);
+    background: var(--color-surface);
+    padding: 0.5rem 0.75rem;
+  }
 
-.row {
-  display: block;
-  padding: 0.75rem 0;
-  color: inherit;
-}
+  .skip:focus {
+    transform: none;
+  }
 
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 36rem;
-}
+  .error {
+    color: #9f1239;
+  }
 
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-input,
-select,
-textarea,
-button {
-  min-height: 44px;
-  font: inherit;
-}
-
-textarea {
-  min-height: 6rem;
-}
-
-:focus-visible {
-  outline: 3px solid currentColor;
-  outline-offset: 2px;
-}
-
-.error {
-  color: #9b1c1c;
-}
-
-.danger {
-  color: #9b1c1c;
-}
-
-.primary {
-  background: #1d4e89;
-  color: #fff;
-  border: 2px solid #1d4e89;
-}
-
-button {
-  border: 2px solid #44403c;
-  background: #fff;
-}
-
-@media (max-width: 720px) {
-  .groups {
-    grid-template-columns: 1fr;
+  .danger {
+    color: #9f1239;
   }
 }

@@ -1,7 +1,13 @@
 <script lang="ts">
   import { ApiError, getLLM, getRouter, putRouter, unreachable } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
-  import type { RouteChoice } from '$lib/types';
+  import { shell, showShell } from '$lib/shell.svelte';
+  import type { Family, RouteChoice } from '$lib/types';
+  import Field from '$lib/ui/Field.svelte';
+  import Notice from '$lib/ui/Notice.svelte';
+  import Page from '$lib/ui/Page.svelte';
+  import Panel from '$lib/ui/Panel.svelte';
+  import SaveBar from '$lib/ui/SaveBar.svelte';
+  import SearchSelect, { type SearchOption } from '$lib/ui/SearchSelect.svelte';
 
   const names = ['plan', 'implement', 'implement_hard', 'review', 'triage'];
   let routes = $state<Record<string, RouteChoice>>({
@@ -11,7 +17,21 @@
     review: { model: 'different-family-from-author', fallback: '' },
     triage: { model: '', fallback: '' }
   });
-  let models = $state<string[]>([]);
+  let families = $state<Family[]>([]);
+  const modelOptions = $derived(
+    families.flatMap((family) => family.models.map((model) => ({ value: model, label: model, detail: family.id })))
+  );
+  const reviewRule = 'different-family-from-author';
+
+  function optionsFor(name: string, kind: 'model' | 'fallback'): SearchOption[] {
+    const options = [...modelOptions];
+    if (kind === 'model' && name === 'review') options.unshift({ value: reviewRule, label: reviewRule, detail: 'Rule' });
+    const current = routes[name]?.[kind] ?? '';
+    if (current !== '' && !options.some((option) => option.value === current)) {
+      options.push({ value: current, label: current, detail: 'Not in LLM APIs' });
+    }
+    return options;
+  }
   let maxAttempts = $state(3);
   let maxTurns = $state(12);
   let maxTokens = $state(200000);
@@ -21,7 +41,10 @@
   let result = $state('');
   let busy = $state(false);
 
+  showShell(() => ({ title: 'Router', message }));
+
   $effect(() => {
+    if (shell.projectId === '') return;
     void Promise.all([getRouter(), getLLM()])
       .then(([router, llm]) => {
         routes = router.routes;
@@ -30,7 +53,7 @@
         maxTokens = router.budgets.maxTokensPerCard || 200000;
         maxMinutes = router.budgets.maxWallMinutesPerAttempt || 30;
         independent = router.reviewIndependentPossible;
-        models = llm.families.flatMap((family) => family.models);
+        families = llm.families;
         message = 'Router';
       })
       .catch((error: unknown) => {
@@ -63,49 +86,62 @@
   }
 </script>
 
-<h1>Router</h1>
-<Live {message} />
-<p>
-  {independent
-    ? 'Review can use a second family.'
-    : 'Only one family is configured, so review will record review.independent = false.'}
-</p>
-<form class="form" onsubmit={save}>
-  <table>
-    <thead>
-      <tr><th>Class</th><th>Model</th><th>Fallback</th></tr>
-    </thead>
-    <tbody>
-      {#each names as name}
-        <tr>
-          <th scope="row">{name}</th>
-          <td>
-            <label for={`${name}-model`}>
-              Model
-              <select id={`${name}-model`} bind:value={routes[name].model}>
-                <option value=""></option>
-                {#if name === 'review'}<option value="different-family-from-author">different-family-from-author</option>{/if}
-                {#each models as model}<option value={model}>{model}</option>{/each}
-              </select>
-            </label>
-          </td>
-          <td>
-            <label for={`${name}-fallback`}>
-              Fallback
-              <select id={`${name}-fallback`} bind:value={routes[name].fallback}>
-                <option value=""></option>
-                {#each models as model}<option value={model}>{model}</option>{/each}
-              </select>
-            </label>
-          </td>
-        </tr>
-      {/each}
-    </tbody>
-  </table>
-  <label for="attempts">Max attempts <input id="attempts" type="number" bind:value={maxAttempts} /></label>
-  <label for="turns">Max model turns <input id="turns" type="number" bind:value={maxTurns} /></label>
-  <label for="tokens">Max tokens <input id="tokens" type="number" bind:value={maxTokens} /></label>
-  <label for="minutes">Max wall minutes <input id="minutes" type="number" bind:value={maxMinutes} /></label>
-  <button class="primary" type="submit" disabled={busy}>Save</button>
-</form>
-{#if result}<p>{result}</p>{/if}
+<Page title="Router" description="Which model handles each class of work, and how much each card may spend." width="form">
+  <form onsubmit={save}>
+    <div class="flex flex-col gap-6">
+      <Notice>
+        {independent
+          ? 'Review can use a second family.'
+          : 'Only one family is configured, so review will record review.independent = false.'}
+      </Notice>
+      <Panel title="Routes" flush>
+        <div
+          class="hidden grid-cols-[9rem_1fr_1fr] gap-3 border-b border-line bg-ground/50 px-5 text-[11px] font-semibold uppercase tracking-wider text-muted sm:grid"
+          aria-hidden="true"
+        >
+          <span class="flex h-10 items-center">Class</span>
+          <span class="flex h-10 items-center">Model</span>
+          <span class="flex h-10 items-center">Fallback</span>
+        </div>
+        <ul aria-label="Routes">
+          {#each names as name (name)}
+            <li
+              class="grid gap-3 border-b border-line px-5 py-3 last:border-b-0 sm:grid-cols-[9rem_1fr_1fr] sm:items-center"
+            >
+              <span class="font-mono text-[13px] font-medium text-ink">{name}</span>
+              <SearchSelect
+                label="Model for {name}"
+                id={`${name}-model`}
+                width="full"
+                hideLabel="sm"
+                emptyLabel="None"
+                placeholder="Search models"
+                options={optionsFor(name, 'model')}
+                bind:value={routes[name].model}
+              />
+              <SearchSelect
+                label="Fallback for {name}"
+                id={`${name}-fallback`}
+                width="full"
+                hideLabel="sm"
+                emptyLabel="None"
+                placeholder="Search models"
+                options={optionsFor(name, 'fallback')}
+                bind:value={routes[name].fallback}
+              />
+            </li>
+          {/each}
+        </ul>
+      </Panel>
+      <Panel title="Budgets" hint="Limits per card and per attempt.">
+        <div class="grid gap-5 sm:grid-cols-2">
+          <Field label="Max attempts" id="attempts" type="number" width="sm" bind:value={maxAttempts} />
+          <Field label="Max model turns" id="turns" type="number" width="sm" hint="Per attempt" bind:value={maxTurns} />
+          <Field label="Max tokens" id="tokens" type="number" width="sm" hint="Per card" bind:value={maxTokens} />
+          <Field label="Max wall minutes" id="minutes" type="number" width="sm" hint="Per attempt" bind:value={maxMinutes} />
+        </div>
+      </Panel>
+    </div>
+    <SaveBar {busy} note={result} />
+  </form>
+</Page>

@@ -30,7 +30,7 @@ func Execute(opts Options) int {
 	if opts.Stdout == nil {
 		opts.Stdout = os.Stdout
 	}
-	var repo, data, addr, sha string
+	var repo, data, addr, sha, project string
 	root := &cobra.Command{
 		Use:           "orchestrator",
 		SilenceUsage:  true,
@@ -39,6 +39,22 @@ func Execute(opts Options) int {
 	root.PersistentFlags().StringVar(&repo, "repo", "", "target repository")
 	root.PersistentFlags().StringVar(&data, "data", "", "data directory")
 	root.PersistentFlags().StringVar(&addr, "addr", "127.0.0.1:8787", "listen address")
+	root.PersistentFlags().StringVar(&project, "project", "", "project id")
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(&cobra.Command{
+		Use: "bootstrap",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				_, err := app.Bootstrap(ctx, db, opts.getenv("ORCHESTRATOR_ADMIN_EMAIL"), opts.getenv("ORCHESTRATOR_ADMIN_PASSWORD"))
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(opts.Stdout, "admin created")
+				return nil
+			})
+		},
+	})
+	root.AddCommand(users)
 	root.AddCommand(&cobra.Command{
 		Use: "serve",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -72,6 +88,9 @@ func Execute(opts Options) int {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
 				n, err := app.CardCount(ctx, db)
+				if project != "" {
+					err = db.QueryRowContext(ctx, `SELECT count(*) FROM cards WHERE project_id = $1`, project).Scan(&n)
+				}
 				if err != nil {
 					return err
 				}

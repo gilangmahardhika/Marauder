@@ -1,7 +1,12 @@
 <script lang="ts">
   import { ApiError, getDeploy, putDeploy, unreachable } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
   import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
+  import { shell, showShell } from '$lib/shell.svelte';
+  import Field from '$lib/ui/Field.svelte';
+  import Page from '$lib/ui/Page.svelte';
+  import Panel from '$lib/ui/Panel.svelte';
+  import SaveBar from '$lib/ui/SaveBar.svelte';
+  import Select from '$lib/ui/Select.svelte';
 
   let devUrl = $state('');
   let devHosts = $state('');
@@ -24,11 +29,14 @@
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
 
+  showShell(() => ({ title: 'Deploy', message }));
+
   function lines(value: string) {
     return value.split('\n').map((line) => line.trim()).filter(Boolean);
   }
 
   $effect(() => {
+    if (shell.projectId === '') return;
     void getDeploy()
       .then((body) => {
         devUrl = body.devUrl;
@@ -90,42 +98,56 @@
   }
 </script>
 
-<h1>Deploy</h1>
-<Live {message} />
-<form class="form" onsubmit={save}>
-  <fieldset>
-    <legend>Empty values can be saved. Deploy stops with deploy_config until they are set.</legend>
-    <label for="dev-url">Dev URL <input id="dev-url" bind:value={devUrl} /></label>
-    <label for="hosts">Dev hosts <textarea id="hosts" bind:value={devHosts}></textarea></label>
-    <p>Health URL and dev URL hosts must be listed here.</p>
-    <label for="deploy-command">Deploy command <input id="deploy-command" bind:value={devCommand} /></label>
-    {#if fields.devCommand}<p class="error">{fields.devCommand}</p>{/if}
-    <label for="rollback">Rollback command <input id="rollback" bind:value={rollbackCommand} /></label>
-    <p>Absolute path to a script outside the target repo and the data directory. Not group or world writable.</p>
-    <label for="health">Health URL <input id="health" bind:value={healthUrl} /></label>
-    <SecretField label="Deploy token" name="deployToken" saved={tokenSet} bind:value={token} bind:clear />
-  </fieldset>
-  <fieldset>
-    <legend>Checks</legend>
-    <label for="local">Local check <input id="local" bind:value={localCheck} /></label>
-    <label for="dev-check">Dev check <input id="dev-check" bind:value={devCheck} /></label>
-    <label for="allow">Allowed executables <textarea id="allow" bind:value={allow}></textarea></label>
-    <label for="engine">
-      Sandbox engine
-      <select id="engine" bind:value={sandboxEngine}>
-        <option value="podman">podman</option>
-        <option value="docker">docker</option>
-      </select>
-    </label>
-    <label for="image">Sandbox image <input id="image" bind:value={sandboxImage} /></label>
-    <p>Pin by digest, for example name@sha256:...</p>
-  </fieldset>
-  <fieldset>
-    <legend>Board</legend>
-    <label for="cap">Implementation cap <input id="cap" type="number" bind:value={implementationCap} /></label>
-    <label for="prd">PRD path <input id="prd" bind:value={prdPath} /></label>
-    <label for="rfc">RFC path <input id="rfc" bind:value={rfcPath} /></label>
-    <label for="operator">Operator login <input id="operator" bind:value={operatorLogin} /></label>
-  </fieldset>
-  <button class="primary" type="submit" disabled={busy}>Save</button>
-</form>
+<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and how the board reads its docs." width="form">
+  <form onsubmit={save}>
+    <div class="flex flex-col gap-6">
+      <Panel title="Dev server" hint="Empty values can be saved. Deploy stops with deploy_config until they are set.">
+        <div class="grid gap-5 sm:grid-cols-2">
+          <Field label="Dev URL" id="dev-url" width="full" mono error={fields.devUrl} bind:value={devUrl} />
+          <Field label="Health URL" id="health" width="full" mono error={fields.healthUrl} bind:value={healthUrl} />
+        </div>
+        <Field
+          label="Dev hosts"
+          id="hosts"
+          type="textarea"
+          width="lg"
+          mono
+          hint="One host per line. The dev URL and health URL hosts must be listed."
+          bind:value={devHosts}
+        />
+        <Field
+          label="Deploy command"
+          id="deploy-command"
+          width="full"
+          mono
+          error={fields.devCommand}
+          hint="Absolute path to a script outside the target repo and the data directory. Not group or world writable."
+          bind:value={devCommand}
+        />
+        <Field label="Rollback command" id="rollback" width="full" mono error={fields.rollbackCommand} bind:value={rollbackCommand} />
+        <SecretField label="Deploy token" name="deployToken" saved={tokenSet} error={fields.deployToken} bind:value={token} bind:clear />
+      </Panel>
+      <Panel title="Checks" hint="A check passes when its command exits 0.">
+        <div class="grid gap-5 sm:grid-cols-2">
+          <Field label="Local check" id="local" width="full" mono bind:value={localCheck} />
+          <Field label="Dev check" id="dev-check" width="full" mono bind:value={devCheck} />
+        </div>
+        <Field label="Allowed executables" id="allow" type="textarea" width="lg" mono hint="One executable per line." bind:value={allow} />
+        <Select label="Sandbox engine" id="engine" width="sm" bind:value={sandboxEngine}>
+          <option value="podman">Podman</option>
+          <option value="docker">Docker</option>
+        </Select>
+        <Field label="Sandbox image" id="image" width="full" mono hint="Pin by digest, for example name@sha256:..." bind:value={sandboxImage} />
+      </Panel>
+      <Panel title="Board">
+        <div class="grid gap-5 sm:grid-cols-2">
+          <Field label="Implementation cap" id="cap" type="number" width="sm" hint="Plan and implement jobs at once, 1 to 8" bind:value={implementationCap} />
+          <Field label="Operator login" id="operator" width="full" bind:value={operatorLogin} />
+          <Field label="PRD path" id="prd" width="full" mono bind:value={prdPath} />
+          <Field label="RFC path" id="rfc" width="full" mono bind:value={rfcPath} />
+        </div>
+      </Panel>
+    </div>
+    <SaveBar {busy} />
+  </form>
+</Page>

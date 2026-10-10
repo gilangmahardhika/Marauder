@@ -68,7 +68,7 @@ SvelteKit writes the policy as a `<meta http-equiv>` tag in the built `index.htm
 | `check` | `svelte-kit sync && svelte-check --tsconfig ./tsconfig.json` |
 | `test` | `vitest run` |
 
-Dev dependencies: `@sveltejs/kit`, `@sveltejs/adapter-static`, `@sveltejs/vite-plugin-svelte`, `svelte`, `vite`, `typescript`, `svelte-check`, `vitest`, `@testing-library/svelte`, `jsdom`. No runtime dependencies beyond these.
+Dev dependencies: `@sveltejs/kit`, `@sveltejs/adapter-static`, `@sveltejs/vite-plugin-svelte`, `svelte`, `vite`, `typescript`, `svelte-check`, `vitest`, `@testing-library/svelte`, `jsdom`, `tailwindcss`, `@tailwindcss/vite`. No runtime dependencies beyond these.
 
 ## Layout
 
@@ -86,19 +86,52 @@ frontend/
   src/routes/intake/+page.svelte
   src/routes/cards/[id]/+page.svelte
   src/routes/cards/[id]/trace/+page.svelte
+  src/routes/account/+page.svelte
+  src/routes/admin/users/+page.svelte
+  src/routes/admin/users/new/+page.svelte
+  src/routes/admin/users/[id]/+page.svelte
+  src/routes/tribes/+page.svelte
+  src/routes/tribes/new/+page.svelte
+  src/routes/tribes/[id]/+page.svelte
+  src/routes/projects/+page.svelte
+  src/routes/projects/new/+page.svelte
+  src/routes/settings/+layout.svelte
   src/routes/settings/github/+page.svelte
   src/routes/settings/llm/+page.svelte
+  src/routes/settings/llm/new/+page.svelte
+  src/routes/settings/llm/[family]/+page.svelte
   src/routes/settings/router/+page.svelte
   src/routes/settings/deploy/+page.svelte
   src/lib/api.ts
   src/lib/session.ts
   src/lib/types.ts
+  src/lib/roles.ts
+  src/lib/llm.ts
+  src/lib/shell.svelte.ts
+  src/lib/ui/Button.svelte
+  src/lib/ui/Field.svelte
+  src/lib/ui/Select.svelte
+  src/lib/ui/Menu.svelte
+  src/lib/ui/SearchSelect.svelte
+  src/lib/ui/Panel.svelte
+  src/lib/ui/Badge.svelte
+  src/lib/ui/Page.svelte
+  src/lib/ui/SaveBar.svelte
+  src/lib/ui/FieldGroup.svelte
+  src/lib/ui/Row.svelte
+  src/lib/ui/Table.svelte
+  src/lib/ui/Checkbox.svelte
+  src/lib/ui/Notice.svelte
+  src/lib/ui/EmptyState.svelte
+  src/lib/ui/control.ts
   src/lib/components/Live.svelte
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
+  src/lib/components/FamilyForm.svelte
   src/lib/api.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/SecretField.test.ts
+  src/lib/ui/SearchSelect.test.ts
 ```
 
 `src/lib/types.ts` mirrors the JSON in 0002. If a field is added to the API, add it here in the same change.
@@ -119,28 +152,26 @@ frontend/
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
 | `/account` | Password and the caller's GitHub settings |
-| `/admin/users` | Admin user list and create form |
-| `/tribes` | Tribes and members |
+| `/admin/users` | Admin user list |
+| `/admin/users/new` | Create a user |
+| `/admin/users/[id]` | Edit role, admin, disabled, and an optional password |
+| `/tribes` | Tribes |
+| `/tribes/new` | Create a tribe |
+| `/tribes/[id]` | Tribe members |
 | `/projects` | Projects for the caller's tribes |
+| `/projects/new` | Create a project |
 | `/settings/github` | Project repo and bot token |
-| `/settings/llm` | LLM API settings for the project |
+| `/settings/llm` | LLM families for the project |
+| `/settings/llm/new` | Create an LLM family |
+| `/settings/llm/[family]` | Edit, test, or delete one LLM family |
 | `/settings/router` | Router settings for the project |
 | `/settings/deploy` | Deploy and checks for the project |
 
-`+layout.svelte` renders the nav on every page except `/login`.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, GitHub, LLM APIs, Router, Deploy), and Admin (Users, Tribes). Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-| Label | href |
-| --- | --- |
-| Board | `/` |
-| Intake | `/intake` |
-| Account | `/account` |
-| Projects | `/projects` |
-| GitHub | `/settings/github` |
-| LLM APIs | `/settings/llm` |
-| Router | `/settings/router` |
-| Deploy | `/settings/deploy` |
+The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repo path as the detail line, and the search matches name or path. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
-The layout also shows a project `<select>` bound to `orchestrator.project`. Options come from `GET /api/projects`. Changing it stores the id and reloads the board. Admin sees a link "Users" to `/admin/users` and "Tribes" to `/tribes` when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+Create and edit forms are their own routes. They are not dialogs.
 
 Unknown paths use SvelteKit's default error page with a link to `/`.
 
@@ -258,9 +289,9 @@ GitHub fieldset: host, login, token. "Test connection" calls `POST /api/me/githu
 
 ### Users and tribes
 
-`src/routes/admin/users/+page.svelte` lists users and has a form for email, password, role, and admin. Submit calls `POST /api/users`. A `403` sets the live message from `error.message`.
+`src/routes/admin/users/+page.svelte` lists users. Create is `/admin/users/new` (email, password, role, admin) and calls `POST /api/users`. Edit is `/admin/users/[id]` and calls `PUT /api/users/{id}`. A `403` sets the live message from `error.message`.
 
-`src/routes/tribes/+page.svelte` lists tribes. An admin can create a tribe and add a member by user id. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` and, for an admin, creates one with tribe, name, and repo path.
+`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user who is not yet a member in a `SearchSelect` searched by email. The request still sends `userId`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects`. Create is `/projects/new` with tribe, name, and repo path.
 
 ### Project GitHub
 
@@ -272,19 +303,21 @@ Fields: host, owner, repository, base branch, bot login, bot token.
 
 ### LLM APIs
 
-`src/routes/settings/llm/+page.svelte`. GET and PUT `/api/projects/{id}/settings/llm` for the selected project.
+`src/routes/settings/llm/+page.svelte` lists the families from GET `/api/projects/{id}/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/settings/llm/new`.
 
-One fieldset per family: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
+`src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
 
-"Add family" appends a fieldset with an empty id. The operator fills the id before save.
+`src/routes/settings/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/settings/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
 
-"Test" on a family calls `POST /api/projects/{id}/settings/llm/{family}/test` and uses the same result line as GitHub.
+The API has no per-family write. Create, Save, and Delete each GET the current list, change one entry, and PUT the whole families list. The other families are sent without `apiKey` or `clear`, so their saved keys stay.
+
+"Test connection" calls `POST /api/projects/{id}/settings/llm/{family}/test` and shows the result in the panel footer.
 
 ### Router
 
 `src/routes/settings/router/+page.svelte`. GET and PUT `/api/projects/{id}/settings/router`. Also GET that project's LLM settings so the selects can list saved model ids.
 
-A table of five rows: `plan`, `implement`, `implement_hard`, `review`, `triage`. Each row has a model `<select>` and a fallback `<select>`. The review model select includes `different-family-from-author` plus the saved model ids.
+A list of five rows: `plan`, `implement`, `implement_hard`, `review`, `triage`. Each row has a model `SearchSelect` and a fallback `SearchSelect`. Options are every model id from LLM APIs, each with its family id as the detail line, and the search matches either. Both pickers start with `None`, which saves an empty value. The review model picker also lists `different-family-from-author` first. A saved model that no family lists any more still shows, marked "Not in LLM APIs". From 640px the rows are three columns: class, model, fallback. Below that each row stacks and the picker labels show.
 
 Four number inputs for the budgets. When the GET budgets are missing, show 3, 12, 200000, and 30.
 
@@ -322,22 +355,19 @@ Static help text:
 
 ## Styles
 
-`src/app.css` is plain CSS, imported from `+layout.svelte`. No CSS framework.
+The product name is Marauder. `src/app.css` imports Tailwind CSS 4 and defines the theme: ground `#f4f1ea`, surface `#fffcf8`, sidebar `#efeae1`, ink `#1c1915`, line `#e6dfd4`, accent `#1f4d3a`. `tailwindcss` and `@tailwindcss/vite` are dev dependencies. There is no runtime CSS library and no React component kit.
 
-| Class | Role |
-| --- | --- |
-| `.wrap` | Page padding, max width 72rem |
-| `.nav` | Row of links, wraps |
-| `.groups` | Board sections, row on wide screens, one column under 720px |
-| `.row` | One card, status text visible |
-| `.form` | Single column, label above control |
-| `.error` | Field error under an input |
-| `.danger` | Blocked status text |
-| `.primary` | The one accent button on the page |
+Shared controls live in `src/lib/ui/`. One primary button on a page. `.danger` is for blocked status. `.error` is for a field error. Inputs and buttons are at least 44px tall. `:focus-visible` keeps a 2px ink outline. Do not remove outlines. Do not put layout in a `style` attribute.
 
-System font stack: `system-ui, sans-serif`. Inputs and buttons have `min-height: 44px`. `:focus-visible` keeps an outline. Do not remove outlines.
+The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Page measures are `max-w-form` (42rem) for forms and settings, `max-w-wide` (72rem) for tables, and full width for the board. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`.
 
-Use the accent on `.primary` only. Status color is limited to `.danger` for `blocked`.
+Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the live status line. It holds no page actions.
+
+Buttons size to their label and never stretch. `full` is only for the login submit. `Panel` has a title row with an optional `actions` snippet and an optional `footer` snippet. The footer is a right-aligned action bar. Settings pages that hold more than one panel end in `SaveBar`, a bar that sticks to the bottom of the viewport with the primary Save. `FieldGroup` groups related controls under one legend. `Row` is one entry in a bordered list, such as one model id, with a remove button. Tables use `Table` and the `th`, `tr`, and `td` classes from `src/lib/ui/control.ts`: an 11px uppercase header and 48px rows.
+
+`SearchSelect` is the shared searchable select for long lists: the project switcher, Router models, and tribe member search. It is an ARIA combobox. Typing filters options by label and detail, arrow keys move, Enter picks, and Escape closes and restores the selected label. An optional `emptyLabel` adds a first option that clears the value. `onchange` fires only when a pick changes the value. Short fixed lists, such as protocol or role, keep the native `Select`.
+
+System font stack: `system-ui, sans-serif`. Below 720px board groups stack in one column. From 720px they sit in one row of lanes at least 15rem wide that scrolls sideways when the window is narrow.
 
 ## Page states
 

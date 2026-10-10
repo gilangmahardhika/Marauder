@@ -1,5 +1,6 @@
 import { session } from '$lib/session';
 import type {
+  AccountGitHub,
   Board,
   Card,
   DeploySettings,
@@ -7,7 +8,10 @@ import type {
   Intake,
   LLMSettings,
   RouterSettings,
-  TraceEvent
+  ProjectRecord,
+  SessionUser,
+  TraceEvent,
+  TribeRecord
 } from '$lib/types';
 
 const base = 'http://127.0.0.1:8787';
@@ -54,66 +58,150 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-export function openSession(token: string) {
-  return request<{ bearer: string; expiresAt: string }>('/api/session', {
+export function openSession(email: string, password: string) {
+  return request<{ bearer: string; expiresAt: string; user: SessionUser }>('/api/session', {
     method: 'POST',
-    body: JSON.stringify({ token })
+    body: JSON.stringify({ email, password })
   });
 }
 
+export function closeSession() {
+  return request<void>('/api/session', { method: 'DELETE' });
+}
+
+export function getMe() {
+  return request<SessionUser & { githubLogin: string; githubTokenSet: boolean }>('/api/me');
+}
+
+export function changePassword(currentPassword: string, newPassword: string) {
+  return request<void>('/api/me/password', {
+    method: 'PUT',
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}
+
+export function getMyGitHub() {
+  return request<AccountGitHub>('/api/me/github');
+}
+
+export function putMyGitHub(body: Record<string, unknown>) {
+  return request<AccountGitHub>('/api/me/github', { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export function testMyGitHub() {
+  return request<{ ok: boolean; login?: string; message?: string }>('/api/me/github/test', {
+    method: 'POST',
+    body: '{}'
+  });
+}
+
+function projectPrefix() {
+  return `/api/projects/${session.project()}`;
+}
+
+export function getProjects() {
+  return request<{ projects: ProjectRecord[] }>('/api/projects');
+}
+
+export function createProject(body: { tribeId: string; name: string; repoPath: string }) {
+  return request<ProjectRecord>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function getTribes() {
+  return request<{ tribes: TribeRecord[] }>('/api/tribes');
+}
+
+export function createTribe(name: string) {
+  return request<TribeRecord>('/api/tribes', { method: 'POST', body: JSON.stringify({ name }) });
+}
+
+export function addMember(tribeId: string, userId: string) {
+  return request<void>(`/api/tribes/${tribeId}/members`, { method: 'POST', body: JSON.stringify({ userId }) });
+}
+
+export function getMembers(tribeId: string) {
+  return request<{ members: SessionUser[] }>(`/api/tribes/${tribeId}/members`);
+}
+
+export function removeMember(tribeId: string, userId: string) {
+  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, { method: 'DELETE' });
+}
+
+export function getUsers() {
+  return request<{ users: SessionUser[] }>('/api/users');
+}
+
+export function createUser(body: { email: string; password: string; role: string; admin: boolean }) {
+  return request<SessionUser>('/api/users', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function updateUser(
+  id: string,
+  body: { role: string; admin: boolean; disabled: boolean; password?: string }
+) {
+  return request<SessionUser>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
 export function getCards() {
-  return request<Board>('/api/cards');
+  return request<Board>(`${projectPrefix()}/cards`);
 }
 
 export function getCard(id: string) {
-  return request<Card>(`/api/cards/${id}`);
+  return request<Card>(`${projectPrefix()}/cards/${id}`);
 }
 
 export function getTrace(id: string) {
-  return request<{ events: TraceEvent[] }>(`/api/cards/${id}/trace`);
+  return request<{ events: TraceEvent[] }>(`${projectPrefix()}/cards/${id}/trace`);
 }
 
 export function getIntake() {
-  return request<Intake>('/api/intake');
+  return request<Intake>(`${projectPrefix()}/intake`);
 }
 
 export function ingest() {
-  return request<Intake>('/api/ingest', { method: 'POST', body: '{}' });
+  return request<Intake>(`${projectPrefix()}/ingest`, { method: 'POST', body: '{}' });
 }
 
 export function acceptRequirements(requirementIds: string[]) {
-  return request<Intake>('/api/accept', { method: 'POST', body: JSON.stringify({ requirementIds }) });
+  return request<Intake>(`${projectPrefix()}/accept`, { method: 'POST', body: JSON.stringify({ requirementIds }) });
 }
 
 export function startRun() {
-  return request<{ runId: string; canRun: boolean; reason?: string }>('/api/runs', { method: 'POST', body: '{}' });
+  return request<{ runId: string; canRun: boolean; reason?: string }>(`${projectPrefix()}/runs`, {
+    method: 'POST',
+    body: '{}'
+  });
+}
+
+export function deployCard(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/deploy`, { method: 'POST', body: '{}' });
 }
 
 export function approveCard(id: string, sha: string) {
-  return request<Card>(`/api/cards/${id}/approve`, { method: 'POST', body: JSON.stringify({ sha }) });
+  return request<Card>(`${projectPrefix()}/cards/${id}/approve`, { method: 'POST', body: JSON.stringify({ sha }) });
 }
 
 export function requestChanges(id: string) {
-  return request<Card>(`/api/cards/${id}/request-changes`, { method: 'POST', body: '{}' });
+  return request<Card>(`${projectPrefix()}/cards/${id}/request-changes`, { method: 'POST', body: '{}' });
 }
 
 export function rejectCard(id: string) {
-  return request<Card>(`/api/cards/${id}/reject`, { method: 'POST', body: '{}' });
+  return request<Card>(`${projectPrefix()}/cards/${id}/reject`, { method: 'POST', body: '{}' });
 }
 
 export function unblockCard(id: string, resetAttempts: boolean) {
-  return request<Card>(`/api/cards/${id}/unblock`, {
+  return request<Card>(`${projectPrefix()}/cards/${id}/unblock`, {
     method: 'POST',
     body: JSON.stringify({ resetAttempts })
   });
 }
 
 export function getGitHub() {
-  return request<GitHubSettings>('/api/settings/github');
+  return request<GitHubSettings>(`${projectPrefix()}/settings/github`);
 }
 
 export function putGitHub(body: Record<string, unknown>) {
-  return request<GitHubSettings>('/api/settings/github', { method: 'PUT', body: JSON.stringify(body) });
+  return request<GitHubSettings>(`${projectPrefix()}/settings/github`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
 export function testGitHub() {

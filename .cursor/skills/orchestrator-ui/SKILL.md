@@ -45,4 +45,4 @@ The board poll is a 3 second interval only while work is running. Clear it when 
 
 ## Style
 
-System font. One `.primary` button on a page. `.danger` only for blocked status. Inputs and buttons are at least 44px tall. Keep `:focus-visible` outlines. Board groups become one column under 720px.
+The product name in the shell is Marauder. Tailwind CSS 4 is a dev dependency, imported from `src/app.css`, with the theme tokens in that file. Shared controls live in `src/lib/ui/`. One primary button per page. `.danger` only for blocked status. Inputs and buttons are at least 44px tall. Keep `:focus-visible` outlines. Board groups become one column under 720px. Do not add a runtime CSS library or React.

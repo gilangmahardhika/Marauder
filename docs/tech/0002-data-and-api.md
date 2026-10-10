@@ -441,6 +441,12 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 
 `GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
 
+`GET /api/tribes/{id}/members` requires admin. A non-admin is `403`. A missing tribe is `404`.
+
+```json
+{ "members": [{ "id": "user_0123456789ab", "email": "ada@example.com", "role": "lead_developer", "admin": false, "disabled": false }] }
+```
+
 `POST /api/tribes/{id}/members` with `{ "userId": "user_0123456789ab" }` and `DELETE /api/tribes/{id}/members/{userId}` require admin. A non-admin is `403`. A missing tribe is `404`.
 
 `GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires admin.
