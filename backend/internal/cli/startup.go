@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -9,11 +10,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/httpapi"
+	"orchestrator/backend/internal/worker"
 )
 
 type resolvedPaths struct {
@@ -62,6 +66,11 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	if err := prepareDataDir(paths.Data); err != nil {
 		return err
 	}
+	lock, err := worker.Lock(filepath.Join(paths.Data, "worker.lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
 	url, err := loadDatabaseURL(paths.Data, opts.getenv)
 	if err != nil {
 		return err
@@ -69,7 +78,24 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	if opts.Open != nil {
 		return opts.Open(url)
 	}
-	return openBoard(url)
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return err
+	}
+	token := hex.EncodeToString(buf[:])
+	fmt.Fprintf(opts.Stdout, "UI token: %s\n", token)
+	db, err := board.Open(url)
+	if err != nil {
+		return scrub(err, url)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		return scrub(err, url)
+	}
+	srv := httpapi.New(token)
+	srv.DB = db
+	srv.Data = paths.Data
+	return http.ListenAndServe(addr, srv.Handler())
 }
 
 func resolvePaths(opts Options, repoFlag, dataFlag string) (resolvedPaths, error) {

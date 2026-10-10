@@ -68,108 +68,108 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 
 ## Sprint 5: One pull request, then a cold review
 
-- [ ] Ensure-PR is idempotent on card id. Metadata block is rewritten on each push. The summary block stays. Push uses the settings URL and the card refspec only, with the token in askpass, not in argv (RFC-034).
-- [ ] Reviewer verdicts: `request_changes` to `changes_requested`, `recommend_approve` plus green required CI to `human_review`. Pending CI stays in `agent_review`. Red CI goes to `changes_requested` with a `ci` note.
-- [ ] Review and triage do not increment `attempts_used` (RFC-042). `review_independent` is stored and is false when only one family is configured (RFC-008).
-- [ ] `TestPROnce`
-- [ ] `TestMetadataRewrite`
-- [ ] `TestPushURL`
-- [ ] `TestAskpass`
-- [ ] `TestReviewerPack`
-- [ ] `TestReviewNotCounted`
-- [ ] `TestCIPending`
-- [ ] `TestCIRed`
-- [ ] `TestRouteClass`
-- [ ] `TestNoDeployClass`
+- [x] Ensure-PR is idempotent on card id. Metadata block is rewritten on each push. The summary block stays. Push uses the settings URL and the card refspec only, with the token in askpass, not in argv (RFC-034).
+- [x] Reviewer verdicts: `request_changes` to `changes_requested`, `recommend_approve` plus green required CI to `human_review`. Pending CI stays in `agent_review`. Red CI goes to `changes_requested` with a `ci` note.
+- [x] Review and triage do not increment `attempts_used` (RFC-042). `review_independent` is stored and is false when only one family is configured (RFC-008).
+- [x] `TestPROnce`
+- [x] `TestMetadataRewrite`
+- [x] `TestPushURL`
+- [x] `TestAskpass`
+- [x] `TestReviewerPack`
+- [x] `TestReviewNotCounted`
+- [x] `TestCIPending`
+- [x] `TestCIRed`
+- [x] `TestRouteClass`
+- [x] `TestNoDeployClass`
 
 ## Sprint 6: Approval is a person and a SHA
 
-- [ ] `approve --sha`, `request-changes`, `reject`, `unblock`. Missing or wrong SHA exits 1 and writes no approval row.
-- [ ] Same SHA twice inserts one approval. Bot login cannot be an approver.
-- [ ] Unblock destinations follow RFC-041: budget and reject go to `ready`; `health`, `deploy_failed`, and `deploy_config` go to `human_review`. `source_changed` stays blocked while a linked id is unaccepted. Default release at the cap raises `max_attempts` by one. `--reset-attempts` zeros `attempts_used`.
-- [ ] `TestApprovedHeadMoved`
-- [ ] `TestRequestChangesFromApproved`
-- [ ] `TestRejectFromApproved`
-- [ ] `TestApproveSha`
-- [ ] `TestApproveIdempotent`
-- [ ] `TestStaleSHA`
-- [ ] `TestUnblockDestinations`
-- [ ] `TestUnblockAtCap`
-- [ ] `TestUnblockReset`
-- [ ] `TestUnblockSourceChanged`
-- [ ] `TestCapFromChangesRequested`
-- [ ] CLI approve and unblock checks
+- [x] `approve --sha`, `request-changes`, `reject`, `unblock`. Missing or wrong SHA exits 1 and writes no approval row.
+- [x] Same SHA twice inserts one approval. Bot login cannot be an approver.
+- [x] Unblock destinations follow RFC-041: budget and reject go to `ready`; `health`, `deploy_failed`, and `deploy_config` go to `human_review`. `source_changed` stays blocked while a linked id is unaccepted. Default release at the cap raises `max_attempts` by one. `--reset-attempts` zeros `attempts_used`.
+- [x] `TestApprovedHeadMoved`
+- [x] `TestRequestChangesFromApproved`
+- [x] `TestRejectFromApproved`
+- [x] `TestApproveSha`
+- [x] `TestApproveIdempotent`
+- [x] `TestStaleSHA`
+- [x] `TestUnblockDestinations`
+- [x] `TestUnblockAtCap`
+- [x] `TestUnblockReset`
+- [x] `TestUnblockSourceChanged`
+- [x] `TestCapFromChangesRequested`
+- [x] CLI approve and unblock checks
 
 ## Sprint 7: Deploy the approved SHA, then test it
 
-- [ ] Deploy and rollback commands are absolute paths outside the repo and the data directory, mode `0700` or `0500` (RFC-038). The SHA argument is 40 or 64 hex only.
-- [ ] Probe allows a listed dev host, refuses link-local, loopback outside fixture mode, and unlisted hosts. A redirect is a failure (RFC-039).
-- [ ] Empty `dev_check` plus a healthy probe is `health_only` and `done`. A failing dev check returns to `changes_requested` on the same PR and stores the triage note.
-- [ ] Reconcile: deploy event without health probes or rolls back before another deploy exec. Commit without a gating check reruns the check and does not call the model.
-- [ ] `TestDeployFailed`
-- [ ] `TestHealthFail`
-- [ ] `TestHealthOnly`
-- [ ] `TestDevFailThenPass`
-- [ ] `TestVerifyAtDeployedSHA`
-- [ ] `TestDeployCommandPath`
-- [ ] `TestSHAArg`
-- [ ] `TestHealthLinkLocal`
-- [ ] `TestHealthLoopback`
-- [ ] `TestHealthPrivateListed`
-- [ ] `TestHealthUnlisted`
-- [ ] `TestHealthRedirect`
-- [ ] `TestReconcileDeploy`
-- [ ] `TestReconcileCommit`
-- [ ] `TestDevCheckNetwork`
+- [x] Deploy and rollback commands are absolute paths outside the repo and the data directory, mode `0700` or `0500` (RFC-038). The SHA argument is 40 or 64 hex only.
+- [x] Probe allows a listed dev host, refuses link-local, loopback outside fixture mode, and unlisted hosts. A redirect is a failure (RFC-039).
+- [x] Empty `dev_check` plus a healthy probe is `health_only` and `done`. A failing dev check returns to `changes_requested` on the same PR and stores the triage note.
+- [x] Reconcile: deploy event without health probes or rolls back before another deploy exec. Commit without a gating check reruns the check and does not call the model.
+- [x] `TestDeployFailed`
+- [x] `TestHealthFail`
+- [x] `TestHealthOnly`
+- [x] `TestDevFailThenPass`
+- [x] `TestVerifyAtDeployedSHA`
+- [x] `TestDeployCommandPath`
+- [x] `TestSHAArg`
+- [x] `TestHealthLinkLocal`
+- [x] `TestHealthLoopback`
+- [x] `TestHealthPrivateListed`
+- [x] `TestHealthUnlisted`
+- [x] `TestHealthRedirect`
+- [x] `TestReconcileDeploy`
+- [x] `TestReconcileCommit`
+- [x] `TestDevCheckNetwork`
 
 ## Sprint 8: One worker runs the board
 
-- [ ] `config.yaml` and mode `0600` `secrets.json`. GET never returns a token. PUT without a secret field keeps the stored bytes. Short secrets and unknown model ids are `422`. A config change event names fields, not values (RFC-030).
-- [ ] Router: retry primary once, then one fallback, then `blocked` with `provider_error`. Empty route blocks with `router_config`. A save during a running attempt does not change that attempt's model.
-- [ ] Worker lock file. A second `serve` exits. Plan job creates cards only for accepted ids and refuses a dependency cycle. Implementation cap and the global deploy lock are enforced. A moved base ref blocks with `base_moved`.
-- [ ] `TestSecretOmitted`
-- [ ] `TestSecretKeep`
-- [ ] `TestShortSecret`
-- [ ] `TestUnknownModel`
-- [ ] `TestModelIdUnique`
-- [ ] `TestBotApprover`
-- [ ] `TestConfigEvent`
-- [ ] `TestSnapshot`
-- [ ] `TestRouterConfig`
-- [ ] `TestFallbackOnce`
-- [ ] `TestPlanCards`
-- [ ] `TestWorkerLock`
-- [ ] `TestDependency`
-- [ ] `TestDeployLock`
-- [ ] `TestCap`
-- [ ] `TestBaseRefUnchanged`
-- [ ] `TestLockHolder`
+- [x] `config.yaml` and mode `0600` `secrets.json`. GET never returns a token. PUT without a secret field keeps the stored bytes. Short secrets and unknown model ids are `422`. A config change event names fields, not values (RFC-030).
+- [x] Router: retry primary once, then one fallback, then `blocked` with `provider_error`. Empty route blocks with `router_config`. A save during a running attempt does not change that attempt's model.
+- [x] Worker lock file. A second `serve` exits. Plan job creates cards only for accepted ids and refuses a dependency cycle. Implementation cap and the global deploy lock are enforced. A moved base ref blocks with `base_moved`.
+- [x] `TestSecretOmitted`
+- [x] `TestSecretKeep`
+- [x] `TestShortSecret`
+- [x] `TestUnknownModel`
+- [x] `TestModelIdUnique`
+- [x] `TestBotApprover`
+- [x] `TestConfigEvent`
+- [x] `TestSnapshot`
+- [x] `TestRouterConfig`
+- [x] `TestFallbackOnce`
+- [x] `TestPlanCards`
+- [x] `TestWorkerLock`
+- [x] `TestDependency`
+- [x] `TestDeployLock`
+- [x] `TestCap`
+- [x] `TestBaseRefUnchanged`
+- [x] `TestLockHolder`
 
 ## Sprint 9: The fixture script and the JSON API
 
-- [ ] Fixture runner uses a temp data directory, copies the deploy stub outside the repo, replays the fake provider for two families, and requires a clean `git status` in the fixture repo (REQ-045).
-- [ ] HTTP: bearer session, loopback `Host` check, CORS only for `http://127.0.0.1:4173`, 1 MiB body cap, the error shape from the contract. Card JSON includes server-computed `group`, `actions`, and `unblockTo`.
-- [ ] Session lockout after 5 failures. Wrong `Origin` and evil `Host` are `403`.
-- [ ] `go run ./cmd/fixture` exits 0
-- [ ] `TestActionsEmpty`
-- [ ] `TestActionsApproved`
-- [ ] `TestCORS`
-- [ ] `TestHostHeader`
-- [ ] `TestSessionLockout`
-- [ ] `TestRedactPack`
-- [ ] `TestSandboxOffRejected`
-- [ ] `TestAskpass` still passes inside `go test ./...`
+- [x] Fixture runner uses a temp data directory, copies the deploy stub outside the repo, replays the fake provider for two families, and requires a clean `git status` in the fixture repo (REQ-045).
+- [x] HTTP: bearer session, loopback `Host` check, CORS only for `http://127.0.0.1:4173`, 1 MiB body cap, the error shape from the contract. Card JSON includes server-computed `group`, `actions`, and `unblockTo`.
+- [x] Session lockout after 5 failures. Wrong `Origin` and evil `Host` are `403`.
+- [x] `go run ./cmd/fixture` exits 0
+- [x] `TestActionsEmpty`
+- [x] `TestActionsApproved`
+- [x] `TestCORS`
+- [x] `TestHostHeader`
+- [x] `TestSessionLockout`
+- [x] `TestRedactPack`
+- [x] `TestSandboxOffRejected`
+- [x] `TestAskpass` still passes inside `go test ./...`
 
 ## Sprint 10: The operator UI and the release pass
 
-- [ ] App shell: client-only SvelteKit, `adapter-static`, CSP meta, session bearer in `sessionStorage`, `src/lib/api.ts` covering every route.
-- [ ] Work pages: `/login`, `/` (six groups, Run, 3s poll), `/intake`, `/cards/[id]`, `/cards/[id]/trace`. `CardActions` renders only names in `actions`.
-- [ ] Settings pages: GitHub, LLM APIs, router, deploy. `SecretField` omits an empty secret and never prints a token.
-- [ ] Styles: system font, one `.primary` button, `.danger` only for blocked, 44px controls, visible focus, one column under 720px.
-- [ ] `npm run check`, `npm run test`, `npm run build`, and `npm audit --omit=dev` from `frontend/`
-- [ ] Vitest: `CardActions` empty, approved, and `unblockTo: null`
-- [ ] Vitest: `SecretField` omits the secret
-- [ ] Vitest: `api` clears the bearer on 401
-- [ ] Built `index.html` has the CSP meta and no `unsafe-inline`
-- [ ] Manual browser pass on fixture cards, from the table in the verification guide
+- [x] App shell: client-only SvelteKit, `adapter-static`, CSP meta, session bearer in `sessionStorage`, `src/lib/api.ts` covering every route.
+- [x] Work pages: `/login`, `/` (six groups, Run, 3s poll), `/intake`, `/cards/[id]`, `/cards/[id]/trace`. `CardActions` renders only names in `actions`.
+- [x] Settings pages: GitHub, LLM APIs, router, deploy. `SecretField` omits an empty secret and never prints a token.
+- [x] Styles: system font, one `.primary` button, `.danger` only for blocked, 44px controls, visible focus, one column under 720px.
+- [x] `npm run check`, `npm run test`, `npm run build`, and `npm audit --omit=dev` from `frontend/`
+- [x] Vitest: `CardActions` empty, approved, and `unblockTo: null`
+- [x] Vitest: `SecretField` omits the secret
+- [x] Vitest: `api` clears the bearer on 401
+- [x] Built `index.html` has the CSP meta and no `unsafe-inline`
+- [x] Manual browser pass on fixture cards, from the table in the verification guide
 - [ ] Optional, after that pass: one real dev host using the same deploy code, with secrets only in `secrets.json`. That run is recorded by hand and is not part of `go test`

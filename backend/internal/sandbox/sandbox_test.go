@@ -98,6 +98,27 @@ func TestEnvScrub(t *testing.T) {
 	}
 }
 
+func TestDevCheckNetwork(t *testing.T) {
+	const image = "example@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	argv, err := sandbox.DevArgv("/usr/bin/podman", image, "/data/exports/card", "https://dev.example", "abc", []string{"go", "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(argv, "\n")
+	if strings.Contains(joined, "--network=none") || !strings.Contains(joined, "DEV_URL=https://dev.example") {
+		t.Fatalf("argv = %s", joined)
+	}
+}
+
+func TestSandboxOffRejected(t *testing.T) {
+	if sandbox.AllowOff("off", false) {
+		t.Fatal("sandbox off was allowed outside the fixture")
+	}
+	if !sandbox.AllowOff("off", true) {
+		t.Fatal("fixture mode rejected sandbox off")
+	}
+}
+
 func TestTarEscape(t *testing.T) {
 	var body bytes.Buffer
 	tw := tar.NewWriter(&body)

@@ -51,6 +51,7 @@ type Card struct {
 	LocalCheck     string
 	DevCheck       string
 	RequirementIDs []string
+	DependsOn      []string
 	CreatedAt      string
 	UpdatedAt      string
 }
@@ -149,7 +150,14 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 	if card.RequirementIDs == nil {
 		card.RequirementIDs = []string{}
 	}
+	if card.DependsOn == nil {
+		card.DependsOn = []string{}
+	}
 	reqJSON, err := json.Marshal(card.RequirementIDs)
+	if err != nil {
+		return Card{}, err
+	}
+	depJSON, err := json.Marshal(card.DependsOn)
 	if err != nil {
 		return Card{}, err
 	}
@@ -159,11 +167,11 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 			risk, service, status, manual, local_check, dev_check,
 			attempts_used, max_attempts, environment, created_at, updated_at
 		) VALUES (
-			$1, $2, $3, '[]', '[]',
-			$4, 'default', $5, $6, $7, $8,
-			$9, $10, 'dev', $11, $12
+			$1, $2, $3, '[]', $4,
+			$5, 'default', $6, $7, $8, $9,
+			$10, $11, 'dev', $12, $13
 		)`,
-		card.ID, card.Title, string(reqJSON), card.Risk, card.Status, card.Manual,
+		card.ID, card.Title, string(reqJSON), string(depJSON), card.Risk, card.Status, card.Manual,
 		nullString(card.LocalCheck), nullString(card.DevCheck),
 		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt,
 	)
@@ -175,7 +183,7 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 
 func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 	var card Card
-	var reqJSON string
+	var reqJSON, depJSON string
 	err := q.QueryRowContext(ctx, `
 		SELECT id, title, status, risk, manual, attempts_used, max_attempts,
 			COALESCE(branch, ''), COALESCE(worktree_path, ''), COALESCE(worktree_gitdir, ''),
@@ -183,13 +191,13 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 			COALESCE(approved_sha, ''), COALESCE(deployed_sha, ''),
 			COALESCE(blocked_reason, ''), COALESCE(failure_reason, ''),
 			COALESCE(local_check, ''), COALESCE(dev_check, ''),
-			requirement_ids_json, created_at, updated_at
+			requirement_ids_json, depends_on_json, created_at, updated_at
 		FROM cards WHERE id = $1`, id).Scan(
 		&card.ID, &card.Title, &card.Status, &card.Risk, &card.Manual,
 		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
 		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
 		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,
-		&card.LocalCheck, &card.DevCheck, &reqJSON, &card.CreatedAt, &card.UpdatedAt,
+		&card.LocalCheck, &card.DevCheck, &reqJSON, &depJSON, &card.CreatedAt, &card.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound
@@ -199,6 +207,11 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 	}
 	if reqJSON != "" {
 		if err := json.Unmarshal([]byte(reqJSON), &card.RequirementIDs); err != nil {
+			return Card{}, err
+		}
+	}
+	if depJSON != "" {
+		if err := json.Unmarshal([]byte(depJSON), &card.DependsOn); err != nil {
 			return Card{}, err
 		}
 	}

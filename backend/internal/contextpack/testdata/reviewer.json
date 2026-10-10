@@ -1,0 +1,4 @@
+{
+  "diff": "diff --git a/hello.txt b/hello.txt\n+ok\n",
+  "requirements": ["The orchestrator reads markdown."]
+}

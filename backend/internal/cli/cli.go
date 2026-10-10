@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"orchestrator/backend/internal/app"
+	"orchestrator/backend/internal/intake"
 )
 
 type Options struct {
@@ -88,11 +89,66 @@ func Execute(opts Options) int {
 			if sha == "" {
 				return errors.New("approve requires --sha")
 			}
-			return errors.New("approve is not available")
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				cfg, err := intake.LoadConfig(paths.Data)
+				if err != nil {
+					return err
+				}
+				_, err = app.Approve(ctx, db, args[0], sha, app.GateConfig{Operator: cfg.Operator, BotLogin: "bot", Approvers: []string{cfg.Operator}})
+				return err
+			})
 		},
 	}
 	approve.Flags().StringVar(&sha, "sha", "", "commit SHA")
 	root.AddCommand(approve)
+	root.AddCommand(&cobra.Command{
+		Use:  "request-changes CARD",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				_, err := app.RequestChanges(ctx, db, args[0], app.GateConfig{Operator: "ada", BotLogin: "bot", Approvers: []string{"ada"}})
+				return err
+			})
+		},
+	})
+	root.AddCommand(&cobra.Command{
+		Use:  "reject CARD",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				_, err := app.Reject(ctx, db, args[0], app.GateConfig{Operator: "ada", BotLogin: "bot", Approvers: []string{"ada"}})
+				return err
+			})
+		},
+	})
+	var reset bool
+	unblock := &cobra.Command{
+		Use:  "unblock CARD",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				_, err := app.Unblock(ctx, db, args[0], reset)
+				return err
+			})
+		},
+	}
+	unblock.Flags().BoolVar(&reset, "reset-attempts", false, "zero the attempt counter")
+	root.AddCommand(unblock)
+	root.AddCommand(&cobra.Command{
+		Use: "run-next",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				var n int
+				if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cards WHERE status = 'ready'`).Scan(&n); err != nil {
+					return err
+				}
+				if n == 0 {
+					fmt.Fprint(opts.Stdout, "no card is ready\n")
+				}
+				return nil
+			})
+		},
+	})
 	root.SetOut(opts.Stderr)
 	root.SetErr(opts.Stderr)
 	if opts.Args != nil {
