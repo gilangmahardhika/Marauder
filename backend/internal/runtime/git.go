@@ -23,6 +23,7 @@ type Git struct {
 	Repo string
 	Data string
 	Bot  string
+	Exec func(context.Context, execx.Child) (execx.Result, error)
 }
 
 type Worktree struct {
@@ -86,6 +87,14 @@ func (g Git) Head(ctx context.Context) (string, error) {
 	return strings.TrimSpace(string(res.Out)), nil
 }
 
+func (g Git) RevParse(ctx context.Context, ref string) (string, error) {
+	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(res.Out)), nil
+}
+
 func (g Git) Export(ctx context.Context, sha, dest string) error {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
 		return err
@@ -98,10 +107,18 @@ func (g Git) Export(ctx context.Context, sha, dest string) error {
 }
 
 func (g Git) run(ctx context.Context, argv ...string) (execx.Result, error) {
-	res, err := execx.Command(ctx, execx.Child{
+	return g.runEnv(ctx, gitEnv(g.Bin, g.Data), gitTimeout, argv...)
+}
+
+func (g Git) runEnv(ctx context.Context, env []string, timeout time.Duration, argv ...string) (execx.Result, error) {
+	run := g.Exec
+	if run == nil {
+		run = execx.Command
+	}
+	res, err := run(ctx, execx.Child{
 		Argv:    argv,
-		Env:     gitEnv(g.Bin, g.Data),
-		Timeout: gitTimeout,
+		Env:     env,
+		Timeout: timeout,
 		MaxOut:  gitMaxOut,
 	})
 	if err != nil {

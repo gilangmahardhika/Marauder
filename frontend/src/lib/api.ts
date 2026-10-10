@@ -3,12 +3,15 @@ import type {
   AccountGitHub,
   Board,
   Card,
+  CompanyGitHub,
+  CompanyRepo,
   DeploySettings,
-  GitHubSettings,
   Intake,
   LLMSettings,
-  RouterSettings,
+  ProjectLink,
   ProjectRecord,
+  Repository,
+  RouterSettings,
   SessionUser,
   TraceEvent,
   TribeRecord
@@ -103,7 +106,7 @@ export function getProjects() {
   return request<{ projects: ProjectRecord[] }>('/api/projects');
 }
 
-export function createProject(body: { tribeId: string; name: string; repoPath: string }) {
+export function createProject(body: { tribeId: string; name: string; repo: string; baseBranch: string }) {
   return request<ProjectRecord>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -196,18 +199,45 @@ export function unblockCard(id: string, resetAttempts: boolean) {
   });
 }
 
-export function getGitHub() {
-  return request<GitHubSettings>(`${projectPrefix()}/settings/github`);
+export function getCompanyGitHub() {
+  return request<CompanyGitHub>('/api/settings/github');
 }
 
-export function putGitHub(body: Record<string, unknown>) {
-  return request<GitHubSettings>(`${projectPrefix()}/settings/github`, { method: 'PUT', body: JSON.stringify(body) });
+export function putCompanyGitHub(body: Record<string, unknown>) {
+  return request<CompanyGitHub>('/api/settings/github', { method: 'PUT', body: JSON.stringify(body) });
 }
 
-export function testGitHub() {
+export function testCompanyGitHub() {
   return request<{ ok: boolean; login?: string; message?: string }>('/api/settings/github/test', {
     method: 'POST',
     body: '{}'
+  });
+}
+
+export function getCompanyRepos() {
+  return request<{ repos: CompanyRepo[] }>('/api/settings/github/repos');
+}
+
+export function getRepository() {
+  return request<Repository>(`${projectPrefix()}/settings/repository`);
+}
+
+export function putRepository(body: { repo: string; baseBranch: string }) {
+  return request<Repository>(`${projectPrefix()}/settings/repository`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+export function syncRepository() {
+  return request<Repository>(`${projectPrefix()}/sync`, { method: 'POST', body: '{}' });
+}
+
+export function getLinks() {
+  return request<{ links: ProjectLink[] }>(`${projectPrefix()}/settings/links`);
+}
+
+export function putLinks(links: { projectId: string; sharedPaths: string[] }[]) {
+  return request<{ links: ProjectLink[] }>(`${projectPrefix()}/settings/links`, {
+    method: 'PUT',
+    body: JSON.stringify({ links })
   });
 }
 
@@ -235,11 +265,11 @@ export function putRouter(body: Record<string, unknown>) {
 }
 
 export function getDeploy() {
-  return request<DeploySettings>('/api/settings/deploy');
+  return request<DeploySettings>(`${projectPrefix()}/settings/deploy`);
 }
 
 export function putDeploy(body: Record<string, unknown>) {
-  return request<DeploySettings>('/api/settings/deploy', { method: 'PUT', body: JSON.stringify(body) });
+  return request<DeploySettings>(`${projectPrefix()}/settings/deploy`, { method: 'PUT', body: JSON.stringify(body) });
 }
 
 export function unreachable() {

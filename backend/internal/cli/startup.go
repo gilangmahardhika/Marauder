@@ -12,12 +12,14 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/httpapi"
+	"orchestrator/backend/internal/tenancy"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -29,8 +31,6 @@ type resolvedPaths struct {
 type secretFile struct {
 	DatabaseURL string            `json:"databaseUrl"`
 	TokenKey    string            `json:"tokenKey,omitempty"`
-	GitHubToken string            `json:"githubToken"`
-	DeployToken string            `json:"deployToken"`
 	LLMKeys     map[string]string `json:"llmKeys"`
 }
 
@@ -95,10 +95,14 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	if err != nil || len(key) != 32 {
 		return errors.New("tokenKey must be 32 bytes")
 	}
+	if err := tenancy.AdoptProjects(context.Background(), db, paths.Data); err != nil {
+		return err
+	}
 	srv := httpapi.New()
 	srv.DB = db
 	srv.Data = paths.Data
 	srv.TokenKey = key
+	srv.Tools = app.Tools{Git: lookTool("git"), GH: lookTool("gh")}
 	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
 		srv.Cloud = true
 		srv.AllowHosts = hostAllowlist(opts.getenv)
@@ -107,6 +111,19 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 		}
 	}
 	return http.ListenAndServe(addr, srv.Handler())
+}
+
+// lookTool returns an absolute path, or "" when the tool is not installed.
+func lookTool(name string) string {
+	path, err := exec.LookPath(name)
+	if err != nil {
+		return ""
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return ""
+	}
+	return abs
 }
 
 func bootstrapAdmin(opts Options, db *sql.DB) error {

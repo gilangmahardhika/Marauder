@@ -14,6 +14,7 @@ type Server struct {
 	DB          *sql.DB
 	Data        string
 	TokenKey    []byte
+	Tools       app.Tools
 	TestBearer  string
 	AllowOrigin string
 	AllowHosts  map[string]bool
@@ -43,23 +44,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects", s.projectCollection)
 	mux.HandleFunc("/api/projects/{projectId}/cards", s.projectCards)
 	mux.HandleFunc("/api/projects/{projectId}/cards/", s.projectCard)
-	mux.HandleFunc("/api/projects/{projectId}/intake", s.projectIntake)
+	mux.HandleFunc("GET /api/projects/{projectId}/intake", s.projectIntake)
 	mux.HandleFunc("POST /api/projects/{projectId}/ingest", s.projectIngest)
 	mux.HandleFunc("POST /api/projects/{projectId}/accept", s.projectAccept)
 	mux.HandleFunc("POST /api/projects/{projectId}/runs", s.projectRuns)
-	mux.HandleFunc("/api/projects/{projectId}/settings/github", s.projectGitHub)
+	mux.HandleFunc("POST /api/projects/{projectId}/sync", s.projectSync)
+	mux.HandleFunc("GET /api/projects/{projectId}/settings/repository", s.projectRepository)
+	mux.HandleFunc("PUT /api/projects/{projectId}/settings/repository", s.projectRepository)
+	mux.HandleFunc("GET /api/projects/{projectId}/settings/links", s.projectLinks)
+	mux.HandleFunc("PUT /api/projects/{projectId}/settings/links", s.projectLinks)
+	mux.HandleFunc("GET /api/projects/{projectId}/settings/deploy", s.projectDeploy)
+	mux.HandleFunc("PUT /api/projects/{projectId}/settings/deploy", s.projectDeploy)
 	mux.HandleFunc("/api/cards", s.cards)
 	mux.HandleFunc("/api/cards/", s.card)
-	mux.HandleFunc("/api/intake", s.intake)
-	mux.HandleFunc("/api/ingest", s.ingest)
-	mux.HandleFunc("/api/accept", s.accept)
-	mux.HandleFunc("/api/runs", s.runs)
-	mux.HandleFunc("/api/settings/github", s.github)
-	mux.HandleFunc("/api/settings/github/test", s.githubTest)
+	mux.HandleFunc("GET /api/settings/github", s.companyGitHub)
+	mux.HandleFunc("PUT /api/settings/github", s.companyGitHub)
+	mux.HandleFunc("POST /api/settings/github/test", s.companyGitHubTest)
+	mux.HandleFunc("GET /api/settings/github/repos", s.companyRepos)
 	mux.HandleFunc("/api/settings/llm", s.llm)
 	mux.HandleFunc("/api/settings/llm/", s.llmTest)
 	mux.HandleFunc("/api/settings/router", s.routerSettings)
-	mux.HandleFunc("/api/settings/deploy", s.deploySettings)
 	return s.wrap(mux)
 }
 

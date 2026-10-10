@@ -51,6 +51,8 @@ The last admin cannot be removed or disabled. Approval stores the user's GitHub 
 
 Requirements: REQ-003, REQ-030, REQ-032, REQ-047, REQ-051.
 
+Superseded in part by RFC-049 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). The bot login an approver may not use is the company bot login. Admin edits the company GitHub account. A Lead Developer edits the project's repository, links, checks, and deploy settings.
+
 ## RFC-047 A tribe owns its projects
 
 Users, sessions, tribes, membership, and projects live in one PostgreSQL database. The connection string is `databaseUrl` in the service `secrets.json`. The API does not return it. A project belongs to one tribe. A tribe has one or more projects. A user may belong to several tribes. The user sees a project's cards, intake, and settings only as a member of that tribe. A non-member, and a request for an unknown project id, gets `404`. Admin manages user, tribe, membership, and project records. Each project has its own repo, settings, worktrees, and intake rows. Requirement ids and decision ids are unique per project.
@@ -62,6 +64,8 @@ Set aside: one database per project. The service has one `databaseUrl`. Also set
 Consequences: board queries include `project_id`. Unique keys for a branch and a pull request URL include `project_id`. `intake_state` and `deploy_lock` are one row per project. The user's GitHub token and the project's bot token are ciphertext in PostgreSQL, encrypted with `tokenKey` from the service secrets file. Jobs decrypt the project bot token for push and pull requests. They do not use the logged-in user's token. GET returns `tokenSet` and never the token or the password hash. Deploy tokens and model keys stay in the project secrets file, mode `0600`, and stay off the API. Redaction still runs on the plaintext before a pack or an event is written.
 
 Requirements: REQ-044, REQ-045, REQ-048, REQ-049, REQ-051.
+
+Superseded in part by RFC-049 and RFC-050 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). Jobs use the company token, not a project bot token. A project names a repository in the company organization, and the service clones it. A user's GitHub token stays ciphertext. Deploy tokens stay in the project secrets file.
 
 ## RFC-048 Workers run per project
 

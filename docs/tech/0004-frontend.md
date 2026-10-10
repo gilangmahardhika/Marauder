@@ -90,13 +90,15 @@ frontend/
   src/routes/admin/users/+page.svelte
   src/routes/admin/users/new/+page.svelte
   src/routes/admin/users/[id]/+page.svelte
+  src/routes/admin/github/+page.svelte
   src/routes/tribes/+page.svelte
   src/routes/tribes/new/+page.svelte
   src/routes/tribes/[id]/+page.svelte
   src/routes/projects/+page.svelte
   src/routes/projects/new/+page.svelte
   src/routes/settings/+layout.svelte
-  src/routes/settings/github/+page.svelte
+  src/routes/settings/repository/+page.svelte
+  src/routes/settings/links/+page.svelte
   src/routes/settings/llm/+page.svelte
   src/routes/settings/llm/new/+page.svelte
   src/routes/settings/llm/[family]/+page.svelte
@@ -155,21 +157,23 @@ frontend/
 | `/admin/users` | Admin user list |
 | `/admin/users/new` | Create a user |
 | `/admin/users/[id]` | Edit role, admin, disabled, and an optional password |
+| `/admin/github` | Company GitHub account |
 | `/tribes` | Tribes |
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
 | `/projects` | Projects for the caller's tribes |
 | `/projects/new` | Create a project |
-| `/settings/github` | Project repo and bot token |
+| `/settings/repository` | Project repository, base branch, and Sync |
+| `/settings/links` | Linked projects and their shared paths |
 | `/settings/llm` | LLM families for the project |
 | `/settings/llm/new` | Create an LLM family |
 | `/settings/llm/[family]` | Edit, test, or delete one LLM family |
 | `/settings/router` | Router settings for the project |
 | `/settings/deploy` | Deploy and checks for the project |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, GitHub, LLM APIs, Router, Deploy), and Admin (Users, Tribes). Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, LLM APIs, Router, Deploy), and Admin (Users, Tribes, Company GitHub). Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repo path as the detail line, and the search matches name or path. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
+The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -269,7 +273,7 @@ A list, oldest first. Each item shows time, kind, attempt id, and the payload in
 
 ## Settings pages
 
-`SecretField.svelte` is used for the GitHub token, each LLM key, and the deploy token.
+`SecretField.svelte` is used for the caller's GitHub token, the company GitHub token, each LLM key, and the deploy token.
 
 1. Input `type="password"`, autocomplete `off`.
 2. If the GET flag (`tokenSet`, `keySet`, or `deployTokenSet`) is true, placeholder "A value is saved".
@@ -285,21 +289,25 @@ Disable the submit button and set the live message while the PUT is in flight. O
 
 Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
 
-GitHub fieldset: host, login, token. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
+GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that clones, pushes, and pull requests use the company account. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
 
 ### Users and tribes
 
 `src/routes/admin/users/+page.svelte` lists users. Create is `/admin/users/new` (email, password, role, admin) and calls `POST /api/users`. Edit is `/admin/users/[id]` and calls `PUT /api/users/{id}`. A `403` sets the live message from `error.message`.
 
-`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user who is not yet a member in a `SearchSelect` searched by email. The request still sends `userId`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects`. Create is `/projects/new` with tribe, name, and repo path.
+`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user who is not yet a member in a `SearchSelect` searched by email. The request still sends `userId`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, and base branch. Picking a repository fills the base branch with its default branch. When the list cannot load, the repository is a text field.
 
-### Project GitHub
+### Company GitHub
 
-`src/routes/settings/github/+page.svelte`. GET and PUT `/api/projects/{id}/settings/github` for the selected project.
+`src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows the bot login on success or `message` on `ok: false`. The saved bot login shows as read-only text.
 
-Fields: host, owner, repository, base branch, bot login, bot token.
+### Repository
 
-"Test connection" calls `POST /api/projects/{id}/settings/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
+`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. "Sync" calls `POST /api/projects/{id}/sync`.
+
+### Linked projects
+
+`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. The page explains that linked context is read only.
 
 ### LLM APIs
 
@@ -334,7 +342,7 @@ The save result line includes "Applies to the next route decision."
 
 ### Deploy and checks
 
-`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/projects/{id}/settings/deploy`.
+`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/projects/{id}/settings/deploy`. These settings belong to the selected project (RFC-050). Any member can read them. Save is for a Lead Developer member, and a `403` shows in the live message.
 
 Fields, in three fieldsets:
 

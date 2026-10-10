@@ -35,7 +35,7 @@ Module path: `orchestrator/backend`.
 
 | Flag | Default |
 | --- | --- |
-| `--repo` | On a local run, the repo to attach to a project. Cloud `serve` loads project repo paths from the database |
+| `--repo` | On a local run and the fixture, the repo to attach. `serve` uses each project's clone at `<data>/projects/<id>/repo` (RFC-050) |
 | `--data` | `~/.orchestrator/service` (0002) |
 | `--addr` | `127.0.0.1:8787` |
 | `--ui-origin` | `http://127.0.0.1:4173`, or the configured origin when `ORCHESTRATOR_CLOUD=1` |
@@ -117,7 +117,7 @@ Each pass, in order:
 9. Start a verify job for each `verifying` card.
 10. Start implement jobs while running implement jobs are under the cap: oldest first among `ready`, `changes_requested`, and `in_progress` with no open attempt, whose requirements are accepted, dependencies are `done`, and `attempts_used < max_attempts`.
 
-Every job snapshots that project's settings at start and uses that snapshot to the end. The push uses the project bot token from that snapshot, not the user's token.
+Every job snapshots that project's settings at start and uses that snapshot to the end. The push uses the company GitHub token (RFC-049), not the user's token. Before a job reads the repo, `runtime.EnsureCheckout` clones `https://<host>/<org>/<repo>.git` into the project's `repo/` when it is missing, else fetches the base branch. The token goes through askpass and the child environment, never argv.
 
 ### Plan job
 
@@ -129,7 +129,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 ### Implement job
 
-1. Take the card lock. For a real repo, require `github.owner`, `github.repo`, `github.botLogin`, and a GitHub token, else block with `github_config`. Require a sandbox image, else `sandbox_config`. Route the task class, and block with `router_config` when the route has no model.
+1. Take the card lock. For a real repo, require the company organization, bot login, and token, and the project repo, else block with `github_config`. Require a sandbox image, else `sandbox_config`. Route the task class, and block with `router_config` when the route has no model.
 2. When the worktree is missing, create it (git commands below) and store `branch`, `worktree_path`, and `worktree_gitdir`. On a later attempt, reuse it.
 3. Record the local `refs/heads/<baseBranch>` SHA for the `base_moved` assertion.
 4. Insert an attempt row: `n` is the card's highest `n` plus one, `parent_attempt_id` is the previous attempt, `base_sha` is the worktree HEAD.
@@ -152,9 +152,13 @@ The provider receives the tool list for the profile. The harness executes each t
 | Profile | Tools |
 | --- | --- |
 | `planner` | `read_doc`, `propose_requirements`, `create_card` |
-| `implementer` | `read_file`, `edit_file`, `run_local_check`, `commit` |
+| `implementer` | `read_file`, `read_linked_file`, `edit_file`, `run_local_check`, `commit` |
 | `reviewer` | `read_diff`, `comment_pr`, `verdict` |
 | `triage` | `read_log`, `write_failure_note` |
+
+`read_linked_file` takes `project` and `path`. `project` must be a linked project of the card's project (RFC-051). The harness exports that project's base SHA once per attempt to `exports/linked-<id>-<sha>/` and reads through `safePath` on that root, with the `read_file` cap. There is no write tool for a linked project.
+
+The implementer and reviewer packs add a `LINKED <name>` block per link inside the untrusted markers: that project's accepted requirements as `<project>:REQ-001`, its decisions, and the files named in the link's shared paths, read from the same export. The block is capped at 64 KiB per link, and the whole untrusted section stays under its cap. The attempt writes one `tool_call` event named `linked_context` whose `links` field lists each linked project id and SHA.
 
 `read_file` and `edit_file` go through `safePath` (0006). `run_local_check` takes no arguments. It runs the card's `localCheck` on a working-tree export with network none, and returns the exit code and the last 200 lines. It never moves the card. `commit` stages the worktree and commits with the model's message plus fixed trailers:
 
@@ -323,7 +327,7 @@ If `cards.pr_url` is already set, skip `pr create`. The unique index is the seco
 
 ## Settings
 
-`settings.SaveGitHub`, `SaveLLM`, `SaveRouter`, and `SaveDeploy` validate against the 0002 rules for one project and the current state of that project's other sections. A Lead Developer member may call them. Then they write that project's `config.yaml` and, only for secret fields that were sent, that project's `secrets.json` or the bot-token ciphertext. Files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names and `actorId`.
+`settings.SaveLLM`, `SaveRouter`, and `SaveProjectDeploy` validate against the 0002 rules for one project and the current state of that project's other sections. A Lead Developer member may call them. Then they write that project's `config.yaml` and, only for secret fields that were sent, that project's `secrets.json`. `company.Save` writes the company GitHub account and is admin only. The project repository and links are rows, saved by `tenancy.SaveRepository` and `tenancy.SaveLinks`. Files are written by temp file, `fsync`, and rename, with mode `0600`. Then they append `config_changed` with field names and `actorId`.
 
 `settings.SaveUserGitHub` writes ciphertext for that user only. `settings.View*` copies config into response structs that have no secret fields, so `json.Marshal` cannot leak one.
 

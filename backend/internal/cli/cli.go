@@ -12,6 +12,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/intake"
+	"orchestrator/backend/internal/tenancy"
 )
 
 type Options struct {
@@ -65,7 +66,7 @@ func Execute(opts Options) int {
 		Use: "ingest",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				result, err := app.Ingest(ctx, db, paths.Repo, paths.Data)
+				result, err := app.Ingest(ctx, db, projectOr(project), paths.Repo, paths.Data)
 				if err != nil {
 					return err
 				}
@@ -79,7 +80,7 @@ func Execute(opts Options) int {
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				return app.Accept(ctx, db, paths.Data, args)
+				return app.Accept(ctx, db, projectOr(project), paths.Data, args)
 			})
 		},
 	})
@@ -178,6 +179,13 @@ func Execute(opts Options) int {
 		return 1
 	}
 	return 0
+}
+
+func projectOr(project string) string {
+	if project == "" {
+		return tenancy.DefaultProject
+	}
+	return project
 }
 
 func (o Options) getenv(key string) string {

@@ -196,6 +196,8 @@ Consequences: new tools require a profile update and a snapshot update in the sa
 
 Requirements: REQ-016, REQ-017.
 
+Superseded in part by RFC-051 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). Packs add linked project context, and the implementer adds `read_linked_file`. Each role still has one fixed pack and one tool list.
+
 ## RFC-014 A model turn cannot supply the shell that runs
 
 `localCheck` and `devCheck` are fields on the card, visible before the inner loop starts. The runner executes that stored command with the working directory pinned to the worktree. The executable must be on an allowlist. Text emitted during a model turn is not a command.

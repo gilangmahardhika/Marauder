@@ -14,15 +14,15 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 
 | Person | What they do |
 | --- | --- |
-| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, and creates projects. Does not approve or deploy unless the job role allows it. |
+| Admin | A flag on a user, not a job role. Creates users, sets the job role and the admin flag, sets passwords, creates tribes, adds members, creates projects, and sets the company GitHub account. Does not approve or deploy unless the job role allows it. |
 | Product Owner | Accepts requirements for a project whose tribe they belong to. May request changes, reject, approve, and unblock. Does not deploy. |
-| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repo settings, checks, router, models, and deploy settings. |
+| Lead Developer | May start a run, request changes, reject, approve, unblock, and start deploy. Edits that project's repository, linked projects, checks, router, models, and deploy settings. |
 | QA Lead | May request changes, reject, and approve. Does not accept requirements or deploy. |
 | Senior Developer | May start a run and request changes. Does not accept, approve, reject, or deploy. |
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 | QA | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 
-A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token. A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
+A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver. Jobs use the company GitHub account instead (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
 
 Models are workers the harness calls. They are not users, and they do not hold the board.
 
@@ -94,6 +94,9 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-049 | A project is visible to its tribe |
 | REQ-050 | The worker runs per project |
 | REQ-051 | Each user has their own GitHub settings |
+| REQ-052 | The company has one GitHub account |
+| REQ-053 | A project is one repository that the service clones |
+| REQ-054 | A project can read context from linked projects |
 
 ## Requirements
 
@@ -312,8 +315,8 @@ Pack contents are fixed. A snapshot test locks each pack.
 | Pack | Includes | Excludes |
 | --- | --- | --- |
 | Planner | PRD outline, requirement candidates, RFC decisions, existing card titles and dependencies | File diffs, credentials, attempt logs |
-| Implementer | The one card, linked requirement statements, linked decisions, repo path map, local check command, and the last failure note if any | Other cards' diffs, deploy secrets |
-| Reviewer | Linked requirements, linked decisions, the diff, local check output, pull request body | Author messages, author tool trace |
+| Implementer | The one card, linked requirement statements, linked decisions, repo path map, local check command, the last failure note if any, and linked project context (REQ-054) | Other cards' diffs, deploy secrets |
+| Reviewer | Linked requirements, linked decisions, the diff, local check output, pull request body, and linked project context (REQ-054) | Author messages, author tool trace |
 | Triage | Failing command, exit code, log tail, card acceptance | Any instruction or tool that edits files |
 
 The log tail included in a pack is capped. The default cap is the last 200 lines.
@@ -645,17 +648,19 @@ v1 is acceptable when the following script passes on a fixture repo and the same
 
 ### REQ-044 Settings are edited through the API, and secrets stay write-only
 
-A Lead Developer member edits project settings from the web UI, through the JSON API. Each user edits their own GitHub settings. There is no approver list and no operator login.
+A Lead Developer member edits project settings from the web UI, through the JSON API. An admin edits the company GitHub account. Each user edits their own GitHub settings. There is no approver list and no operator login.
 
 | Section | Fields | Who saves |
 | --- | --- | --- |
 | Account GitHub | Host, login, token | That user |
-| Project GitHub | Host, owner, repo, base branch, bot login, bot token | Lead Developer member |
+| Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
+| Project repository | Repo in the company organization, base branch | Lead Developer member |
+| Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member |
 | LLM | Families, each with protocol, base URL, model ids, and an API key | Lead Developer member |
 | Router | Model and fallback per task class, review independence, budgets | Lead Developer member |
 | Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member |
 
-No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The project bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
+No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
 
 #### Acceptance
 
@@ -714,7 +719,7 @@ An admin creates a tribe and adds users to it. A user may be in more than one tr
 
 ### REQ-049 A project is visible to its tribe
 
-An admin creates a project on one tribe. The project names one target repo. Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
+An admin creates a project on one tribe. The project names one repository (REQ-053). Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
 
 #### Acceptance
 
@@ -736,14 +741,50 @@ Each project has its own worker lock and its own deploy lock. The service may ru
 
 ### REQ-051 Each user has their own GitHub settings
 
-Each user stores a GitHub host, login, and token. The token is write-only. The project stores owner, repo, base branch, bot login, and bot token for the worker. The worker pushes and opens pull requests with the project bot token. It does not use the signed-in user's token. A user can test their own token. The API returns whether a token is set and never returns the token.
+Each user stores a GitHub host, login, and token. The token is write-only. The login names the user as an approver. The worker pushes and opens pull requests with the company token (REQ-052). It does not use the signed-in user's token. A user can test their own token. The API returns whether a token is set and never returns the token.
 
 #### Acceptance
 
 - `GET` of the caller's GitHub settings returns `tokenSet` and no token.
 - One user cannot read or replace another user's token.
-- A job's push uses the project bot token.
+- A job's push uses the company token.
 - Approval is rejected when the caller's GitHub login is empty.
+
+### REQ-052 The company has one GitHub account
+
+An admin sets one GitHub account for the company: a host, an organization, and a token. The token is ciphertext in the database and write-only. The test calls GitHub with the token, checks the organization, and stores the login it reports as the bot login. Every job in every project clones, fetches, pushes, and opens pull requests with this token. The token is passed to `git` and `gh` in the child environment, never in argv. A Lead Developer can list the organization's repositories to pick one for a project.
+
+#### Acceptance
+
+- `GET /api/settings/github` returns `tokenSet` and no token.
+- A non-admin who saves the company GitHub account is rejected.
+- Saving with an empty token keeps the stored token.
+- Approval is rejected when the caller's GitHub login equals the company bot login.
+
+### REQ-053 A project is one repository that the service clones
+
+A project names one repository in the company organization and one base branch. Two projects cannot name the same repository. The service clones the repository into that project's data directory and fetches the base branch before ingest and on Sync. Worktrees branch from the project's base branch. Deploy, checks, sandbox, scheduler, and doc paths are settings of that project, and its deploy token is in that project's secrets file.
+
+#### Acceptance
+
+- Creating a second project on the same repository is rejected.
+- The clone command has no token in argv.
+- A worktree branches from the project's base branch.
+- Ingest on one project does not add requirements to another project.
+- Deploy settings saved on one project are not returned for another project.
+- A Developer member who saves project deploy settings is rejected.
+
+### REQ-054 A project can read context from linked projects
+
+A Lead Developer member links their project to other projects in the same tribe. A link is one way. Each link may name shared paths, which are relative paths in the linked repository. The implementer and reviewer packs add each linked project's accepted requirements and decisions, and the shared files read at the linked base branch, inside the untrusted markers. The implementer may call `read_linked_file` to read any other file of a linked project at that SHA. It cannot write there.
+
+#### Acceptance
+
+- A link to a project in another tribe is rejected.
+- A link from a project to itself is rejected.
+- A shared path that escapes the repository is rejected.
+- The implementer pack contains the linked project's accepted requirement statements, marked untrusted.
+- `read_linked_file` rejects `..`, an absolute path, and `.git`.
 
 ## Non-goals
 
@@ -758,7 +799,7 @@ Each user stores a GitHub host, login, and token. The token is write-only. The p
 
 ## Configuration defaults
 
-Project settings live in that project's `config.yaml` and secrets (REQ-045). A Lead Developer member edits them from the settings pages (REQ-044). Each user edits their own GitHub settings (REQ-051). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
+Project settings live in that project's `config.yaml` and secrets (REQ-045). A Lead Developer member edits them from the settings pages (REQ-044). An admin edits the company GitHub account (REQ-052). Each user edits their own GitHub settings (REQ-051). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
 
 | Setting | v1 default |
 | --- | --- |
@@ -772,7 +813,7 @@ Project settings live in that project's `config.yaml` and secrets (REQ-045). A L
 | Sandbox engine | Podman |
 | Environment | `dev` only |
 
-Model ids, the project bot login, dev hosts, deploy and rollback scripts, the sandbox image digest, and check commands have no default. Each is chosen per project. A card whose job needs a missing setting blocks with a reason that names the section.
+Model ids, the project repository, dev hosts, deploy and rollback scripts, the sandbox image digest, and check commands have no default. Each is chosen per project. A card whose job needs a missing setting blocks with a reason that names the section.
 
 Git host default is GitHub. The card store is PostgreSQL, reached by `databaseUrl` in the data directory (RFC-044). The git host stores the pull request. It does not store card status as the source of truth.
 
@@ -820,7 +861,8 @@ Startup sees a deploy without a health event. It probes or rolls back before ope
 | Cold review | A review whose prompt excludes the author's transcript. |
 | Job role | One of Lead Developer, Senior Developer, Developer, QA Lead, QA, and Product Owner. Not a model profile. |
 | Tribe | A team. Members see that tribe's projects. |
-| Project | One target repo and its cards, settings, and worker. |
+| Project | One repository in the company GitHub organization, and its cards, settings, and worker. |
+| Linked project | Another project in the same tribe whose requirements, decisions, and files a project reads as context. |
 | Data directory | The service root, plus one directory per project outside that project's repo. The board is the PostgreSQL database named by `databaseUrl` in the service secrets file. |
 | Export | A fresh copy of one SHA, or of the working tree without `.git`, that a check runs against. |
 
@@ -840,3 +882,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 10. Dependencies and the per-project deploy lock (REQ-007, REQ-034), then the fixture script (REQ-043).
 11. The data directory and the settings API (REQ-045, REQ-044), then the web UI (REQ-042).
 12. Accounts, tribes, and per-project workers (REQ-046 through REQ-051).
+13. The company GitHub account, project repositories, and linked projects (REQ-052 through REQ-054).

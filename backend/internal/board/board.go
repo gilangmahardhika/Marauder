@@ -33,6 +33,7 @@ type DBTX interface {
 
 type Card struct {
 	ID             string
+	ProjectID      string
 	Title          string
 	Status         string
 	Risk           string
@@ -153,6 +154,9 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 	if card.DependsOn == nil {
 		card.DependsOn = []string{}
 	}
+	if card.ProjectID == "" {
+		card.ProjectID = "proj_default"
+	}
 	reqJSON, err := json.Marshal(card.RequirementIDs)
 	if err != nil {
 		return Card{}, err
@@ -165,15 +169,15 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 		INSERT INTO cards (
 			id, title, requirement_ids_json, decision_ids_json, depends_on_json,
 			risk, service, status, manual, local_check, dev_check,
-			attempts_used, max_attempts, environment, created_at, updated_at
+			attempts_used, max_attempts, environment, created_at, updated_at, project_id
 		) VALUES (
 			$1, $2, $3, '[]', $4,
 			$5, 'default', $6, $7, $8, $9,
-			$10, $11, 'dev', $12, $13
+			$10, $11, 'dev', $12, $13, $14
 		)`,
 		card.ID, card.Title, string(reqJSON), string(depJSON), card.Risk, card.Status, card.Manual,
 		nullString(card.LocalCheck), nullString(card.DevCheck),
-		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt,
+		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt, card.ProjectID,
 	)
 	if err != nil {
 		return Card{}, err
@@ -185,7 +189,7 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 	var card Card
 	var reqJSON, depJSON string
 	err := q.QueryRowContext(ctx, `
-		SELECT id, title, status, risk, manual, attempts_used, max_attempts,
+		SELECT id, project_id, title, status, risk, manual, attempts_used, max_attempts,
 			COALESCE(branch, ''), COALESCE(worktree_path, ''), COALESCE(worktree_gitdir, ''),
 			COALESCE(pr_url, ''), COALESCE(head_sha, ''),
 			COALESCE(approved_sha, ''), COALESCE(deployed_sha, ''),
@@ -193,7 +197,7 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 			COALESCE(local_check, ''), COALESCE(dev_check, ''),
 			requirement_ids_json, depends_on_json, created_at, updated_at
 		FROM cards WHERE id = $1`, id).Scan(
-		&card.ID, &card.Title, &card.Status, &card.Risk, &card.Manual,
+		&card.ID, &card.ProjectID, &card.Title, &card.Status, &card.Risk, &card.Manual,
 		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
 		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
 		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,

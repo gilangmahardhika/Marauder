@@ -175,7 +175,7 @@ func step1(ctx context.Context, db *sql.DB, data string) error {
 	if len(parsed.Requirements) != 2 {
 		return fmt.Errorf("step 1: requirements = %d", len(parsed.Requirements))
 	}
-	if err := intake.Apply(ctx, db, parsed); err != nil {
+	if err := intake.Apply(ctx, db, "proj_default", parsed); err != nil {
 		return err
 	}
 	n, err := board.CountCards(ctx, db)
@@ -192,7 +192,7 @@ func step1(ctx context.Context, db *sql.DB, data string) error {
 }
 
 func step2(ctx context.Context, db *sql.DB) (board.Card, board.Card, error) {
-	if err := intake.Accept(ctx, db, "ada", []string{"REQ-001", "REQ-002"}); err != nil {
+	if err := intake.Accept(ctx, db, "proj_default", "ada", []string{"REQ-001", "REQ-002"}); err != nil {
 		return board.Card{}, board.Card{}, err
 	}
 	planned, err := worker.Plan([]worker.Proposal{

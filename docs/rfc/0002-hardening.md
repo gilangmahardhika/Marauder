@@ -46,6 +46,8 @@ Consequences: one function, `safePath(root, requested)`, is used by every file t
 
 Requirements: REQ-017, REQ-018.
 
+Superseded in part by RFC-051 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). `read_linked_file` adds one read-only root per linked project: the export of that project's base SHA. The same `safePath` rules apply to it.
+
 ## RFC-026 Check commands come from operator settings
 
 `localCheck` and `devCheck` on a card are copied from settings when the card is created. `create_card` has no command field. A model tool cannot change them. An operator may edit them in settings before the card leaves `backlog`. After `ready`, a check command change blocks the card with `source_changed` until the operator releases it.
@@ -111,6 +113,8 @@ Consequences: `trace.Append` and `contextpack.Build` both call `redact`. A unit 
 Requirements: REQ-016, REQ-041.
 
 Superseded in part by RFC-047 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). User GitHub tokens and the project bot token are ciphertext in PostgreSQL. `databaseUrl` and `tokenKey` stay in the service secrets file. Redaction of plaintext stays.
+
+Superseded in part by RFC-049 in [0006-company-github-and-linked-projects.md](0006-company-github-and-linked-projects.md). The GitHub token jobs use is the company token, ciphertext in PostgreSQL. No `secrets.json` holds a GitHub token.
 
 ## RFC-031 The event log is insert-only
 

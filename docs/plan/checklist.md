@@ -221,3 +221,36 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestActorOnTransition`
 - [x] `TestCloudBind`
 - [x] `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`
+
+## Sprint 14: One company account, one repo per project
+
+- [x] An admin saves, tests, and clears the company GitHub account. The token is ciphertext and never returned.
+- [x] A Lead Developer lists the organization's repositories.
+- [x] A project names one repository and a base branch. Two projects cannot name the same repository.
+- [x] Sync clones or fetches the project repository with the company token, never in argv.
+- [x] Worktrees branch from the project base branch. Intake and accept are per project.
+- [x] Deploy settings and the deploy token are saved per project. The service-wide deploy route is gone.
+- [x] `TestCompanyGitHubTokenNeverReturned`
+- [x] `TestCompanyGitHubAdminOnly`
+- [x] `TestRepoListUsesCompanyToken`
+- [x] `TestProjectRepoUnique`
+- [x] `TestCloneTokenNotInArgv`
+- [x] `TestCheckoutUsesBaseBranch`
+- [x] `TestIntakePerProject`
+- [x] `TestProjectDeploySettingsIsolated`
+- [x] `TestProjectDeployTokenNeverReturned`
+- [x] `TestDeployLeadOnly`
+
+## Sprint 15: A project reads its neighbours
+
+- [x] A Lead Developer links projects in the same tribe, with shared paths per link.
+- [x] Packs add linked requirements, decisions, and shared files inside the untrusted markers.
+- [x] `read_linked_file` reads a linked export and cannot write.
+- [x] An event records the linked project ids and SHAs for each attempt.
+- [x] `TestProjectLinkSameTribeOnly`
+- [x] `TestProjectLinkNoSelf`
+- [x] `TestProjectLinkOutsiderMisses`
+- [x] `TestPackIncludesLinkedRequirements`
+- [x] `TestSharedPathConfined`
+- [x] `TestReadLinkedFileReadOnly`
+- [x] `TestLinkedContextIsUntrusted`

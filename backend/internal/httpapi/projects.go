@@ -2,13 +2,15 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/intake"
-	"orchestrator/backend/internal/tenancy"
+	"orchestrator/backend/internal/settings"
 )
 
 func (s *Server) tribes(w http.ResponseWriter, r *http.Request) {
@@ -87,15 +89,18 @@ func (s *Server) projectCollection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"projects": list})
 	case http.MethodPost:
 		var body struct {
-			TribeID  string `json:"tribeId"`
-			Name     string `json:"name"`
-			RepoPath string `json:"repoPath"`
+			TribeID    string `json:"tribeId"`
+			Name       string `json:"name"`
+			Repo       string `json:"repo"`
+			BaseBranch string `json:"baseBranch"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		project, err := app.CreateProject(r.Context(), s.DB, actor, body.TribeID, body.Name, body.RepoPath, s.Data)
+		project, err := app.CreateProject(r.Context(), s.DB, actor, app.NewProject{
+			TribeID: body.TribeID, Name: body.Name, Repo: body.Repo, BaseBranch: body.BaseBranch,
+		}, s.Data)
 		if err != nil {
 			writeAccountErr(w, err)
 			return
@@ -173,78 +178,54 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 	s.cardRoute(w, r, id, action)
 }
 
-func (s *Server) projectGitHub(w http.ResponseWriter, r *http.Request) {
+func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
-		gh, err := app.LoadProjectGitHub(r.Context(), s.DB, projectID)
-		if err != nil {
-			writeAccountErr(w, err)
-			return
-		}
-		writeJSON(w, 200, map[string]any{
-			"host": gh.Host, "owner": gh.Owner, "repo": gh.Repo, "baseBranch": gh.Base,
-			"botLogin": gh.BotLogin, "tokenSet": gh.TokenSet,
-		})
-	case http.MethodPut:
-		user, _ := app.CurrentUser(r.Context())
-		var body struct {
-			Host       string `json:"host"`
-			Owner      string `json:"owner"`
-			Repo       string `json:"repo"`
-			BaseBranch string `json:"baseBranch"`
-			BotLogin   string `json:"botLogin"`
-			Token      string `json:"token"`
-			Clear      bool   `json:"clear"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, 422, "validation", "body")
-			return
-		}
-		var token *string
-		if body.Token != "" {
-			token = &body.Token
-		}
-		err := app.SaveProjectGitHub(r.Context(), s.DB, user, projectID, tenancy.ProjectGitHub{
-			Host: body.Host, Owner: body.Owner, Repo: body.Repo, Base: body.BaseBranch, BotLogin: body.BotLogin,
-		}, token, body.Clear, s.TokenKey)
-		if err != nil {
-			writeAccountErr(w, err)
-			return
-		}
-		gh, err := app.LoadProjectGitHub(r.Context(), s.DB, projectID)
-		if err != nil {
-			writeAccountErr(w, err)
-			return
-		}
-		writeJSON(w, 200, map[string]any{
-			"host": gh.Host, "owner": gh.Owner, "repo": gh.Repo, "baseBranch": gh.Base,
-			"botLogin": gh.BotLogin, "tokenSet": gh.TokenSet,
-		})
-	default:
-		writeErr(w, 404, "not_found", "not found")
-	}
-}
-
-func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.visibleProject(w, r); !ok {
+	if s.DB == nil {
+		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "requirements": []any{}, "decisions": []any{}})
 		return
 	}
-	s.intake(w, r)
+	s.writeIntake(w, r, projectID)
 }
 
+// projectIngest fetches the base branch when the company token is set, then
+// parses the PRD and RFC paths from the project clone.
 func (s *Server) projectIngest(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.visibleProject(w, r); !ok {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
 		return
 	}
-	s.ingest(w, r)
+	project, err := app.GetProject(r.Context(), s.DB, projectID)
+	if err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	if s.Data == "" || project.RepoPath == "" {
+		writeFields(w, 422, "validation", "the project has no clone", map[string]string{"repo": "set the repository and sync it first"})
+		return
+	}
+	if token, err := app.CompanyToken(r.Context(), s.DB, s.TokenKey); err == nil && token != "" && project.Repo != "" {
+		if _, err := app.Sync(r.Context(), s.DB, s.TokenKey, s.Data, projectID, s.Tools); err != nil {
+			writeSyncErr(w, err)
+			return
+		}
+	}
+	if !app.ProjectGit(s.Data, project, "", s.Tools).Cloned() {
+		writeFields(w, 422, "validation", "the project has no clone", map[string]string{"repo": "sync the repository first"})
+		return
+	}
+	if _, err := app.Ingest(r.Context(), s.DB, projectID, project.RepoPath, settings.ProjectDir(s.Data, projectID)); err != nil {
+		writeErr(w, 422, "validation", err.Error())
+		return
+	}
+	s.writeIntake(w, r, projectID)
 }
 
 func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.visibleProject(w, r); !ok {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
@@ -259,11 +240,19 @@ func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 422, "validation", "body")
 		return
 	}
-	if err := intake.Accept(r.Context(), s.DB, user.ID, body.IDs); err != nil {
+	if err := intake.Accept(r.Context(), s.DB, projectID, user.ID, body.IDs); err != nil {
+		if errors.Is(err, intake.ErrUnknownID) {
+			writeFields(w, 422, "validation", err.Error(), map[string]string{"requirementIds": err.Error()})
+			return
+		}
 		writeAppErr(w, err)
 		return
 	}
-	payload, err := intakeBody(r, s.DB)
+	s.writeIntake(w, r, projectID)
+}
+
+func (s *Server) writeIntake(w http.ResponseWriter, r *http.Request, projectID string) {
+	payload, err := intakeBody(r, s.DB, projectID)
 	if err != nil {
 		writeErr(w, 500, "internal", "intake")
 		return
@@ -272,7 +261,12 @@ func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectRuns(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.visibleProject(w, r); !ok {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	if s.DB == nil {
+		writeJSON(w, 200, map[string]any{"runId": "run_0123456789ab", "canRun": false, "reason": "no card is ready"})
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
@@ -282,7 +276,26 @@ func (s *Server) projectRuns(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
 	}
-	s.runs(w, r)
+	id, err := board.NewID("run_")
+	if err != nil {
+		writeErr(w, 500, "internal", "run")
+		return
+	}
+	if _, err := s.DB.ExecContext(r.Context(), `
+		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'api', $2, $3)`,
+		id, time.Now().UTC().Format(time.RFC3339), projectID); err != nil {
+		writeErr(w, 500, "internal", "run")
+		return
+	}
+	var ready int
+	_ = s.DB.QueryRowContext(r.Context(), `
+		SELECT count(*) FROM cards WHERE project_id = $1 AND status IN ('ready', 'changes_requested', 'approved')`,
+		projectID).Scan(&ready)
+	body := map[string]any{"runId": id, "canRun": ready > 0}
+	if ready == 0 {
+		body["reason"] = "no card is ready"
+	}
+	writeJSON(w, 200, body)
 }
 
 func (s *Server) visibleProject(w http.ResponseWriter, r *http.Request) (string, bool) {

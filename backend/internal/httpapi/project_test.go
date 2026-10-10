@@ -29,7 +29,7 @@ func TestMemberSeesProject(t *testing.T) {
 		t.Fatalf("member = %d %s", rec.Code, rec.Body.String())
 	}
 	created := postJSON(t, srv, "/api/projects", token, map[string]string{
-		"tribeId": tribeBody.ID, "name": "Widget", "repoPath": "/tmp/widget",
+		"tribeId": tribeBody.ID, "name": "Widget", "repo": "widget",
 	})
 	if created.Code != 201 {
 		t.Fatalf("project = %d %s", created.Code, created.Body.String())
@@ -72,7 +72,7 @@ func TestOutsiderMissesProject(t *testing.T) {
 	}
 	postJSON(t, srv, "/api/tribes/"+tribeBody.ID+"/members", adminToken, map[string]string{"userId": admin.ID})
 	created := postJSON(t, srv, "/api/projects", adminToken, map[string]string{
-		"tribeId": tribeBody.ID, "name": "Widget", "repoPath": "/tmp/widget",
+		"tribeId": tribeBody.ID, "name": "Widget", "repo": "widget",
 	})
 	var project struct {
 		ID string `json:"id"`

@@ -128,7 +128,7 @@
       </Panel>
     </form>
     <form onsubmit={saveGitHub}>
-      <Panel title="GitHub" hint="Your own host, login, and token. They are not the project bot.">
+      <Panel title="GitHub" hint="Your own login, used to approve cards. It is not the company GitHub account.">
         <div class="grid gap-5 sm:grid-cols-2">
           <Field label="Host" id="host" width="full" error={fields.host} bind:value={host} />
           <Field label="Login" id="login" width="full" bind:value={login} />

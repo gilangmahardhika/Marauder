@@ -3,9 +3,6 @@ package tenancy
 import (
 	"context"
 	"database/sql"
-	"errors"
-	"os"
-	"path/filepath"
 	"time"
 
 	"orchestrator/backend/internal/board"
@@ -19,11 +16,15 @@ type Tribe struct {
 	Name string `json:"name"`
 }
 
+// Project is one repository in the company organization. RepoPath is the
+// server-side clone and is not sent to clients.
 type Project struct {
-	ID       string `json:"id"`
-	TribeID  string `json:"tribeId"`
-	Name     string `json:"name"`
-	RepoPath string `json:"repoPath"`
+	ID         string `json:"id"`
+	TribeID    string `json:"tribeId"`
+	Name       string `json:"name"`
+	Repo       string `json:"repo"`
+	BaseBranch string `json:"baseBranch"`
+	RepoPath   string `json:"-"`
 }
 
 type Member struct {
@@ -151,176 +152,4 @@ func RemoveMember(ctx context.Context, db *sql.DB, actor identity.User, tribeID,
 		return identity.ErrNotFound
 	}
 	return nil
-}
-
-func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, tribeID, name, repoPath, dataRoot string) (Project, error) {
-	if !actor.Admin {
-		return Project{}, identity.ErrForbidden
-	}
-	if name == "" || repoPath == "" {
-		return Project{}, &identity.Validation{Fields: map[string]string{"name": "name and repoPath are required"}}
-	}
-	var n int
-	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tribes WHERE id = $1`, tribeID).Scan(&n); err != nil {
-		return Project{}, err
-	}
-	if n == 0 {
-		return Project{}, identity.ErrNotFound
-	}
-	id, err := board.NewID("proj_")
-	if err != nil {
-		return Project{}, err
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return Project{}, err
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO projects (id, tribe_id, name, repo_path, created_at) VALUES ($1, $2, $3, $4, $5)`,
-		id, tribeID, name, repoPath, now); err != nil {
-		return Project{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO intake_state (id, draft_pending, project_id) VALUES (1, false, $1)`, id); err != nil {
-		return Project{}, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO deploy_lock (id, project_id) VALUES (1, $1)`, id); err != nil {
-		return Project{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return Project{}, err
-	}
-	if dataRoot != "" {
-		dir := filepath.Join(dataRoot, "projects", id)
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return Project{}, err
-		}
-		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("github:\n  host: github.com\n"), 0o600); err != nil {
-			return Project{}, err
-		}
-		if err := os.WriteFile(filepath.Join(dir, "secrets.json"), []byte("{}\n"), 0o600); err != nil {
-			return Project{}, err
-		}
-		if err := os.WriteFile(filepath.Join(dir, "worker.lock"), nil, 0o600); err != nil {
-			return Project{}, err
-		}
-	}
-	return Project{ID: id, TribeID: tribeID, Name: name, RepoPath: repoPath}, nil
-}
-
-func ListProjects(ctx context.Context, db *sql.DB, actor identity.User) ([]Project, error) {
-	var query string
-	var args []any
-	if actor.Admin {
-		query = `SELECT id, tribe_id, name, repo_path FROM projects ORDER BY name`
-	} else {
-		query = `
-			SELECT p.id, p.tribe_id, p.name, p.repo_path FROM projects p
-			JOIN tribe_members m ON m.tribe_id = p.tribe_id
-			WHERE m.user_id = $1 ORDER BY p.name`
-		args = []any{actor.ID}
-	}
-	rows, err := db.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Project{}
-	for rows.Next() {
-		var project Project
-		if err := rows.Scan(&project.ID, &project.TribeID, &project.Name, &project.RepoPath); err != nil {
-			return nil, err
-		}
-		out = append(out, project)
-	}
-	return out, rows.Err()
-}
-
-type ProjectGitHub struct {
-	Host     string
-	Owner    string
-	Repo     string
-	Base     string
-	BotLogin string
-	TokenSet bool
-}
-
-func LoadProjectGitHub(ctx context.Context, db *sql.DB, projectID string) (ProjectGitHub, error) {
-	var gh ProjectGitHub
-	var cipher string
-	err := db.QueryRowContext(ctx, `
-		SELECT github_host, github_owner, github_repo, github_base, bot_login, bot_token_ciphertext
-		FROM projects WHERE id = $1`, projectID).Scan(&gh.Host, &gh.Owner, &gh.Repo, &gh.Base, &gh.BotLogin, &cipher)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ProjectGitHub{}, identity.ErrNotFound
-	}
-	if err != nil {
-		return ProjectGitHub{}, err
-	}
-	gh.TokenSet = cipher != ""
-	return gh, nil
-}
-
-func SaveProjectGitHub(ctx context.Context, db *sql.DB, actor identity.User, projectID string, gh ProjectGitHub, token *string, clear bool, key []byte) error {
-	if actor.Role != "lead_developer" {
-		return identity.ErrForbidden
-	}
-	if err := Visible(ctx, db, projectID, actor.ID); err != nil {
-		return err
-	}
-	current, err := LoadProjectGitHub(ctx, db, projectID)
-	if err != nil {
-		return err
-	}
-	var cipher string
-	if err := db.QueryRowContext(ctx, `SELECT bot_token_ciphertext FROM projects WHERE id = $1`, projectID).Scan(&cipher); err != nil {
-		return err
-	}
-	if clear {
-		cipher = ""
-	} else if token != nil {
-		if len(*token) < 8 {
-			return &identity.Validation{Fields: map[string]string{"token": "token is too short"}}
-		}
-		sealed, err := identity.Seal(key, []byte(*token))
-		if err != nil {
-			return err
-		}
-		cipher = sealed
-	}
-	if gh.Host == "" {
-		gh.Host = current.Host
-	}
-	_, err = db.ExecContext(ctx, `
-		UPDATE projects
-		SET github_host = $2, github_owner = $3, github_repo = $4, github_base = $5, bot_login = $6, bot_token_ciphertext = $7
-		WHERE id = $1`, projectID, gh.Host, gh.Owner, gh.Repo, gh.Base, gh.BotLogin, cipher)
-	return err
-}
-
-func ProjectBotToken(ctx context.Context, db *sql.DB, projectID string, key []byte) (string, error) {
-	var cipher string
-	err := db.QueryRowContext(ctx, `SELECT bot_token_ciphertext FROM projects WHERE id = $1`, projectID).Scan(&cipher)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", identity.ErrNotFound
-	}
-	if err != nil || cipher == "" {
-		return "", err
-	}
-	return identity.OpenToken(key, cipher)
-}
-
-func Visible(ctx context.Context, db *sql.DB, projectID, userID string) error {
-	var one int
-	err := db.QueryRowContext(ctx, `
-		SELECT 1 FROM projects p
-		JOIN tribe_members m ON m.tribe_id = p.tribe_id
-		WHERE p.id = $1 AND m.user_id = $2`, projectID, userID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return identity.ErrNotFound
-	}
-	return err
 }

@@ -52,7 +52,7 @@
         <tr class="border-b border-line bg-ground/50">
           <th class={th} scope="col">Name</th>
           <th class={th} scope="col">Tribe</th>
-          <th class={th} scope="col">Repo path</th>
+          <th class={th} scope="col">Repository</th>
           <th class={th} scope="col"><span class="sr-only">Open</span></th>
         </tr>
       </thead>
@@ -66,7 +66,9 @@
               </span>
             </td>
             <td class="{td} text-muted">{tribeName(project.tribeId)}</td>
-            <td class="{td} font-mono text-xs text-muted">{project.repoPath}</td>
+            <td class="{td} font-mono text-xs text-muted">
+              {#if project.repo}{project.repo}<span class="text-muted/70"> · {project.baseBranch}</span>{:else}Not set{/if}
+            </td>
             <td class="{td} text-right">
               <button
                 type="button"

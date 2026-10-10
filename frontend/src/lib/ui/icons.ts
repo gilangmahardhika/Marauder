@@ -12,7 +12,9 @@ export type IconName =
   | 'menu'
   | 'close'
   | 'check'
-  | 'plus';
+  | 'plus'
+  | 'link'
+  | 'building';
 
 export const iconPaths: Record<IconName, string[]> = {
   board: ['M4 4h5v16H4z', 'M10.5 4h4v10h-4z', 'M16 4h4v14h-4z'],
@@ -28,5 +30,7 @@ export const iconPaths: Record<IconName, string[]> = {
   menu: ['M4 7h16', 'M4 12h16', 'M4 17h16'],
   close: ['M6 6l12 12', 'M18 6L6 18'],
   check: ['M5 12l5 5 9-9'],
-  plus: ['M12 5v14', 'M5 12h14']
+  plus: ['M12 5v14', 'M5 12h14'],
+  link: ['M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1', 'M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1'],
+  building: ['M5 21V5l7-2v18', 'M12 8l7 2v11', 'M3 21h18', 'M8 9h1', 'M8 13h1', 'M8 17h1', 'M15 13h1', 'M15 17h1']
 };

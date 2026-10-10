@@ -14,8 +14,10 @@ type IngestResult struct {
 	DraftPending bool
 }
 
-func Ingest(ctx context.Context, db *sql.DB, repo, data string) (IngestResult, error) {
-	cfg, err := intake.LoadConfig(data)
+// Ingest parses the PRD and RFC paths from configDir/config.yaml inside repo
+// and stores the records on projectID.
+func Ingest(ctx context.Context, db *sql.DB, projectID, repo, configDir string) (IngestResult, error) {
+	cfg, err := intake.LoadConfig(configDir)
 	if err != nil {
 		return IngestResult{}, err
 	}
@@ -31,7 +33,7 @@ func Ingest(ctx context.Context, db *sql.DB, repo, data string) (IngestResult, e
 	if err != nil {
 		return IngestResult{}, err
 	}
-	if err := intake.Apply(ctx, db, parsed); err != nil {
+	if err := intake.Apply(ctx, db, projectID, parsed); err != nil {
 		return IngestResult{}, err
 	}
 	return IngestResult{
@@ -41,12 +43,13 @@ func Ingest(ctx context.Context, db *sql.DB, repo, data string) (IngestResult, e
 	}, nil
 }
 
-func Accept(ctx context.Context, db *sql.DB, data string, ids []string) error {
+// Accept is the CLI twin. The operator comes from operatorLogin in the service config.yaml.
+func Accept(ctx context.Context, db *sql.DB, projectID, data string, ids []string) error {
 	cfg, err := intake.LoadConfig(data)
 	if err != nil {
 		return err
 	}
-	return intake.Accept(ctx, db, cfg.Operator, ids)
+	return intake.Accept(ctx, db, projectID, cfg.Operator, ids)
 }
 
 func CardCount(ctx context.Context, db *sql.DB) (int, error) {

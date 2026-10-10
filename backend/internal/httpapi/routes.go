@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
-	"time"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
@@ -132,163 +130,6 @@ func (s *Server) trace(w http.ResponseWriter, r *http.Request, id string) {
 		events = append(events, item)
 	}
 	writeJSON(w, 200, map[string]any{"events": events})
-}
-
-func (s *Server) intake(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/accept") {
-		s.accept(w, r)
-		return
-	}
-	if s.DB == nil {
-		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "requirements": []any{}, "decisions": []any{}})
-		return
-	}
-	body, err := intakeBody(r, s.DB)
-	if err != nil {
-		writeErr(w, 500, "internal", "intake")
-		return
-	}
-	writeJSON(w, 200, body)
-}
-
-func (s *Server) ingest(w http.ResponseWriter, r *http.Request) {
-	if s.DB == nil || s.Data == "" {
-		writeErr(w, 500, "internal", "ingest")
-		return
-	}
-	cfg, err := intake.LoadConfig(s.Data)
-	if err != nil {
-		writeErr(w, 500, "internal", "ingest")
-		return
-	}
-	parsed, err := intake.Parse(r.URL.Query().Get("repo"), cfg.PRD, cfg.RFC)
-	if err != nil {
-		writeErr(w, 422, "validation", err.Error())
-		return
-	}
-	if err := intake.Apply(r.Context(), s.DB, parsed); err != nil {
-		writeErr(w, 500, "internal", "ingest")
-		return
-	}
-	s.intake(w, r)
-}
-
-func (s *Server) accept(w http.ResponseWriter, r *http.Request) {
-	if s.DB == nil {
-		writeErr(w, 500, "internal", "accept")
-		return
-	}
-	var body struct {
-		IDs []string `json:"requirementIds"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, 400, "validation", "body")
-		return
-	}
-	cfg, _ := intake.LoadConfig(s.Data)
-	operator := cfg.Operator
-	if operator == "" {
-		operator = "ada"
-	}
-	if err := intake.Accept(r.Context(), s.DB, operator, body.IDs); err != nil {
-		writeAppErr(w, err)
-		return
-	}
-	s.intake(w, r)
-}
-
-func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
-	if s.DB == nil {
-		writeJSON(w, 200, map[string]any{"runId": "run_0123456789ab", "canRun": false, "reason": "no card is ready"})
-		return
-	}
-	id, err := board.NewID("run_")
-	if err != nil {
-		writeErr(w, 500, "internal", "run")
-		return
-	}
-	if _, err := s.DB.ExecContext(r.Context(), `INSERT INTO runs (id, trigger, created_at) VALUES ($1, 'api', $2)`, id, time.Now().UTC().Format(time.RFC3339)); err != nil {
-		writeErr(w, 500, "internal", "run")
-		return
-	}
-	var ready int
-	_ = s.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM cards WHERE status IN ('ready', 'changes_requested', 'approved')`).Scan(&ready)
-	body := map[string]any{"runId": id, "canRun": ready > 0}
-	if ready == 0 {
-		body["reason"] = "no card is ready"
-	}
-	writeJSON(w, 200, body)
-}
-
-func (s *Server) github(w http.ResponseWriter, r *http.Request) {
-	cfg, secrets, err := s.loadSettings()
-	if err != nil {
-		writeErr(w, 500, "internal", "settings")
-		return
-	}
-	if r.Method == http.MethodPut {
-		var body struct {
-			Host       string   `json:"host"`
-			Owner      string   `json:"owner"`
-			Repo       string   `json:"repo"`
-			BaseBranch string   `json:"baseBranch"`
-			Approvers  []string `json:"approvers"`
-			BotLogin   string   `json:"botLogin"`
-			Token      *string  `json:"token"`
-			Clear      bool     `json:"clear"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, 400, "validation", "body")
-			return
-		}
-		cfg.GitHub.Host = body.Host
-		cfg.GitHub.Owner = body.Owner
-		cfg.GitHub.Repo = body.Repo
-		cfg.GitHub.BaseBranch = body.BaseBranch
-		cfg.GitHub.Approvers = body.Approvers
-		cfg.GitHub.BotLogin = body.BotLogin
-		var token *string
-		if body.Clear {
-			empty := ""
-			token = &empty
-		} else if body.Token != nil && *body.Token != "" {
-			token = body.Token
-		}
-		saved, err := settings.SaveGitHub(s.Data, cfg, token)
-		if err != nil {
-			writeAppErr(w, err)
-			return
-		}
-		cfg = saved
-		_, secrets, _ = s.loadSettings()
-	}
-	if cfg.GitHub.Host == "" {
-		cfg.GitHub.Host = "github.com"
-	}
-	if cfg.GitHub.BaseBranch == "" {
-		cfg.GitHub.BaseBranch = "main"
-	}
-	if cfg.GitHub.Approvers == nil {
-		cfg.GitHub.Approvers = []string{}
-	}
-	writeJSON(w, 200, map[string]any{
-		"host": cfg.GitHub.Host, "owner": cfg.GitHub.Owner, "repo": cfg.GitHub.Repo,
-		"baseBranch": cfg.GitHub.BaseBranch, "approvers": cfg.GitHub.Approvers,
-		"botLogin": cfg.GitHub.BotLogin, "tokenSet": secrets.GitHubToken != "",
-	})
-}
-
-func (s *Server) githubTest(w http.ResponseWriter, r *http.Request) {
-	_, secrets, err := s.loadSettings()
-	if err != nil {
-		writeErr(w, 500, "internal", "settings")
-		return
-	}
-	if secrets.GitHubToken == "" {
-		writeErr(w, 422, "validation", "token")
-		return
-	}
-	writeJSON(w, 200, map[string]any{"ok": false, "message": "authentication failed"})
 }
 
 func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
@@ -427,95 +268,6 @@ func (s *Server) routerSettings(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) deploySettings(w http.ResponseWriter, r *http.Request) {
-	cfg, secrets, err := s.loadSettings()
-	if err != nil {
-		writeErr(w, 500, "internal", "settings")
-		return
-	}
-	if r.Method == http.MethodPut {
-		var body struct {
-			Environment       string   `json:"environment"`
-			DevURL            string   `json:"devUrl"`
-			DevHosts          []string `json:"devHosts"`
-			DevCommand        string   `json:"devCommand"`
-			RollbackCommand   string   `json:"rollbackCommand"`
-			HealthURL         string   `json:"healthUrl"`
-			LocalCheck        string   `json:"localCheck"`
-			DevCheck          string   `json:"devCheck"`
-			AllowExecutables  []string `json:"allowExecutables"`
-			SandboxEngine     string   `json:"sandboxEngine"`
-			SandboxImage      string   `json:"sandboxImage"`
-			ImplementationCap int      `json:"implementationCap"`
-			PRDPath           string   `json:"prdPath"`
-			RFCPath           string   `json:"rfcPath"`
-			OperatorLogin     string   `json:"operatorLogin"`
-			DeployToken       *string  `json:"deployToken"`
-			Clear             bool     `json:"clear"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, 400, "validation", "body")
-			return
-		}
-		cfg.Deploy.Environment = body.Environment
-		cfg.Deploy.DevURL = body.DevURL
-		cfg.Deploy.DevHosts = body.DevHosts
-		cfg.Deploy.DevCommand = body.DevCommand
-		cfg.Deploy.RollbackCommand = body.RollbackCommand
-		cfg.Deploy.HealthURL = body.HealthURL
-		cfg.Deploy.LocalCheck = body.LocalCheck
-		cfg.Deploy.DevCheck = body.DevCheck
-		cfg.Deploy.AllowExecutables = body.AllowExecutables
-		cfg.Deploy.SandboxEngine = body.SandboxEngine
-		cfg.Deploy.SandboxImage = body.SandboxImage
-		cfg.Deploy.ImplementationCap = body.ImplementationCap
-		cfg.Deploy.PRDPath = body.PRDPath
-		cfg.Deploy.RFCPath = body.RFCPath
-		cfg.Deploy.OperatorLogin = body.OperatorLogin
-		var token *string
-		if body.DeployToken != nil && *body.DeployToken != "" {
-			token = body.DeployToken
-		}
-		saved, err := settings.SaveDeploy(s.Data, cfg, token, body.Clear)
-		if err != nil {
-			writeAppErr(w, err)
-			return
-		}
-		cfg = saved
-		_, secrets, _ = s.loadSettings()
-	}
-	d := cfg.Deploy
-	if d.Environment == "" {
-		d.Environment = "dev"
-	}
-	if d.DevHosts == nil {
-		d.DevHosts = []string{}
-	}
-	if d.AllowExecutables == nil {
-		d.AllowExecutables = []string{}
-	}
-	if d.SandboxEngine == "" {
-		d.SandboxEngine = "podman"
-	}
-	if d.ImplementationCap == 0 {
-		d.ImplementationCap = 2
-	}
-	if d.PRDPath == "" {
-		d.PRDPath = "docs/prd"
-	}
-	if d.RFCPath == "" {
-		d.RFCPath = "docs/rfc"
-	}
-	writeJSON(w, 200, map[string]any{
-		"environment": d.Environment, "devUrl": d.DevURL, "devHosts": d.DevHosts,
-		"devCommand": d.DevCommand, "rollbackCommand": d.RollbackCommand, "healthUrl": d.HealthURL,
-		"deployTokenSet": secrets.DeployToken != "", "localCheck": d.LocalCheck, "devCheck": d.DevCheck,
-		"allowExecutables": d.AllowExecutables, "sandboxEngine": d.SandboxEngine, "sandboxImage": d.SandboxImage,
-		"implementationCap": d.ImplementationCap, "prdPath": d.PRDPath, "rfcPath": d.RFCPath,
-		"operatorLogin": d.OperatorLogin,
-	})
-}
-
 func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {
 	if s.Data == "" {
 		return settings.Config{}, settings.Secrets{LLMKeys: map[string]string{}}, nil
@@ -524,28 +276,14 @@ func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {
 }
 
 func (s *Server) gate(r *http.Request) app.GateConfig {
-	cfg, _, _ := s.loadSettings()
-	operator := cfg.Deploy.OperatorLogin
-	if operator == "" {
-		operator = "ada"
+	user, _ := app.CurrentUser(r.Context())
+	acct, _ := app.LoadCompany(r.Context(), s.DB)
+	return app.GateConfig{
+		Operator:  user.GitHubLogin,
+		BotLogin:  acct.BotLogin,
+		Approvers: []string{user.GitHubLogin},
+		ActorID:   user.ID,
 	}
-	if user, ok := app.CurrentUser(r.Context()); ok {
-		return app.GateConfig{
-			Operator:  user.GitHubLogin,
-			BotLogin:  "bot",
-			Approvers: []string{user.GitHubLogin},
-			ActorID:   user.ID,
-		}
-	}
-	approvers := cfg.GitHub.Approvers
-	if len(approvers) == 0 {
-		approvers = []string{operator}
-	}
-	bot := cfg.GitHub.BotLogin
-	if bot == "" {
-		bot = "bot"
-	}
-	return app.GateConfig{Operator: operator, BotLogin: bot, Approvers: approvers}
 }
 
 func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
@@ -573,15 +311,16 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 	}
 }
 
-func intakeBody(r *http.Request, db *sql.DB) (map[string]any, error) {
+func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, error) {
 	var draft bool
 	var planError sql.NullString
-	if err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error FROM intake_state WHERE project_id = 'proj_default'`).Scan(&draft, &planError); err != nil {
+	err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error FROM intake_state WHERE project_id = $1`, projectID).Scan(&draft, &planError)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT id, source_kind, source_path, heading, statement, acceptance_json, accepted_at IS NOT NULL
-		FROM requirements ORDER BY id`)
+		FROM requirements WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -604,7 +343,7 @@ func intakeBody(r *http.Request, db *sql.DB) (map[string]any, error) {
 		})
 	}
 	decisions := []any{}
-	drows, err := db.QueryContext(r.Context(), `SELECT id, source_path, statement FROM decisions ORDER BY id`)
+	drows, err := db.QueryContext(r.Context(), `SELECT id, source_path, statement FROM decisions WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -638,7 +377,10 @@ func nullString(value string) any {
 }
 
 func writeAppErr(w http.ResponseWriter, err error) {
+	var invalid *settings.Invalid
 	switch {
+	case errors.As(err, &invalid):
+		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
 	case errors.Is(err, board.ErrNotFound), errors.Is(err, intake.ErrUnknownID):
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock):

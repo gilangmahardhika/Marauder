@@ -74,7 +74,7 @@ A successful body never includes `error`.
 | `provider_error` | Primary and fallback both failed | `ready` |
 | `review_parse` | Two reviewer replies had no parseable verdict | `ready` |
 | `router_config` | The route for the needed task class has no model | `ready` |
-| `github_config` | Owner, repo, bot login, or token missing | `ready` |
+| `github_config` | The company organization, bot login, or token is missing, or the project names no repo | `ready` |
 | `sandbox_config` | Sandbox image missing or not pinned, or a check command fails parsing | `ready` |
 | `check_error` | A check could not start | `ready` |
 | `base_moved` | The local base branch ref changed during a job | `ready` |
@@ -330,7 +330,7 @@ Every payload passes through `redact` before insert. A new transition may includ
 
 ## Identity, tribes, and projects
 
-Migration `00003` and any later file in that series. Passwords use argon2id. A password shorter than 12 characters is `422`. User GitHub tokens and project bot tokens are AES-256-GCM ciphertext. The key is `tokenKey` in the service `secrets.json`, 32 bytes, and the API never returns it.
+Migration `00003` and any later file in that series. Passwords use argon2id. A password shorter than 12 characters is `422`. User GitHub tokens and the company GitHub token are AES-256-GCM ciphertext. The key is `tokenKey` in the service `secrets.json`, 32 bytes, and the API never returns it.
 
 ```sql
 CREATE TABLE users (
@@ -377,9 +377,32 @@ CREATE TABLE projects (
   tribe_id TEXT NOT NULL REFERENCES tribes(id),
   name TEXT NOT NULL,
   repo_path TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  github_repo TEXT NOT NULL DEFAULT '',
+  github_base TEXT NOT NULL DEFAULT 'main'
+);
+CREATE UNIQUE INDEX projects_repo ON projects(github_repo) WHERE github_repo <> '';
+
+CREATE TABLE workspace_github (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  host TEXT NOT NULL DEFAULT 'github.com',
+  org TEXT NOT NULL DEFAULT '',
+  bot_login TEXT NOT NULL DEFAULT '',
+  token_ciphertext TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE project_links (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  linked_project_id TEXT NOT NULL REFERENCES projects(id),
+  shared_paths_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, linked_project_id),
+  CHECK (project_id <> linked_project_id)
 );
 ```
+
+`00005` added host, owner, bot login, and bot token columns to `projects`. `00006` drops them and creates `workspace_github` (RFC-049). `repo_path` is set by the server to `<data>/projects/<id>/repo`, the clone (RFC-050). `00007` creates `project_links`. Both projects in a link share a tribe. The server checks that, because a foreign key cannot compare two rows.
 
 `project_id TEXT NOT NULL REFERENCES projects(id)` is added to `requirements`, `decisions`, `cards`, `attempts`, `locks`, `gates`, `events`, `approvals`, `failure_notes`, `runs`, `intake_state`, and `deploy_lock`. `events.actor_id` is nullable text. `intake_state` and `deploy_lock` use `project_id` as their primary key, one row each per project. Child rows that already reference `card_id` keep that id and also store `project_id` so a list does not join through every card.
 
@@ -452,10 +475,22 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 `GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires admin.
 
 ```json
-{ "tribeId": "tribe_0123456789ab", "name": "Widget", "repoPath": "/srv/widget" }
+{ "tribeId": "tribe_0123456789ab", "name": "Widget", "repo": "widget", "baseBranch": "main" }
 ```
 
-`repoPath` must be an absolute directory outside the service data root and outside every other project's repo. The server creates `<data>/projects/<project-id>/` at mode `0700`.
+`repo` is a repository name in the company organization, `^[A-Za-z0-9._-]+$`. A repo another project already names is `422` on `repo`. `baseBranch` follows the branch rule below. The server creates `<data>/projects/<project-id>/` at mode `0700`. The clone happens on the first Sync or ingest.
+
+A project object is:
+
+```json
+{
+  "id": "proj_0123456789ab",
+  "tribeId": "tribe_0123456789ab",
+  "name": "Widget",
+  "repo": "widget",
+  "baseBranch": "main"
+}
+```
 
 ## Card JSON
 
@@ -590,7 +625,7 @@ When nothing can move, the response is still `200`:
 { "sha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c" }
 ```
 
-The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the project bot token, rejects a missing GitHub login, rejects the project bot login, and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
+The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
 
 `POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`.
 
@@ -619,33 +654,70 @@ Secret fields are write-only.
 | Event | `config_changed` records the section and the field names, not the values |
 | In-flight job | Keeps that project's settings snapshot it started with |
 | Failure | `422` with `fields`. Files on disk are unchanged |
-| Caller | Lead Developer member for project sections. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
+| Caller | Lead Developer member for project sections. Admin for the company GitHub account. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
 
 Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` uses the caller's stored token and returns `{ "ok": true, "login": "octocat" }` or `{ "ok": false, "message": "authentication failed" }`.
 
-`GET /api/projects/{projectId}/settings/github`
+`GET /api/settings/github` is the company GitHub account (RFC-049). Admin only.
 
 ```json
 {
   "host": "github.com",
-  "owner": "",
-  "repo": "",
-  "baseBranch": "main",
-  "botLogin": "",
-  "tokenSet": false
+  "org": "acme",
+  "botLogin": "acme-bot",
+  "tokenSet": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/github` accepts the same fields plus optional `token` and `clear`. The token is the project bot token.
+`PUT /api/settings/github` accepts `host`, `org`, optional `token`, and `clear`. `botLogin` is not accepted. The test sets it.
 
 | Field | Rule |
 | --- | --- |
 | `host` | Hostname only, no scheme or path |
-| `owner`, `repo` | `^[A-Za-z0-9._-]+$` |
-| `baseBranch` | Valid by `git check-ref-format --branch`, and not `orch/*` |
-| `botLogin` | Required before a real repo job runs. Used for the commit identity. Must not equal a login that is asked to approve |
+| `org` | `^[A-Za-z0-9._-]+$` |
 
-`POST /api/projects/{projectId}/settings/github/test` uses the stored bot token and returns the same shape as the account test. The token is in neither body. A completed check is `200`, including `ok: false`. No stored token is `422`.
+`POST /api/settings/github/test` runs `gh api user` and `gh api orgs/{org}` with `GH_TOKEN` and `GH_HOST` in the child environment and an empty `GH_CONFIG_DIR`. It returns `{ "ok": true, "login": "acme-bot" }` and stores that login as `botLogin`, or `{ "ok": false, "message": "..." }`. A completed check is `200`, including `ok: false`. No stored token is `422`.
+
+`GET /api/settings/github/repos` lists the organization's repositories for an admin or a Lead Developer: `{ "repos": [{ "name": "widget", "defaultBranch": "main", "archived": false }] }`. No stored token is `422`. A failed call is `502`.
+
+`GET /api/projects/{projectId}/settings/repository`
+
+```json
+{
+  "host": "github.com",
+  "org": "acme",
+  "repo": "widget",
+  "baseBranch": "main",
+  "cloned": true,
+  "headSha": "0123456789abcdef0123456789abcdef01234567"
+}
+```
+
+`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here.
+
+| Field | Rule |
+| --- | --- |
+| `repo` | `^[A-Za-z0-9._-]+$`, not named by another project |
+| `baseBranch` | Valid by `git check-ref-format --branch`, and not `orch/*` |
+
+`POST /api/projects/{projectId}/sync` clones the repository into `<data>/projects/<id>/repo` when it is missing, otherwise fetches `baseBranch`, then returns the repository object. The token is passed through askpass and the child environment. A missing company token is `422`. A failed git call is `502` with a redacted message. Lead Developer, Senior Developer, and Developer members may sync.
+
+`GET /api/projects/{projectId}/settings/links` returns the projects this project reads from (RFC-051).
+
+```json
+{
+  "links": [
+    { "projectId": "proj_0123456789ab", "name": "Widget API", "repo": "widget-api", "sharedPaths": ["api/openapi.yaml"] }
+  ]
+}
+```
+
+`PUT /api/projects/{projectId}/settings/links` accepts `{ "links": [{ "projectId": "...", "sharedPaths": ["..."] }] }` and replaces the list.
+
+| Field | Rule |
+| --- | --- |
+| `projectId` | Another project in the same tribe. Not this project. Unknown is `422` |
+| `sharedPaths` | At most 20 per link. Each is relative, has no `..`, and is not under `.git` or `.orchestrator` |
 
 `GET /api/projects/{projectId}/settings/llm`
 
@@ -767,11 +839,13 @@ The service data directory defaults to `~/.orchestrator/service` (RFC-047). Each
 <data>/projects/<project-id>/config.yaml     mode 0600
 <data>/projects/<project-id>/secrets.json    mode 0600
 <data>/projects/<project-id>/worker.lock
+<data>/projects/<project-id>/repo/                       the clone of the project repository
 <data>/projects/<project-id>/empty-hooks/
 <data>/projects/<project-id>/empty-gh/
 <data>/projects/<project-id>/askpass/
 <data>/projects/<project-id>/worktrees/<card-id>/
 <data>/projects/<project-id>/exports/<card-id>-<sha>/   deleted after each check
+<data>/projects/<project-id>/exports/linked-<linked-id>-<sha>/   read-only linked context
 <data>/projects/<project-id>/logs/<attempt-id>.log
 <data>/projects/<project-id>/logs/<attempt-id>-review.json
 ```
@@ -781,12 +855,6 @@ The board is not a file in this directory. It is the PostgreSQL database named b
 `config.yaml`:
 
 ```yaml
-github:
-  host: github.com
-  owner: ""
-  repo: ""
-  baseBranch: main
-  botLogin: ""
 llm:
   families:
     - id: anthropic
@@ -851,7 +919,7 @@ Project `secrets.json`:
 }
 ```
 
-`databaseUrl` is the PostgreSQL URL for every project's board (RFC-047). `tokenKey` encrypts user GitHub tokens and project bot tokens. Empty string means unset. The API never returns either value. The project bot token is not in this file. Both secret files are written to a temp file in the same directory, synced, and renamed. The API never decodes a secrets file into a struct that is encoded to the client. Edit a project's `config.yaml` by hand only while that project's worker is stopped. Startup validates it with the same rules as the PUT routes.
+`databaseUrl` is the PostgreSQL URL for every project's board (RFC-047). `tokenKey` encrypts user GitHub tokens and the company GitHub token. Empty string means unset. The API never returns either value. No GitHub token is in either secrets file. The repository and base branch are project columns, not `config.yaml` keys. Both secret files are written to a temp file in the same directory, synced, and renamed. The API never decodes a secrets file into a struct that is encoded to the client. Edit a project's `config.yaml` by hand only while that project's worker is stopped. Startup validates it with the same rules as the PUT routes.
 
 ## CLI twins
 

@@ -83,7 +83,8 @@ export type ProjectRecord = {
   id: string;
   tribeId: string;
   name: string;
-  repoPath: string;
+  repo: string;
+  baseBranch: string;
 };
 
 export type AccountGitHub = {
@@ -92,14 +93,33 @@ export type AccountGitHub = {
   tokenSet: boolean;
 };
 
-export type GitHubSettings = {
+export type CompanyGitHub = {
   host: string;
-  owner: string;
-  repo: string;
-  baseBranch: string;
-  approvers?: string[];
+  org: string;
   botLogin: string;
   tokenSet: boolean;
+};
+
+export type CompanyRepo = {
+  name: string;
+  defaultBranch: string;
+  archived: boolean;
+};
+
+export type Repository = {
+  host: string;
+  org: string;
+  repo: string;
+  baseBranch: string;
+  cloned: boolean;
+  headSha: string | null;
+};
+
+export type ProjectLink = {
+  projectId: string;
+  name: string;
+  repo: string;
+  sharedPaths: string[];
 };
 
 export type Family = {
@@ -146,5 +166,4 @@ export type DeploySettings = {
   implementationCap: number;
   prdPath: string;
   rfcPath: string;
-  operatorLogin: string;
 };

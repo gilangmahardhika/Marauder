@@ -15,7 +15,7 @@ func TestImplementerTools(t *testing.T) {
 		}
 		got[tool.Name] = true
 	}
-	for _, want := range []string{"read_file", "edit_file", "run_local_check", "commit"} {
+	for _, want := range []string{"read_file", "read_linked_file", "edit_file", "run_local_check", "commit"} {
 		if !got[want] {
 			t.Fatalf("missing %s in %s", want, strings.Join(keys(got), ", "))
 		}

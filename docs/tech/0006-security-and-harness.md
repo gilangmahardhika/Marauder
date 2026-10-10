@@ -80,6 +80,7 @@ func safePath(root, requested string) (string, error)
 4. Resolve symlinks on the deepest existing ancestor. The resolved path must still have the resolved `root` as a prefix.
 5. Reject a final path whose relative form is `.git` or `.orchestrator`, or starts with `.git/` or `.orchestrator/`.
 6. `read_doc` uses the configured PRD and RFC directories as its only roots.
+7. `read_linked_file` uses the export of one linked project's base SHA as its only root (RFC-051). The model names the linked project by id, and an id that is not a link of the card's project is an error. Shared paths saved on a link pass steps 1, 2, and 5 when they are saved, and the full check when they are read.
 
 `edit_file` refuses a target that exists and is not a regular file, and refuses writes over 1 MiB. `read_file` returns at most 256 KiB and records `truncated: true` when it cuts. The data directory is outside the repo, so it is outside every root.
 
@@ -195,7 +196,7 @@ func probe(raw string, hosts []string, fixture bool) error
 
 ## Secrets
 
-Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the project bot token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
+Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the company GitHub token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
 
 - event payloads
 - pack user strings
@@ -272,7 +273,7 @@ git -c core.hooksPath=<data>/empty-hooks
 
 Calls on a worktree add `--git-dir=<worktree_gitdir> --work-tree=<worktree_path>` from the card row. The harness never lets git discover the admin directory by reading the worktree's `.git` file after creation. `<data>/empty-hooks` is an empty directory created at startup.
 
-Network calls (`fetch`, `push`) use an explicit URL built from settings: `https://<host>/<owner>/<repo>.git`. `owner` and `repo` match `^[A-Za-z0-9._-]+$`. Remotes configured in the repo are not used. A remote a model added cannot redirect a push.
+Network calls (`clone`, `fetch`, `push`) use an explicit URL built from settings: `https://<host>/<org>/<repo>.git`, where `host` and `org` come from the company GitHub account and `repo` from the project (RFC-049, RFC-050). `owner` and `repo` match `^[A-Za-z0-9._-]+$`. Remotes configured in the repo are not used. A remote a model added cannot redirect a push.
 
 Authentication uses askpass. `GIT_ASKPASS` is the absolute path of the orchestrator binary. With `ORCH_ASKPASS=1`, the binary prints `x-access-token` for a prompt starting with `Username` and the value of `GH_TOKEN` for a prompt starting with `Password`, then exits. `credential.helper=` empties the helper list so the operator's keychain is not consulted.
 
@@ -387,6 +388,23 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestAcceptByOwner` | A Product Owner member can accept. A Lead Developer member cannot |
 | `TestDeveloperRunOnly` | A Developer member can start a run and cannot approve or deploy |
 | `TestActorOnTransition` | A new transition event stores `actorId` and does not change older rows |
+| `TestCompanyGitHubTokenNeverReturned` | `GET` and `PUT /api/settings/github` return `tokenSet` and no token, and the row holds ciphertext |
+| `TestCompanyGitHubAdminOnly` | A non-admin `PUT /api/settings/github` is `403` |
+| `TestRepoListUsesCompanyToken` | The repo list runs `gh` with the company token in `GH_TOKEN` and not in argv |
+| `TestProjectRepoUnique` | A second project on the same repo is `422` on `repo` |
+| `TestCloneTokenNotInArgv` | The clone and fetch argv never contain the token, and the URL is built from the company org and project repo |
+| `TestCheckoutUsesBaseBranch` | A worktree branches from the project's base branch |
+| `TestIntakePerProject` | Ingest and accept on one project leave another project's requirements unchanged |
+| `TestProjectDeploySettingsIsolated` | Deploy settings saved on one project are not returned for another |
+| `TestProjectDeployTokenNeverReturned` | The project deploy route returns `deployTokenSet` and no token, and the token is in that project's `secrets.json` |
+| `TestDeployLeadOnly` | A Developer member who saves deploy settings is `403` |
+| `TestProjectLinkSameTribeOnly` | A link to a project in another tribe is `422` |
+| `TestProjectLinkNoSelf` | A link from a project to itself is `422` |
+| `TestProjectLinkOutsiderMisses` | A non-member reading links is `404` |
+| `TestPackIncludesLinkedRequirements` | The implementer pack holds the linked project's accepted requirements as `<project>:REQ-001` |
+| `TestSharedPathConfined` | A shared path with `..`, an absolute path, or `.git` is rejected |
+| `TestReadLinkedFileReadOnly` | `read_linked_file` reads the linked export, rejects an unlinked project, and there is no linked write tool |
+| `TestLinkedContextIsUntrusted` | Linked content sits inside the untrusted markers and a planted secret is `[redacted]` |
 | `TestHookNotRun` | A fixture `pre-commit` hook is not executed |
 | `TestFsmonitorOff` | A repo config with `core.fsmonitor` set to a command does not run it |
 | `TestPushURL` | A remote named `origin` pointing elsewhere is ignored. The push goes to the settings URL with the card refspec only |

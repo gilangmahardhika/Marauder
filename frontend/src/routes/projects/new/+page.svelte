@@ -1,23 +1,36 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, createProject, getTribes, unreachable } from '$lib/api';
+  import { ApiError, createProject, getCompanyRepos, getTribes, unreachable } from '$lib/api';
   import { session } from '$lib/session';
   import { showShell } from '$lib/shell.svelte';
-  import type { TribeRecord } from '$lib/types';
+  import type { CompanyRepo, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
+  import SearchSelect from '$lib/ui/SearchSelect.svelte';
   import Select from '$lib/ui/Select.svelte';
 
   let tribes = $state<TribeRecord[]>([]);
+  let repos = $state<CompanyRepo[] | null>(null);
+  let reposError = $state('');
   let tribeId = $state('');
   let name = $state('');
-  let repoPath = $state('');
+  let repo = $state('');
+  let baseBranch = $state('main');
+  let fields = $state<Record<string, string>>({});
   let message = $state('New project');
   let busy = $state(false);
 
   showShell(() => ({ title: 'New project', message }));
+
+  const repoOptions = $derived(
+    (repos ?? []).map((item) => ({
+      value: item.name,
+      label: item.name,
+      detail: item.archived ? `${item.defaultBranch} · archived` : item.defaultBranch
+    }))
+  );
 
   $effect(() => {
     void getTribes()
@@ -28,18 +41,34 @@
       .catch((error: unknown) => {
         message = error instanceof ApiError ? error.message : unreachable();
       });
+    void getCompanyRepos()
+      .then((body) => {
+        repos = body.repos;
+      })
+      .catch((error: unknown) => {
+        reposError = error instanceof ApiError ? error.message : unreachable();
+      });
   });
+
+  function pickRepo(value: string) {
+    repo = value;
+    const found = repos?.find((item) => item.name === value);
+    if (found) baseBranch = found.defaultBranch;
+    if (name === '' && value !== '') name = value;
+  }
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
+    fields = {};
     message = 'Creating project';
     try {
-      const project = await createProject({ tribeId, name, repoPath });
+      const project = await createProject({ tribeId, name, repo, baseBranch });
       session.setProject(project.id);
       message = 'Project created';
-      await goto('/projects');
+      await goto('/settings/repository');
     } catch (error) {
+      fields = error instanceof ApiError ? error.fields : {};
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
       busy = false;
@@ -47,23 +76,49 @@
   }
 </script>
 
-<Page title="New project" description="A project is one repository. Members of its tribe can see its board." width="form">
+<Page
+  title="New project"
+  description="A project is one repository in the company GitHub organization. Members of its tribe can see its board."
+  width="form"
+>
   <form onsubmit={submit}>
     <Panel title="Project">
-      <Select label="Tribe" id="tribe" bind:value={tribeId}>
+      <Select label="Tribe" id="tribe" error={fields.tribeId} bind:value={tribeId}>
         {#each tribes as tribe (tribe.id)}
           <option value={tribe.id}>{tribe.name}</option>
         {/each}
       </Select>
-      <Field label="Name" id="name" bind:value={name} />
+      {#if repos !== null}
+        <SearchSelect
+          label="Repository"
+          id="repo"
+          width="lg"
+          placeholder={repos.length === 0 ? 'No repositories in the organization' : 'Search repositories'}
+          options={repoOptions}
+          value={repo}
+          error={fields.repo}
+          onchange={pickRepo}
+        />
+      {:else}
+        <Field
+          label="Repository"
+          id="repo"
+          width="lg"
+          mono
+          error={fields.repo}
+          hint={reposError ? `The repository list did not load: ${reposError}. Type the name instead.` : 'Loading repositories'}
+          bind:value={repo}
+        />
+      {/if}
+      <Field label="Name" id="name" error={fields.name} bind:value={name} />
       <Field
-        label="Repo path"
-        id="repo"
-        width="lg"
+        label="Base branch"
+        id="base"
+        width="sm"
         mono
-        hint="Absolute directory outside the data root."
-        placeholder="/srv/repos/app"
-        bind:value={repoPath}
+        error={fields.baseBranch}
+        hint="Card branches start here."
+        bind:value={baseBranch}
       />
       {#snippet footer()}
         <Button variant="ghost" href="/projects">Cancel</Button>

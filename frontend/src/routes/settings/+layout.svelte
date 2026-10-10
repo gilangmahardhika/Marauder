@@ -5,7 +5,8 @@
   let { children }: { children: Snippet } = $props();
 
   const links = [
-    { href: '/settings/github', label: 'GitHub' },
+    { href: '/settings/repository', label: 'Repository' },
+    { href: '/settings/links', label: 'Linked projects' },
     { href: '/settings/llm', label: 'LLM APIs' },
     { href: '/settings/router', label: 'Router' },
     { href: '/settings/deploy', label: 'Deploy' }

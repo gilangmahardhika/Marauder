@@ -30,6 +30,7 @@ var ErrRequirement = errors.New("unknown or unaccepted requirement")
 func ImplementerTools() []providers.Tool {
 	return []providers.Tool{
 		{Name: "read_file"},
+		{Name: "read_linked_file"},
 		{Name: "edit_file"},
 		{Name: "run_local_check"},
 		{Name: "commit"},
@@ -43,15 +44,17 @@ type Settings struct {
 }
 
 type Input struct {
-	DB        *sql.DB
-	Git       runtime.Git
-	CardID    string
-	Model     string
-	TaskClass string
-	MaxTurns  int
-	Provider  providers.Provider
-	Secrets   []string
-	Allow     []string
+	DB         *sql.DB
+	Git        runtime.Git
+	BaseBranch string
+	Linked     []LinkedSource
+	CardID     string
+	Model      string
+	TaskClass  string
+	MaxTurns   int
+	Provider   providers.Provider
+	Secrets    []string
+	Allow      []string
 }
 
 type Result struct {
@@ -77,7 +80,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 	}
-	wt, err := in.Git.EnsureWorktree(ctx, card.ID, "main")
+	base := in.BaseBranch
+	if base == "" {
+		base = "main"
+	}
+	wt, err := in.Git.EnsureWorktree(ctx, card.ID, base)
 	if err != nil {
 		return Result{}, err
 	}
@@ -97,7 +104,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	statements, err := statements(ctx, in.DB, card.RequirementIDs)
+	statements, err := statements(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	if err != nil {
+		return Result{}, err
+	}
+	linked, linkedRoots, linkedRefs, err := prepareLinked(ctx, in.DB, filepath.Join(in.Git.Data, "exports"), in.Linked)
 	if err != nil {
 		return Result{}, err
 	}
@@ -111,6 +122,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		},
 		Requirements: statements,
 		FailureNote:  note,
+		Linked:       linked,
 		Secrets:      in.Secrets,
 	})
 	if err != nil {
@@ -134,7 +146,15 @@ func Run(ctx context.Context, in Input) (Result, error) {
 
 	session := &session{
 		in: in, card: card, wt: wt, attemptID: attemptID,
-		system: system, user: user,
+		system: system, user: user, linkedRoots: linkedRoots,
+	}
+	if len(linkedRefs) > 0 {
+		if err := session.event(ctx, "tool_call", map[string]any{
+			"name": "linked_context", "ok": true, "rejected": false,
+			"summary": fmt.Sprintf("%d linked projects", len(linkedRefs)), "links": linkedRefs,
+		}); err != nil {
+			return Result{}, err
+		}
 	}
 	if err := session.loop(ctx); err != nil {
 		_ = board.FinishAttempt(ctx, in.DB, attemptID, "error", "")
@@ -171,12 +191,13 @@ func Run(ctx context.Context, in Input) (Result, error) {
 }
 
 type session struct {
-	in        Input
-	card      board.Card
-	wt        runtime.Worktree
-	attemptID string
-	system    string
-	user      string
+	in          Input
+	card        board.Card
+	wt          runtime.Worktree
+	attemptID   string
+	system      string
+	user        string
+	linkedRoots map[string]string
 }
 
 func (s *session) loop(ctx context.Context) error {
@@ -222,6 +243,19 @@ func (s *session) dispatch(ctx context.Context, call providers.ToolCall) (string
 	switch call.Name {
 	case "read_file":
 		text, truncated, err := readFile(s.wt.Path, strArg(call.Args, "path"))
+		if err != nil {
+			return err.Error(), false, nil
+		}
+		if truncated {
+			return text + "\ntruncated: true", false, nil
+		}
+		return text, false, nil
+	case "read_linked_file":
+		root, ok := s.linkedRoots[strArg(call.Args, "project")]
+		if !ok {
+			return "not a linked project with a clone", false, nil
+		}
+		text, truncated, err := readFile(root, strArg(call.Args, "path"))
 		if err != nil {
 			return err.Error(), false, nil
 		}
@@ -279,7 +313,7 @@ func (s *session) localCheck(ctx context.Context) (int, string, error) {
 
 func (s *session) event(ctx context.Context, kind string, payload map[string]any) error {
 	_, err := trace.Append(ctx, s.in.DB, trace.Event{
-		CardID: s.card.ID, AttemptID: s.attemptID, Kind: kind, Payload: payload,
+		CardID: s.card.ID, AttemptID: s.attemptID, ProjectID: s.card.ProjectID, Kind: kind, Payload: payload,
 	}, s.in.Secrets)
 	return err
 }

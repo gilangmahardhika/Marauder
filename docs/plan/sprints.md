@@ -25,8 +25,12 @@ flowchart LR
   s11[Sprint11_Accounts]
   s12[Sprint12_Tribes]
   s13[Sprint13_Projects]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13
+  s14[Sprint14_CompanyRepos]
+  s15[Sprint15_LinkedProjects]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15
 ```
+
+Sprints 14 and 15 implement [../rfc/0006-company-github-and-linked-projects.md](../rfc/0006-company-github-and-linked-projects.md).
 
 Sprints 11–13 implement [../rfc/0005-teams-and-cloud.md](../rfc/0005-teams-and-cloud.md). Do not start Sprint 11 while a required Sprint 10 test fails. The optional real-host box does not block Sprint 11. The REQ-043 fixture stays one project. New tests add a second project beside that run.
 
@@ -204,3 +208,32 @@ Goal: Each project has its own data directory, settings, bot token, worker lock,
 - Reconcile and the deploy lock stay inside one project.
 
 Done when: `TestParallelProjects`, `TestLeadDeploy`, `TestOwnerApproveStops`, `TestAcceptByOwner`, `TestDeveloperRunOnly`, `TestActorOnTransition`, `TestCloudBind`, and `TestLoopbackOnly` still passes without `ORCHESTRATOR_CLOUD`.
+
+## Sprint 14: One company account, one repo per project
+
+Goal: An admin sets one company GitHub account. Each project names one repository in that organization, and the service clones it. Deploy, checks, sandbox, and doc paths are saved per project.
+
+Migration `00006` creates `workspace_github`, drops the per-project host, owner, bot login, and bot token, and makes `github_repo` unique. Packages: `internal/company`, `internal/tenancy`, `internal/runtime`, `internal/settings`, `internal/intake`.
+
+- `GET` and `PUT /api/settings/github`, `POST /api/settings/github/test`, and `GET /api/settings/github/repos`. Admin only, except the repo list, which a Lead Developer may call. The token is ciphertext and never returned. `gh` gets it in the child environment.
+- `POST /api/projects` takes `repo` and `baseBranch`. A repo another project names is `422`.
+- `GET` and `PUT /api/projects/{id}/settings/repository` and `POST /api/projects/{id}/sync`. Sync clones into `<data>/projects/<id>/repo` or fetches the base branch, with the token through askpass.
+- Worktrees branch from the project base branch. Intake, accept, and the loop's requirement reads include `project_id`. Ingest reads the project clone.
+- `GET` and `PUT /api/projects/{id}/settings/deploy` read and write that project's `config.yaml` and `secrets.json`, atomically. The service-wide deploy route and operator login are removed.
+- UI: Company GitHub under Admin, the repository picker on New project, the Repository page with Sync, and Deploy on the project route.
+
+Done when: `TestCompanyGitHubTokenNeverReturned`, `TestCompanyGitHubAdminOnly`, `TestRepoListUsesCompanyToken`, `TestProjectRepoUnique`, `TestCloneTokenNotInArgv`, `TestCheckoutUsesBaseBranch`, `TestIntakePerProject`, `TestProjectDeploySettingsIsolated`, `TestProjectDeployTokenNeverReturned`, `TestDeployLeadOnly`.
+
+## Sprint 15: A project reads its neighbours
+
+Goal: A Lead Developer links their project to other projects in the same tribe. The implementer and reviewer see the linked requirements, decisions, and shared files, and the implementer can read any linked file. Nothing writes to a linked repository.
+
+Migration `00007` creates `project_links`. Packages: `internal/tenancy`, `internal/contextpack`, `internal/loop`, `internal/runtime`.
+
+- `GET` and `PUT /api/projects/{id}/settings/links`. Same tribe only, no self link, shared paths checked like a tool path.
+- The implementer and reviewer packs add a `LINKED` block per link inside the untrusted markers, capped per link.
+- `read_linked_file` reads from an export of the linked base SHA through `safePath`. The tool list snapshot changes in this sprint.
+- One event per attempt lists the linked project ids and SHAs.
+- UI: the Linked projects page.
+
+Done when: `TestProjectLinkSameTribeOnly`, `TestProjectLinkNoSelf`, `TestProjectLinkOutsiderMisses`, `TestPackIncludesLinkedRequirements`, `TestSharedPathConfined`, `TestReadLinkedFileReadOnly`, `TestLinkedContextIsUntrusted`.

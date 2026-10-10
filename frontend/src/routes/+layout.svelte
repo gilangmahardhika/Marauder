@@ -30,7 +30,8 @@
       label: 'Project',
       items: [
         { href: '/projects', label: 'Projects', icon: 'projects' },
-        { href: '/settings/github', label: 'GitHub', icon: 'git' },
+        { href: '/settings/repository', label: 'Repository', icon: 'git' },
+        { href: '/settings/links', label: 'Linked projects', icon: 'link' },
         { href: '/settings/llm', label: 'LLM APIs', icon: 'spark' },
         { href: '/settings/router', label: 'Router', icon: 'router' },
         { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' }
@@ -41,7 +42,8 @@
       admin: true,
       items: [
         { href: '/admin/users', label: 'Users', icon: 'users' },
-        { href: '/tribes', label: 'Tribes', icon: 'shield' }
+        { href: '/tribes', label: 'Tribes', icon: 'shield' },
+        { href: '/admin/github', label: 'Company GitHub', icon: 'building' }
       ]
     }
   ];
@@ -49,7 +51,7 @@
   const login = $derived($page.url.pathname === '/login');
   const projectName = $derived(projects.find((project) => project.id === selected)?.name ?? 'No project');
   const projectOptions = $derived(
-    projects.map((project) => ({ value: project.id, label: project.name, detail: project.repoPath }))
+    projects.map((project) => ({ value: project.id, label: project.name, detail: project.repo }))
   );
 
   function active(href: string) {

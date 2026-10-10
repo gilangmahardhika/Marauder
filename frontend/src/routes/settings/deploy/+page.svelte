@@ -24,7 +24,6 @@
   let implementationCap = $state(2);
   let prdPath = $state('docs/prd');
   let rfcPath = $state('docs/rfc');
-  let operatorLogin = $state('');
   let message = $state('Loading deploy settings');
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
@@ -53,7 +52,6 @@
         implementationCap = body.implementationCap || 2;
         prdPath = body.prdPath;
         rfcPath = body.rfcPath;
-        operatorLogin = body.operatorLogin;
         message = 'Deploy settings';
       })
       .catch((error: unknown) => {
@@ -82,7 +80,6 @@
         implementationCap,
         prdPath,
         rfcPath,
-        operatorLogin,
         ...omitEmptySecret('deployToken', token, clear)
       });
       tokenSet = saved.deployTokenSet;
@@ -98,7 +95,7 @@
   }
 </script>
 
-<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and how the board reads its docs." width="form">
+<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings. Only a Lead Developer can save." width="form">
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
       <Panel title="Dev server" hint="Empty values can be saved. Deploy stops with deploy_config until they are set.">
@@ -142,7 +139,6 @@
       <Panel title="Board">
         <div class="grid gap-5 sm:grid-cols-2">
           <Field label="Implementation cap" id="cap" type="number" width="sm" hint="Plan and implement jobs at once, 1 to 8" bind:value={implementationCap} />
-          <Field label="Operator login" id="operator" width="full" bind:value={operatorLogin} />
           <Field label="PRD path" id="prd" width="full" mono bind:value={prdPath} />
           <Field label="RFC path" id="rfc" width="full" mono bind:value={rfcPath} />
         </div>

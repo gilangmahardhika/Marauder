@@ -83,18 +83,18 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestReviewNotCounted` | A review and a triage call leave `attempts_used` unchanged |
 | `TestRedact` | A payload containing the fixture deploy token is stored as `[redacted]` |
 | `TestReviewerPack` | Fixture JSON has the diff and lacks `author-transcript` |
-| `TestImplementerTools` | Tool list has no `deploy` and no `verdict` |
+| `TestImplementerTools` | Tool list has `read_linked_file` and no `deploy`, no `verdict`, and no linked write tool |
 | `TestFallbackOnce` | Primary transport error, one retry, one fallback, then `blocked` with `provider_error` if the fallback also fails |
 | `TestRouteClass` | Low risk and zero attempts select `implement`. High risk or any used attempt selects `implement_hard` |
 | `TestNoDeployClass` | `Decide` rejects task class `deploy` |
 | `TestRouterConfig` | An empty `implement` model blocks the card with `router_config` |
 | `TestPlanCards` | Planner cards link only accepted ids, get checks from settings, and a dependency cycle is refused |
 | `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
-| `TestSecretOmitted` | GET of GitHub, LLM, and deploy settings has no token or key substring from the secrets file |
-| `TestSecretKeep` | PUT without the secret field leaves the file bytes for that slot unchanged |
+| `TestSecretOmitted` | GET of the company GitHub, LLM, and project deploy settings has no token or key substring from the secrets file |
+| `TestSecretKeep` | A project deploy PUT without the token leaves that project's `secrets.json` bytes unchanged |
 | `TestUnknownModel` | Router PUT with model id `missing` returns `422` and the yaml is unchanged |
 | `TestModelIdUnique` | The same model id in two families is `422` |
-| `TestBotApprover` | PUT GitHub with the bot login in `approvers` returns `422` |
+| `TestBotApprover` | An approval by a user whose GitHub login is the company bot login returns `422` |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

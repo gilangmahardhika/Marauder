@@ -21,7 +21,7 @@ func TestDraftIds(t *testing.T) {
 		writeFile(t, filepath.Join(repo, "docs", "prd", "draft.md"), "# Notes\n\nThis file has no requirement ids.\n")
 		writeFile(t, filepath.Join(repo, "docs", "extra", "note.md"), "### REQ-999 Outside\n\nNot ingested.\n")
 
-		result, err := app.Ingest(context.Background(), db, repo, data)
+		result, err := app.Ingest(context.Background(), db, "proj_default", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +49,7 @@ func TestDraftIds(t *testing.T) {
 		writeFile(t, rfc, "## RFC-001 Keep the id\n\nExisting ids stay as written.\n")
 		writeFile(t, filepath.Join(data, "config.yaml"), "operatorLogin: ada\n")
 
-		result, err := app.Ingest(context.Background(), db, repo, data)
+		result, err := app.Ingest(context.Background(), db, "proj_default", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,20 +66,20 @@ func TestDraftIds(t *testing.T) {
 		if !strings.Contains(acceptance, "A fixture PRD yields one record per id.") {
 			t.Fatalf("acceptance = %s", acceptance)
 		}
-		if err := app.Accept(context.Background(), db, data, []string{"REQ-404"}); err != intake.ErrUnknownID {
+		if err := app.Accept(context.Background(), db, "proj_default", data, []string{"REQ-404"}); err != intake.ErrUnknownID {
 			t.Fatalf("unknown accept err = %v", err)
 		}
 		if runs := countRuns(t, db); runs != 0 {
 			t.Fatalf("runs after unknown accept = %d", runs)
 		}
-		if err := app.Accept(context.Background(), db, data, []string{"REQ-001"}); err != nil {
+		if err := app.Accept(context.Background(), db, "proj_default", data, []string{"REQ-001"}); err != nil {
 			t.Fatal(err)
 		}
 		if !requirementAccepted(t, db, "REQ-001", "ada") {
 			t.Fatal("REQ-001 was not accepted")
 		}
 
-		result, err = app.Ingest(context.Background(), db, repo, data)
+		result, err = app.Ingest(context.Background(), db, "proj_default", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func TestDraftIds(t *testing.T) {
 		}
 
 		writeFile(t, prd, "### REQ-001 Parse records\n\nThe statement changed.\n\n#### Acceptance\n\n- A fixture PRD yields one record per id.\n")
-		if _, err := app.Ingest(context.Background(), db, repo, data); err != nil {
+		if _, err := app.Ingest(context.Background(), db, "proj_default", repo, data); err != nil {
 			t.Fatal(err)
 		}
 		if requirementAccepted(t, db, "REQ-001", "ada") {

@@ -9,11 +9,11 @@ import (
 	"orchestrator/backend/internal/trace"
 )
 
-func statements(ctx context.Context, db *sql.DB, ids []string) ([]string, error) {
+func statements(ctx context.Context, db *sql.DB, projectID string, ids []string) ([]string, error) {
 	var out []string
 	for _, id := range ids {
 		var statement string
-		err := db.QueryRowContext(ctx, `SELECT statement FROM requirements WHERE id = $1`, id).Scan(&statement)
+		err := db.QueryRowContext(ctx, `SELECT statement FROM requirements WHERE id = $1 AND project_id = $2`, id, projectID).Scan(&statement)
 		if err != nil {
 			return nil, err
 		}
@@ -33,24 +33,29 @@ func latestNote(ctx context.Context, db *sql.DB, cardID string) (string, error) 
 }
 
 type CreateInput struct {
-	DB       *sql.DB
-	Settings Settings
-	Args     map[string]any
-	Secrets  []string
+	DB        *sql.DB
+	ProjectID string
+	Settings  Settings
+	Args      map[string]any
+	Secrets   []string
 }
 
 func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
+	if in.ProjectID == "" {
+		in.ProjectID = "proj_default"
+	}
 	ids := stringList(in.Args["requirementIds"])
 	for _, id := range ids {
 		var accepted sql.NullString
-		err := in.DB.QueryRowContext(ctx, `SELECT accepted_at FROM requirements WHERE id = $1`, id).Scan(&accepted)
+		err := in.DB.QueryRowContext(ctx, `SELECT accepted_at FROM requirements WHERE id = $1 AND project_id = $2`, id, in.ProjectID).Scan(&accepted)
 		if err != nil || !accepted.Valid || accepted.String == "" {
 			return board.Card{}, ErrRequirement
 		}
 	}
 	if _, ok := in.Args["command"]; ok {
 		if _, err := trace.Append(ctx, in.DB, trace.Event{
-			Kind: "tool_call",
+			ProjectID: in.ProjectID,
+			Kind:      "tool_call",
 			Payload: map[string]any{
 				"name":     "create_card",
 				"ok":       false,
@@ -64,6 +69,7 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 	title, _ := in.Args["title"].(string)
 	risk, _ := in.Args["risk"].(string)
 	card, err := board.InsertCard(ctx, in.DB, board.Card{
+		ProjectID:      in.ProjectID,
 		Title:          title,
 		Status:         "backlog",
 		Risk:           risk,
