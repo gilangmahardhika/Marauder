@@ -7,7 +7,8 @@
 </script>
 
 <script lang="ts">
-  import { control, labelClass, widths, type Width } from '$lib/ui/control';
+  import { labelClass, widths, type Width } from '$lib/ui/control';
+  import PasswordInput from '$lib/ui/PasswordInput.svelte';
 
   let {
     label,
@@ -32,13 +33,13 @@
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
   <label for={inputId} class={labelClass}>{label}</label>
   <div class="flex items-center gap-2">
-    <input
+    <PasswordInput
       id={inputId}
+      {label}
       {name}
-      type="password"
       autocomplete="off"
       placeholder={clear ? 'Removed when you save' : saved ? 'A value is saved' : ''}
-      class="{control} min-w-0 flex-1"
+      class="min-w-0 flex-1"
       bind:value
       oninput={() => (clear = false)}
     />

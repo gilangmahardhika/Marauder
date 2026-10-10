@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { HTMLInputAttributes } from 'svelte/elements';
   import { control, controlBase, labelClass, widths, type Width } from './control';
+  import PasswordInput from './PasswordInput.svelte';
 
   let {
     label,
@@ -37,6 +38,8 @@
   {#if type === 'textarea'}
     <textarea {id} {disabled} {placeholder} aria-describedby={described} class="{controlBase} py-2.5 {font}" bind:value
     ></textarea>
+  {:else if type === 'password'}
+    <PasswordInput {id} {label} {autocomplete} {disabled} {placeholder} describedby={described} bind:value />
   {:else}
     <input
       {id}

@@ -10,7 +10,6 @@
 
   let email = $state('');
   let password = $state('');
-  let reveal = $state(false);
   let message = $state('');
   let busy = $state(false);
 
@@ -68,19 +67,14 @@
       <p class="mt-1 text-sm text-muted">Use the email and password an admin gave you.</p>
       <form class="mt-6 flex flex-col gap-4" onsubmit={submit}>
         <Field label="Email" id="email" type="email" width="full" autocomplete="email" bind:value={email} />
-        <div>
-          <Field
-            label="Password"
-            id="password"
-            type={reveal ? 'text' : 'password'}
-            width="full"
-            autocomplete="current-password"
-            bind:value={password}
-          />
-          <button type="button" class="min-h-11 text-sm text-muted underline" onclick={() => (reveal = !reveal)}>
-            {reveal ? 'Hide password' : 'Show password'}
-          </button>
-        </div>
+        <Field
+          label="Password"
+          id="password"
+          type="password"
+          width="full"
+          autocomplete="current-password"
+          bind:value={password}
+        />
         <Button variant="primary" type="submit" full disabled={busy}>{busy ? 'Signing in' : 'Sign in'}</Button>
       </form>
       <div class="mt-4">

@@ -114,6 +114,7 @@ frontend/
   src/lib/shell.svelte.ts
   src/lib/ui/Button.svelte
   src/lib/ui/Field.svelte
+  src/lib/ui/PasswordInput.svelte
   src/lib/ui/Select.svelte
   src/lib/ui/Menu.svelte
   src/lib/ui/SearchSelect.svelte
@@ -140,6 +141,7 @@ frontend/
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
+  src/lib/ui/PasswordInput.test.ts
 ```
 
 `src/lib/types.ts` mirrors the JSON in 0002. If a field is added to the API, add it here in the same change.
@@ -215,7 +217,7 @@ Pages set `message` to "Loading board", "Running the worker", "Saving GitHub set
 
 ## Login
 
-`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is `type="password"` and `autocomplete="current-password"`.
+`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
 
 ## Board
 
@@ -285,7 +287,7 @@ A list, oldest first. Each item shows time, kind, attempt id, and the payload in
 
 `SecretField.svelte` is used for the caller's GitHub token, the company GitHub token, each LLM key, and the deploy token.
 
-1. Input `type="password"`, autocomplete `off`.
+1. Input is a `PasswordInput` (masked, with the eye toggle), autocomplete `off`.
 2. If the GET flag (`tokenSet`, `keySet`, or `deployTokenSet`) is true, placeholder "A value is saved".
 3. Empty input on submit means the JSON omits that secret field.
 4. A "Remove" button sets `clear: true` and omits the secret string.
@@ -377,7 +379,7 @@ The product name is Marauder. `src/app.css` imports Tailwind CSS 4 and defines t
 
 Shared controls live in `src/lib/ui/`. One primary button on a page. `.danger` is for blocked status. `.error` is for a field error. Inputs and buttons are at least 44px tall. `:focus-visible` keeps a 2px ink outline. Do not remove outlines. Do not put layout in a `style` attribute.
 
-The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`.
+The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`. Every password or secret input is a `PasswordInput`: `Field type="password"` and `SecretField` both render it. It starts masked, and an eye button inside the right edge (a 44px `type="button"` with `aria-pressed` and "Show {label}" or "Hide {label}") reveals only what was typed. It masks again when the value is cleared or the input is disabled.
 
 Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the live status line. It holds no page actions.
 

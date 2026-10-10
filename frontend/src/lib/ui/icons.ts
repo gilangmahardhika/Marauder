@@ -14,7 +14,9 @@ export type IconName =
   | 'check'
   | 'plus'
   | 'link'
-  | 'building';
+  | 'building'
+  | 'eye'
+  | 'eye-off';
 
 export const iconPaths: Record<IconName, string[]> = {
   board: ['M4 4h5v16H4z', 'M10.5 4h4v10h-4z', 'M16 4h4v14h-4z'],
@@ -32,5 +34,12 @@ export const iconPaths: Record<IconName, string[]> = {
   check: ['M5 12l5 5 9-9'],
   plus: ['M12 5v14', 'M5 12h14'],
   link: ['M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1', 'M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1'],
-  building: ['M5 21V5l7-2v18', 'M12 8l7 2v11', 'M3 21h18', 'M8 9h1', 'M8 13h1', 'M8 17h1', 'M15 13h1', 'M15 17h1']
+  building: ['M5 21V5l7-2v18', 'M12 8l7 2v11', 'M3 21h18', 'M8 9h1', 'M8 13h1', 'M8 17h1', 'M15 13h1', 'M15 17h1'],
+  eye: ['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z', 'M12 15a3 3 0 100-6 3 3 0 000 6'],
+  'eye-off': [
+    'M4 4l16 16',
+    'M10.6 5.6A9.6 9.6 0 0112 5.5c6 0 9.5 6.5 9.5 6.5a16.8 16.8 0 01-3 3.8',
+    'M6.6 6.9C4 8.6 2.5 12 2.5 12S6 18.5 12 18.5a9 9 0 004.6-1.3',
+    'M9.9 9.9a3 3 0 004.2 4.2'
+  ]
 };
