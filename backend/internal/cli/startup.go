@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +26,29 @@ type secretFile struct {
 	GitHubToken string            `json:"githubToken"`
 	DeployToken string            `json:"deployToken"`
 	LLMKeys     map[string]string `json:"llmKeys"`
+}
+
+func withBoard(opts Options, repoFlag, dataFlag string, fn func(context.Context, *sql.DB, resolvedPaths) error) error {
+	paths, err := resolvePaths(opts, repoFlag, dataFlag)
+	if err != nil {
+		return err
+	}
+	if err := prepareDataDir(paths.Data); err != nil {
+		return err
+	}
+	url, err := loadDatabaseURL(paths.Data, opts.getenv)
+	if err != nil {
+		return err
+	}
+	db, err := board.Open(url)
+	if err != nil {
+		return scrub(err, url)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		return scrub(err, url)
+	}
+	return fn(context.Background(), db, paths)
 }
 
 func runServe(opts Options, repoFlag, dataFlag, addr string) error {

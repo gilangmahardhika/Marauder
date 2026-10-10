@@ -286,6 +286,21 @@ DROP TABLE requirements;
 
 v1 ships one migration. A later schema change is `00002_*.sql`. Do not edit `00001` after the first release.
 
+`draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
+
+```sql
+-- +goose Up
+CREATE TABLE intake_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  draft_pending BOOLEAN NOT NULL DEFAULT false,
+  plan_error TEXT
+);
+INSERT INTO intake_state (id, draft_pending) VALUES (1, false);
+
+-- +goose Down
+DROP TABLE intake_state;
+```
+
 Column notes:
 
 - `content_hash` is SHA-256 hex of the statement plus the acceptance list, or of the decision statement. Intake uses it to detect edits (REQ-004).

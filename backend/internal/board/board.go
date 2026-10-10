@@ -243,6 +243,12 @@ func ClearApprovals(ctx context.Context, q DBTX, cardID, clearedAt string) error
 	return err
 }
 
+func CountCards(ctx context.Context, q DBTX) (int, error) {
+	var n int
+	err := q.QueryRowContext(ctx, `SELECT count(*) FROM cards`).Scan(&n)
+	return n, err
+}
+
 func CountGates(ctx context.Context, q DBTX, cardID string) (int, error) {
 	var n int
 	err := q.QueryRowContext(ctx, `SELECT count(*) FROM gates WHERE card_id = $1`, cardID).Scan(&n)

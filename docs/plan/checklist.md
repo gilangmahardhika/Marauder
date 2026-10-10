@@ -25,12 +25,12 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 
 ## Sprint 2: Nothing starts until a person accepts the ids
 
-- [ ] Parse markdown with goldmark. Keep existing `REQ-` and `RFC-` ids. A file with no ids sets `draftPending` and stores drafted rows as unaccepted.
-- [ ] Record operator acceptance. Re-parse clears acceptance only for changed ids (RFC-019).
-- [ ] CLI: `ingest`, `accept`, and `status` on an empty board (the empty-board and missing-`--sha` CLI checks).
-- [ ] `TestDraftIds`
-- [ ] `status` on an empty data dir prints `board is empty` and `orchestrator ingest`
-- [ ] No worktree package exists yet
+- [x] Parse markdown with goldmark. Keep existing `REQ-` and `RFC-` ids. A file with no ids sets `draftPending` and stores drafted rows as unaccepted.
+- [x] Record operator acceptance. Re-parse clears acceptance only for changed ids (RFC-019).
+- [x] CLI: `ingest`, `accept`, and `status` on an empty board (the empty-board and missing-`--sha` CLI checks).
+- [x] `TestDraftIds`
+- [x] `status` on an empty data dir prints `board is empty` and `orchestrator ingest`
+- [x] No worktree package exists yet
 
 ## Sprint 3: Checks cannot rewrite the worktree
 
