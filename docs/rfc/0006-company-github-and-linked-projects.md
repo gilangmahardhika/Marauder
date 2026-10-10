@@ -26,6 +26,8 @@ Consequences: the project rows no longer carry a host, an owner, a bot login, or
 
 Requirements: REQ-044, REQ-051, REQ-052.
 
+Superseded in part by RFC-054 in [0009-card-owner.md](0009-card-owner.md). The company token clones and fetches. Jobs commit as the card owner and push and open pull requests with the owner's verified token. A card whose owner has no usable token is blocked with `owner_github`. A user's login is the one GitHub reports for their token.
+
 ## RFC-050 A project is one repository that the service clones
 
 A project names one repository in the company organization and one base branch. Two projects cannot name the same repository. The service clones it into `<data>/projects/<id>/repo` with the company token, and fetches the base branch before ingest and on Sync. Worktrees, exports, and logs for that project live under the same project directory. Deploy, checks, sandbox, scheduler, and paths are project settings in that directory's `config.yaml`, and the deploy token is in its `secrets.json`.

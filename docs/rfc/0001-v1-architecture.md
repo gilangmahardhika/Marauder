@@ -110,6 +110,8 @@ Requirements: REQ-029, REQ-030, REQ-031.
 
 Superseded in part by RFC-046 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). The allowlist sentence no longer decides who may approve. The SHA binding and the bot exclusion stay.
 
+Superseded in part by RFC-054 in [0009-card-owner.md](0009-card-owner.md). The card owner is also excluded from approving their own card. The pull request is opened by the owner, not the bot.
+
 ## RFC-007 The reviewer does not see the author transcript
 
 The reviewer pack contains the linked requirements, the linked decisions, the diff, the check output, the pull request body, and human comments already on the pull request. It excludes the author's messages and tool trace.

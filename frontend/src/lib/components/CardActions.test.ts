@@ -11,6 +11,7 @@ function card(partial: Partial<Card>): Card {
     group: 'running',
     actions: [],
     unblockTo: null,
+    owner: null,
     requirementIds: [],
     decisionIds: [],
     dependsOn: [],

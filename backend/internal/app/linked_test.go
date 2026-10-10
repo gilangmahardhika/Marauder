@@ -33,7 +33,7 @@ func TestCheckoutUsesBaseBranch(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := app.RunImplementer(context.Background(), loop.Input{
-		DB: db, Git: runtime.Git{Bin: git, Repo: repo, Data: data, Bot: "bot"}, BaseBranch: "develop",
+		DB: db, Git: runtime.Git{Bin: git, Repo: repo, Data: data, Author: runtime.LoginAuthor("bot", 0)}, BaseBranch: "develop",
 		CardID: card.ID, Model: "fake-model", MaxTurns: 2, Provider: provider,
 	})
 	if err != nil {
@@ -65,10 +65,10 @@ func TestIntakePerProject(t *testing.T) {
 	writeFile(t, filepath.Join(repoB, "docs", "prd", "b.md"), "### REQ-001 Api\n\nProject B statement.\n")
 	writeFile(t, filepath.Join(data, "config.yaml"), "operatorLogin: ada\n")
 	ctx := context.Background()
-	if _, err := app.Ingest(ctx, db, "proj_default", repoA, data); err != nil {
+	if _, err := app.Ingest(ctx, db, "proj_default", "", repoA, data); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.Ingest(ctx, db, "proj_b", repoB, data); err != nil {
+	if _, err := app.Ingest(ctx, db, "proj_b", "", repoB, data); err != nil {
 		t.Fatal(err)
 	}
 	if err := app.Accept(ctx, db, "proj_b", data, []string{"REQ-001"}); err != nil {
@@ -244,7 +244,7 @@ func (f linkedFixture) run(t *testing.T, script string) (loop.Result, *fake.Fake
 	}
 	git := lookGit(t)
 	result, err := app.RunImplementer(context.Background(), loop.Input{
-		DB: f.db, Git: runtime.Git{Bin: git, Repo: f.repo, Data: f.data, Bot: "bot"},
+		DB: f.db, Git: runtime.Git{Bin: git, Repo: f.repo, Data: f.data, Author: runtime.LoginAuthor("bot", 0)},
 		Linked: []loop.LinkedSource{{
 			ProjectID: "proj_b", Name: "Widget API", BaseBranch: "main",
 			Git:         runtime.Git{Bin: git, Repo: f.linkedRepo, Data: dataDir(t)},

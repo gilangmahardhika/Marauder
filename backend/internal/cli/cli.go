@@ -67,7 +67,7 @@ func Execute(opts Options) int {
 		Use: "ingest",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				result, err := app.Ingest(ctx, db, projectOr(project), paths.Repo, paths.Data)
+				result, err := app.Ingest(ctx, db, projectOr(project), "", paths.Repo, paths.Data)
 				if err != nil {
 					return err
 				}

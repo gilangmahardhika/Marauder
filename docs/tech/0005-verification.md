@@ -99,6 +99,11 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestUnknownModel` | Router PUT with model id `missing` returns `422` and the yaml is unchanged |
 | `TestModelIdUnique` | The same model id in two families is `422` |
 | `TestBotApprover` | An approval by a user whose GitHub login is the company bot login returns `422` |
+| `TestOwnerCannotApprove` | The card owner's `actions` has no `approve`, and an approval POST by the owner is `403` with no approval row (RFC-054) |
+| `TestIngestRecordsCreator` | A web ingest stores the caller as `created_by` on new parsed rows. A second ingest by another user keeps the first. A CLI ingest stores null |
+| `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |
+| `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |
+| `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer, an unverified reviewer, or the creator is `422` |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |
@@ -133,7 +138,9 @@ These use `testdata/fixture-repo`, a git repository with one file and a check sc
 | `TestDependency` | Card B stays out of `in_progress` until card A is `done` |
 | `TestDeployLock` | Two approved cards produce non-overlapping `deploy` events |
 | `TestCap` | The third counted attempt failing on a card with `max_attempts` 3 ends `blocked` and opens no other attempt |
-| `TestCommitIdentity` | Commits use the bot login and carry the three trailers |
+| `TestCommitIdentity` | Commits use the `runtime.Git.Author` they are given and carry the three trailers |
+| `TestCommitIdentityOwner` | A commit on an owned card has the owner's verified login and `<id>+<login>@users.noreply.github.com` as author and committer (RFC-054) |
+| `TestRequestReviewers` | The reviewer request names the union of the card's requirement reviewers without the owner, the bot, or an unverified user. A failed request writes `reviewers_requested` with `ok: false` and the card status is unchanged |
 | `TestReconcileDeploy` | Kill after the `deploy` event and before `health`. Restart probes or rolls back and does not exec deploy again first |
 | `TestReconcileCommit` | Kill after a commit and before the gating check. Restart runs the check without a model call and makes no second commit |
 

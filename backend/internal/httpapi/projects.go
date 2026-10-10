@@ -10,6 +10,7 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/intake"
+	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/settings"
 )
 
@@ -212,11 +213,12 @@ func (s *Server) projectIngest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !app.ProjectGit(s.Data, project, "", s.Tools).Cloned() {
+	if !app.ProjectGit(s.Data, project, runtime.Author{}, s.Tools).Cloned() {
 		writeFields(w, 422, "validation", "the project has no clone", map[string]string{"repo": "sync the repository first"})
 		return
 	}
-	result, err := app.Ingest(r.Context(), s.DB, projectID, project.RepoPath, settings.ProjectDir(s.Data, projectID))
+	user, _ := app.CurrentUser(r.Context())
+	result, err := app.Ingest(r.Context(), s.DB, projectID, user.ID, project.RepoPath, settings.ProjectDir(s.Data, projectID))
 	if err != nil {
 		writeErr(w, 422, "validation", err.Error())
 		return
@@ -310,11 +312,34 @@ func (s *Server) projectRequirement(w http.ResponseWriter, r *http.Request) {
 	s.writeIntake(w, r, projectID)
 }
 
+// projectReviewers replaces the reviewers of one requirement (RFC-054).
+func (s *Server) projectReviewers(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		UserIDs []string `json:"userIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	user, _ := app.CurrentUser(r.Context())
+	if err := intake.SetReviewers(r.Context(), s.DB, projectID, r.PathValue("id"), user.ID, user.Role, body.UserIDs); err != nil {
+		writeIntakeErr(w, err)
+		return
+	}
+	s.writeIntake(w, r, projectID)
+}
+
 func writeIntakeErr(w http.ResponseWriter, err error) {
 	var invalid *intake.Invalid
 	switch {
 	case errors.As(err, &invalid):
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
+	case errors.Is(err, intake.ErrForbidden):
+		writeErr(w, 403, "forbidden", err.Error())
 	case errors.Is(err, intake.ErrNotFound):
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, intake.ErrDuplicate):

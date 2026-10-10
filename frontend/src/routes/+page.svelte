@@ -125,6 +125,11 @@
                   <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
                   {card.status}
                 </span>
+                {#if card.owner}
+                  <span class="mt-1.5 block truncate text-xs text-muted">
+                    {card.owner.githubLogin || card.owner.email}
+                  </span>
+                {/if}
                 <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
                   <span>Attempt {card.attemptsUsed} of {card.maxAttempts}</span>
                   {#if card.headSha}<span class="font-mono">{card.headSha.slice(0, 7)}</span>{/if}

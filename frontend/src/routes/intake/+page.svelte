@@ -124,15 +124,34 @@
           </ul>
         {/if}
         {#snippet footer()}
+          <div class="mr-auto flex min-w-0 flex-col gap-1.5">
+            {#if requirement.sourceKind === 'manual'}
+              <span class="text-xs text-muted">Added by {requirement.createdBy ?? 'a former user'}</span>
+            {:else}
+              <span class="font-mono text-xs text-muted">{requirement.sourcePath}</span>
+              {#if requirement.createdBy}<span class="text-xs text-muted">Ingested by {requirement.createdBy}</span>{/if}
+            {/if}
+            {#if requirement.reviewers.length > 0}
+              <ul class="flex flex-wrap items-center gap-1.5" aria-label={`Reviewers of ${requirement.id}`}>
+                <li class="text-xs text-muted">Reviewers</li>
+                {#each requirement.reviewers as reviewer (reviewer.id)}
+                  <li><Badge>{reviewer.githubLogin || reviewer.email}</Badge></li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
           {#if requirement.sourceKind === 'manual'}
-            <span class="mr-auto text-xs text-muted">Added by {requirement.createdBy ?? 'a former user'}</span>
             <a
               class="inline-flex min-h-11 items-center px-1 text-sm font-medium text-accent hover:underline"
               href={`/intake/${encodeURIComponent(requirement.id)}`}
               aria-label={`Edit ${requirement.id}`}>Edit</a
             >
-          {:else}
-            <span class="mr-auto font-mono text-xs text-muted">{requirement.sourcePath}</span>
+          {:else if requirement.canEditReviewers}
+            <a
+              class="inline-flex min-h-11 items-center px-1 text-sm font-medium text-accent hover:underline"
+              href={`/intake/${encodeURIComponent(requirement.id)}`}
+              aria-label={`Reviewers for ${requirement.id}`}>Reviewers</a
+            >
           {/if}
           {#each requirement.linkedCards as id}
             <a class="inline-flex min-h-11 items-center px-1 font-mono text-xs text-accent underline" href={`/cards/${id}`}>{id}</a>

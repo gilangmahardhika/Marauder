@@ -166,7 +166,7 @@ func runScript(t *testing.T, ctx context.Context, db *sql.DB, repo, data, cardID
 		t.Fatal(err)
 	}
 	result, err := app.RunImplementer(ctx, loop.Input{
-		DB: db, Git: runtime.Git{Bin: lookGit(t), Repo: repo, Data: data, Bot: "bot"},
+		DB: db, Git: runtime.Git{Bin: lookGit(t), Repo: repo, Data: data, Author: runtime.LoginAuthor("bot", 0)},
 		CardID: cardID, Model: "fake-model", TaskClass: "implement", MaxTurns: 4,
 		Provider: provider, Allow: []string{"true", "false", "touch"},
 	})

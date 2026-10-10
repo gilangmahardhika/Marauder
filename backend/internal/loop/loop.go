@@ -27,6 +27,9 @@ const writeCap = 1 << 20
 
 var ErrRequirement = errors.New("unknown or unaccepted requirement")
 
+// ErrOwners rejects a card whose requirements were brought in by different users (RFC-054).
+var ErrOwners = errors.New("requirements have different creators; create one card per creator")
+
 func ImplementerTools() []providers.Tool {
 	return []providers.Tool{
 		{Name: "read_file"},

@@ -74,7 +74,7 @@ export function closeSession() {
 }
 
 export function getMe() {
-  return request<SessionUser & { githubLogin: string; githubTokenSet: boolean }>('/api/me');
+  return request<SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean }>('/api/me');
 }
 
 export function changePassword(currentPassword: string, newPassword: string) {
@@ -178,6 +178,13 @@ export function updateRequirement(id: string, body: RequirementDraft) {
   return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(body)
+  });
+}
+
+export function setReviewers(id: string, userIds: string[]) {
+  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/reviewers`, {
+    method: 'PUT',
+    body: JSON.stringify({ userIds })
   });
 }
 

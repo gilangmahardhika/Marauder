@@ -317,14 +317,21 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 	if card.BlockedReason == "source_changed" {
 		_, open = app.UnblockTo(r.Context(), s.DB, card)
 	}
-	role := ""
+	role, userID := "", ""
 	if user, ok := app.CurrentUser(r.Context()); ok {
-		role = user.Role
+		role, userID = user.Role, user.ID
 	}
 	group, actions, unblock := Actions(card.Status, card.BlockedReason, open, role)
+	if card.OwnerID != "" && card.OwnerID == userID {
+		actions = withoutAction(actions, "approve")
+	}
+	var owner any
+	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
+		owner = map[string]any{"id": found.ID, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
+	}
 	return map[string]any{
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
-		"actions": actions, "unblockTo": unblock,
+		"actions": actions, "unblockTo": unblock, "owner": owner,
 		"requirementIds": nonNil(card.RequirementIDs), "decisionIds": []string{},
 		"dependsOn": nonNil(card.DependsOn), "risk": card.Risk, "service": "default",
 		"manual": card.Manual, "localCheck": nullString(card.LocalCheck), "devCheck": nullString(card.DevCheck),
@@ -344,9 +351,18 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
+	user, _ := app.CurrentUser(r.Context())
+	reviewers, err := intake.Reviewers(r.Context(), db, projectID)
+	if err != nil {
+		return nil, err
+	}
+	options, err := intake.ReviewerOptions(r.Context(), db, projectID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
-			q.accepted_at IS NOT NULL, u.email
+			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, '')
 		FROM requirements q LEFT JOIN users u ON u.id = q.created_by
 		WHERE q.project_id = $1 ORDER BY q.id`, projectID)
 	if err != nil {
@@ -355,10 +371,10 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	defer rows.Close()
 	reqs := []any{}
 	for rows.Next() {
-		var id, kind, path, heading, statement, acceptance string
+		var id, kind, path, heading, statement, acceptance, creatorID string
 		var accepted bool
 		var createdBy sql.NullString
-		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy); err != nil {
+		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID); err != nil {
 			return nil, err
 		}
 		var lines []string
@@ -366,10 +382,16 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		if lines == nil {
 			lines = []string{}
 		}
+		named := reviewers[id]
+		if named == nil {
+			named = []intake.Reviewer{}
+		}
 		reqs = append(reqs, map[string]any{
 			"id": id, "sourceKind": kind, "sourcePath": path, "heading": heading,
 			"statement": statement, "acceptance": lines, "accepted": accepted,
 			"createdBy": nullString(createdBy.String), "linkedCards": []any{},
+			"reviewers":        named,
+			"canEditReviewers": intake.CanEditReviewers(user.ID, user.Role, creatorID),
 		})
 	}
 	decisions := []any{}
@@ -389,10 +411,9 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	if planError.Valid {
 		plan = planError.String
 	}
-	user, _ := app.CurrentUser(r.Context())
 	return map[string]any{
 		"draftPending": draft, "planError": plan, "canAccept": canAccept(user.Role),
-		"requirements": reqs, "decisions": decisions,
+		"requirements": reqs, "decisions": decisions, "reviewerOptions": options,
 	}, nil
 }
 
@@ -403,6 +424,16 @@ func canAccept(role string) bool {
 		return true
 	}
 	return false
+}
+
+func withoutAction(actions []string, name string) []string {
+	out := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action != name {
+			out = append(out, action)
+		}
+	}
+	return out
 }
 
 func nonNil(values []string) []string {
@@ -430,6 +461,8 @@ func writeAppErr(w http.ResponseWriter, err error) {
 		writeErr(w, 422, "validation", err.Error())
 	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked):
 		writeErr(w, 409, "conflict", err.Error())
+	case errors.Is(err, app.ErrOwnerApprove):
+		writeErr(w, 403, "forbidden", err.Error())
 	default:
 		writeErr(w, 500, "internal", err.Error())
 	}

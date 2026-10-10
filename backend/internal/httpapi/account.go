@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"orchestrator/backend/internal/app"
+	"orchestrator/backend/internal/company"
 )
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +50,7 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	body := userJSON(user)
 	body["githubLogin"] = user.GitHubLogin
 	body["githubTokenSet"] = user.GitHubTokenSet
+	body["githubVerified"] = user.GitHubVerified
 	writeJSON(w, 200, body)
 }
 
@@ -84,6 +86,7 @@ func (s *Server) myGitHub(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, 200, map[string]any{
 			"host": user.GitHubHost, "login": user.GitHubLogin, "tokenSet": user.GitHubTokenSet,
+			"verified": user.GitHubVerified,
 		})
 	case http.MethodPut:
 		var body struct {
@@ -111,6 +114,7 @@ func (s *Server) myGitHub(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, map[string]any{
 			"host": fresh.GitHubHost, "login": fresh.GitHubLogin, "tokenSet": fresh.GitHubTokenSet,
+			"verified": fresh.GitHubVerified,
 		})
 	default:
 		writeErr(w, 404, "not_found", "not found")
@@ -119,20 +123,19 @@ func (s *Server) myGitHub(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) testMyGitHub(w http.ResponseWriter, r *http.Request) {
 	user, _ := app.CurrentUser(r.Context())
-	token, err := app.UserGitHubToken(r.Context(), s.DB, user.ID, s.TokenKey)
-	if err != nil {
-		writeAccountErr(w, err)
-		return
-	}
-	if token == "" {
-		writeErr(w, 422, "validation", "no stored token")
-		return
-	}
-	if user.GitHubLogin == "" {
+	login, err := app.TestUserGitHub(r.Context(), s.DB, s.TokenKey, user.ID, s.gh())
+	switch {
+	case errors.Is(err, app.ErrNoUserToken):
+		writeErr(w, 422, "validation", err.Error())
+	case errors.Is(err, app.ErrLoginTaken):
+		writeJSON(w, 200, map[string]any{"ok": false, "message": err.Error()})
+	case errors.Is(err, company.ErrGitHub):
 		writeJSON(w, 200, map[string]any{"ok": false, "message": "authentication failed"})
-		return
+	case err != nil:
+		writeAccountErr(w, err)
+	default:
+		writeJSON(w, 200, map[string]any{"ok": true, "login": login})
 	}
-	writeJSON(w, 200, map[string]any{"ok": true, "login": user.GitHubLogin})
 }
 
 func (s *Server) users(w http.ResponseWriter, r *http.Request) {

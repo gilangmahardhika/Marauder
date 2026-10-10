@@ -36,6 +36,8 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | `--addr` is not loopback, and `ORCHESTRATOR_CLOUD` is unset | Process exits before listen |
 | `Host` header not allowed | `403` |
 | Push refspec destination is not the card branch | No network call |
+| Card owner missing, disabled, unverified, or without a token | `owner_github`, no push and no pull request call. The company token is never used instead (RFC-054) |
+| Approver is the card owner | `403`, no approval row |
 | Event `UPDATE` or `DELETE` | Postgres trigger aborts the statement |
 | Deploy SHA is not 40 or 64 hex digits | `deploy_config`, no exec |
 | Transition status changed after read | `409`, no side effect |
@@ -196,7 +198,7 @@ func probe(raw string, hosts []string, fixture bool) error
 
 ## Secrets
 
-Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the company GitHub token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
+Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the card owner's GitHub token when the job decrypted it (RFC-054), the company GitHub token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
 
 - event payloads
 - pack user strings
@@ -409,6 +411,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestFsmonitorOff` | A repo config with `core.fsmonitor` set to a command does not run it |
 | `TestPushURL` | A remote named `origin` pointing elsewhere is ignored. The push goes to the settings URL with the card refspec only |
 | `TestAskpass` | The token is absent from every recorded git argv and present only in the askpass env |
+| `TestPushUsesOwnerToken` | Push, pull request, and reviewer calls carry the owner's token in the child environment, never in argv, and never the company token (RFC-054) |
+| `TestOwnerGitHubBlocks` | A card whose owner has no verified token moves to `blocked` with `owner_github`, and no push or `gh` call runs |
+| `TestGitHubLoginVerified` | The account token test stores the login `gh api user` reports. A new token clears it. A second user cannot verify the same login |
 | `TestBaseRefUnchanged` | Local `refs/heads/main` is unchanged after a job, and a forced change blocks with `base_moved` |
 | `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped, and the system hash matches |
 
@@ -425,6 +430,7 @@ These stay outside the program.
 | Leave `ORCHESTRATOR_CLOUD` unset on a laptop | Loopback stays the default bind |
 | Set cloud mode only behind TLS | RFC-045 refuses a public bind without that flag |
 | Keep `tokenKey` in the service secrets file | It decrypts every GitHub token |
+| Ask developers for fine-grained tokens limited to the company organization, with Contents and Pull requests write | Unattended jobs push with each owner's token (RFC-054) |
 | Review what dev checks reach | Dev check egress is open in v1 |
 
 A production credential is still out of scope (NG-001). Hardening v1 does not add a safe place to put one.

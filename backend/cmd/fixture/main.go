@@ -117,7 +117,7 @@ func run() error {
 	if err := ensureMain(repo, gitBin); err != nil {
 		return err
 	}
-	g := runtime.Git{Bin: gitBin, Repo: repo, Data: data, Bot: "bot"}
+	g := runtime.Git{Bin: gitBin, Repo: repo, Data: data, Author: runtime.LoginAuthor("bot", 0)}
 	first, err = step3(ctx, db, g, first)
 	if err != nil {
 		return err
@@ -175,7 +175,7 @@ func step1(ctx context.Context, db *sql.DB, data string) error {
 	if len(parsed.Requirements) != 2 {
 		return fmt.Errorf("step 1: requirements = %d", len(parsed.Requirements))
 	}
-	if _, err := intake.Apply(ctx, db, "proj_default", parsed); err != nil {
+	if _, err := intake.Apply(ctx, db, "proj_default", "", parsed); err != nil {
 		return err
 	}
 	n, err := board.CountCards(ctx, db)

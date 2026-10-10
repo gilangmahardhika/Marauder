@@ -13,8 +13,9 @@ import (
 var ErrUnknownID = errors.New("unknown requirement id")
 
 // Apply upserts parsed records on projectID. A manual row is never
-// overwritten. Its id is returned in skipped (RFC-053).
-func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) (skipped []string, err error) {
+// overwritten. Its id is returned in skipped (RFC-053). actorID becomes
+// created_by on a row that has none yet, and is empty for the CLI (RFC-054).
+func Apply(ctx context.Context, db *sql.DB, projectID, actorID string, result Result) (skipped []string, err error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -32,9 +33,10 @@ func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) (sk
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO requirements (
 				id, source_kind, source_path, heading, statement,
-				acceptance_json, non_goals_json, content_hash, project_id
-			) VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, $8)
+				acceptance_json, non_goals_json, content_hash, project_id, created_by
+			) VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, $8, $9)
 			ON CONFLICT (project_id, id) DO UPDATE SET
+				created_by = COALESCE(requirements.created_by, EXCLUDED.created_by),
 				source_kind = EXCLUDED.source_kind,
 				source_path = EXCLUDED.source_path,
 				heading = EXCLUDED.heading,
@@ -52,6 +54,7 @@ func Apply(ctx context.Context, db *sql.DB, projectID string, result Result) (sk
 				END
 			WHERE requirements.source_kind <> 'manual'`,
 			req.ID, req.SourceKind, req.SourcePath, req.Heading, req.Statement, string(encoded), req.Hash, projectID,
+			nullable(actorID),
 		)
 		if err != nil {
 			return nil, err
@@ -120,6 +123,13 @@ func Accept(ctx context.Context, db *sql.DB, projectID, operator string, ids []s
 		return err
 	}
 	return tx.Commit()
+}
+
+func nullable(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 func newID(prefix string) (string, error) {

@@ -267,3 +267,23 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestManualRequirementEdit`
 - [x] `TestIngestKeepsManual`
 - [x] `TestAcceptSeniorRoles`
+
+## Sprint 17: Card owner
+
+- [x] Web ingest records the creator. `create_card` sets `owner_id` and rejects mixed creators.
+- [x] The account token test verifies the login with GitHub.
+- [x] Commits, push, and the pull request use the owner's identity and token, or the card blocks with `owner_github`.
+- [x] Reviewers named on Intake are requested on the pull request.
+- [x] The owner cannot approve their own card.
+- [x] UI: owner on the board and card page, reviewer picker on Intake, Verified on account GitHub.
+- [x] `TestIngestRecordsCreator`
+- [x] `TestCardOwnerFromRequirement`
+- [x] `TestCreateCardMixedOwners`
+- [x] `TestGitHubLoginVerified`
+- [x] `TestCommitIdentityOwner`
+- [x] `TestPushUsesOwnerToken`
+- [x] `TestOwnerGitHubBlocks`
+- [x] `TestRequestReviewers`
+- [x] `TestReviewersSetByCreator`
+- [x] `TestOwnerCannotApprove`
+- [x] `MultiSearchSelect.test.ts`

@@ -213,7 +213,7 @@ func initRepo(t *testing.T, repo string) {
 
 func newGit(t *testing.T, repo, data string) runtime.Git {
 	t.Helper()
-	return runtime.Git{Bin: lookGit(t), Repo: repo, Data: data, Bot: "bot"}
+	return runtime.Git{Bin: lookGit(t), Repo: repo, Data: data, Author: runtime.LoginAuthor("bot", 0)}
 }
 
 func dataDir(t *testing.T) string {

@@ -7,6 +7,7 @@
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
 
@@ -76,6 +77,12 @@
       <Button href={`/cards/${card!.id}/trace`}>View trace</Button>
     {/snippet}
     <div class="flex flex-col gap-6">
+      {#if card.blockedReason === 'owner_github'}
+        <Notice tone="danger">
+          The owner's GitHub account cannot push this card. The owner saves a token on the Account page and runs Test
+          connection. Then unblock the card.
+        </Notice>
+      {/if}
       {#if hasControls}
         <Panel title="Next step">
           <CardActions bind:card />
@@ -83,6 +90,14 @@
       {/if}
       <Panel title="Details">
         <dl class="grid gap-x-10 gap-y-5 sm:grid-cols-2">
+          {@render item(
+            'Owner',
+            card.owner
+              ? card.owner.githubLogin
+                ? `${card.owner.githubLogin} (${card.owner.email})`
+                : `${card.owner.email}, no verified GitHub login`
+              : 'None'
+          )}
           {@render item('Requirements', card.requirementIds.join(', ') || '—', true)}
           {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
           {@render item('Risk', card.risk)}

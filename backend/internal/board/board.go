@@ -34,6 +34,7 @@ type DBTX interface {
 type Card struct {
 	ID             string
 	ProjectID      string
+	OwnerID        string
 	Title          string
 	Status         string
 	Risk           string
@@ -169,15 +170,16 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 		INSERT INTO cards (
 			id, title, requirement_ids_json, decision_ids_json, depends_on_json,
 			risk, service, status, manual, local_check, dev_check,
-			attempts_used, max_attempts, environment, created_at, updated_at, project_id
+			attempts_used, max_attempts, environment, created_at, updated_at, project_id, owner_id
 		) VALUES (
 			$1, $2, $3, '[]', $4,
 			$5, 'default', $6, $7, $8, $9,
-			$10, $11, 'dev', $12, $13, $14
+			$10, $11, 'dev', $12, $13, $14, $15
 		)`,
 		card.ID, card.Title, string(reqJSON), string(depJSON), card.Risk, card.Status, card.Manual,
 		nullString(card.LocalCheck), nullString(card.DevCheck),
 		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt, card.ProjectID,
+		nullString(card.OwnerID),
 	)
 	if err != nil {
 		return Card{}, err
@@ -195,13 +197,14 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 			COALESCE(approved_sha, ''), COALESCE(deployed_sha, ''),
 			COALESCE(blocked_reason, ''), COALESCE(failure_reason, ''),
 			COALESCE(local_check, ''), COALESCE(dev_check, ''),
-			requirement_ids_json, depends_on_json, created_at, updated_at
+			requirement_ids_json, depends_on_json, created_at, updated_at, COALESCE(owner_id, '')
 		FROM cards WHERE id = $1`, id).Scan(
 		&card.ID, &card.ProjectID, &card.Title, &card.Status, &card.Risk, &card.Manual,
 		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
 		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
 		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,
 		&card.LocalCheck, &card.DevCheck, &reqJSON, &depJSON, &card.CreatedAt, &card.UpdatedAt,
+		&card.OwnerID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound

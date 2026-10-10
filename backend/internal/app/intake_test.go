@@ -21,7 +21,7 @@ func TestDraftIds(t *testing.T) {
 		writeFile(t, filepath.Join(repo, "docs", "prd", "draft.md"), "# Notes\n\nThis file has no requirement ids.\n")
 		writeFile(t, filepath.Join(repo, "docs", "extra", "note.md"), "### REQ-999 Outside\n\nNot ingested.\n")
 
-		result, err := app.Ingest(context.Background(), db, "proj_default", repo, data)
+		result, err := app.Ingest(context.Background(), db, "proj_default", "", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -49,7 +49,7 @@ func TestDraftIds(t *testing.T) {
 		writeFile(t, rfc, "## RFC-001 Keep the id\n\nExisting ids stay as written.\n")
 		writeFile(t, filepath.Join(data, "config.yaml"), "operatorLogin: ada\n")
 
-		result, err := app.Ingest(context.Background(), db, "proj_default", repo, data)
+		result, err := app.Ingest(context.Background(), db, "proj_default", "", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +79,7 @@ func TestDraftIds(t *testing.T) {
 			t.Fatal("REQ-001 was not accepted")
 		}
 
-		result, err = app.Ingest(context.Background(), db, "proj_default", repo, data)
+		result, err = app.Ingest(context.Background(), db, "proj_default", "", repo, data)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -94,7 +94,7 @@ func TestDraftIds(t *testing.T) {
 		}
 
 		writeFile(t, prd, "### REQ-001 Parse records\n\nThe statement changed.\n\n#### Acceptance\n\n- A fixture PRD yields one record per id.\n")
-		if _, err := app.Ingest(context.Background(), db, "proj_default", repo, data); err != nil {
+		if _, err := app.Ingest(context.Background(), db, "proj_default", "", repo, data); err != nil {
 			t.Fatal(err)
 		}
 		if requirementAccepted(t, db, "REQ-001", "ada") {
@@ -119,7 +119,7 @@ func TestIngestKeepsManual(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(repo, "docs", "prd", "one.md"), "### REQ-001 From the repo\n\nThe repo text.\n\n### REQ-002 Second\n\nAnother.\n")
 
-	result, err := app.Ingest(ctx, db, "proj_default", repo, data)
+	result, err := app.Ingest(ctx, db, "proj_default", "", repo, data)
 	if err != nil {
 		t.Fatal(err)
 	}

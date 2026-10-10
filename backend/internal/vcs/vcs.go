@@ -13,7 +13,7 @@ type Command struct {
 	Env  []string
 }
 
-// Push authenticates with token. Callers pass the project bot token, not a signed-in user's token.
+// Push authenticates with token. Callers pass the card owner's verified token (RFC-054).
 func Push(git, askpass, url, token, cardID string) (Command, error) {
 	if !cardIDPattern.MatchString(cardID) {
 		return Command{}, fmt.Errorf("card id %s", cardID)

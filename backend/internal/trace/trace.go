@@ -25,6 +25,7 @@ var kinds = map[string]struct{}{
 	"budget_stop":         {},
 	"config_changed":      {},
 	"assertion_failed":    {},
+	"reviewers_requested": {},
 }
 
 type queryer interface {

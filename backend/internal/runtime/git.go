@@ -19,11 +19,26 @@ const (
 )
 
 type Git struct {
-	Bin  string
-	Repo string
-	Data string
-	Bot  string
-	Exec func(context.Context, execx.Child) (execx.Result, error)
+	Bin    string
+	Repo   string
+	Data   string
+	Author Author
+	Exec   func(context.Context, execx.Child) (execx.Result, error)
+}
+
+// Author is the name and email on every commit, as author and committer.
+type Author struct {
+	Name  string
+	Email string
+}
+
+// LoginAuthor names a GitHub login with its noreply address. A positive id
+// gives the <id>+<login> form GitHub links to the account (RFC-054).
+func LoginAuthor(login string, id int64) Author {
+	if id > 0 {
+		return Author{Name: login, Email: fmt.Sprintf("%d+%s@users.noreply.github.com", id, login)}
+	}
+	return Author{Name: login, Email: login + "@users.noreply.github.com"}
 }
 
 type Worktree struct {
@@ -150,8 +165,8 @@ func (g Git) worktreeArgv(wt Worktree, args ...string) []string {
 func (g Git) commitArgv(wt Worktree, args ...string) []string {
 	argv := g.prefix()
 	argv = append(argv,
-		"-c", "user.name="+g.Bot,
-		"-c", "user.email="+g.Bot+"@users.noreply.github.com",
+		"-c", "user.name="+g.Author.Name,
+		"-c", "user.email="+g.Author.Email,
 		"--git-dir="+wt.GitDir,
 		"--work-tree="+wt.Path,
 	)

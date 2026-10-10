@@ -26,13 +26,13 @@ const (
 	maxLine       = 1000
 )
 
-// Invalid carries one message per rejected field: id, statement, or acceptance.
+// Invalid carries one message per rejected field: id, statement, acceptance, or userIds.
 type Invalid struct {
 	Fields map[string]string
 }
 
 func (v *Invalid) Error() string {
-	for _, key := range []string{"id", "statement", "acceptance"} {
+	for _, key := range []string{"id", "statement", "acceptance", "userIds"} {
 		if msg, ok := v.Fields[key]; ok {
 			return msg
 		}

@@ -2,7 +2,7 @@
 
 Status: v1 draft, revised after review. Date: 2026-10-10.
 
-This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0005. Implementation guides are in `docs/tech/`.
+This document is the requirements source. [docs/README.md](../README.md) lists every document and which one wins when two disagree. Decisions are in `docs/rfc/`, RFC-0001 through RFC-0009. Implementation guides are in `docs/tech/`.
 
 ## Problem
 
@@ -22,7 +22,7 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 | QA | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 
-Every member of a project's tribe may add a requirement to that project by hand (REQ-055). A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver. Jobs use the company GitHub account instead (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver.
+Every member of a project's tribe may add a requirement to that project by hand (REQ-055). A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver and as the author of the cards they own (REQ-057). Clone and fetch use the company GitHub account (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver, and an owner never approves their own card.
 
 Models are workers the harness calls. They are not users, and they do not hold the board.
 
@@ -98,6 +98,9 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-053 | A project is one repository that the service clones |
 | REQ-054 | A project can read context from linked projects |
 | REQ-055 | A member can add a requirement by hand |
+| REQ-056 | A card belongs to the person who brought its requirements in |
+| REQ-057 | The owner commits and opens the pull request |
+| REQ-058 | The requirement's creator picks pull request reviewers |
 
 ## Requirements
 
@@ -743,14 +746,15 @@ Each project has its own worker lock and its own deploy lock. The service may ru
 
 ### REQ-051 Each user has their own GitHub settings
 
-Each user stores a GitHub host, login, and token. The token is write-only. The login names the user as an approver. The worker pushes and opens pull requests with the company token (REQ-052). It does not use the signed-in user's token. A user can test their own token. The API returns whether a token is set and never returns the token.
+Each user stores a GitHub host, login, and token. The token is write-only. The login names the user as an approver. A user can test their own token. The test asks GitHub which login the token belongs to and stores that login as verified. The worker pushes and opens pull requests for a card with its owner's token (REQ-057, RFC-054). The API returns whether a token is set and never returns the token.
 
 #### Acceptance
 
 - `GET` of the caller's GitHub settings returns `tokenSet` and no token.
 - One user cannot read or replace another user's token.
-- A job's push uses the company token.
+- A job's push uses the card owner's token, and its clone uses the company token.
 - Approval is rejected when the caller's GitHub login is empty.
+- Testing a token stores the login GitHub reports, not the typed one.
 
 ### REQ-052 The company has one GitHub account
 
@@ -803,6 +807,39 @@ A member of the project's tribe adds a requirement on the Intake page or through
 - Deleting a manual requirement that a card lists is rejected.
 - Ingest of a PRD that defines an id already added by hand keeps the manual text and reports the id as skipped.
 - A user outside the tribe receives `404`.
+
+### REQ-056 A card belongs to the person who brought its requirements in
+
+Each requirement records the member who added it by hand or ran the ingest that first stored it. A card's owner is that member, read from the card's requirements when the planner creates it. The planner cannot choose the owner. A card's requirements all come from one owner. The board and the card page show the owner (RFC-054).
+
+#### Acceptance
+
+- Ingest from the web stores the caller as the creator of each new parsed requirement. A re-ingest keeps the first creator.
+- A card created from a requirement stores that requirement's creator as `owner_id`.
+- `create_card` with requirements from two creators is rejected.
+- An owner passed in the `create_card` arguments is ignored.
+
+### REQ-057 The owner commits and opens the pull request
+
+A card's commits use the owner's verified GitHub login as the author and committer name and the owner's GitHub noreply address as the email. The worker pushes the card branch and opens or updates the pull request with the owner's token, in the child environment only. Clone and fetch use the company token. When the owner is missing, disabled, unverified, or has no token, the card is blocked with `owner_github` and nothing is pushed. The owner cannot approve their own card (RFC-054).
+
+#### Acceptance
+
+- A commit on an owned card has the owner's login and `<id>+<login>@users.noreply.github.com` as author and committer.
+- The push and the pull request calls carry the owner's token in the environment and never in argv.
+- A card whose owner has no verified token moves to `blocked` with `owner_github`, and no push runs.
+- Approval by the owner is rejected, and the owner's `actions` list has no `approve`.
+
+### REQ-058 The requirement's creator picks pull request reviewers
+
+The member who brought a requirement in, or a Lead Developer member, names reviewers for it on the Intake page. Reviewers are tribe members with a verified GitHub login. When a card's pull request is open, the worker requests the union of its requirements' reviewers on GitHub, without the owner and the company bot. A failed request writes an event and does not change the card (RFC-054).
+
+#### Acceptance
+
+- The creator can set reviewers on a parsed or a manual requirement. Another Developer member is rejected.
+- A reviewer who is not a tribe member with a verified login is rejected.
+- The reviewer request on the pull request excludes the owner and the bot.
+- A failed reviewer request leaves the card status unchanged.
 
 ## Non-goals
 
@@ -902,3 +939,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 12. Accounts, tribes, and per-project workers (REQ-046 through REQ-051).
 13. The company GitHub account, project repositories, and linked projects (REQ-052 through REQ-054).
 14. Manual requirements and senior accept (REQ-055).
+15. Card owner, owner pull requests, and intake reviewers (REQ-056 through REQ-058).

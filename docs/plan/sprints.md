@@ -255,3 +255,19 @@ Migration `00008` adds `manual` to `requirements.source_kind` and adds `requirem
 - UI: Add requirement, `/intake/new`, `/intake/[id]`, a Manual badge, and the Accept button only when `canAccept`.
 
 Done when: `TestManualRequirementAdd`, `TestManualRequirementEdit`, `TestIngestKeepsManual`, `TestAcceptSeniorRoles`.
+
+## Sprint 17: Card owner
+
+Goal: A card belongs to the member who brought its requirements in. Its commits and pull request are theirs, the reviewers they named are requested, and they cannot approve it (RFC-054).
+
+Migration `00009` adds `cards.owner_id`, `requirement_reviewers`, and `user_github.github_id` and `verified_at`. Packages: `internal/intake`, `internal/loop`, `internal/board`, `internal/identity`, `internal/ghcli`, `internal/runtime`, `internal/vcs`, `internal/app`, `internal/httpapi`.
+
+- Web ingest stores the caller as `created_by` on new parsed rows. `create_card` copies that creator to `owner_id` and rejects requirements from two creators.
+- The account token test runs `gh api user` and stores the reported login and id as verified. A new token clears it.
+- `app.OwnerGitHub` resolves the owner's login, noreply email, and token, or `owner_github`. `runtime.Git.Author` replaces the bot name.
+- `app.Publish` pushes and opens or updates the pull request with the owner's token, then requests reviewers.
+- The owner's `actions` has no `approve`, and approval by the owner is `403`.
+- `PUT /api/projects/{id}/requirements/{reqId}/reviewers`. The intake response adds `reviewers`, `canEditReviewers`, and `reviewerOptions`.
+- UI: owner on the board and the card page, a reviewer picker on Intake, and Verified on the account GitHub page.
+
+Done when: `TestIngestRecordsCreator`, `TestCardOwnerFromRequirement`, `TestCreateCardMixedOwners`, `TestGitHubLoginVerified`, `TestCommitIdentityOwner`, `TestPushUsesOwnerToken`, `TestOwnerGitHubBlocks`, `TestRequestReviewers`, `TestReviewersSetByCreator`, `TestOwnerCannotApprove`.

@@ -3,9 +3,10 @@
   import { page } from '$app/stores';
   import { ApiError, deleteRequirement, getIntake, unreachable, updateRequirement } from '$lib/api';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
+  import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
   import { fromLines, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { Requirement } from '$lib/types';
+  import type { Intake, Requirement, Reviewer } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -13,6 +14,7 @@
   import Panel from '$lib/ui/Panel.svelte';
 
   let requirement = $state<Requirement | null>(null);
+  let reviewerOptions = $state<Reviewer[]>([]);
   let missing = $state(false);
   let statement = $state('');
   let acceptance = $state('');
@@ -25,9 +27,10 @@
 
   showShell(() => ({ title: requirementId || 'Requirement', message }));
 
-  function pick(list: Requirement[]) {
-    const found = list.find((item) => item.id === requirementId) ?? null;
+  function pick(intake: Intake) {
+    const found = intake.requirements.find((item) => item.id === requirementId) ?? null;
     requirement = found;
+    reviewerOptions = intake.reviewerOptions;
     missing = !found;
     if (found) {
       statement = found.statement;
@@ -40,7 +43,7 @@
     if (id === '' || shell.projectId === '') return;
     void getIntake()
       .then((body) => {
-        pick(body.requirements);
+        pick(body);
         message = missing ? 'Requirement not found' : id;
       })
       .catch((error: unknown) => {
@@ -56,7 +59,7 @@
     const wasAccepted = Boolean(requirement?.accepted);
     try {
       const saved = await updateRequirement(requirementId, { statement, acceptance: toLines(acceptance) });
-      pick(saved.requirements);
+      pick(saved);
       message = wasAccepted && !requirement?.accepted ? 'Requirement saved. It needs acceptance again.' : 'Requirement saved';
     } catch (error) {
       fields = error instanceof ApiError ? error.fields : {};
@@ -91,12 +94,15 @@
     {#snippet actions()}
       <Button href="/intake">Intake</Button>
     {/snippet}
-    <EmptyState
-      title="Edit this requirement in the repository."
-      description={requirement.sourcePath
-        ? `It comes from ${requirement.sourcePath}. Change the file, then run Ingest.`
-        : 'The planner drafted it. Accept it or replace it in the PRD.'}
-    />
+    <div class="flex flex-col gap-6">
+      <EmptyState
+        title="Edit this requirement in the repository."
+        description={requirement.sourcePath
+          ? `It comes from ${requirement.sourcePath}. Change the file, then run Ingest.`
+          : 'The planner drafted it. Accept it or replace it in the PRD.'}
+      />
+      <ReviewersPanel {requirement} options={reviewerOptions} onsaved={pick} onmessage={(text) => (message = text)} />
+    </div>
   </Page>
 {:else if requirement}
   <Page title={requirementId}>
@@ -116,6 +122,7 @@
           {/snippet}
         </Panel>
       </form>
+      <ReviewersPanel requirement={requirement!} options={reviewerOptions} onsaved={pick} onmessage={(text) => (message = text)} />
       <Panel title="Delete requirement" hint="A requirement that a card lists cannot be deleted.">
         {#if confirming}
           <div class="flex flex-wrap items-center gap-2">

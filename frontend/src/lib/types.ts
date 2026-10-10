@@ -1,3 +1,9 @@
+export type CardOwner = {
+  id: string;
+  email: string;
+  githubLogin: string;
+};
+
 export type Card = {
   id: string;
   title: string;
@@ -5,6 +11,7 @@ export type Card = {
   group: string;
   actions: string[];
   unblockTo: string | null;
+  owner: CardOwner | null;
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -52,6 +59,14 @@ export type Requirement = {
   accepted: boolean;
   createdBy: string | null;
   linkedCards: string[];
+  reviewers: Reviewer[];
+  canEditReviewers: boolean;
+};
+
+export type Reviewer = {
+  id: string;
+  email: string;
+  githubLogin: string;
 };
 
 export type RequirementDraft = {
@@ -72,6 +87,7 @@ export type Intake = {
   skipped?: string[];
   requirements: Requirement[];
   decisions: Decision[];
+  reviewerOptions: Reviewer[];
 };
 
 export type SessionUser = {
@@ -99,6 +115,7 @@ export type AccountGitHub = {
   host: string;
   login: string;
   tokenSet: boolean;
+  verified: boolean;
 };
 
 export type CompanyGitHub = {

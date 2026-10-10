@@ -3,7 +3,13 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
+	"orchestrator/backend/internal/ghcli"
 	"orchestrator/backend/internal/identity"
 )
 
@@ -14,6 +20,7 @@ var (
 	ErrLastAdmin       = identity.ErrLastAdmin
 	ErrNotFoundUser    = identity.ErrNotFound
 	ErrAdminExists     = identity.ErrExists
+	ErrLoginTaken      = identity.ErrLoginTaken
 )
 
 type User = identity.User
@@ -63,6 +70,42 @@ func OpenUserToken(key []byte, ciphertext string) (string, error) {
 func UserGitHubToken(ctx context.Context, db *sql.DB, userID string, key []byte) (string, error) {
 	return identity.Token(ctx, db, userID, key)
 }
+
+var ErrNoUserToken = errors.New("no stored token")
+
+// TestUserGitHub asks GitHub which account the user's token belongs to and
+// stores that login and id as verified (RFC-054). The typed login is not trusted.
+func TestUserGitHub(ctx context.Context, db *sql.DB, key []byte, userID string, gh ghcli.Runner) (string, error) {
+	acct, err := identity.GitHubOf(ctx, db, userID)
+	if err != nil {
+		return "", err
+	}
+	token, err := identity.Token(ctx, db, userID, key)
+	if err != nil {
+		return "", err
+	}
+	if token == "" {
+		return "", ErrNoUserToken
+	}
+	out, err := gh.API(ctx, acct.Host, token, "user", "--jq", ".login, .id")
+	if err != nil {
+		return "", err
+	}
+	lines := strings.Fields(string(out))
+	if len(lines) != 2 {
+		return "", fmt.Errorf("%w: unexpected user reply", ghcli.ErrGitHub)
+	}
+	id, err := strconv.ParseInt(lines[1], 10, 64)
+	if err != nil || id <= 0 || !loginPattern.MatchString(lines[0]) {
+		return "", fmt.Errorf("%w: unexpected user reply", ghcli.ErrGitHub)
+	}
+	if err := identity.VerifyGitHub(ctx, db, userID, lines[0], id); err != nil {
+		return "", err
+	}
+	return lines[0], nil
+}
+
+var loginPattern = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$`)
 
 type userContextKey struct{}
 

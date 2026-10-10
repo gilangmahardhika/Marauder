@@ -31,6 +31,7 @@ var (
 	ErrLastAdmin       = errors.New("last admin")
 	ErrNotFound        = errors.New("not found")
 	ErrExists          = errors.New("admin already exists")
+	ErrLoginTaken      = errors.New("login already verified by another user")
 )
 
 type Validation struct {
@@ -55,6 +56,17 @@ type User struct {
 	GitHubHost     string
 	GitHubLogin    string
 	GitHubTokenSet bool
+	GitHubVerified bool
+}
+
+// GitHubAccount is a user's GitHub row. Verified means the token test stored
+// the login and id GitHub reported for the current token (RFC-054).
+type GitHubAccount struct {
+	Host     string
+	Login    string
+	ID       int64
+	TokenSet bool
+	Verified bool
 }
 
 type Session struct {
@@ -236,28 +248,49 @@ func UserByBearer(ctx context.Context, db *sql.DB, bearer string) (User, error) 
 }
 
 func GitHub(ctx context.Context, db *sql.DB, userID string) (host, login string, tokenSet bool, err error) {
-	err = db.QueryRowContext(ctx, `
-		SELECT host, login, token_ciphertext <> '' FROM user_github WHERE user_id = $1`, userID).Scan(&host, &login, &tokenSet)
+	acct, err := GitHubOf(ctx, db, userID)
+	return acct.Host, acct.Login, acct.TokenSet, err
+}
+
+func GitHubOf(ctx context.Context, db *sql.DB, userID string) (GitHubAccount, error) {
+	var acct GitHubAccount
+	var id sql.NullInt64
+	err := db.QueryRowContext(ctx, `
+		SELECT host, login, token_ciphertext <> '', github_id, verified_at IS NOT NULL
+		FROM user_github WHERE user_id = $1`, userID).Scan(&acct.Host, &acct.Login, &acct.TokenSet, &id, &acct.Verified)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "github.com", "", false, nil
+		return GitHubAccount{Host: "github.com"}, nil
 	}
-	return host, login, tokenSet, err
+	acct.ID = id.Int64
+	return acct, err
+}
+
+// VerifyGitHub stores the login and id GitHub reported for the user's token.
+func VerifyGitHub(ctx context.Context, db *sql.DB, userID, login string, githubID int64) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE user_github SET login = $1, github_id = $2, verified_at = $3 WHERE user_id = $4`,
+		login, githubID, time.Now().UTC().Format(time.RFC3339), userID)
+	if err != nil && strings.Contains(err.Error(), "user_github_verified_login") {
+		return ErrLoginTaken
+	}
+	return err
 }
 
 func SaveGitHub(ctx context.Context, db *sql.DB, userID, host, login string, token *string, clear bool, key []byte) error {
 	if strings.TrimSpace(host) == "" || strings.Contains(host, "/") || strings.Contains(host, ":") {
 		return &Validation{Fields: map[string]string{"host": "host must be a hostname"}}
 	}
-	currentHost, currentLogin, _, err := GitHub(ctx, db, userID)
+	current, err := GitHubOf(ctx, db, userID)
 	if err != nil {
 		return err
 	}
 	if host == "" {
-		host = currentHost
+		host = current.Host
 	}
 	if login == "" && token == nil && !clear {
-		login = currentLogin
+		login = current.Login
 	}
+	keepVerified := current.Verified && token == nil && !clear && host == current.Host && login == current.Login
 	var cipherText string
 	if err := db.QueryRowContext(ctx, `SELECT token_ciphertext FROM user_github WHERE user_id = $1`, userID).Scan(&cipherText); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -276,8 +309,10 @@ func SaveGitHub(ctx context.Context, db *sql.DB, userID, host, login string, tok
 	}
 	_, err = db.ExecContext(ctx, `
 		INSERT INTO user_github (user_id, host, login, token_ciphertext) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (user_id) DO UPDATE SET host = EXCLUDED.host, login = EXCLUDED.login, token_ciphertext = EXCLUDED.token_ciphertext`,
-		userID, host, login, cipherText)
+		ON CONFLICT (user_id) DO UPDATE SET host = EXCLUDED.host, login = EXCLUDED.login, token_ciphertext = EXCLUDED.token_ciphertext,
+			github_id = CASE WHEN $5 THEN user_github.github_id ELSE NULL END,
+			verified_at = CASE WHEN $5 THEN user_github.verified_at ELSE NULL END`,
+		userID, host, login, cipherText, keepVerified)
 	return err
 }
 
@@ -403,13 +438,14 @@ func userByID(ctx context.Context, db *sql.DB, id string) (User, error) {
 	if err != nil {
 		return User{}, err
 	}
-	host, login, set, err := GitHub(ctx, db, id)
+	acct, err := GitHubOf(ctx, db, id)
 	if err != nil {
 		return User{}, err
 	}
-	user.GitHubHost = host
-	user.GitHubLogin = login
-	user.GitHubTokenSet = set
+	user.GitHubHost = acct.Host
+	user.GitHubLogin = acct.Login
+	user.GitHubTokenSet = acct.TokenSet
+	user.GitHubVerified = acct.Verified
 	return user, nil
 }
 

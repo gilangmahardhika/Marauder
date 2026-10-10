@@ -14,6 +14,8 @@ var (
 	ErrSHA      = errors.New("sha does not match the current head")
 	ErrApprover = errors.New("operator cannot approve")
 	ErrUnblock  = errors.New("unblock is refused")
+	// ErrOwnerApprove refuses an approval by the card owner (RFC-054).
+	ErrOwnerApprove = errors.New("the card owner cannot approve their own card")
 )
 
 type GateConfig struct {
@@ -27,6 +29,9 @@ func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
 		return board.Card{}, err
+	}
+	if card.OwnerID != "" && cfg.ActorID == card.OwnerID {
+		return card, ErrOwnerApprove
 	}
 	if sha == "" || sha != card.HeadSHA {
 		return card, ErrSHA

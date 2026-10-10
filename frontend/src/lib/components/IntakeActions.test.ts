@@ -5,7 +5,7 @@ import { toLines } from '$lib/requirements';
 import type { Intake } from '$lib/types';
 
 function intake(partial: Partial<Intake>): Intake {
-  return { draftPending: false, planError: null, canAccept: false, requirements: [], decisions: [], ...partial };
+  return { draftPending: false, planError: null, canAccept: false, requirements: [], decisions: [], reviewerOptions: [], ...partial };
 }
 
 const noop = () => {};

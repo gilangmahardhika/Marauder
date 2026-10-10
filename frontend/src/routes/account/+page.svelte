@@ -19,6 +19,7 @@
   let token = $state('');
   let clear = $state(false);
   let tokenSet = $state(false);
+  let verified = $state(false);
   let message = $state('Loading account');
   let result = $state('');
   let busy = $state(false);
@@ -35,6 +36,7 @@
         host = github.host || 'github.com';
         login = github.login;
         tokenSet = github.tokenSet;
+        verified = github.verified;
         message = 'Account';
       })
       .catch((error: unknown) => {
@@ -68,6 +70,7 @@
     try {
       const saved = await putMyGitHub({ host, login, ...omitEmptySecret('token', token, clear) });
       tokenSet = saved.tokenSet;
+      verified = saved.verified;
       login = saved.login;
       token = '';
       clear = false;
@@ -86,6 +89,9 @@
       const outcome = await testMyGitHub();
       result = outcome.ok ? `Signed in as ${outcome.login ?? 'ok'}` : (outcome.message ?? 'authentication failed');
       message = result;
+      const github = await getMyGitHub();
+      login = github.login;
+      verified = github.verified;
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -127,7 +133,13 @@
       </Panel>
     </form>
     <form onsubmit={saveGitHub}>
-      <Panel title="GitHub" hint="Your own login, used to approve cards. It is not the company GitHub account.">
+      <Panel
+        title="GitHub"
+        hint="Your own account. Cards built from requirements you bring in are committed, pushed, and opened as pull requests with this token. Test connection records the login GitHub reports."
+      >
+        {#snippet actions()}
+          <Badge tone={verified ? 'green' : 'amber'}>{verified ? 'Verified' : 'Not verified'}</Badge>
+        {/snippet}
         <div class="grid gap-5 sm:grid-cols-2">
           <Field label="Host" id="host" width="full" error={fields.host} bind:value={host} />
           <Field label="Login" id="login" width="full" bind:value={login} />

@@ -1,5 +1,6 @@
 // Package company holds the one GitHub account the service uses for every
-// project: clone, fetch, push, pull requests, and the organization repo list.
+// project: clone, fetch, and the organization repo list. Pushes and pull
+// requests use the card owner's token (RFC-054).
 package company
 
 import (
@@ -10,29 +11,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
 
-	"orchestrator/backend/internal/execx"
+	"orchestrator/backend/internal/ghcli"
 	"orchestrator/backend/internal/identity"
-	"orchestrator/backend/internal/trace"
 )
 
 var (
 	ErrNoToken = errors.New("no company GitHub token is saved")
-	ErrGitHub  = errors.New("github call failed")
+	ErrGitHub  = ghcli.ErrGitHub
 
 	NamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	hostPattern = regexp.MustCompile(`^[A-Za-z0-9.-]+$`)
-)
-
-const (
-	ghTimeout = 30 * time.Second
-	ghMaxOut  = 4 << 20
 )
 
 type Account struct {
@@ -144,60 +137,10 @@ func Token(ctx context.Context, db *sql.DB, key []byte) (string, error) {
 }
 
 // GH runs the gh CLI with the company token in the child environment only.
-type GH struct {
-	Bin       string
-	ConfigDir string
-	Exec      func(context.Context, execx.Child) (execx.Result, error)
-}
+type GH = ghcli.Runner
 
-func (g GH) api(ctx context.Context, acct Account, token string, args ...string) ([]byte, error) {
-	bin := g.Bin
-	if bin == "" {
-		found, err := exec.LookPath("gh")
-		if err != nil {
-			return nil, fmt.Errorf("%w: gh is not installed", ErrGitHub)
-		}
-		bin = found
-	}
-	run := g.Exec
-	if run == nil {
-		run = execx.Command
-	}
-	configDir := g.ConfigDir
-	if configDir == "" {
-		dir, err := os.MkdirTemp("", "orchestrator-gh-")
-		if err != nil {
-			return nil, err
-		}
-		defer os.RemoveAll(dir)
-		configDir = dir
-	}
-	argv := append([]string{bin, "api", "--hostname", acct.Host}, args...)
-	for _, arg := range argv {
-		if token != "" && strings.Contains(arg, token) {
-			return nil, fmt.Errorf("%w: token in argv", ErrGitHub)
-		}
-	}
-	env := []string{
-		"GH_TOKEN=" + token,
-		"GH_HOST=" + acct.Host,
-		"GH_CONFIG_DIR=" + configDir,
-		"GH_PROMPT_DISABLED=1",
-		"GH_NO_UPDATE_NOTIFIER=1",
-		"NO_COLOR=1",
-		"HOME=" + configDir,
-	}
-	if acct.Host != "github.com" {
-		env = append(env, "GH_ENTERPRISE_TOKEN="+token)
-	}
-	res, err := run(ctx, execx.Child{Argv: argv, Env: env, Timeout: ghTimeout, MaxOut: ghMaxOut})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrGitHub, trace.Redact(err.Error(), []string{token}))
-	}
-	if res.Exit != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrGitHub, firstLine(trace.Redact(string(res.Out), []string{token})))
-	}
-	return res.Out, nil
+func api(ctx context.Context, g GH, acct Account, token string, args ...string) ([]byte, error) {
+	return g.API(ctx, acct.Host, token, args...)
 }
 
 // Test checks the token and the organization, then stores the token's login as the bot login.
@@ -213,7 +156,7 @@ func Test(ctx context.Context, db *sql.DB, key []byte, gh GH) (string, error) {
 	if token == "" {
 		return "", ErrNoToken
 	}
-	out, err := gh.api(ctx, acct, token, "user", "--jq", ".login")
+	out, err := api(ctx, gh, acct, token, "user", "--jq", ".login")
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +165,7 @@ func Test(ctx context.Context, db *sql.DB, key []byte, gh GH) (string, error) {
 		return "", fmt.Errorf("%w: no login returned", ErrGitHub)
 	}
 	if acct.Org != "" {
-		if _, err := gh.api(ctx, acct, token, "orgs/"+acct.Org, "--jq", ".login"); err != nil {
+		if _, err := api(ctx, gh, acct, token, "orgs/"+acct.Org, "--jq", ".login"); err != nil {
 			return "", err
 		}
 	}
@@ -247,14 +190,14 @@ func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 	if token == "" {
 		return nil, ErrNoToken
 	}
-	out, err := gh.api(ctx, acct, token, "--paginate", "orgs/"+acct.Org+"/repos?per_page=100",
+	out, err := api(ctx, gh, acct, token, "--paginate", "orgs/"+acct.Org+"/repos?per_page=100",
 		"--jq", ".[] | {name: .name, defaultBranch: .default_branch, archived: .archived}")
 	if err != nil {
 		return nil, err
 	}
 	repos := []Repo{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
-	scanner.Buffer(make([]byte, 64<<10), ghMaxOut)
+	scanner.Buffer(make([]byte, 64<<10), ghcli.MaxOut)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
@@ -268,18 +211,4 @@ func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 	}
 	sort.Slice(repos, func(i, j int) bool { return strings.ToLower(repos[i].Name) < strings.ToLower(repos[j].Name) })
 	return repos, nil
-}
-
-func firstLine(s string) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
-	}
-	if len(s) > 300 {
-		s = s[:300]
-	}
-	if s == "" {
-		return "gh exited non-zero"
-	}
-	return s
 }

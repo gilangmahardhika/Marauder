@@ -117,19 +117,19 @@ Each pass, in order:
 9. Start a verify job for each `verifying` card.
 10. Start implement jobs while running implement jobs are under the cap: oldest first among `ready`, `changes_requested`, and `in_progress` with no open attempt, whose requirements are accepted, dependencies are `done`, and `attempts_used < max_attempts`.
 
-Every job snapshots that project's settings at start and uses that snapshot to the end. The push uses the company GitHub token (RFC-049), not the user's token. Before a job reads the repo, `runtime.EnsureCheckout` clones `https://<host>/<org>/<repo>.git` into the project's `repo/` when it is missing, else fetches the base branch. The token goes through askpass and the child environment, never argv.
+Every job snapshots that project's settings at start and uses that snapshot to the end. Clone and fetch use the company GitHub token (RFC-049). The push and the pull request use the card owner's verified token, decrypted at the start of the job and added to that job's redaction list (RFC-054). Before a job reads the repo, `runtime.EnsureCheckout` clones `https://<host>/<org>/<repo>.git` into the project's `repo/` when it is missing, else fetches the base branch. The token goes through askpass and the child environment, never argv.
 
 ### Plan job
 
 1. Route `plan`. No model configured: set `planError` to `router_config` and stop.
 2. When `draftPending`, the planner pack holds the PRD outline. `propose_requirements` writes rows with `source_kind = 'draft'` and `accepted_at` null, then clears `draftPending`.
 3. Otherwise the pack holds accepted requirements without cards, decisions, and existing card titles and dependencies. `create_card` takes `ref`, `title`, `requirementIds`, `decisionIds`, `dependsOn` (card ids or refs from this job), `risk`, and `manual`.
-4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected.
+4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected. The owner is the `created_by` shared by the named requirements. Requirements with different creators are rejected with `ErrOwners`, so the planner splits them. An owner in the arguments is ignored (RFC-054).
 5. Planner tokens are logged as `model_call` with no card id.
 
 ### Implement job
 
-1. Take the card lock. For a real repo, require the company organization, bot login, and token, and the project repo, else block with `github_config`. Require a sandbox image, else `sandbox_config`. Route the task class, and block with `router_config` when the route has no model.
+1. Take the card lock. For a real repo, require the company organization, bot login, and token, and the project repo, else block with `github_config`. Require an owner who is enabled and has a verified GitHub login and a token, else block with `owner_github` (`app.OwnerGitHub`). Require a sandbox image, else `sandbox_config`. Route the task class, and block with `router_config` when the route has no model.
 2. When the worktree is missing, create it (git commands below) and store `branch`, `worktree_path`, and `worktree_gitdir`. On a later attempt, reuse it.
 3. Record the local `refs/heads/<baseBranch>` SHA for the `base_moved` assertion.
 4. Insert an attempt row: `n` is the card's highest `n` plus one, `parent_attempt_id` is the previous attempt, `base_sha` is the worktree HEAD.
@@ -138,7 +138,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 7. Budget hit: end the attempt with outcome `budget`, add one to `attempts_used`, append `budget_stop`, and block with `turn_cap`, `token_cap`, or `wall_cap`.
 8. No new commit since `base_sha`: end with `no_commit`, add one to `attempts_used`, and write a failure note with source `no_commit`. The card stays `in_progress`, and pass step 4 or step 10 picks it up.
 9. New commit: store `commit_sha`, transition `in_progress -> self_check`, and run the gating check on an export of that SHA (0006).
-10. Exit `0`: push the branch, ensure one pull request, rewrite its metadata, end with `checks_passed`, add one to `attempts_used`, transition `self_check -> pr_open`.
+10. Exit `0`: `app.Publish` pushes the branch and ensures one pull request with the owner's token, rewrites its metadata, and requests the reviewers of the card's requirements. Then end with `checks_passed`, add one to `attempts_used`, transition `self_check -> pr_open`. An owner check that fails here blocks with `owner_github` before the push. A failed reviewer request appends `reviewers_requested` with `ok: false` and does not change the card.
 11. Exit non-zero: store the log, run triage for a failure note, end with `checks_failed`, and add one to `attempts_used`. If attempts remain, transition `self_check -> in_progress`. If none remain, block with `attempt_cap`.
 12. If the local base ref changed during the job, append `assertion_failed` and block with `base_moved`.
 13. Release the card lock.
@@ -211,7 +211,7 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 
 | Function | From | Checks | Result |
 | --- | --- | --- | --- |
-| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the project bot. `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy |
+| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy |
 | `RequestChanges(actor, card)` | `human_review`, `approved` | Member, role may request changes | `changes_requested`, approval cleared, note with source `approver`, `runs` row |
 | `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected` |
 | `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
@@ -220,6 +220,8 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 | `AddRequirement(actor, project, id, statement, acceptance)` | intake | Member. A blank id takes the next free `REQ-` number under the project's `intake_state` row lock | `source_kind = 'manual'`, `created_by` is the user id, not accepted |
 | `UpdateRequirement(actor, project, id, statement, acceptance)` | intake | Member, row is manual | A changed hash clears `accepted_at` and `accepted_by` |
 | `DeleteRequirement(actor, project, id)` | intake | Member, row is manual, no card in the project lists the id | Row removed |
+| `SetReviewers(actor, project, id, userIds)` | intake | Member, actor is the row's creator or a Lead Developer. Each reviewer is a tribe member with a verified login and is not the creator (RFC-054) | `requirement_reviewers` replaced for that row |
+| `Ingest(actor, project)` | intake | Member | New parsed rows store `created_by` as the actor. The CLI passes no actor |
 
 HTTP passes the session user. The break-glass CLI passes `--as`. A missing permission returns `app.ErrActionNotListed` when the name is not in `actions`, and `403` when the route is not a card action. A non-member is `404`.
 
@@ -294,7 +296,7 @@ git -C <repo> worktree add -b orch/<card-id> <data>/worktrees/<card-id> refs/orc
 
 The fixture skips the fetch and uses the local base branch. `<url>` is `https://<host>/<owner>/<repo>.git`, built from settings. Fetching into `refs/orchestrator/base` leaves `refs/heads/<base>` alone.
 
-Commit identity is `-c user.name=<botLogin> -c user.email=<botLogin>@users.noreply.github.com`. Signing is off.
+Commit identity is the card owner (RFC-054): `-c user.name=<login> -c user.email=<id>+<login>@users.noreply.github.com`, with the owner's verified login and numeric GitHub id. A card without an owner, the fixture, and the break-glass CLI use the `runtime.Git.Author` they are given. Signing is off.
 
 Push:
 
@@ -324,9 +326,10 @@ gh pr edit URL --body-file BODY
 gh pr comment URL --body-file COMMENT
 gh pr view URL --json url,headRefOid,statusCheckRollup,reviews,comments
 gh api user
+gh api -X POST repos/OWNER/REPO/pulls/NUMBER/requested_reviewers -f reviewers[]=LOGIN
 ```
 
-If `cards.pr_url` is already set, skip `pr create`. The unique index is the second guard. Text from the model goes through `--body-file`, never through argv.
+Push, `pr create`, `pr edit`, and the reviewer request carry the card owner's token. `pr view`, `pr comment`, and the company test carry the company token. If `cards.pr_url` is already set, skip `pr create`. The unique index is the second guard. Text from the model goes through `--body-file`, never through argv.
 
 ## Settings
 

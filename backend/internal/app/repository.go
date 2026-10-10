@@ -31,13 +31,15 @@ type Tools struct {
 	Exec func(context.Context, execx.Child) (execx.Result, error)
 }
 
-func ProjectGit(data string, project tenancy.Project, bot string, tools Tools) runtime.Git {
+// ProjectGit is the project's git runner. author is the card owner for a job,
+// and empty for clone, fetch, and reads.
+func ProjectGit(data string, project tenancy.Project, author runtime.Author, tools Tools) runtime.Git {
 	return runtime.Git{
-		Bin:  tools.Git,
-		Repo: project.RepoPath,
-		Data: settings.ProjectDir(data, project.ID),
-		Bot:  bot,
-		Exec: tools.Exec,
+		Bin:    tools.Git,
+		Repo:   project.RepoPath,
+		Data:   settings.ProjectDir(data, project.ID),
+		Author: author,
+		Exec:   tools.Exec,
 	}
 }
 
@@ -54,7 +56,7 @@ func RepositoryView(ctx context.Context, db *sql.DB, data, projectID string, too
 	if project.RepoPath == "" || tools.Git == "" {
 		return view, nil
 	}
-	git := ProjectGit(data, project, acct.BotLogin, tools)
+	git := ProjectGit(data, project, runtime.Author{}, tools)
 	if git.Cloned() {
 		view.Cloned = true
 		if head, err := git.Head(ctx); err == nil {
@@ -93,7 +95,7 @@ func Sync(ctx context.Context, db *sql.DB, key []byte, data, projectID string, t
 	if err := tenancy.PrepareProject(data, projectID); err != nil {
 		return Repository{}, err
 	}
-	git := ProjectGit(data, project, acct.BotLogin, tools)
+	git := ProjectGit(data, project, runtime.Author{}, tools)
 	if _, err := git.EnsureCheckout(ctx, project.BaseBranch, runtime.Remote{URL: acct.CloneURL(project.Repo), Token: token}); err != nil {
 		return Repository{}, errors.Join(ErrSync, err)
 	}

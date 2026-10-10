@@ -118,6 +118,7 @@ frontend/
   src/lib/ui/Select.svelte
   src/lib/ui/Menu.svelte
   src/lib/ui/SearchSelect.svelte
+  src/lib/ui/MultiSearchSelect.svelte
   src/lib/ui/Panel.svelte
   src/lib/ui/Badge.svelte
   src/lib/ui/Page.svelte
@@ -135,12 +136,14 @@ frontend/
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
   src/lib/components/IntakeActions.svelte
+  src/lib/components/ReviewersPanel.svelte
   src/lib/requirements.ts
   src/lib/api.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
+  src/lib/ui/MultiSearchSelect.test.ts
   src/lib/ui/PasswordInput.test.ts
 ```
 
@@ -160,7 +163,7 @@ frontend/
 | `/` | Board for the selected project |
 | `/intake` | Ingest and accept for the selected project |
 | `/intake/new` | Add a requirement by hand |
-| `/intake/[id]` | Edit or delete a manual requirement |
+| `/intake/[id]` | Edit or delete a manual requirement, and name its reviewers |
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
 | `/account` | Password and the caller's GitHub settings |
@@ -223,7 +226,7 @@ Pages set `message` to "Loading board", "Running the worker", "Saving GitHub set
 
 `src/routes/+page.svelte` calls `GET /api/cards` from `onMount` (or `$effect` on first run).
 
-Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print `status` as text on the row. The row links to `/cards/{id}`.
+Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print `status` as text on the row. When `owner` is set, the row shows the owner's `githubLogin`, or the email when the login is empty (RFC-054). The row links to `/cards/{id}`.
 
 The primary button is "Run". It is enabled when `canRun` is true and `running` is false. It POSTs `/api/runs`, then reloads the list. The live message is "Running the worker" while the request is in flight, and the button is disabled.
 
@@ -235,7 +238,7 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-Show title, raw status, requirement ids, decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA.
+Show title, raw status, owner (login and email, or "None"), requirement ids, decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 
 Render a control only when its name is in `actions`:
 
@@ -269,11 +272,13 @@ A link "Trace" goes to `/cards/{id}/trace`.
 
 `GET /api/projects/{projectId}/intake`.
 
-Each requirement is a block: id, accepted or not, a "Draft" badge when `sourceKind` is `draft`, a "Manual" badge when it is `manual`, statement, acceptance lines, source path or "Added by" with `createdBy`, and links to `linkedCards`. A manual block has an Edit link to `/intake/[id]`. Decisions are a list under them: id and statement.
+Each requirement is a block: id, accepted or not, a "Draft" badge when `sourceKind` is `draft`, a "Manual" badge when it is `manual`, statement, acceptance lines, source path or "Added by" with `createdBy`, and links to `linkedCards`. A parsed block with `createdBy` also says "Ingested by" that email. The block footer lists `reviewers` as badges, by GitHub login. A manual block has an Edit link to `/intake/[id]`. A parsed block whose `canEditReviewers` is true has a Reviewers link to the same page (RFC-054). Decisions are a list under them: id and statement.
 
 Button "Ingest" POSTs `ingest` and replaces the list. When the response has `skipped`, a notice names those ids and says the manual text was kept. Button "Add requirement" links to `/intake/new`. Button "Accept unaccepted ids" POSTs `accept` with the ids on screen whose `accepted` is false. It renders only when `canAccept` is true, and it is disabled while `draftPending` is true (RFC-053).
 
-`/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no form. Field errors come from the API `fields`.
+`/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
+
+Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by GitHub login with the email as the detail line. On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
 
 While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Saving acceptance".
 
@@ -301,7 +306,7 @@ Disable the submit button and set the live message while the PUT is in flight. O
 
 Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
 
-GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that clones, pushes, and pull requests use the company account. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`.
+GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that cards built from requirements the caller brought in are committed, pushed, and opened as pull requests with this token (RFC-054). Clones and fetches still use the company account. The panel header shows a "Verified" or "Not verified" badge from `verified`. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`. After the test, reload `GET /api/me/github` so the login and badge show what GitHub reported.
 
 ### Users and tribes
 
@@ -386,6 +391,8 @@ Every page body starts with `Page`: the `h1`, an optional description, an option
 Buttons size to their label and never stretch. `full` is only for the login submit. `Panel` has a title row with an optional `actions` snippet and an optional `footer` snippet. The footer is a right-aligned action bar. Admin settings pages (Company GitHub, Router, and an LLM family) put the primary Save in the last panel's footer, after "Test connection" where the page has one. Project settings pages and the user edit page end in `SaveBar`, a bar that sticks to the bottom of the viewport with the primary Save. `FieldGroup` groups related controls under one legend. `Row` is one entry in a bordered list, such as one model id, with a remove button. Tables use `Table` and the `th`, `tr`, and `td` classes from `src/lib/ui/control.ts`: an 11px uppercase header and 48px rows.
 
 `SearchSelect` is the shared searchable select for long lists: the project switcher, Router models, and tribe member search. It is an ARIA combobox. Typing filters options by label and detail, arrow keys move, Enter picks, and Escape closes and restores the selected label. An optional `emptyLabel` adds a first option that clears the value. `onchange` fires only when a pick changes the value. Short fixed lists, such as protocol or role, keep the native `Select`.
+
+`MultiSearchSelect` picks several values from a long list, such as requirement reviewers. It wraps `SearchSelect`: a pick adds a chip and clears the input, and picked values leave the option list. Each chip has a "Remove {label}" button. An optional `max` hides the input at the limit. `disabled` shows the chips without remove buttons.
 
 System font stack: `system-ui, sans-serif`. Below 720px board groups stack in one column. From 720px they sit in one row of lanes at least 15rem wide that scrolls sideways when the window is narrow.
 

@@ -61,7 +61,7 @@ A successful body never includes `error`.
 | `done` | `finished` | `[]` |
 | `blocked` | `stopped` | `unblock`, unless release is refused |
 
-`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member. `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member.
+`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member.
 
 ## Blocked reasons
 
@@ -75,6 +75,7 @@ A successful body never includes `error`.
 | `review_parse` | Two reviewer replies had no parseable verdict | `ready` |
 | `router_config` | The route for the needed task class has no model | `ready` |
 | `github_config` | The company organization, bot login, or token is missing, or the project names no repo | `ready` |
+| `owner_github` | The card has no owner, or the owner is disabled, has no verified GitHub login, or has no token (RFC-054) | `ready` |
 | `sandbox_config` | Sandbox image missing or not pinned, or a check command fails parsing | `ready` |
 | `check_error` | A check could not start | `ready` |
 | `base_moved` | The local base branch ref changed during a job | `ready` |
@@ -312,7 +313,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -325,6 +326,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
 | `assertion_failed` | `name`, `detail` |
+| `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 
 Every payload passes through `redact` before insert. A new transition may include `actorId`. Existing rows stay as stored. Nothing updates an event to backfill it.
 
@@ -410,6 +412,28 @@ CREATE TABLE project_links (
 
 `00008` widens the `requirements.source_kind` check to `('prd', 'rfc', 'draft', 'manual')` and adds `requirements.created_by TEXT`, the user id that added a manual row (RFC-053). It is null for parsed and drafted rows. A manual row has `source_path = ''` and `heading` equal to its id.
 
+`00009` is the card owner (RFC-054):
+
+```sql
+ALTER TABLE cards ADD COLUMN owner_id TEXT REFERENCES users(id);
+
+CREATE TABLE requirement_reviewers (
+  project_id TEXT NOT NULL,
+  requirement_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  added_by TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, requirement_id, user_id),
+  FOREIGN KEY (project_id, requirement_id) REFERENCES requirements(project_id, id) ON DELETE CASCADE
+);
+
+ALTER TABLE user_github ADD COLUMN github_id BIGINT;
+ALTER TABLE user_github ADD COLUMN verified_at TEXT;
+CREATE UNIQUE INDEX user_github_verified_login ON user_github(host, lower(login)) WHERE verified_at IS NOT NULL;
+```
+
+From `00009`, `requirements.created_by` is also set on a parsed row: the user who ran the ingest that first inserted it. A re-ingest keeps it. A CLI ingest leaves it null. `cards.owner_id` is the `created_by` shared by every requirement the card lists, set by `create_card`. It is null when that value is null. `user_github.verified_at` and `github_id` are set by the token test and cleared when the token or host changes.
+
 ## Accounts and membership API
 
 `POST /api/session`
@@ -433,7 +457,7 @@ CREATE TABLE project_links (
 
 A wrong password is `401`. Five wrong passwords for that email pause further attempts for one minute with `429`. A disabled user is `401`. The bearer is 32 random bytes. The row stores its SHA-256. The process checks the hash and `expires_at` on every request. `DELETE /api/session` requires the bearer and deletes that row.
 
-`GET /api/me` returns the `user` object plus `githubLogin` and `githubTokenSet`.
+`GET /api/me` returns the `user` object plus `githubLogin`, `githubTokenSet`, and `githubVerified`.
 
 `PUT /api/me/password`
 
@@ -446,10 +470,10 @@ A wrong current password is `401`. A short new password is `422` on `newPassword
 `GET /api/me/github` and `PUT /api/me/github` are the caller's GitHub settings.
 
 ```json
-{ "host": "github.com", "login": "ada", "tokenSet": false }
+{ "host": "github.com", "login": "ada", "tokenSet": false, "verified": false }
 ```
 
-PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and token rules as a secret field apply. One user cannot call this route for someone else.
+PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and token rules as a secret field apply. One user cannot call this route for someone else. A new token, a cleared token, a changed host, or a changed login sets `verified` to false until the next test.
 
 `GET /api/users` and `POST /api/users` require the admin flag. A non-admin is `403`.
 
@@ -504,6 +528,7 @@ A project object is:
   "group": "review",
   "actions": ["approve", "request_changes", "reject"],
   "projectId": "proj_0123456789ab",
+  "owner": { "id": "user_0123456789ab", "email": "ada@example.com", "githubLogin": "ada" },
   "unblockTo": null,
   "requirementIds": ["REQ-001"],
   "decisionIds": ["RFC-018"],
@@ -529,7 +554,7 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call.
+`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`.
 
 ## Board and intake
 
@@ -586,9 +611,12 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
       "acceptance": ["A fixture PRD yields one record per id."],
       "accepted": false,
       "createdBy": null,
+      "canEditReviewers": true,
+      "reviewers": [{ "id": "user_0123456789ab", "email": "grace@example.com", "githubLogin": "grace" }],
       "linkedCards": []
     }
   ],
+  "reviewerOptions": [{ "id": "user_0123456789ab", "email": "grace@example.com", "githubLogin": "grace" }],
   "decisions": [
     {
       "id": "RFC-001",
@@ -601,7 +629,15 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
 
 `POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
-`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added a manual row, and `null` for other rows.
+`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
+
+`PUT /api/projects/{projectId}/requirements/{id}/reviewers` replaces the reviewers of one requirement, parsed or manual, and returns the intake shape.
+
+```json
+{ "userIds": ["user_0123456789ab"] }
+```
+
+Allowed for the row's creator or a Lead Developer member. Anyone else is `403`, and a non-member is `404`. An unknown id is `404`. A user id that is not a tribe member with a verified login, or is the row's creator, is `422` on `userIds`. At most 15 reviewers.
 
 `POST /api/projects/{projectId}/requirements` adds a manual requirement. Any member may call it.
 
@@ -643,7 +679,7 @@ When nothing can move, the response is still `200`:
 { "sha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c" }
 ```
 
-The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
+The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, rejects the card owner (`403`, RFC-054), and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
 
 `POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`.
 
@@ -674,7 +710,7 @@ Secret fields are write-only.
 | Failure | `422` with `fields`. Files on disk are unchanged |
 | Caller | Lead Developer member for project sections. Admin for the company GitHub account. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
 
-Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` uses the caller's stored token and returns `{ "ok": true, "login": "octocat" }` or `{ "ok": false, "message": "authentication failed" }`.
+Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` runs `gh api user` with the caller's stored token in the child environment. On success it stores the login and numeric id GitHub reports, sets `verified_at`, and returns `{ "ok": true, "login": "octocat" }`. A failure returns `{ "ok": false, "message": "authentication failed" }` and leaves the row unverified. A login another user already holds as verified on that host is `{ "ok": false, "message": "login already verified by another user" }`.
 
 `GET /api/settings/github` is the company GitHub account (RFC-049). Admin only.
 

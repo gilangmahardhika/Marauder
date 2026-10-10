@@ -73,6 +73,8 @@ Superseded in part by RFC-049 and RFC-050 in [0006-company-github-and-linked-pro
 
 Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-models-and-router.md). Model keys are in the service secrets file, not the project secrets file.
 
+Superseded in part by RFC-054 in [0009-card-owner.md](0009-card-owner.md). Jobs push and open pull requests with the card owner's verified token. Clone and fetch keep the company token.
+
 ## RFC-048 Workers run per project
 
 Each project has its own data directory outside that project's repo, its own `worker.lock`, and its own deploy lock. Workers for different projects run at the same time. Inside one project, one deploy runs at a time, and implementation stays under that project's cap. A card in `approved` does not deploy until a Lead Developer who is a member starts deploy. The push refspec stays `refs/heads/orch/<card-id>` for that project's remote (RFC-034).

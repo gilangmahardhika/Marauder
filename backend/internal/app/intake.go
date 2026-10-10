@@ -16,8 +16,9 @@ type IngestResult struct {
 }
 
 // Ingest parses the PRD and RFC paths from configDir/config.yaml inside repo
-// and stores the records on projectID.
-func Ingest(ctx context.Context, db *sql.DB, projectID, repo, configDir string) (IngestResult, error) {
+// and stores the records on projectID. actorID is the session user, or empty
+// for the CLI.
+func Ingest(ctx context.Context, db *sql.DB, projectID, actorID, repo, configDir string) (IngestResult, error) {
 	cfg, err := intake.LoadConfig(configDir)
 	if err != nil {
 		return IngestResult{}, err
@@ -34,7 +35,7 @@ func Ingest(ctx context.Context, db *sql.DB, projectID, repo, configDir string) 
 	if err != nil {
 		return IngestResult{}, err
 	}
-	skipped, err := intake.Apply(ctx, db, projectID, parsed)
+	skipped, err := intake.Apply(ctx, db, projectID, actorID, parsed)
 	if err != nil {
 		return IngestResult{}, err
 	}

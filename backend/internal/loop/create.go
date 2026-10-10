@@ -45,11 +45,19 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 		in.ProjectID = "proj_default"
 	}
 	ids := stringList(in.Args["requirementIds"])
-	for _, id := range ids {
-		var accepted sql.NullString
-		err := in.DB.QueryRowContext(ctx, `SELECT accepted_at FROM requirements WHERE id = $1 AND project_id = $2`, id, in.ProjectID).Scan(&accepted)
+	owner := ""
+	for i, id := range ids {
+		var accepted, creator sql.NullString
+		err := in.DB.QueryRowContext(ctx, `
+			SELECT accepted_at, created_by FROM requirements WHERE id = $1 AND project_id = $2`,
+			id, in.ProjectID).Scan(&accepted, &creator)
 		if err != nil || !accepted.Valid || accepted.String == "" {
 			return board.Card{}, ErrRequirement
+		}
+		if i == 0 {
+			owner = creator.String
+		} else if creator.String != owner {
+			return board.Card{}, ErrOwners
 		}
 	}
 	if _, ok := in.Args["command"]; ok {
@@ -70,6 +78,7 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 	risk, _ := in.Args["risk"].(string)
 	card, err := board.InsertCard(ctx, in.DB, board.Card{
 		ProjectID:      in.ProjectID,
+		OwnerID:        owner,
 		Title:          title,
 		Status:         "backlog",
 		Risk:           risk,
