@@ -53,18 +53,18 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 
 ## Sprint 4: A scripted implementer can commit
 
-- [ ] Fake provider replays scripts by task class and attempt. It records the system and user strings.
-- [ ] Tool loop stops at `maxTurns`. Unknown tools and a scripted `deploy` call are rejected and do not exec.
-- [ ] `create_card` cannot set the check command. Checks come from settings.
-- [ ] No commit counts as an implementer attempt and writes a `no_commit` note. `run_local_check` inside the attempt does not move status.
-- [ ] Prompt packs wrap untrusted text in the markers from the security guide. Commit trailers are `Orchestrator-Card`, `Orchestrator-Attempt`, and `Model`.
-- [ ] `TestImplementerTools`
-- [ ] `TestToolNotInProfile`
-- [ ] `TestNoCommitAttempt`
-- [ ] `TestToolCheckDoesNotMove`
-- [ ] `TestCommitIdentity`
-- [ ] `TestPromptMarkers`
-- [ ] `TestCreateCardIgnoresCommand`
+- [x] Fake provider replays scripts by task class and attempt. It records the system and user strings.
+- [x] Tool loop stops at `maxTurns`. Unknown tools and a scripted `deploy` call are rejected and do not exec.
+- [x] `create_card` cannot set the check command. Checks come from settings.
+- [x] No commit counts as an implementer attempt and writes a `no_commit` note. `run_local_check` inside the attempt does not move status.
+- [x] Prompt packs wrap untrusted text in the markers from the security guide. Commit trailers are `Orchestrator-Card`, `Orchestrator-Attempt`, and `Model`.
+- [x] `TestImplementerTools`
+- [x] `TestToolNotInProfile`
+- [x] `TestNoCommitAttempt`
+- [x] `TestToolCheckDoesNotMove`
+- [x] `TestCommitIdentity`
+- [x] `TestPromptMarkers`
+- [x] `TestCreateCardIgnoresCommand`
 
 ## Sprint 5: One pull request, then a cold review
 

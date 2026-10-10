@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
+	"syscall"
 	"testing"
 
 	"orchestrator/backend/internal/runtime"
@@ -174,13 +174,20 @@ func TestCheckExit(t *testing.T) {
 	}
 }
 
-var fixtureMu sync.Mutex
-
 func openFixture(t *testing.T) string {
 	t.Helper()
-	fixtureMu.Lock()
-	t.Cleanup(func() { fixtureMu.Unlock() })
 	repo := filepath.Join(moduleRoot(t), "testdata", "fixture-repo")
+	lock, err := os.OpenFile(repo+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		lock.Close()
+	})
 	git := lookGit(t)
 	if err := os.Chmod(filepath.Join(repo, "check.sh"), 0o755); err != nil {
 		t.Fatal(err)

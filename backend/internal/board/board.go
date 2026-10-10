@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,6 +23,7 @@ const maxConns = 4
 var (
 	ErrNotFound = errors.New("not found")
 	ErrConflict = errors.New("conflict")
+	ErrLocked   = errors.New("locked")
 )
 
 type DBTX interface {
@@ -30,22 +32,27 @@ type DBTX interface {
 }
 
 type Card struct {
-	ID            string
-	Title         string
-	Status        string
-	Risk          string
-	Manual        bool
-	AttemptsUsed  int
-	MaxAttempts   int
-	Branch        string
-	PRURL         string
-	HeadSHA       string
-	ApprovedSHA   string
-	DeployedSHA   string
-	BlockedReason string
-	FailureReason string
-	CreatedAt     string
-	UpdatedAt     string
+	ID             string
+	Title          string
+	Status         string
+	Risk           string
+	Manual         bool
+	AttemptsUsed   int
+	MaxAttempts    int
+	Branch         string
+	WorktreePath   string
+	WorktreeGitDir string
+	PRURL          string
+	HeadSHA        string
+	ApprovedSHA    string
+	DeployedSHA    string
+	BlockedReason  string
+	FailureReason  string
+	LocalCheck     string
+	DevCheck       string
+	RequirementIDs []string
+	CreatedAt      string
+	UpdatedAt      string
 }
 
 type StatusWrite struct {
@@ -139,17 +146,25 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 	if card.MaxAttempts == 0 {
 		card.MaxAttempts = 3
 	}
-	_, err := q.ExecContext(ctx, `
+	if card.RequirementIDs == nil {
+		card.RequirementIDs = []string{}
+	}
+	reqJSON, err := json.Marshal(card.RequirementIDs)
+	if err != nil {
+		return Card{}, err
+	}
+	_, err = q.ExecContext(ctx, `
 		INSERT INTO cards (
 			id, title, requirement_ids_json, decision_ids_json, depends_on_json,
-			risk, service, status, manual, attempts_used, max_attempts,
-			environment, created_at, updated_at
+			risk, service, status, manual, local_check, dev_check,
+			attempts_used, max_attempts, environment, created_at, updated_at
 		) VALUES (
-			$1, $2, '[]', '[]', '[]',
-			$3, 'default', $4, $5, $6, $7,
-			'dev', $8, $9
+			$1, $2, $3, '[]', '[]',
+			$4, 'default', $5, $6, $7, $8,
+			$9, $10, 'dev', $11, $12
 		)`,
-		card.ID, card.Title, card.Risk, card.Status, card.Manual,
+		card.ID, card.Title, string(reqJSON), card.Risk, card.Status, card.Manual,
+		nullString(card.LocalCheck), nullString(card.DevCheck),
 		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt,
 	)
 	if err != nil {
@@ -160,23 +175,32 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 
 func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 	var card Card
+	var reqJSON string
 	err := q.QueryRowContext(ctx, `
 		SELECT id, title, status, risk, manual, attempts_used, max_attempts,
-			COALESCE(branch, ''), COALESCE(pr_url, ''), COALESCE(head_sha, ''),
+			COALESCE(branch, ''), COALESCE(worktree_path, ''), COALESCE(worktree_gitdir, ''),
+			COALESCE(pr_url, ''), COALESCE(head_sha, ''),
 			COALESCE(approved_sha, ''), COALESCE(deployed_sha, ''),
 			COALESCE(blocked_reason, ''), COALESCE(failure_reason, ''),
-			created_at, updated_at
+			COALESCE(local_check, ''), COALESCE(dev_check, ''),
+			requirement_ids_json, created_at, updated_at
 		FROM cards WHERE id = $1`, id).Scan(
 		&card.ID, &card.Title, &card.Status, &card.Risk, &card.Manual,
-		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.PRURL,
-		&card.HeadSHA, &card.ApprovedSHA, &card.DeployedSHA, &card.BlockedReason,
-		&card.FailureReason, &card.CreatedAt, &card.UpdatedAt,
+		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
+		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
+		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,
+		&card.LocalCheck, &card.DevCheck, &reqJSON, &card.CreatedAt, &card.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound
 	}
 	if err != nil {
 		return Card{}, err
+	}
+	if reqJSON != "" {
+		if err := json.Unmarshal([]byte(reqJSON), &card.RequirementIDs); err != nil {
+			return Card{}, err
+		}
 	}
 	return card, nil
 }
@@ -253,6 +277,13 @@ func CountGates(ctx context.Context, q DBTX, cardID string) (int, error) {
 	var n int
 	err := q.QueryRowContext(ctx, `SELECT count(*) FROM gates WHERE card_id = $1`, cardID).Scan(&n)
 	return n, err
+}
+
+func nullString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 func nullValue(v sql.NullString) any {

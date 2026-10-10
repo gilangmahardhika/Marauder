@@ -70,6 +70,14 @@ func (g Git) Status(ctx context.Context, repo string) error {
 	return err
 }
 
+func (g Git) WorktreeHead(ctx context.Context, wt Worktree) (string, error) {
+	res, err := g.run(ctx, g.worktreeArgv(wt, "rev-parse", "HEAD")...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(res.Out)), nil
+}
+
 func (g Git) Head(ctx context.Context) (string, error) {
 	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "rev-parse", "HEAD")...)
 	if err != nil {

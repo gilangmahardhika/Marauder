@@ -1,2 +1,3 @@
 .env
 testdata/fixture-repo/.git/
+testdata/fixture-repo.lock
