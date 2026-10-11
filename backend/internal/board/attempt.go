@@ -134,3 +134,52 @@ func ReleaseLock(ctx context.Context, q DBTX, cardID, holder string) error {
 	)
 	return err
 }
+
+// SetAttemptOutcome records the outcome of an attempt that already ended.
+func SetAttemptOutcome(ctx context.Context, q DBTX, id, outcome string) error {
+	_, err := q.ExecContext(ctx, `UPDATE attempts SET outcome = $2 WHERE id = $1`, id, outcome)
+	return err
+}
+
+// AddAttemptTokens adds one model call's token counts to the attempt.
+func AddAttemptTokens(ctx context.Context, q DBTX, id string, input, output int) error {
+	_, err := q.ExecContext(ctx, `
+		UPDATE attempts SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3 WHERE id = $1`,
+		id, input, output)
+	return err
+}
+
+// OpenAttempt reports whether the card has an attempt that has not ended.
+func OpenAttempt(ctx context.Context, q DBTX, cardID string) (bool, error) {
+	var open bool
+	err := q.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM attempts WHERE card_id = $1 AND ended_at IS NULL)`, cardID).Scan(&open)
+	return open, err
+}
+
+// SetLocalCheck stores the card's local check command.
+func SetLocalCheck(ctx context.Context, q DBTX, cardID, command string) error {
+	_, err := q.ExecContext(ctx, `
+		UPDATE cards SET local_check = $2, updated_at = $3 WHERE id = $1`,
+		cardID, command, time.Now().UTC().Format(time.RFC3339))
+	return err
+}
+
+// ReconcileProject ends the project's open attempts as cancelled and deletes
+// its card locks. Call it only when no job of the project is alive.
+func ReconcileProject(ctx context.Context, q DBTX, projectID string) (int, error) {
+	res, err := q.ExecContext(ctx, `
+		UPDATE attempts SET ended_at = $2, outcome = 'cancelled'
+		WHERE ended_at IS NULL AND card_id IN (SELECT id FROM cards WHERE project_id = $1)`,
+		projectID, time.Now().UTC().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	_, err = q.ExecContext(ctx, `
+		DELETE FROM locks WHERE card_id IN (SELECT id FROM cards WHERE project_id = $1)`, projectID)
+	return int(n), err
+}

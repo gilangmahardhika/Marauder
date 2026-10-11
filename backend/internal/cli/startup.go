@@ -105,7 +105,7 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	srv.DB = db
 	srv.Data = paths.Data
 	srv.TokenKey = key
-	srv.Tools = app.Tools{Git: lookTool("git"), GH: lookTool("gh")}
+	srv.Tools = jobTools()
 	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
 		srv.Cloud = true
 		srv.AllowHosts = hostAllowlist(opts.getenv)
@@ -118,7 +118,8 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		worker.Run(ctx, db, paths.Data, 2*time.Second, func(format string, args ...any) {
+		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools})
+		worker.Run(ctx, db, paths.Data, 2*time.Second, jobs, func(format string, args ...any) {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})
 	}()
@@ -139,9 +140,15 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 }
 
 // lookTool returns an absolute path, or "" when the tool is not installed.
-func lookTool(name string) string {
+// The fallbacks are absolute install paths checked when PATH has no match.
+func lookTool(name string, fallbacks ...string) string {
 	path, err := exec.LookPath(name)
 	if err != nil {
+		for _, candidate := range fallbacks {
+			if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+				return candidate
+			}
+		}
 		return ""
 	}
 	abs, err := filepath.Abs(path)
@@ -149,6 +156,15 @@ func lookTool(name string) string {
 		return ""
 	}
 	return abs
+}
+
+func jobTools() app.Tools {
+	return app.Tools{
+		Git:    lookTool("git"),
+		GH:     lookTool("gh"),
+		Podman: lookTool("podman", "/opt/podman/bin/podman", "/opt/homebrew/bin/podman", "/usr/local/bin/podman"),
+		Docker: lookTool("docker", "/usr/local/bin/docker", "/opt/homebrew/bin/docker"),
+	}
 }
 
 func bootstrapAdmin(opts Options, db *sql.DB) error {

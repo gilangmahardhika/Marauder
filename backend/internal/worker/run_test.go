@@ -42,11 +42,16 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 
 func startWorker(t *testing.T, db *sql.DB, data string) context.CancelFunc {
 	t.Helper()
+	return startWorkerJobs(t, db, data, worker.Jobs{})
+}
+
+func startWorkerJobs(t *testing.T, db *sql.DB, data string, jobs worker.Jobs) context.CancelFunc {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})
 	go func() {
 		defer close(stopped)
-		worker.Run(ctx, db, data, 20*time.Millisecond, t.Logf)
+		worker.Run(ctx, db, data, 20*time.Millisecond, jobs, t.Logf)
 	}()
 	t.Cleanup(func() {
 		cancel()

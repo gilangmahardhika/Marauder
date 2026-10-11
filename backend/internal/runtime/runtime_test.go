@@ -92,6 +92,51 @@ func TestHookNotRun(t *testing.T) {
 	}
 }
 
+func TestDiscardChangesKeepsCommits(t *testing.T) {
+	repo := t.TempDir()
+	initRepo(t, repo)
+	data := dataDir(t)
+	g := newGit(t, repo, data)
+	ctx := context.Background()
+	wt, err := g.EnsureWorktree(ctx, "card_abcdef012346", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt.Path, "kept.txt"), []byte("kept\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.Commit(ctx, wt, "kept"); err != nil {
+		t.Fatal(err)
+	}
+	head, err := g.WorktreeHead(ctx, wt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt.Path, "kept.txt"), []byte("half done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(wt.Path, "stray"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wt.Path, "stray", "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := g.DiscardChanges(ctx, wt); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(wt.Path, "kept.txt"))
+	if err != nil || string(body) != "kept\n" {
+		t.Fatalf("kept.txt = %q, %v", body, err)
+	}
+	if _, err := os.Stat(filepath.Join(wt.Path, "stray")); !os.IsNotExist(err) {
+		t.Fatalf("untracked dir stat = %v", err)
+	}
+	if after, _ := g.WorktreeHead(ctx, wt); after != head {
+		t.Fatalf("head moved from %s to %s", head, after)
+	}
+}
+
 func TestFsmonitorOff(t *testing.T) {
 	repo := t.TempDir()
 	initRepo(t, repo)

@@ -9,12 +9,13 @@ import (
 	"sync"
 	"time"
 
+	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/settings"
 )
 
 // Run starts one loop per project and picks up projects created later. It
-// returns when ctx is cancelled and every project loop has stopped.
-func Run(ctx context.Context, db *sql.DB, dataRoot string, interval time.Duration, logf func(string, ...any)) {
+// returns when ctx is cancelled and every project loop and job has stopped.
+func Run(ctx context.Context, db *sql.DB, dataRoot string, interval time.Duration, jobs Jobs, logf func(string, ...any)) {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
@@ -35,7 +36,7 @@ func Run(ctx context.Context, db *sql.DB, dataRoot string, interval time.Duratio
 			wg.Add(1)
 			go func(id string) {
 				defer wg.Done()
-				projectLoop(ctx, db, dataRoot, id, interval, logf)
+				projectLoop(ctx, db, dataRoot, id, interval, jobs, logf)
 			}(id)
 		}
 		select {
@@ -70,11 +71,13 @@ func Drain(ctx context.Context, db *sql.DB, dataRoot, projectID string) (Result,
 	return total, ctx.Err()
 }
 
-func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, interval time.Duration, logf func(string, ...any)) {
+func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, interval time.Duration, jobs Jobs, logf func(string, ...any)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+	slots := NewSlots()
 	var lock *os.File
 	defer func() {
+		slots.Wait()
 		if lock != nil {
 			lock.Close()
 		}
@@ -101,8 +104,13 @@ func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, in
 				}
 				continue
 			}
+			if n, err := board.ReconcileProject(ctx, db, projectID); err != nil && ctx.Err() == nil {
+				logf("worker: project %s reconcile: %v", projectID, err)
+			} else if n > 0 {
+				logf("worker: project %s cancelled %d open attempts", projectID, n)
+			}
 		}
-		open, err := Pending(ctx, db, projectID)
+		open, err := Wake(ctx, db, projectID)
 		if err != nil && ctx.Err() == nil {
 			logf("worker: project %s: %v", projectID, err)
 		}
@@ -111,6 +119,9 @@ func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, in
 				logf("worker: project %s pass: %v", projectID, err)
 			} else if result.Changed() {
 				logf("worker: project %s created %d promoted %d", projectID, result.Created, result.Promoted)
+			}
+			if _, err := StartQueued(ctx, db, dataRoot, projectID, jobs, slots, logf); err != nil && ctx.Err() == nil {
+				logf("worker: project %s start: %v", projectID, err)
 			}
 		}
 		select {

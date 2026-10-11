@@ -126,9 +126,36 @@ func TestCardRunNeedsDependencies(t *testing.T) {
 func TestCardRunNotReady(t *testing.T) {
 	srv := accountServer(t)
 	token := runMember(t, srv, "lead_developer")
+	for _, status := range []string{"backlog", "pr_open", "blocked"} {
+		card := statusCard(t, srv, status)
+		if rec := postJSON(t, srv, "/api/projects/proj_default/cards/"+card.ID+"/run", token, map[string]any{}); rec.Code != 409 {
+			t.Fatalf("%s run = %d %s, want 409", status, rec.Code, rec.Body.String())
+		}
+	}
+	running := statusCard(t, srv, "in_progress")
+	if err := board.InsertAttempt(context.Background(), srv.DB, board.Attempt{CardID: running.ID, N: 1, TaskClass: "implement"}); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/projects/proj_default/cards/" + running.ID
+	if got := decodeRunCard(t, getAuth(t, srv, path, token).Body.Bytes()); slices.Contains(got.Actions, "run") {
+		t.Fatalf("running card offers run: %+v", got)
+	}
+	if rec := postJSON(t, srv, path+"/run", token, map[string]any{}); rec.Code != 409 {
+		t.Fatalf("open attempt run = %d %s, want 409", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCardRunResumesInProgress(t *testing.T) {
+	srv := accountServer(t)
+	token := runMember(t, srv, "developer")
 	card := statusCard(t, srv, "in_progress")
-	if rec := postJSON(t, srv, "/api/projects/proj_default/cards/"+card.ID+"/run", token, map[string]any{}); rec.Code != 409 {
-		t.Fatalf("run = %d %s, want 409", rec.Code, rec.Body.String())
+	path := "/api/projects/proj_default/cards/" + card.ID
+	if got := decodeRunCard(t, getAuth(t, srv, path, token).Body.Bytes()); !slices.Contains(got.Actions, "run") {
+		t.Fatalf("idle in_progress card has no run: %+v", got)
+	}
+	rec := postJSON(t, srv, path+"/run", token, map[string]any{})
+	if rec.Code != 200 || !decodeRunCard(t, rec.Body.Bytes()).Queued {
+		t.Fatalf("run = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

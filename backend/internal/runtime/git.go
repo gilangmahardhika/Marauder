@@ -81,6 +81,16 @@ func (g Git) Commit(ctx context.Context, wt Worktree, message string) error {
 	return err
 }
 
+// DiscardChanges drops uncommitted edits and untracked files from the
+// worktree, so an attempt starts from the worktree's last commit.
+func (g Git) DiscardChanges(ctx context.Context, wt Worktree) error {
+	if _, err := g.run(ctx, g.worktreeArgv(wt, "reset", "--hard", "--quiet", "HEAD")...); err != nil {
+		return err
+	}
+	_, err := g.run(ctx, g.worktreeArgv(wt, "clean", "-fd", "--quiet")...)
+	return err
+}
+
 func (g Git) Status(ctx context.Context, repo string) error {
 	_, err := g.run(ctx, append(g.prefix(), "-C", repo, "status", "--porcelain")...)
 	return err

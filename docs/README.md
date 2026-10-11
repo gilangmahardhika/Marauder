@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-068`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-069`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -21,6 +21,8 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0014-repository-check.md](rfc/0014-repository-check.md) | Decision `RFC-060`. GitHub confirms a project's repository and base branch before they are saved |
 | [rfc/0015-card-runs.md](rfc/0015-card-runs.md) | Decision `RFC-061`. A run request names one ready card, and the board shows it as queued |
 | [rfc/0016-worker-first-slice.md](rfc/0016-worker-first-slice.md) | Decision `RFC-062`. `serve` runs a worker per project that makes one card per accepted requirement without a model |
+| [rfc/0017-implement-job.md](rfc/0017-implement-job.md) | Decision `RFC-063`. The worker runs the implement job for queued cards, with real `openai` and `anthropic` clients, up to `pr_open` |
+| [rfc/0018-implementer-finds-files.md](rfc/0018-implementer-finds-files.md) | Decision `RFC-064`. The implementer gets the read-only tools `list_files` and `search_files` |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

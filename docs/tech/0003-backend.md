@@ -60,7 +60,7 @@ Every command runs these steps before its own work:
 | Command | Lock behavior |
 | --- | --- |
 | `serve` | Takes each project's lock and runs that worker. A project whose lock is already held is logged and skipped. The process still serves the others |
-| `run-next --project` | Inserts a `runs` row for that project. If that project's lock is free, takes it, runs `Reconcile` for that project, processes until idle, exits. If held, prints `queued for the running server` and exits `0`. `Reconcile` is not built yet, so today it only runs the passes (RFC-062) |
+| `run-next --project` | Inserts a `runs` row for that project. If that project's lock is free, takes it, runs `Reconcile` for that project, processes until idle, exits. If held, prints `queued for the running server` and exits `0`. Today `Reconcile` runs only step 1 and the cancel part of step 3, then the passes, then the implement jobs of queued cards, waiting for them, and prints `started N` (RFC-062, RFC-063) |
 | Human gates, `ingest`, `accept`, `status`, `trace` | Do not take it |
 
 ## Transition
@@ -105,7 +105,7 @@ One loop goroutine per project ticks every 2 seconds. Projects run those loops a
 
 A row with `card_id` set asks for that one card (RFC-061). The pass starts that card's implement job when the card is still `ready`, its dependencies are `done`, and the cap has room, and sets `processed_at` on that row when the job starts. A row without `card_id` wakes the whole project as above. The API never starts a job itself.
 
-What runs today (RFC-062): `worker.Run` in `serve` starts one loop per project and retries a busy project lock on the next tick. A pass runs step 3 (promote), then a model-free step 5 that makes one `backlog` card per accepted requirement without a card through `loop.CreateCard`, then closes the project's rows that have no `card_id` when nothing changed. `worker.Drain` repeats passes until one changes nothing. Steps 1, 2, 4, and 6 to 10 are not built, so card-scoped rows stay open and the board shows those cards as queued.
+What runs today (RFC-062): `worker.Run` in `serve` starts one loop per project and retries a busy project lock on the next tick. A pass runs step 3 (promote), then a model-free step 5 that makes one `backlog` card per accepted requirement without a card through `loop.CreateCard`, then closes the project's rows that have no `card_id` when nothing changed. `worker.Drain` repeats passes until one changes nothing. Since RFC-063, each tick with any open row also runs `worker.StartQueued`: step 10 for card-scoped rows only, oldest first, under the cap, setting `processed_at` when a job starts. A `ready` card nobody queued is not started. When a project loop takes its lock, it runs Reconcile step 1 and ends open attempts as `cancelled`. Steps 1, 2, 4, and 6 to 9 are not built.
 
 Jobs run in goroutines beside that project's loop. Implement and plan jobs are capped by that project's `scheduler.implementationCap`. At most one deploy job runs per project. Review and verify jobs are capped at 2 each, per project. Every job takes its card lock with a fresh random holder and releases it with that holder. The job uses that project's repo and that project's data directory.
 
@@ -150,6 +150,8 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 The implement job never calls `deploy`.
 
+What runs today (RFC-063): `app.ImplementCard` moves `ready` or `changes_requested` to `in_progress` first, so the step 1 blocks are legal edges, and copies the project's `checks.local` onto a card that has none. The card lock is held during the tool loop only. A `maxWallMinutesPerAttempt` stop blocks with `wall_cap`. Step 11 writes the last 200 lines of the check as a `local_check` note instead of running triage. A check that cannot start blocks with `check_error`, and a failed push or pull request blocks with `publish_failed`. Not built: `turn_cap`, `token_cap`, triage, and step 12.
+
 ### Tool loop
 
 The provider receives the tool list for the profile. The harness executes each tool and returns the result as the next input of this attempt only.
@@ -157,7 +159,7 @@ The provider receives the tool list for the profile. The harness executes each t
 | Profile | Tools |
 | --- | --- |
 | `planner` | `read_doc`, `propose_requirements`, `create_card` |
-| `implementer` | `read_file`, `read_linked_file`, `edit_file`, `run_local_check`, `commit` |
+| `implementer` | `list_files`, `search_files`, `read_file`, `read_linked_file`, `edit_file`, `run_local_check`, `commit` (RFC-064) |
 | `reviewer` | `read_diff`, `comment_pr`, `verdict` |
 | `triage` | `read_log`, `write_failure_note` |
 
@@ -167,7 +169,7 @@ The implementer and reviewer packs add a `LINKED <name>` block per link inside t
 
 The implementer and reviewer packs open the untrusted section with the card's rules and skills (RFC-055, RFC-056). A rule renders as `CONVENTION <title> (<global or stack name>, <category>) v<n>` followed by its body. A skill renders as `SKILL <slug> v<n>: <title>`, a `use when:` line, and its body. Each block is cut at 16 KiB with `truncated: true`. The blocks share a 64 KiB section cap, and a block that does not fit becomes `CONVENTION <title> omitted: the conventions section is full` or the `SKILL` form of that line. The text passes through marker stripping and redaction like every untrusted section. It cannot add a tool: the tool list is the profile's constant.
 
-`read_file` and `edit_file` go through `safePath` (0006). `run_local_check` takes no arguments. It runs the card's `localCheck` on a working-tree export with network none, and returns the exit code and the last 200 lines. It never moves the card. `commit` stages the worktree and commits with the model's message plus fixed trailers:
+`read_file` and `edit_file` go through `safePath` (0006). `list_files(path)` and `search_files(text)` start from a `safePath` directory, skip `.git` and `.orchestrator`, do not follow symlinks, and return at most 500 paths or 100 matching lines (RFC-064). Each attempt first drops uncommitted changes in the worktree, so it starts from the last commit (RFC-064). `run_local_check` takes no arguments. It runs the card's `localCheck` on a working-tree export with network none, and returns the exit code and the last 200 lines. It never moves the card. `commit` stages the worktree and commits with the model's message plus fixed trailers:
 
 ```text
 Orchestrator-Card: <card id>
@@ -287,6 +289,8 @@ type Provider interface {
 `Request` has `Model`, `System`, `User`, `Tools`, and `MaxTokens`. `Response` has text, tool calls, token counts, and a stop reason.
 
 The `anthropic` protocol uses `anthropic-sdk-go`. The `openai` protocol uses `openai-go/v3` with the family's `baseUrl`, which also covers local OpenAI-compatible servers on loopback without a key. Keys come from the job's secrets snapshot. Logs receive the redacted request.
+
+The clients live in `internal/providers/openai` and `internal/providers/anthropic`. Neither SDK retries or reads the environment. `Tool` has `Name`, `Description`, and `Parameters`, a JSON schema object. `internal/providers/llm` builds the client for a model from the family that lists it, and refuses a remote family without a key. `app.RoutedProvider` applies `router.Call` around those clients and wraps the final failure in `app.ErrProvider` (RFC-063).
 
 A fake implements `Provider` and replays a script file (0005). The REQ-043 fixture uses the fake. Live keys are not required for that suite.
 

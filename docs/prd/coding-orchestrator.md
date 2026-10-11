@@ -111,6 +111,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-066 | GitHub confirms a project's repository |
 | REQ-067 | Run one ready card |
 | REQ-068 | Accepted requirements become cards |
+| REQ-069 | A queued card runs with a real model up to a pull request |
 
 ## Requirements
 
@@ -948,7 +949,7 @@ A Lead Developer, Senior Developer, Developer, or QA member can queue one ready 
 
 - A ready card with done dependencies lists `run` in `actions`. Queueing it twice leaves one open run request, and the card then shows `queued: true` without `run`.
 - A ready card with a dependency that is not done lists it in `waitingOn`, has no `run` action, and a request to run it is `409`.
-- A card that is not ready is `409`.
+- A card that is not ready is `409`, except an `in_progress` or `changes_requested` card with no open attempt (RFC-063, REQ-069).
 - A Product Owner sees no `run` action and is refused with `403`.
 - The top button queues only the ready cards with done dependencies, a repeat queues none, and the board's `readyCount` then reads `0`.
 
@@ -963,6 +964,25 @@ After a requirement is accepted, the project's worker makes one card for it, own
 - An idle pass marks the project's run requests processed, and leaves card-scoped requests open.
 - With `serve` running, an accept row leads to a ready card, then a processed row.
 - `run-next` on a project with one accepted requirement prints `created 1`.
+
+### REQ-069 A queued card runs with a real model up to a pull request
+
+An admin's Test connection on an LLM family sends one short request to its first model and shows the provider's answer or its error, without the key. A family uses the `openai` protocol (OpenAI, Groq, or any compatible server) or the `anthropic` protocol (Anthropic, Deepseek, or any compatible server). When a member presses Run, the project's worker starts the implement job for that card under the project's cap: the routed model edits and commits in the card's worktree, the project's local check runs on the commit in the pinned sandbox image, and an exit `0` pushes the branch and opens the pull request with the card owner's token. A failed check sends the card back to In progress with a failure note until attempts run out. Missing settings block the card with the reason to fix. A ready card nobody queued does not start (RFC-063).
+
+#### Acceptance
+
+- The OpenAI client sends the tools with their schemas and the bearer key to `<baseUrl>/chat/completions`, and maps tool calls and token counts. Its errors do not contain the key.
+- The Anthropic client sends the tools as `input_schema` to `<baseUrl>/v1/messages` with `x-api-key`, and maps text, tool calls, and token counts.
+- A model is served by the client of the family that lists it. A remote family without a key is refused, and a loopback one is allowed.
+- A primary model that fails twice is replaced by the route's fallback. With no fallback, the error is `provider_error` without the key.
+- Test connection returns `ok: true` after one request, and `ok: false` with a status and without the key for a bad key. An unknown family is `404`.
+- A non-fixture check runs as `<engine> run --rm --pull=never --network=none` with the export at `/work`. Docker gets no `relabel`. A floating image, a relative engine, or a shell engine runs nothing.
+- A queued card whose check exits `0` reaches `pr_open` with the pull request URL, a `local_checks` gate, outcome `checks_passed`, and one attempt used.
+- A check that exits non-zero leaves the card `in_progress` with a `local_check` note and nothing pushed, and the card can be run again. With no attempts left it is blocked with `attempt_cap`.
+- A check that is not allowlisted, or an unpinned image on a real repo, blocks with `sandbox_config` before any network call. A card made without a check gets the project's check.
+- A route with no model blocks with `router_config` and makes no attempt. A card with an open attempt does not start.
+- With a cap of 2 and three queued cards, two start, the third waits, then starts oldest first. A ready card nobody queued does not start.
+- An `in_progress` card with no open attempt lists `run`. One with an open attempt, and a `backlog`, `pr_open`, or `blocked` card, are `409`.
 
 ## Non-goals
 
@@ -1070,3 +1090,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 20. GitHub confirms a project's repository (REQ-066).
 21. Run one ready card (REQ-067).
 22. Accepted requirements become cards (REQ-068).
+23. A queued card runs with a real model up to a pull request (REQ-069).

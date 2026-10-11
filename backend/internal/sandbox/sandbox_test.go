@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,53 @@ func TestSandboxFlags(t *testing.T) {
 	devJoined := strings.Join(dev, "\n")
 	if strings.Contains(devJoined, "--network=none") || !strings.Contains(devJoined, "DEV_URL=https://dev.example") {
 		t.Fatalf("dev argv = %s", devJoined)
+	}
+}
+
+func TestExecuteCheckBuildsContainerArgv(t *testing.T) {
+	const image = "example@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	var got []execx.Child
+	run := func(_ context.Context, child execx.Child) (execx.Result, error) {
+		got = append(got, child)
+		return execx.Result{Exit: 3, Out: []byte("FAIL\n")}, nil
+	}
+	opts := sandbox.ExecuteOpts{
+		Command: "npm test", Allow: []string{"npm"}, Engine: "/opt/podman/bin/podman", Image: image,
+		Dir: "/data/exports/att_1-gate", Timeout: time.Minute, MaxOut: 1 << 20,
+	}
+	res, executed, err := sandbox.ExecuteCheck(context.Background(), opts, run)
+	if err != nil || !executed || res.Exit != 3 {
+		t.Fatalf("res = %+v executed %t err %v", res, executed, err)
+	}
+	argv := got[0].Argv
+	joined := strings.Join(argv, " ")
+	if argv[0] != "/opt/podman/bin/podman" || !strings.Contains(joined, "run --rm --pull=never --network=none") ||
+		!strings.Contains(joined, "src=/data/exports/att_1-gate,dst=/work,relabel=private") ||
+		!strings.HasSuffix(joined, image+" npm test") {
+		t.Fatalf("argv = %s", joined)
+	}
+	if got[0].Dir != "" || !slices.Contains(got[0].Env, "PATH=/opt/podman/bin") {
+		t.Fatalf("child = %+v", got[0])
+	}
+
+	opts.Engine = "/usr/local/bin/docker"
+	got = nil
+	if _, _, err := sandbox.ExecuteCheck(context.Background(), opts, run); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(got[0].Argv, " "), "relabel") {
+		t.Fatalf("docker argv has relabel: %v", got[0].Argv)
+	}
+
+	for name, bad := range map[string]sandbox.ExecuteOpts{
+		"floating image":  {Command: "npm test", Allow: []string{"npm"}, Engine: "/opt/podman/bin/podman", Image: "node:22"},
+		"relative engine": {Command: "npm test", Allow: []string{"npm"}, Engine: "podman", Image: image},
+		"shell engine":    {Command: "npm test", Allow: []string{"npm"}, Engine: "/bin/sh", Image: image},
+	} {
+		got = nil
+		if _, executed, err := sandbox.ExecuteCheck(context.Background(), bad, run); err == nil || executed || len(got) != 0 {
+			t.Fatalf("%s: executed %t err %v calls %d", name, executed, err, len(got))
+		}
 	}
 }
 

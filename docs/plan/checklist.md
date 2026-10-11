@@ -389,3 +389,50 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestProjectLockSkips`
 - [x] `TestRunNextPlans`
 - [x] `TestBoardRunningWhileProjectRunOpen`
+
+## Sprint 26: Implement job with real models
+
+- [x] `openai` and `anthropic` protocol clients with tool schemas, chosen by the model's family, behind the router's retry and fallback.
+- [x] Test connection sends one real request.
+- [x] Non-fixture checks run in the pinned image with `podman` or `docker`.
+- [x] The implement job runs queued cards from Ready to a pull request, or back to In progress, or blocked with the reason.
+- [x] The worker starts queued cards under the cap. `serve` and `run-next` run the job.
+- [x] `TestOpenAIToolCall`
+- [x] `TestOpenAIError`
+- [x] `TestAnthropicToolCall`
+- [x] `TestAnthropicBaseURL`
+- [x] `TestForModelPicksProtocol`
+- [x] `TestFallbackAfterRetry`
+- [x] `TestLLMTestCallsProvider`
+- [x] `TestLLMTestBadKey`
+- [x] `TestLLMTestNoKey`
+- [x] `TestExecuteCheckBuildsContainerArgv`
+- [x] `TestImplementReachesPROpen`
+- [x] `TestImplementCheckFailsReturnsInProgress`
+- [x] `TestImplementAttemptCap`
+- [x] `TestImplementBlocksSandboxConfig`
+- [x] `TestImplementBlocksUnpinnedImage`
+- [x] `TestImplementBlocksRouterConfig`
+- [x] `TestImplementRefusesOpenAttempt`
+- [x] `TestPassStartsQueuedCardsUnderCap`
+- [x] `TestPassSkipsUnqueuedReady`
+- [x] `TestCardRunNotReady`
+- [x] `TestCardRunResumesInProgress`
+
+## Sprint 27: The implementer finds files
+
+- [x] `list_files` and `search_files` read the worktree and nothing outside it.
+- [x] A family `baseUrl` pasted with its endpoint works.
+- [x] A rate-limited call waits for `retry-after` and is sent again. A provider error keeps its message in `job_error`.
+- [x] `TestImplementerTools`
+- [x] `TestListAndSearchFiles`
+- [x] `TestOpenAIEndpointBaseURL`
+- [x] `TestAnthropicBaseURL`
+- [x] `TestRateLimitWaitsThenRetries`
+- [x] `TestImplementProviderErrorRecordsMessage`
+- [x] Each attempt starts from the worktree's last commit.
+- [x] `TestDiscardChangesKeepsCommits`
+- [x] The model sees its earlier turns, and the history stays under a free-tier request limit.
+- [x] `TestHistoryKeepsNewestResults`
+- [x] `TestOpenAISendsTurns`
+- [x] `TestAnthropicSendsTurns`

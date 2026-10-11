@@ -29,9 +29,23 @@ type Repository struct {
 
 // Tools are the binaries and the runner used for git and gh calls.
 type Tools struct {
-	Git  string
-	GH   string
-	Exec func(context.Context, execx.Child) (execx.Result, error)
+	Git    string
+	GH     string
+	Podman string
+	Docker string
+	Exec   func(context.Context, execx.Child) (execx.Result, error)
+}
+
+// Engine returns the absolute path of the project's sandbox engine, or "".
+func (t Tools) Engine(name string) string {
+	switch name {
+	case "", "podman":
+		return t.Podman
+	case "docker":
+		return t.Docker
+	default:
+		return ""
+	}
 }
 
 // ProjectGit is the project's git runner. author is the card owner for a job,

@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/intake"
+	"orchestrator/backend/internal/providers/llm"
 	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/worker"
 )
@@ -232,6 +234,28 @@ func (s *Server) llmTest(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
 	}
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	family, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/settings/llm/"), "/test")
+	if !ok || family == "" || strings.Contains(family, "/") {
+		writeErr(w, 404, "not_found", "not found")
+		return
+	}
+	err := app.TestLLM(r.Context(), s.Data, family)
+	if errors.Is(err, app.ErrUnknownFamily) {
+		writeErr(w, 404, "not_found", "family")
+		return
+	}
+	if errors.Is(err, llm.ErrNoKey) {
+		writeFields(w, 422, "validation", "the family has no API key", map[string]string{"apiKey": "set the API key first"})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"ok": false, "message": err.Error()})
+		return
+	}
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
@@ -364,8 +388,10 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if err != nil {
 		queued, waitingOn = false, []string{}
 	}
-	if card.Status == "ready" && !queued && len(waitingOn) == 0 && actionAllowed(role, "run") {
-		actions = append(actions, "run")
+	if !queued && len(waitingOn) == 0 && actionAllowed(role, "run") {
+		if ok, err := app.CanStartImplement(r.Context(), s.DB, card); err == nil && ok {
+			actions = append(actions, "run")
+		}
 	}
 	var owner any
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {

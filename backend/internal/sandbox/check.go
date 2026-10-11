@@ -88,10 +88,14 @@ func DevArgv(engine, image, export, devURL, sha string, check []string) ([]strin
 }
 
 func containerArgv(engine, image, export string, check []string, local bool, devURL, sha string) ([]string, error) {
-	if !pinnedImage(image) {
+	if !PinnedImage(image) {
 		return nil, ErrImage
 	}
-	argv := []string{engine, "run", "--rm"}
+	mount := fmt.Sprintf("type=bind,src=%s,dst=/work", export)
+	if filepath.Base(engine) != "docker" {
+		mount += ",relabel=private"
+	}
+	argv := []string{engine, "run", "--rm", "--pull=never"}
 	if local {
 		argv = append(argv, "--network=none")
 	}
@@ -103,7 +107,7 @@ func containerArgv(engine, image, export string, check []string, local bool, dev
 		"--cpus=2",
 		"--read-only",
 		"--tmpfs", "/tmp:rw,nosuid,size=256m",
-		"--mount", fmt.Sprintf("type=bind,src=%s,dst=/work,relabel=private", export),
+		"--mount", mount,
 		"--workdir", "/work",
 		"--user", "65532:65532",
 		"--env", "CI=1",
@@ -118,7 +122,8 @@ func containerArgv(engine, image, export string, check []string, local bool, dev
 	return argv, nil
 }
 
-func pinnedImage(image string) bool {
+// PinnedImage reports whether image ends in @sha256: and 64 lowercase hex characters.
+func PinnedImage(image string) bool {
 	marker := "@sha256:"
 	i := strings.LastIndex(image, marker)
 	if i < 0 {

@@ -54,8 +54,10 @@ A successful body never includes `error`.
 | --- | --- | --- |
 | `backlog` | `waiting` | `[]` |
 | `ready` | `waiting` | `run` when every `dependsOn` card is `done` and the card has no open run request (RFC-061) |
-| `in_progress`, `self_check` | `running` | `[]` |
-| `pr_open`, `agent_review`, `changes_requested` | `review` | `[]` |
+| `in_progress` | `running` | `run` when the card has no open attempt, its dependencies are `done`, and it has no open run request (RFC-063) |
+| `self_check` | `running` | `[]` |
+| `changes_requested` | `review` | `run` under the same rule as `in_progress` (RFC-063) |
+| `pr_open`, `agent_review` | `review` | `[]` |
 | `human_review` | `review` | `approve`, `request_changes`, `reject` |
 | `approved` | `shipping` | `request_changes`, `reject`, `deploy` |
 | `deploying_dev`, `verifying` | `shipping` | `[]` |
@@ -79,6 +81,7 @@ A successful body never includes `error`.
 | `owner_github` | The card has no owner, or the owner is disabled, has no verified GitHub login, or has no token (RFC-054) | `ready` |
 | `sandbox_config` | Sandbox image missing or not pinned, or a check command fails parsing | `ready` |
 | `check_error` | A check could not start | `ready` |
+| `publish_failed` | The push or the pull request call failed after the gating check passed (RFC-063) | `ready` |
 | `base_moved` | The local base branch ref changed during a job | `ready` |
 | `assertion` | A harness assertion failed | `ready` |
 | `rejected` | The approver rejected the card | `ready` |
@@ -316,7 +319,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -331,6 +334,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `assertion_failed` | `name`, `detail` |
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
+| `job_error` | `message`, the redacted error that stopped an implement job (RFC-063) |
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
 
@@ -805,7 +809,7 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 { "queued": 2, "readyCount": 0 }
 ```
 
-`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, or that has a dependency not `done`, is `409` `conflict`. The card's status does not change.
+`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts.
 
 `POST /api/projects/{projectId}/cards/{id}/approve`
 
@@ -1228,7 +1232,7 @@ The CLI calls the same `internal/app` functions, not the HTTP API. It prints the
 | `orchestrator users bootstrap` | Creates the first admin when `users` is empty. No HTTP twin |
 | `orchestrator ingest --project ID` | `POST /api/projects/{id}/ingest` |
 | `orchestrator accept --project ID` | `POST /api/projects/{id}/accept` with every current unaccepted id |
-| `orchestrator run-next --project ID` | Inserts a `cli` run row. When that project's lock is free, runs worker passes until idle and prints `created N` and `promoted M`, then `no card is ready` when none is. When the lock is held, prints `queued for the running server` (RFC-048, RFC-062) |
+| `orchestrator run-next --project ID` | Inserts a `cli` run row. When that project's lock is free, runs worker passes until idle and prints `created N` and `promoted M`, then runs the implement jobs of queued cards, waits for them, and prints `started N` when it started any, then `no card is ready` when none is. When the lock is held, prints `queued for the running server` (RFC-048, RFC-062, RFC-063) |
 | `orchestrator status --project ID` | `GET /api/projects/{id}/cards` |
 | `orchestrator status --project ID CARD` | `GET /api/projects/{id}/cards/{card}` |
 | `orchestrator trace --project ID CARD` | `GET /api/projects/{id}/cards/{card}/trace` |

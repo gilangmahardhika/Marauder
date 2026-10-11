@@ -35,12 +35,60 @@ var ErrSkill = errors.New("skill is not enabled for this project")
 
 func ImplementerTools() []providers.Tool {
 	return []providers.Tool{
-		{Name: "read_file"},
-		{Name: "read_linked_file"},
-		{Name: "edit_file"},
-		{Name: "run_local_check"},
-		{Name: "commit"},
+		{
+			Name:        "list_files",
+			Description: "List the files under a directory of the card worktree, up to 500 paths.",
+			Parameters:  object(map[string]any{"path": str("Repository-relative directory. Empty or . for the root")}),
+		},
+		{
+			Name:        "search_files",
+			Description: "Find lines that contain the exact text in the card worktree. Returns path:line: text, up to 100 matches.",
+			Parameters:  object(map[string]any{"text": str("Exact text to find, case sensitive")}, "text"),
+		},
+		{
+			Name:        "read_file",
+			Description: "Read a file from the card worktree. Paths are relative to the repository root.",
+			Parameters:  object(map[string]any{"path": str("Repository-relative path")}, "path"),
+		},
+		{
+			Name:        "read_linked_file",
+			Description: "Read a file from a linked project by its project id. Linked projects are read only.",
+			Parameters: object(map[string]any{
+				"project": str("Linked project id"),
+				"path":    str("Path relative to the linked repository root"),
+			}, "project", "path"),
+		},
+		{
+			Name:        "edit_file",
+			Description: "Replace the whole content of a file in the card worktree, creating it when missing.",
+			Parameters: object(map[string]any{
+				"path": str("Repository-relative path"),
+				"text": str("The complete new file content"),
+			}, "path", "text"),
+		},
+		{
+			Name:        "run_local_check",
+			Description: "Run the card's local check on a copy of the worktree. Returns the exit code and the last 200 lines.",
+			Parameters:  object(map[string]any{}),
+		},
+		{
+			Name:        "commit",
+			Description: "Commit every change in the worktree. Call it once the work is done and the local check passes.",
+			Parameters:  object(map[string]any{"message": str("One-line commit message")}, "message"),
+		},
 	}
+}
+
+func object(props map[string]any, required ...string) map[string]any {
+	out := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		out["required"] = required
+	}
+	return out
+}
+
+func str(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
 }
 
 type Settings struct {
@@ -62,6 +110,8 @@ type Input struct {
 	Provider   providers.Provider
 	Secrets    []string
 	Allow      []string
+	Engine     string
+	Image      string
 }
 
 type Result struct {
@@ -107,6 +157,9 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	}
 	defer board.ReleaseLock(ctx, in.DB, card.ID, holder)
 
+	if err := in.Git.DiscardChanges(ctx, wt); err != nil {
+		return Result{}, err
+	}
 	baseSHA, err := in.Git.WorktreeHead(ctx, wt)
 	if err != nil {
 		return Result{}, err
@@ -216,27 +269,102 @@ type session struct {
 	system      string
 	user        string
 	linkedRoots map[string]string
+	turns       []providers.Turn
+}
+
+// Free model tiers refuse a request over about 7000 tokens, so the history
+// carries the newest results first and drops the text of older ones.
+const (
+	resultCap  = 12 << 10
+	historyCap = 16 << 10
+	omitted    = "(older result omitted)"
+	written    = "(omitted: already written to the file)"
+	lastTurns  = 3
+)
+
+// history is the turns so far, sized for one request. The newest result is
+// always sent, cut at resultCap. Older results are sent while their total stays
+// under historyCap, then replaced by omitted. File text in edit_file calls is
+// never sent back, because the result already says the file was written.
+func (s *session) history() []providers.Turn {
+	out := make([]providers.Turn, len(s.turns))
+	used, full, newest := 0, true, true
+	for t := len(s.turns) - 1; t >= 0; t-- {
+		turn := s.turns[t]
+		next := providers.Turn{Text: turn.Text, Results: make([]string, len(turn.Results))}
+		for _, call := range turn.Calls {
+			if call.Name == "edit_file" {
+				args := map[string]any{}
+				for k, v := range call.Args {
+					args[k] = v
+				}
+				args["text"] = written
+				call.Args = args
+			}
+			next.Calls = append(next.Calls, call)
+		}
+		for i := len(turn.Results) - 1; i >= 0; i-- {
+			text := turn.Results[i]
+			if len(text) > resultCap {
+				text = strings.ToValidUTF8(text[:resultCap], "") + "\ntruncated: true"
+			}
+			if !newest && (!full || used+len(text) > historyCap) {
+				full = false
+				text = omitted
+			}
+			newest = false
+			used += len(text)
+			next.Results[i] = text
+		}
+		out[t] = next
+	}
+	return out
+}
+
+// warnTurnsLeft adds a reminder to the newest result when lastTurns or fewer
+// model turns remain. turns must come from history, which copies the results.
+func warnTurnsLeft(turns []providers.Turn, left int) []providers.Turn {
+	if left > lastTurns || len(turns) == 0 {
+		return turns
+	}
+	last := turns[len(turns)-1].Results
+	if n := len(last); n > 0 {
+		last[n-1] += fmt.Sprintf("\n\n%d model turns left in this attempt. If the change is done, call commit now.", left)
+	}
+	return turns
 }
 
 func (s *session) loop(ctx context.Context) error {
 	for turn := 0; turn < s.in.MaxTurns; turn++ {
+		turns := warnTurnsLeft(s.history(), s.in.MaxTurns-turn)
 		resp, err := s.in.Provider.Complete(ctx, providers.Request{
-			Model: s.in.Model, System: s.system, User: s.user,
+			Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
 			Tools: ImplementerTools(), TaskClass: s.in.TaskClass,
 		})
 		if err != nil {
 			return err
 		}
+		if err := board.AddAttemptTokens(ctx, s.in.DB, s.attemptID, resp.InputTokens, resp.OutputTokens); err != nil {
+			return err
+		}
+		modelID := resp.Model
+		if modelID == "" {
+			modelID = s.in.Model
+		}
 		if err := s.event(ctx, "model_call", map[string]any{
-			"role": "implementer", "modelId": s.in.Model, "stopReason": resp.StopReason,
+			"role": "implementer", "modelId": modelID, "stopReason": resp.StopReason,
+			"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens,
 		}); err != nil {
 			return err
 		}
 		if len(resp.ToolCalls) == 0 {
 			return nil
 		}
-		var results []string
-		for _, call := range resp.ToolCalls {
+		done := providers.Turn{Text: resp.Text}
+		for i, call := range resp.ToolCalls {
+			if call.ID == "" {
+				call.ID = fmt.Sprintf("call_%d_%d", turn, i)
+			}
 			summary, rejected, callErr := s.dispatch(ctx, call)
 			payload := map[string]any{
 				"name": call.Name, "ok": callErr == nil && !rejected, "rejected": rejected, "summary": summary,
@@ -247,9 +375,10 @@ func (s *session) loop(ctx context.Context) error {
 			if callErr != nil {
 				return callErr
 			}
-			results = append(results, call.Name+": "+summary)
+			done.Calls = append(done.Calls, call)
+			done.Results = append(done.Results, summary)
 		}
-		s.user = s.user + "\n" + strings.Join(results, "\n")
+		s.turns = append(s.turns, done)
 	}
 	return nil
 }
@@ -259,6 +388,18 @@ func (s *session) dispatch(ctx context.Context, call providers.ToolCall) (string
 		return "not in profile", true, nil
 	}
 	switch call.Name {
+	case "list_files":
+		text, err := listFiles(s.wt.Path, strArg(call.Args, "path"))
+		if err != nil {
+			return err.Error(), false, nil
+		}
+		return text, false, nil
+	case "search_files":
+		text, err := searchFiles(s.wt.Path, strArg(call.Args, "text"))
+		if err != nil {
+			return err.Error(), false, nil
+		}
+		return text, false, nil
 	case "read_file":
 		text, truncated, err := readFile(s.wt.Path, strArg(call.Args, "path"))
 		if err != nil {
@@ -316,8 +457,10 @@ func (s *session) localCheck(ctx context.Context) (int, string, error) {
 		Command: s.card.LocalCheck,
 		Allow:   s.in.Allow,
 		Fixture: runtime.FixtureMode(s.in.Git.Repo),
+		Engine:  s.in.Engine,
+		Image:   s.in.Image,
 		Dir:     dest,
-		Timeout: 2 * time.Minute,
+		Timeout: 10 * time.Minute,
 		MaxOut:  1 << 20,
 	}, execx.Command)
 	if err != nil {

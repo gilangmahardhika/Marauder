@@ -16,6 +16,7 @@ import (
 type Result struct {
 	Created  int
 	Promoted int
+	Started  int
 }
 
 func (r Result) Changed() bool {
@@ -55,6 +56,16 @@ func Pending(ctx context.Context, db *sql.DB, projectID string) (bool, error) {
 	var open bool
 	err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (SELECT 1 FROM runs WHERE project_id = $1 AND card_id IS NULL AND processed_at IS NULL)`,
+		projectID).Scan(&open)
+	return open, err
+}
+
+// Wake reports whether the project loop has work: any open run request, for
+// the whole project or for one card.
+func Wake(ctx context.Context, db *sql.DB, projectID string) (bool, error) {
+	var open bool
+	err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (SELECT 1 FROM runs WHERE project_id = $1 AND processed_at IS NULL)`,
 		projectID).Scan(&open)
 	return open, err
 }

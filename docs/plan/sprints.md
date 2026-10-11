@@ -392,3 +392,35 @@ Packages: `internal/worker`, `internal/loop`, `internal/app`, `internal/cli`, `i
 - The board's `running` flag follows open project rows, so the board polls until the worker is idle.
 
 Done when: `TestPassCreatesCardPerRequirement`, `TestPassPromotesReady`, `TestPassMarksRunsProcessed`, `TestWorkerCreatesCardsAfterAccept`, `TestProjectLockSkips`, `TestRunNextPlans`, `TestBoardRunningWhileProjectRunOpen`.
+
+## Sprint 26: Implement job with real models
+
+Goal: A queued card runs with a real model up to a pull request (RFC-063, REQ-069).
+
+Packages: `internal/providers`, `internal/providers/openai`, `internal/providers/anthropic`, `internal/providers/llm`, `internal/sandbox`, `internal/loop`, `internal/board`, `internal/app`, `internal/worker`, `internal/cli`, `internal/httpapi`.
+
+- `openai-go/v3` and `anthropic-sdk-go` clients behind `providers.Provider`, with tool schemas, token counts, and redacted errors. `llm.ForModel` picks the client by the family's protocol.
+- `app.RoutedProvider` retries the route's model once, then uses its fallback.
+- `POST /api/settings/llm/{family}/test` sends one short request.
+- `sandbox.ExecuteCheck` runs non-fixture checks in the pinned image with `podman` or `docker`.
+- `app.ImplementCard` runs preflight, one attempt, the gating check, and `app.Publish`, with the failure, `attempt_cap`, and `wall_cap` paths.
+- `worker.StartQueued` starts implement jobs for card-scoped rows under `implementationCap`. A project loop cancels open attempts when it takes its lock. `serve` and `run-next` pass the job in.
+- Run is also offered for `in_progress` and `changes_requested` cards with no open attempt.
+
+Done when: `TestOpenAIToolCall`, `TestOpenAIError`, `TestAnthropicToolCall`, `TestAnthropicBaseURL`, `TestForModelPicksProtocol`, `TestFallbackAfterRetry`, `TestLLMTestCallsProvider`, `TestLLMTestBadKey`, `TestLLMTestNoKey`, `TestExecuteCheckBuildsContainerArgv`, `TestImplementReachesPROpen`, `TestImplementCheckFailsReturnsInProgress`, `TestImplementAttemptCap`, `TestImplementBlocksSandboxConfig`, `TestImplementBlocksUnpinnedImage`, `TestImplementBlocksRouterConfig`, `TestImplementRefusesOpenAttempt`, `TestPassStartsQueuedCardsUnderCap`, `TestPassSkipsUnqueuedReady`, `TestCardRunNotReady`, `TestCardRunResumesInProgress`.
+
+## Sprint 27: The implementer finds files
+
+Goal: The implementer can list and search the worktree, and a pasted model endpoint URL works (RFC-064).
+
+Packages: `internal/loop`, `internal/contextpack`, `internal/providers/openai`, `internal/providers/anthropic`.
+
+- `list_files` and `search_files` read the worktree through `safePath`, skip `.git`, and do not follow symlinks.
+- The implementer system prompt names the seven tools and the order of work.
+- The `openai` and `anthropic` clients drop an endpoint suffix from the family `baseUrl`.
+- A `429` waits for `retry-after`, up to 60 seconds, and is sent again. `model_call` names the model that answered.
+- `job_error` is an accepted event kind.
+- Each attempt drops uncommitted worktree changes before it starts.
+- The implement loop sends earlier turns as assistant tool calls and tool results, keeping the newest results under 16 KiB.
+
+Done when: `TestImplementerTools`, `TestListAndSearchFiles`, `TestOpenAIEndpointBaseURL`, `TestAnthropicBaseURL`, `TestRateLimitWaitsThenRetries`, `TestImplementProviderErrorRecordsMessage`, `TestDiscardChangesKeepsCommits`, `TestHistoryKeepsNewestResults`, `TestOpenAISendsTurns`, `TestAnthropicSendsTurns`.

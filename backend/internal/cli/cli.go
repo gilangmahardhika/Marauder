@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -163,7 +164,14 @@ func Execute(opts Options) int {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
 				projectID := projectOr(project)
-				result, queued, err := app.RunNext(ctx, db, paths.Data, projectID)
+				deps := app.JobDeps{Data: paths.Data, Tools: jobTools()}
+				if secrets, err := loadSecrets(paths.Data, opts.getenv); err == nil {
+					if key, err := hex.DecodeString(secrets.TokenKey); err == nil && len(key) == 32 {
+						deps.Key = key
+					}
+				}
+				logf := func(format string, args ...any) { fmt.Fprintf(opts.Stderr, format+"\n", args...) }
+				result, queued, err := app.RunNext(ctx, db, paths.Data, projectID, app.ImplementJobs(db, deps), logf)
 				if err != nil {
 					return err
 				}
@@ -172,6 +180,9 @@ func Execute(opts Options) int {
 					return nil
 				}
 				fmt.Fprintf(opts.Stdout, "created %d\npromoted %d\n", result.Created, result.Promoted)
+				if result.Started > 0 {
+					fmt.Fprintf(opts.Stdout, "started %d\n", result.Started)
+				}
 				var n int
 				if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cards WHERE project_id = $1 AND status = 'ready'`, projectID).Scan(&n); err != nil {
 					return err

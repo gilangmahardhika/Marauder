@@ -2,7 +2,7 @@
 
 A Go harness keeps a PostgreSQL board of coding cards. A SvelteKit client talks to that API. The browser shows the actions the API returns. It does not change card status on its own.
 
-People sign in with email and password. An admin creates users. A user has one job role and may belong to several tribes. A tribe's projects are hidden from everyone else. Each project has its own repo, settings, and worker, and two projects may run at the same time. The worker turns each accepted requirement into a card and moves cards to Ready. It does not call a model or start implementation yet (RFC-062).
+People sign in with email and password. An admin creates users. A user has one job role and may belong to several tribes. A tribe's projects are hidden from everyone else. Each project has its own repo, settings, and worker, and two projects may run at the same time. The worker turns each accepted requirement into a card and moves cards to Ready without a model (RFC-062). When someone presses Run on a card, the worker runs the implement job with the routed model, runs the project's local check in the sandbox image, and opens the pull request (RFC-063).
 
 Specification lives in [docs/README.md](docs/README.md).
 
@@ -70,7 +70,9 @@ cd backend
 go run ./cmd/orchestrator serve --repo /path/to/target-repo
 ```
 
-The process keeps listening and runs one worker loop per project. A second `serve` on the same data directory exits while the first holds its lock. Log lines such as `worker: project proj_... created 1 promoted 1` show the worker making cards after an accept. `orchestrator run-next --project ID` runs the same passes once when no server holds that project's lock.
+The process keeps listening and runs one worker loop per project. A second `serve` on the same data directory exits while the first holds its lock. Log lines such as `worker: project proj_... created 1 promoted 1` show the worker making cards after an accept, and `worker: card card_... -> pr_open` shows a queued card finishing its implement job. `orchestrator run-next --project ID` runs the same passes, and the jobs of queued cards, once when no server holds that project's lock.
+
+Before a card can run on a real repository, set in the project's Deploy settings a local check (for example `npm test`), its first word in the allowed executables, the sandbox engine (`podman` or `docker`), and an image pinned as `name@sha256:<64 hex>` that already holds the toolchain and dependencies. The check runs with no network, so it cannot install packages. Pull the image once with the engine before the first run.
 
 ## 5. Start the client by itself
 

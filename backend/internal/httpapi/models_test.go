@@ -1,13 +1,94 @@
 package httpapi_test
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-const modelKey = "model-key-value-1"
+const (
+	modelKey = "model-key-value-1"
+	badKey   = "bad-key-value-1"
+)
+
+// modelServer answers the Anthropic messages route. A bad key gets 401 with
+// the key echoed in the body, so tests can check redaction.
+func modelServer(t *testing.T, seen *[]string) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := r.Header.Get("X-Api-Key")
+		if seen != nil {
+			*seen = append(*seen, r.URL.Path+" "+key)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if key == badKey {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = io.WriteString(w, `{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key `+key+`"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"id":"m","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func llmAdmin(t *testing.T, baseURL, key string) func(path string) (int, string) {
+	t.Helper()
+	srv := accountServer(t)
+	srv.Data = dataRoot(t)
+	seedUser(t, srv, "ada@example.com", "password-long-1", "product_owner", true)
+	admin := loginToken(t, srv, "ada@example.com", "password-long-1")
+	families := map[string]any{"families": []map[string]any{{
+		"id": "deepseek", "protocol": "anthropic", "baseUrl": baseURL,
+		"models": []string{"Pro"}, "apiKey": key,
+	}}}
+	if rec := putJSON(t, srv, "/api/settings/llm", admin, families); rec.Code != 200 {
+		t.Fatalf("llm put = %d %s", rec.Code, rec.Body.String())
+	}
+	return func(path string) (int, string) {
+		rec := postJSON(t, srv, path, admin, map[string]any{})
+		return rec.Code, rec.Body.String()
+	}
+}
+
+func TestLLMTestCallsProvider(t *testing.T) {
+	var seen []string
+	model := modelServer(t, &seen)
+	post := llmAdmin(t, model.URL+"/anthropic", modelKey)
+	code, body := post("/api/settings/llm/deepseek/test")
+	if code != 200 || !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("test = %d %s", code, body)
+	}
+	if len(seen) != 1 || seen[0] != "/anthropic/v1/messages "+modelKey {
+		t.Fatalf("requests = %v", seen)
+	}
+	if code, body := post("/api/settings/llm/missing/test"); code != 404 {
+		t.Fatalf("unknown family = %d %s", code, body)
+	}
+}
+
+func TestLLMTestNoKey(t *testing.T) {
+	post := llmAdmin(t, "https://api.example.com/v1", "")
+	if code, body := post("/api/settings/llm/deepseek/test"); code != 422 || !strings.Contains(body, `"apiKey"`) {
+		t.Fatalf("no key = %d %s", code, body)
+	}
+}
+
+func TestLLMTestBadKey(t *testing.T) {
+	model := modelServer(t, nil)
+	post := llmAdmin(t, model.URL, badKey)
+	code, body := post("/api/settings/llm/deepseek/test")
+	if code != 200 || !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "401") {
+		t.Fatalf("test = %d %s", code, body)
+	}
+	if strings.Contains(body, badKey) {
+		t.Fatalf("key in response: %s", body)
+	}
+}
 
 func TestModelSettingsAdminOnly(t *testing.T) {
 	srv := accountServer(t)
@@ -20,8 +101,9 @@ func TestModelSettingsAdminOnly(t *testing.T) {
 	seedUser(t, srv, "lead@example.com", "password-long-2", "lead_developer", false)
 	admin := loginToken(t, srv, "ada@example.com", "password-long-1")
 	lead := loginToken(t, srv, "lead@example.com", "password-long-2")
+	model := modelServer(t, nil)
 	families := map[string]any{"families": []map[string]any{{
-		"id": "anthropic", "protocol": "anthropic", "baseUrl": "https://api.anthropic.com",
+		"id": "anthropic", "protocol": "anthropic", "baseUrl": model.URL,
 		"models": []string{"claude-example"}, "apiKey": modelKey,
 	}}}
 	routes := map[string]any{

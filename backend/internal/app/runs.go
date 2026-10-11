@@ -10,7 +10,7 @@ import (
 	"orchestrator/backend/internal/worker"
 )
 
-var ErrNotRunnable = errors.New("only a ready card whose dependencies are done can run")
+var ErrNotRunnable = errors.New("only a ready or in-progress card that is not running and whose dependencies are done can run")
 
 type querier interface {
 	board.DBTX
@@ -40,8 +40,9 @@ func CardRunState(ctx context.Context, db querier, card board.Card) (bool, []str
 	return queued, waitingOn, nil
 }
 
-// QueueCardRun records one run request for a ready card. A card that is
-// already queued keeps its single open request.
+// QueueCardRun records one run request for a card the implement job can start:
+// ready, changes_requested, or in_progress with no open attempt (RFC-063). A
+// card that is already queued keeps its single open request.
 func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string) (board.Card, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -64,7 +65,11 @@ func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string) (bo
 	if err != nil {
 		return card, err
 	}
-	if !runnable(card, done) {
+	ok, err := CanStartImplement(ctx, tx, card)
+	if err != nil {
+		return card, err
+	}
+	if !ok || !worker.CanStart(done, card.DependsOn) {
 		return card, ErrNotRunnable
 	}
 	if _, err := insertCardRun(ctx, tx, projectID, cardID); err != nil {
@@ -137,9 +142,10 @@ func ReadyCount(ctx context.Context, db querier, projectID string) (int, error) 
 }
 
 // RunNext records a CLI run request for the project. When no server holds the
-// project's worker lock, it runs worker passes until idle; queued reports that
-// a running server will process the request instead.
-func RunNext(ctx context.Context, db *sql.DB, dataRoot, projectID string) (result worker.Result, queued bool, err error) {
+// project's worker lock, it runs worker passes until idle, then runs the
+// implement jobs of queued cards and waits for them; queued reports that a
+// running server will process the request instead.
+func RunNext(ctx context.Context, db *sql.DB, dataRoot, projectID string, jobs worker.Jobs, logf func(string, ...any)) (result worker.Result, queued bool, err error) {
 	if _, err := db.ExecContext(ctx, `
 		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'cli', $2, $3)`,
 		mustID("run_"), time.Now().UTC().Format(time.RFC3339), projectID); err != nil {
@@ -153,8 +159,26 @@ func RunNext(ctx context.Context, db *sql.DB, dataRoot, projectID string) (resul
 		return result, false, err
 	}
 	defer lock.Close()
+	if _, err := board.ReconcileProject(ctx, db, projectID); err != nil {
+		return result, false, err
+	}
 	result, err = worker.Drain(ctx, db, dataRoot, projectID)
+	if err != nil {
+		return result, false, err
+	}
+	slots := worker.NewSlots()
+	result.Started, err = worker.StartQueued(ctx, db, dataRoot, projectID, jobs, slots, logf)
+	slots.Wait()
 	return result, false, err
+}
+
+// ImplementJobs binds the implement job to the database and job dependencies
+// for the worker.
+func ImplementJobs(db *sql.DB, deps JobDeps) worker.Jobs {
+	return worker.Jobs{Implement: func(ctx context.Context, projectID, cardID string) (string, error) {
+		card, err := ImplementCard(ctx, db, deps, projectID, cardID)
+		return card.Status, err
+	}}
 }
 
 func runnable(card board.Card, done map[string]bool) bool {

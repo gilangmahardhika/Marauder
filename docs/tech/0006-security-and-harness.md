@@ -178,6 +178,8 @@ Dev checks replace `--network=none` with the engine's default rootless network a
 
 The sandbox off mode is accepted only in fixture mode.
 
+What runs today (RFC-063): `sandbox.ExecuteCheck` builds this argv for `run_local_check` and the gating check, always with `--pull=never`, and runs it with the engine environment in the table above, a 10 minute timeout, and a 1 MiB cap. The engine must be an absolute `podman` or `docker` path resolved at startup. Anything else, or an image without a digest, runs nothing and returns an error the job maps to `sandbox_config`. Pull the image by hand before the first run, because there is no settings test yet.
+
 ## Deploy commands
 
 Checked at settings save and again inside the deploy lock before exec (RFC-038):
