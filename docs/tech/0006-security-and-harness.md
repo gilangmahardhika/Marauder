@@ -399,6 +399,7 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestOwnerApproveStops` | A Product Owner approval leaves the card in `approved` |
 | `TestAcceptSeniorRoles` | Lead Developer, Senior Developer, QA Lead, and Product Owner members can accept. Developer and QA members get `403` (RFC-053) |
 | `TestDeveloperRunOnly` | A Developer member can start a run and cannot approve or deploy |
+| `TestCardRunRole` | A Product Owner member sees no `run` action, is `403` on a card run, and the board has `canRun: false`. Lead Developer, Senior Developer, Developer, and QA members may run (RFC-061) |
 | `TestActorOnTransition` | A new transition event stores `actorId` and does not change older rows |
 | `TestCompanyGitHubTokenNeverReturned` | `GET` and `PUT /api/settings/github` return `tokenSet` and no token, and the row holds ciphertext |
 | `TestCompanyGitHubAdminOnly` | A non-admin `PUT /api/settings/github` is `403` |

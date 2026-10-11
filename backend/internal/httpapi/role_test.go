@@ -105,7 +105,7 @@ func TestDeveloperRunOnly(t *testing.T) {
 	card := reviewCard(t, srv, "proj_default")
 	token := loginToken(t, srv, "dev@example.com", "password-long-2")
 	run := postJSON(t, srv, "/api/projects/proj_default/runs", token, map[string]string{})
-	if run.Code != 200 {
+	if run.Code != 200 || !strings.Contains(run.Body.String(), `"queued":0`) {
 		t.Fatalf("run = %d %s", run.Code, run.Body.String())
 	}
 	denied := postJSON(t, srv, "/api/projects/proj_default/cards/"+card.ID+"/approve", token, map[string]string{"sha": headSHA})

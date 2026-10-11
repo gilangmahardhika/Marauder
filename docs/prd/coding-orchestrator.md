@@ -109,6 +109,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-064 | A user has a display name |
 | REQ-065 | Admins and tribe admins edit project settings |
 | REQ-066 | GitHub confirms a project's repository |
+| REQ-067 | Run one ready card |
 
 ## Requirements
 
@@ -938,6 +939,18 @@ Creating a project, or saving a new repository or base branch for one, asks GitH
 - When GitHub fails, the response is `502` and nothing is saved.
 - Saving the repository settings with a missing repository is rejected. A repository GitHub finds is saved.
 
+### REQ-067 Run one ready card
+
+A Lead Developer, Senior Developer, Developer, or QA member can queue one ready card whose dependencies are done, from its board tile or its card page. The board's top button queues every such card and shows how many there are. A queued card shows Queued until the worker picks it up, and a ready card whose dependencies are not done shows how many it waits on. Queueing does not change the card's status (RFC-061).
+
+#### Acceptance
+
+- A ready card with done dependencies lists `run` in `actions`. Queueing it twice leaves one open run request, and the card then shows `queued: true` without `run`.
+- A ready card with a dependency that is not done lists it in `waitingOn`, has no `run` action, and a request to run it is `409`.
+- A card that is not ready is `409`.
+- A Product Owner sees no `run` action and is refused with `403`.
+- The top button queues only the ready cards with done dependencies, a repeat queues none, and the board's `readyCount` then reads `0`.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1042,3 +1055,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 18. User display names (REQ-064).
 19. Admins and tribe admins edit project settings (REQ-065).
 20. GitHub confirms a project's repository (REQ-066).
+21. Run one ready card (REQ-067).

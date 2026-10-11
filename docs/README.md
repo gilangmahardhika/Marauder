@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-066`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-067`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -19,6 +19,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0012-user-names.md](rfc/0012-user-names.md) | Decision `RFC-058`. A user has a display name, and pages show it instead of the email |
 | [rfc/0013-project-settings-admins.md](rfc/0013-project-settings-admins.md) | Decision `RFC-059`. A company admin edits every project's settings, and a tribe admin edits its tribe's |
 | [rfc/0014-repository-check.md](rfc/0014-repository-check.md) | Decision `RFC-060`. GitHub confirms a project's repository and base branch before they are saved |
+| [rfc/0015-card-runs.md](rfc/0015-card-runs.md) | Decision `RFC-061`. A run request names one ready card, and the board shows it as queued |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -16,6 +16,8 @@ function card(id: string, partial: Partial<Card> = {}): Card {
     requirementIds: [],
     decisionIds: [],
     dependsOn: [],
+    queued: false,
+    waitingOn: [],
     risk: 'low',
     service: 'default',
     manual: false,

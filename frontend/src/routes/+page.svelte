@@ -1,13 +1,12 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getCards, startRun, unreachable } from '$lib/api';
-  import { filterCards, ownerChoices, parseOwners, personName } from '$lib/board';
+  import { ApiError, getCards, runCard, startRun, unreachable } from '$lib/api';
+  import { filterCards, ownerChoices, parseOwners } from '$lib/board';
+  import BoardCard from '$lib/components/BoardCard.svelte';
   import OwnerFilter from '$lib/components/OwnerFilter.svelte';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
-  import { statusLabel } from '$lib/status';
   import type { Card } from '$lib/types';
-  import Avatar from '$lib/ui/Avatar.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
@@ -25,6 +24,7 @@
 
   let cards = $state<Card[]>([]);
   let canRun = $state(false);
+  let readyCount = $state(0);
   let running = $state(false);
   let loaded = $state(false);
   let unavailable = $state(false);
@@ -36,6 +36,7 @@
       const board = await getCards();
       cards = board.cards;
       canRun = board.canRun;
+      readyCount = board.readyCount ?? 0;
       running = board.running;
       loaded = true;
       unavailable = false;
@@ -67,10 +68,11 @@
 
   async function run() {
     busy = true;
-    message = 'Running the worker';
+    message = 'Queueing ready cards';
     try {
-      await startRun();
+      const result = await startRun();
       await load();
+      message = `Queued ${result.queued} ${result.queued === 1 ? 'card' : 'cards'}.`;
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -78,13 +80,33 @@
     }
   }
 
-  function tone(card: Card) {
-    if (card.status === 'blocked' || card.group === 'stopped') return 'bg-red-600';
-    if (card.group === 'running' || card.group === 'shipping') return 'bg-sky-600';
-    if (card.group === 'review') return 'bg-amber-500';
-    if (card.group === 'finished') return 'bg-emerald-600';
-    return 'bg-ink/30';
+  async function runOne(card: Card) {
+    busy = true;
+    message = `Queueing ${card.title}`;
+    try {
+      const next = await runCard(card.id);
+      cards = cards.map((item) => (item.id === next.id ? { ...item, ...next } : item));
+      readyCount = Math.max(0, readyCount - 1);
+      message = `Queued ${next.title}.`;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409) {
+        await load();
+        message = 'Card changed. Reloaded.';
+      } else message = error instanceof ApiError ? error.message : unreachable();
+    } finally {
+      busy = false;
+    }
   }
+
+  const runHint = $derived(
+    !canRun && readyCount > 0
+      ? 'Your role cannot start cards'
+      : readyCount > 0
+        ? `Queue ${readyCount} ready ${readyCount === 1 ? 'card' : 'cards'}`
+        : cards.some((card) => card.queued)
+          ? 'All ready cards are queued'
+          : 'No ready card can start'
+  );
 
   const params = $derived($page.url.searchParams);
   const choices = $derived(ownerChoices(cards, shell.email));
@@ -107,7 +129,11 @@
 
 <Page title="Board" description={summary}>
   {#snippet actions()}
-    <Button variant="primary" type="button" disabled={!canRun || running || busy} onclick={() => void run()}>Run</Button>
+    <span title={runHint}>
+      <Button variant="primary" type="button" disabled={!canRun || readyCount === 0 || busy} onclick={() => void run()}
+        >Run ready cards ({readyCount})</Button
+      >
+    </span>
   {/snippet}
   {#if unavailable}
     <EmptyState
@@ -157,35 +183,7 @@
             </h2>
             <div class="flex flex-col gap-2">
               {#each column as card (card.id)}
-                <a
-                  class="block rounded-control border border-line bg-surface p-3 text-ink hover:border-line-strong hover:shadow-sm"
-                  href={`/cards/${card.id}`}
-                >
-                  <span class="block text-sm font-medium leading-snug">{card.title}</span>
-                  <span class="mt-2 flex items-center gap-1.5 text-xs {card.status === 'blocked' ? 'danger' : 'text-muted'}">
-                    <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
-                    <span title={card.status}>{statusLabel(card.status)}</span>
-                  </span>
-                  <span class="mt-2 flex items-center gap-2 text-xs text-muted">
-                    <Avatar person={card.owner} size="sm" />
-                    <span class="min-w-0 flex-1 truncate">{card.owner ? personName(card.owner) : 'No owner'}</span>
-                    {#if card.reviewers?.length}
-                      {@const names = card.reviewers.map(personName).join(', ')}
-                      <span class="flex shrink-0 items-center" role="img" aria-label={`Reviewers: ${names}`} title={`Reviewers: ${names}`}>
-                        {#each card.reviewers.slice(0, 3) as reviewer (reviewer.id)}
-                          <span class="-ml-1.5 rounded-full ring-2 ring-surface first:ml-0"><Avatar person={reviewer} size="sm" /></span>
-                        {/each}
-                        {#if card.reviewers.length > 3}
-                          <span class="ml-1 text-[11px]">+{card.reviewers.length - 3}</span>
-                        {/if}
-                      </span>
-                    {/if}
-                  </span>
-                  <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
-                    <span>Attempt {card.attemptsUsed} of {card.maxAttempts}</span>
-                    {#if card.headSha}<span class="font-mono">{card.headSha.slice(0, 7)}</span>{/if}
-                  </span>
-                </a>
+                <BoardCard {card} {busy} onrun={(next) => void runOne(next)} />
               {:else}
                 <p class="rounded-control border border-dashed border-line-strong px-3 py-4 text-xs text-muted">No cards</p>
               {/each}

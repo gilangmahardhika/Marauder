@@ -52,7 +52,8 @@ A successful body never includes `error`.
 
 | Status | `group` | `actions`, before the role filter |
 | --- | --- | --- |
-| `backlog`, `ready` | `waiting` | `[]` |
+| `backlog` | `waiting` | `[]` |
+| `ready` | `waiting` | `run` when every `dependsOn` card is `done` and the card has no open run request (RFC-061) |
 | `in_progress`, `self_check` | `running` | `[]` |
 | `pr_open`, `agent_review`, `changes_requested` | `review` | `[]` |
 | `human_review` | `review` | `approve`, `request_changes`, `reject` |
@@ -61,7 +62,7 @@ A successful body never includes `error`.
 | `done` | `finished` | `[]` |
 | `blocked` | `stopped` | `unblock`, unless release is refused |
 
-`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member.
+`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` remains for a Lead Developer, Senior Developer, Developer, or QA member.
 
 ## Blocked reasons
 
@@ -289,6 +290,8 @@ DROP TABLE requirements;
 ```
 
 `00001_init.sql` and `00002_intake_state.sql` stay as shipped. Do not edit them. Identity, tribes, and projects are later migrations, starting at `00003`. Those migrations add `project_id` and replace the global unique indexes above with `(project_id, branch)` and `(project_id, pr_url)`. Requirement and decision primary keys become `(project_id, id)`. `runs.trigger` gains `deploy`.
+
+`00014_card_runs.sql` adds `runs.card_id TEXT REFERENCES cards(id) ON DELETE CASCADE` and the partial unique index `runs_open_card ON runs(card_id) WHERE card_id IS NOT NULL AND processed_at IS NULL`. A row with `card_id` asks for that one card. A card has at most one open row (RFC-061).
 
 `draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
 
@@ -643,6 +646,8 @@ A project object is:
   "requirementIds": ["REQ-001"],
   "decisionIds": ["RFC-018"],
   "dependsOn": [],
+  "queued": false,
+  "waitingOn": [],
   "risk": "low",
   "service": "default",
   "manual": false,
@@ -664,7 +669,7 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056).
+`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 
@@ -695,14 +700,15 @@ Routes in this section include `/api/projects/{projectId}/`. A non-member is `40
 ```json
 {
   "canRun": true,
+  "readyCount": 2,
   "running": false,
   "cards": []
 }
 ```
 
-An empty store returns `canRun: false`, `running: false`, and `cards: []`. It does not return an error.
+An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `cards: []`. It does not return an error.
 
-`canRun` is true when that project's worker could start something now: a planning job is needed, a `backlog` card can be promoted, a `ready` or `changes_requested` card is under the cap, a `pr_open` card awaits review, or a `verifying` card awaits its check. An `approved` card does not set `canRun`. Deploy waits for a Lead Developer. `running` is true while an unprocessed `runs` row exists for that project.
+`readyCount` counts the project's `ready` cards whose dependencies are all `done` and that have no open run request, the cards that list `run`. `canRun` is true when `readyCount` is above zero and the caller's role may run (RFC-061). `running` is true while an unprocessed `runs` row exists for that project.
 
 `GET /api/projects/{projectId}/cards/{id}` returns one card object. Unknown id, or a card in another project, is `404`.
 
@@ -793,17 +799,13 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 
 ## Runs and human gates
 
-`POST /api/projects/{projectId}/runs` has an empty body. A Lead Developer, Senior Developer, Developer, or QA member may call it. Anyone else is `403`. It inserts a `runs` row for that project and returns immediately. That project's worker processes it until idle (0003).
+`POST /api/projects/{projectId}/runs` has an empty body. A Lead Developer, Senior Developer, Developer, or QA member may call it. Anyone else is `403`. It inserts one card-scoped `runs` row for every card of that project that lists `run`, in one transaction, and returns immediately. `queued` is how many rows it added. `readyCount` is what the board reads afterwards. When nothing can move, the response is still `200` with `queued: 0` (RFC-061).
 
 ```json
-{ "runId": "run_0123456789ab", "canRun": true }
+{ "queued": 2, "readyCount": 0 }
 ```
 
-When nothing can move, the response is still `200`:
-
-```json
-{ "runId": "run_0123456789ab", "canRun": false, "reason": "no card is ready" }
-```
+`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, or that has a dependency not `done`, is `409` `conflict`. The card's status does not change.
 
 `POST /api/projects/{projectId}/cards/{id}/approve`
 

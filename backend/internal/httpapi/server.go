@@ -127,7 +127,7 @@ func (s *Server) cards(w http.ResponseWriter, r *http.Request) {
 		s.listCards(w, r)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"canRun": false, "running": false, "cards": []any{}})
+	writeJSON(w, 200, map[string]any{"canRun": false, "readyCount": 0, "running": false, "cards": []any{}})
 }
 
 func (s *Server) card(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +209,8 @@ func actionAllowed(role, action string) bool {
 		return role == "lead_developer" || role == "product_owner"
 	case "deploy":
 		return role == "lead_developer"
+	case "run":
+		return role == "lead_developer" || role == "senior_developer" || role == "developer" || role == "qa"
 	default:
 		return false
 	}

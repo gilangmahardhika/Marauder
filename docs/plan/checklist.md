@@ -364,3 +364,15 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] The repository list adds collaborator repositories of the organization, and Test connection reports what the token sees.
 - [x] `TestRepoListIncludesCollaboratorRepos`
 - [x] `TestCompanyTestReportsAccess`
+
+## Sprint 24: One card at a time
+
+- [x] A run request names one ready card, and a card has at most one open request.
+- [x] The top button queues every ready card whose dependencies are done.
+- [x] UI: Run, Queued, and Waiting on N cards on the board tile, and Run on the card page.
+- [x] `TestCardRunQueues`
+- [x] `TestCardRunNeedsDependencies`
+- [x] `TestCardRunNotReady`
+- [x] `TestCardRunRole`
+- [x] `TestRunReadyCards`
+- [x] `BoardCard.test.ts`

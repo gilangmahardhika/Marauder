@@ -254,7 +254,7 @@ Buttons that submit a form use `type="submit"`. Buttons that do not submit use `
 <p role="status">{message}</p>
 ```
 
-Pages set `message` to "Loading board", "Running the worker", "Saving GitHub settings", or the error string. The paragraph stays in the page so the text change is announced.
+Pages set `message` to "Loading board", "Queueing ready cards", "Saving GitHub settings", or the error string. The paragraph stays in the page so the text change is announced.
 
 ## Search and filters
 
@@ -291,9 +291,11 @@ Router, Company GitHub, Linked projects, and Account have no toolbar. Their list
 
 `src/routes/+page.svelte` calls `GET /api/cards` from `onMount` (or `$effect` on first run).
 
-Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print the status as words from `statusLabel` in `src/lib/status.ts`, such as "Waiting for review" for `human_review`, with the raw status in `title`. Below it, the row shows the owner's initials avatar and display name, `name`, then `githubLogin`, then the email, or a dashed avatar and "No owner" (RFC-054, RFC-058). Every page that lists a person uses that order (`displayName` in `src/lib/people.ts`) and the `Avatar` component. When `reviewers` is not empty, the same line ends with up to three overlapping reviewer avatars and "+n" for the rest. Their names are in the `title` and `aria-label` ("Reviewers: ..."). The name clamps to one line. The row links to `/cards/{id}`.
+Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print the status as words from `statusLabel` in `src/lib/status.ts`, such as "Waiting for review" for `human_review`, with the raw status in `title`. Below it, the row shows the owner's initials avatar and display name, `name`, then `githubLogin`, then the email, or a dashed avatar and "No owner" (RFC-054, RFC-058). Every page that lists a person uses that order (`displayName` in `src/lib/people.ts`) and the `Avatar` component. When `reviewers` is not empty, the same line ends with up to three overlapping reviewer avatars and "+n" for the rest. Their names are in the `title` and `aria-label` ("Reviewers: ..."). The name clamps to one line. The tile is `src/lib/components/BoardCard.svelte`. Its body links to `/cards/{id}`.
 
-The primary button is "Run". It is enabled when `canRun` is true and `running` is false. It POSTs `/api/runs`, then reloads the list. The live message is "Running the worker" while the request is in flight, and the button is disabled.
+Below the link, outside it, a ready card has a footer row (RFC-061). It shows a 44px "Run" button when `actions` includes `run`, a "Queued" pill when `queued` is true, or "Waiting on N cards" when `waitingOn` is not empty, with the ids in `title`. Run POSTs `/api/projects/{id}/cards/{card}/run`, swaps the returned card into the list, and sets the message to "Queued {title}." A `409` reloads the board with "Card changed. Reloaded." The card page shows the same Run through `CardActions`.
+
+The primary button reads "Run ready cards (N)", where N is `readyCount`. It is enabled when `canRun` is true and N is above zero. Its `title` says why when it is disabled: "All ready cards are queued", "No ready card can start", or "Your role cannot start cards". It POSTs `/api/projects/{id}/runs`, then reloads the list, and the message reads "Queued N cards." The page says "Queued" and never "Running" for these cards, because the worker loop is not built yet.
 
 When `running` is true, or any card is in the `running` or `shipping` group or in `agent_review`, an `$effect` starts a 3 second `setInterval` that calls `GET /api/cards` again. The effect cleanup clears the timer when the condition becomes false and when the page is destroyed.
 

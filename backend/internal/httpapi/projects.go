@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
@@ -167,7 +166,7 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	cards := []any{}
-	canRun := false
+	ready := 0
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
@@ -179,14 +178,14 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, "internal", "cards")
 			return
 		}
-		if card.Status == "ready" || card.Status == "changes_requested" || card.Status == "approved" || card.Status == "backlog" {
-			canRun = true
-		}
 		body := s.cardJSON(r, card, reviewers[card.ID])
 		body["projectId"] = projectID
+		if readyToRun(body) {
+			ready++
+		}
 		cards = append(cards, body)
 	}
-	writeJSON(w, 200, map[string]any{"canRun": canRun, "running": false, "cards": cards})
+	writeJSON(w, 200, s.boardBody(r, cards, ready))
 }
 
 func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +211,19 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "deploy" {
 		next, err := app.Deploy(r.Context(), s.DB, id, user.ID)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+		return
+	}
+	if action == "run" {
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "method_not_allowed", "method not allowed")
+			return
+		}
+		next, err := app.QueueCardRun(r.Context(), s.DB, projectID, id)
 		if err != nil {
 			writeAppErr(w, err)
 			return
@@ -409,36 +421,25 @@ func (s *Server) projectRuns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.DB == nil {
-		writeJSON(w, 200, map[string]any{"runId": "run_0123456789ab", "canRun": false, "reason": "no card is ready"})
+		writeJSON(w, 200, map[string]any{"queued": 0, "readyCount": 0})
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
-	switch user.Role {
-	case "lead_developer", "senior_developer", "developer", "qa":
-	default:
+	if !actionAllowed(user.Role, "run") {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
 	}
-	id, err := board.NewID("run_")
+	queued, err := app.QueueReadyRuns(r.Context(), s.DB, projectID)
 	if err != nil {
 		writeErr(w, 500, "internal", "run")
 		return
 	}
-	if _, err := s.DB.ExecContext(r.Context(), `
-		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'api', $2, $3)`,
-		id, time.Now().UTC().Format(time.RFC3339), projectID); err != nil {
+	ready, err := app.ReadyCount(r.Context(), s.DB, projectID)
+	if err != nil {
 		writeErr(w, 500, "internal", "run")
 		return
 	}
-	var ready int
-	_ = s.DB.QueryRowContext(r.Context(), `
-		SELECT count(*) FROM cards WHERE project_id = $1 AND status IN ('ready', 'changes_requested', 'approved')`,
-		projectID).Scan(&ready)
-	body := map[string]any{"runId": id, "canRun": ready > 0}
-	if ready == 0 {
-		body["reason"] = "no card is ready"
-	}
-	writeJSON(w, 200, body)
+	writeJSON(w, 200, map[string]any{"queued": queued, "readyCount": ready})
 }
 
 // settingsProject admits a company admin to any project's settings and

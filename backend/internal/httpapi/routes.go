@@ -23,7 +23,7 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	cards := []any{}
-	canRun := false
+	ready := 0
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
@@ -35,12 +35,29 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 500, "internal", "cards")
 			return
 		}
-		if card.Status == "ready" || card.Status == "changes_requested" || card.Status == "approved" || card.Status == "backlog" {
-			canRun = true
+		body := s.cardBody(r, card)
+		if readyToRun(body) {
+			ready++
 		}
-		cards = append(cards, s.cardBody(r, card))
+		cards = append(cards, body)
 	}
-	writeJSON(w, 200, map[string]any{"canRun": canRun, "running": false, "cards": cards})
+	writeJSON(w, 200, s.boardBody(r, cards, ready))
+}
+
+// readyToRun is true for a ready card whose dependencies are done and that
+// has no open run request.
+func readyToRun(body map[string]any) bool {
+	waitingOn, _ := body["waitingOn"].([]string)
+	queued, _ := body["queued"].(bool)
+	return body["status"] == "ready" && !queued && len(waitingOn) == 0
+}
+
+func (s *Server) boardBody(r *http.Request, cards []any, ready int) map[string]any {
+	user, _ := app.CurrentUser(r.Context())
+	return map[string]any{
+		"canRun": ready > 0 && actionAllowed(user.Role, "run"), "readyCount": ready,
+		"running": false, "cards": cards,
+	}
 }
 
 func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action string) {
@@ -336,6 +353,13 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if card.OwnerID != "" && card.OwnerID == userID {
 		actions = withoutAction(actions, "approve")
 	}
+	queued, waitingOn, err := app.CardRunState(r.Context(), s.DB, card)
+	if err != nil {
+		queued, waitingOn = false, []string{}
+	}
+	if card.Status == "ready" && !queued && len(waitingOn) == 0 && actionAllowed(role, "run") {
+		actions = append(actions, "run")
+	}
 	var owner any
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
 		owner = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
@@ -351,7 +375,8 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
 		"actions": actions, "unblockTo": unblock, "owner": owner, "reviewers": reviewers, "skills": skills,
 		"requirementIds": nonNil(card.RequirementIDs), "decisionIds": []string{},
-		"dependsOn": nonNil(card.DependsOn), "risk": card.Risk, "service": "default",
+		"dependsOn": nonNil(card.DependsOn), "queued": queued, "waitingOn": waitingOn,
+		"risk": card.Risk, "service": "default",
 		"manual": card.Manual, "localCheck": nullString(card.LocalCheck), "devCheck": nullString(card.DevCheck),
 		"attemptsUsed": card.AttemptsUsed, "maxAttempts": card.MaxAttempts,
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
@@ -508,7 +533,7 @@ func writeAppErr(w http.ResponseWriter, err error) {
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock):
 		writeErr(w, 422, "validation", err.Error())
-	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked):
+	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable):
 		writeErr(w, 409, "conflict", err.Error())
 	case errors.Is(err, app.ErrOwnerApprove):
 		writeErr(w, 403, "forbidden", err.Error())

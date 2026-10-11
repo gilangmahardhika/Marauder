@@ -103,6 +103,8 @@ Runs only in the worker that holds that project's lock, before any job for that 
 
 One loop goroutine per project ticks every 2 seconds. Projects run those loops at the same time (RFC-048). While an unprocessed `runs` row exists for that project, each tick runs a pass. When a pass starts nothing, no job is running for that project, and no card of that project waits on CI, the loop sets `processed_at` on that project's open `runs` rows. The project is then idle until the next row.
 
+A row with `card_id` set asks for that one card (RFC-061). The pass starts that card's implement job when the card is still `ready`, its dependencies are `done`, and the cap has room, and sets `processed_at` on that row when the job starts. A row without `card_id` wakes the whole project as above. The API never starts a job itself. Until this loop is built, card-scoped rows stay open and the board shows those cards as queued.
+
 Jobs run in goroutines beside that project's loop. Implement and plan jobs are capped by that project's `scheduler.implementationCap`. At most one deploy job runs per project. Review and verify jobs are capped at 2 each, per project. Every job takes its card lock with a fresh random holder and releases it with that holder. The job uses that project's repo and that project's data directory.
 
 Each pass, in order:

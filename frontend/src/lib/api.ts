@@ -243,10 +243,14 @@ export function deleteRequirement(id: string) {
 }
 
 export function startRun() {
-  return request<{ runId: string; canRun: boolean; reason?: string }>(`${projectPrefix()}/runs`, {
+  return request<{ queued: number; readyCount: number }>(`${projectPrefix()}/runs`, {
     method: 'POST',
     body: '{}'
   });
+}
+
+export function runCard(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/run`, { method: 'POST', body: '{}' });
 }
 
 export function deployCard(id: string) {

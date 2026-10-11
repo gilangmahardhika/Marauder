@@ -365,3 +365,17 @@ Packages: `internal/ghcli`, `internal/company`, `internal/tenancy`, `internal/ap
 - The repository list adds the organization's repositories from `user/repos`. Test connection reports the token kind, scopes, the repositories it sees, and a hint.
 
 Done when: `TestProjectRepoCheckedOnGitHub`, `TestProjectRepoNeedsCompanyToken`, `TestProjectRepoGitHubDown`, `TestRepoListIncludesCollaboratorRepos`, `TestCompanyTestReportsAccess`.
+
+## Sprint 24: One card at a time
+
+Goal: A person queues one ready card, or every ready card, and the board shows which cards are queued (RFC-061, REQ-067).
+
+Packages: `migrations`, `internal/app`, `internal/httpapi`.
+
+- `00014_card_runs.sql` adds `runs.card_id` and one open row per card.
+- `app.QueueCardRun` and `app.QueueReadyRuns` add card-scoped rows for ready cards whose dependencies are done. The card's status does not change.
+- The card lists `run`, `queued`, and `waitingOn`. The board returns `readyCount`.
+- UI: `BoardCard` shows Run, Queued, or Waiting on N cards. The top button reads "Run ready cards (N)". The card page shows Run.
+- The worker loop that consumes these rows is a later sprint.
+
+Done when: `TestCardRunQueues`, `TestCardRunNeedsDependencies`, `TestCardRunNotReady`, `TestCardRunRole`, `TestRunReadyCards`, and `BoardCard.test.ts`.

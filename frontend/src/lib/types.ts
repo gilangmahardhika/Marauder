@@ -20,6 +20,10 @@ export type Card = {
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
+  /** True while an open run request waits for the worker. */
+  queued: boolean;
+  /** Dependencies that are not done yet. */
+  waitingOn: string[];
   risk: string;
   service: string;
   manual: boolean;
@@ -67,6 +71,8 @@ export type CardRule = {
 
 export type Board = {
   canRun: boolean;
+  /** Ready cards whose dependencies are done and that are not queued. */
+  readyCount: number;
   running: boolean;
   cards: Card[];
 };

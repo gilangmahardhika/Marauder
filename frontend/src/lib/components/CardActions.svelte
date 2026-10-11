@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ApiError, approveCard, deployCard, getCard, rejectCard, requestChanges, unblockCard } from '$lib/api';
+  import { ApiError, approveCard, deployCard, getCard, rejectCard, requestChanges, runCard, unblockCard } from '$lib/api';
   import { shell } from '$lib/shell.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
@@ -44,6 +44,14 @@
 </script>
 
 <div class="flex flex-col gap-5">
+  {#if actions.includes('run')}
+    <div class="flex flex-wrap items-center gap-3">
+      <Button variant="primary" type="button" disabled={busy} onclick={() => void run('Queue run', () => runCard(card.id))}>Run</Button>
+      <p class="text-sm text-muted">Queues this card for the worker.</p>
+    </div>
+  {:else if card.queued}
+    <p class="text-sm text-muted">Queued. The card starts when the worker picks it up.</p>
+  {/if}
   {#if actions.includes('approve')}
     <form
       class="flex flex-col gap-1.5"
