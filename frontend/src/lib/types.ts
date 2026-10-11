@@ -172,6 +172,18 @@ export type CompanyRepo = {
   name: string;
   defaultBranch: string;
   archived: boolean;
+  private: boolean;
+};
+
+export type CompanyAccess = {
+  ok: boolean;
+  message?: string;
+  login?: string;
+  tokenKind?: 'classic' | 'fine-grained' | 'other';
+  scopes?: string[];
+  repoCount?: number;
+  privateCount?: number;
+  hint?: string;
 };
 
 export type Repository = {

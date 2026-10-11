@@ -67,6 +67,9 @@ func TestRepoListUsesCompanyToken(t *testing.T) {
 	seedUser(t, srv, "dev@example.com", "password-long-3", "developer", false)
 	saveCompany(t, srv, admin)
 	rec := &recorder{reply: func(child execx.Child) execx.Result {
+		if !contains(child.Argv, "orgs/acme/repos?type=all&per_page=100") {
+			return execx.Result{}
+		}
 		return execx.Result{Out: []byte(`{"name":"widget","defaultBranch":"develop","archived":false}` + "\n" +
 			`{"name":"api","defaultBranch":"main","archived":true}` + "\n")}
 	}}
@@ -77,15 +80,14 @@ func TestRepoListUsesCompanyToken(t *testing.T) {
 		t.Fatalf("repos = %d %s", got.Code, got.Body.String())
 	}
 	calls := rec.all()
-	if len(calls) != 1 {
-		t.Fatalf("calls = %d", len(calls))
+	if len(calls) != 2 || !contains(calls[0].Argv, "orgs/acme/repos?type=all&per_page=100") ||
+		!contains(calls[1].Argv, "user/repos?affiliation=owner,collaborator,organization_member&per_page=100") {
+		t.Fatalf("calls = %+v", calls)
 	}
-	call := calls[0]
-	if !contains(call.Env, "GH_TOKEN="+companyToken) || !contains(call.Argv, "orgs/acme/repos?per_page=100") {
-		t.Fatalf("call = %+v", call)
-	}
-	if strings.Contains(strings.Join(call.Argv, " "), companyToken) {
-		t.Fatalf("token in argv: %v", call.Argv)
+	for _, call := range calls {
+		if !contains(call.Env, "GH_TOKEN="+companyToken) || strings.Contains(strings.Join(call.Argv, " "), companyToken) {
+			t.Fatalf("token handling: env has token %v, argv %v", contains(call.Env, "GH_TOKEN="+companyToken), call.Argv)
+		}
 	}
 	dev := loginToken(t, srv, "dev@example.com", "password-long-3")
 	if denied := getAuth(t, srv, "/api/settings/github/repos", dev); denied.Code != 403 {

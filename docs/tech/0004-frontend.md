@@ -401,11 +401,11 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 ### Company GitHub
 
-`src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows the bot login on success or `message` on `ok: false` in the Bot account panel footer, next to Save. The saved bot login shows as read-only text.
+`src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows "Signed in as LOGIN. Sees N repositories in ORG (M private)." on success or `message` on `ok: false` in the Bot account panel footer, next to Save. A non-empty `hint` shows in a `warning` `Notice` in the Bot account panel. The saved bot login shows as read-only text.
 
 ### Repository
 
-`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. The repository is a `SearchSelect` of `GET /api/settings/github/repos` with no free-text fallback, as on New project. "Sync" calls `POST /api/projects/{id}/sync`. It is enabled when `canEdit` is true or the caller is a Developer, Senior Developer, or Lead Developer, matching the server.
+`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. The repository is a `SearchSelect` of `GET /api/settings/github/repos` with no free-text fallback, as on New project. When the list loads empty, the picker's error line says the company token sees no repositories in the organization, and an admin gets a "Check Company GitHub" link to `/admin/github`. New project shows the same line and link. "Sync" calls `POST /api/projects/{id}/sync`. It is enabled when `canEdit` is true or the caller is a Developer, Senior Developer, or Lead Developer, matching the server.
 
 ### Linked projects
 

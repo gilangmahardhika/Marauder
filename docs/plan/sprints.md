@@ -362,5 +362,6 @@ Packages: `internal/ghcli`, `internal/company`, `internal/tenancy`, `internal/ap
 
 - `company.CheckRepo` looks up the repository and branch with the company token. Project create and the repository save call it.
 - UI: New project and Repository pick the repository from the organization list only. Archived repositories cannot be picked.
+- The repository list adds the organization's repositories from `user/repos`. Test connection reports the token kind, scopes, the repositories it sees, and a hint.
 
-Done when: `TestProjectRepoCheckedOnGitHub`, `TestProjectRepoNeedsCompanyToken`, `TestProjectRepoGitHubDown`.
+Done when: `TestProjectRepoCheckedOnGitHub`, `TestProjectRepoNeedsCompanyToken`, `TestProjectRepoGitHubDown`, `TestRepoListIncludesCollaboratorRepos`, `TestCompanyTestReportsAccess`.

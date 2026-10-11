@@ -402,7 +402,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestActorOnTransition` | A new transition event stores `actorId` and does not change older rows |
 | `TestCompanyGitHubTokenNeverReturned` | `GET` and `PUT /api/settings/github` return `tokenSet` and no token, and the row holds ciphertext |
 | `TestCompanyGitHubAdminOnly` | A non-admin `PUT /api/settings/github` is `403` |
-| `TestRepoListUsesCompanyToken` | The repo list runs `gh` with the company token in `GH_TOKEN` and not in argv |
+| `TestRepoListUsesCompanyToken` | The repo list runs `gh` twice, for the organization list and `user/repos`, each with the company token in `GH_TOKEN` and not in argv |
+| `TestRepoListIncludesCollaboratorRepos` | With an empty organization list, a private repository from `user/repos`, filtered to the organization, is listed |
+| `TestCompanyTestReportsAccess` | A classic token without the `repo` scope that sees no repositories gets `tokenKind: classic`, its scopes, `repoCount: 0`, and the repo-scope hint. The token is in neither the response nor argv |
 | `TestProjectRepoUnique` | A second project on the same repo is `422` on `repo` |
 | `TestCloneTokenNotInArgv` | The clone and fetch argv never contain the token, and the URL is built from the company org and project repo |
 | `TestCheckoutUsesBaseBranch` | A worktree branches from the project's base branch |

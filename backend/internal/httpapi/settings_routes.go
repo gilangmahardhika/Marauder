@@ -76,7 +76,7 @@ func (s *Server) companyGitHubTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
 	}
-	login, err := app.TestCompany(r.Context(), s.DB, s.TokenKey, s.gh())
+	access, err := app.TestCompany(r.Context(), s.DB, s.TokenKey, s.gh())
 	switch {
 	case errors.Is(err, company.ErrNoToken):
 		writeFields(w, 422, "validation", err.Error(), map[string]string{"token": err.Error()})
@@ -85,7 +85,10 @@ func (s *Server) companyGitHubTest(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		writeAccountErr(w, err)
 	default:
-		writeJSON(w, 200, map[string]any{"ok": true, "login": login})
+		writeJSON(w, 200, map[string]any{
+			"ok": true, "login": access.Login, "tokenKind": access.TokenKind, "scopes": access.Scopes,
+			"repoCount": access.RepoCount, "privateCount": access.PrivateCount, "hint": access.Hint,
+		})
 	}
 }
 

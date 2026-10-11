@@ -5,6 +5,7 @@
   import Button from '$lib/ui/Button.svelte';
   import { labelClass } from '$lib/ui/control';
   import Field from '$lib/ui/Field.svelte';
+  import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
 
@@ -16,6 +17,7 @@
   let tokenSet = $state(false);
   let message = $state('Loading company GitHub');
   let result = $state('');
+  let hint = $state('');
   let busy = $state(false);
   let fields = $state<Record<string, string>>({});
 
@@ -47,6 +49,7 @@
       token = '';
       clear = false;
       result = '';
+      hint = '';
       message = 'Company GitHub saved';
     } catch (error) {
       fields = error instanceof ApiError ? error.fields : {};
@@ -59,11 +62,16 @@
   async function test() {
     busy = true;
     message = 'Testing connection';
+    hint = '';
     try {
       const outcome = await testCompanyGitHub();
       if (outcome.ok) {
         botLogin = outcome.login ?? botLogin;
-        result = `Signed in as ${botLogin}`;
+        const count = outcome.repoCount ?? 0;
+        result = org
+          ? `Signed in as ${botLogin}. Sees ${count} ${count === 1 ? 'repository' : 'repositories'} in ${org} (${outcome.privateCount ?? 0} private).`
+          : `Signed in as ${botLogin}`;
+        hint = outcome.hint ?? '';
       } else {
         result = outcome.message ?? 'GitHub refused the token';
       }
@@ -97,6 +105,7 @@
             {botLogin || 'Unknown until Test connection succeeds'}
           </p>
         </div>
+        {#if hint}<Notice tone="warning">{hint}</Notice>{/if}
         {#snippet footer()}
           {#if result || !tokenSet}
             <span class="mr-auto text-sm text-muted">{result || 'Save a token, then test the connection.'}</span>

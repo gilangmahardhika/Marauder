@@ -36,6 +36,16 @@
       disabled: item.archived
     }))
   );
+  const repoError = $derived(
+    fields.repo ||
+      (locked
+        ? ''
+        : reposError
+          ? `The repository list did not load: ${reposError}`
+          : repos?.length === 0
+            ? `The company token sees no repositories in ${view?.org || 'the organization'}.`
+            : '')
+  );
   const repoPlaceholder = $derived(
     repos === null
       ? reposError
@@ -126,16 +136,21 @@
     <div class="flex flex-col gap-6">
       <Panel title="Source" hint={view ? `${view.host} / ${view.org || 'no organization'}` : ''}>
         <fieldset class="flex min-w-0 flex-col gap-5" disabled={locked}>
-          <SearchSelect
-            label="Repository"
-            id="repo"
-            width="lg"
-            placeholder={repoPlaceholder}
-            options={repoOptions}
-            value={repo}
-            error={fields.repo || (reposError && !locked ? `The repository list did not load: ${reposError}` : '')}
-            onchange={pickRepo}
-          />
+          <div class="flex flex-col gap-1.5">
+            <SearchSelect
+              label="Repository"
+              id="repo"
+              width="lg"
+              placeholder={repoPlaceholder}
+              options={repoOptions}
+              value={repo}
+              error={repoError}
+              onchange={pickRepo}
+            />
+            {#if repos?.length === 0 && shell.admin}
+              <a class="inline-flex min-h-11 items-center self-start text-xs font-medium text-accent hover:underline" href="/admin/github">Check Company GitHub</a>
+            {/if}
+          </div>
           <Field
             label="Base branch"
             id="base"

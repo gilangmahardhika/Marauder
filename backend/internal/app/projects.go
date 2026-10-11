@@ -102,7 +102,7 @@ func SaveCompany(ctx context.Context, db *sql.DB, actor User, host, org string, 
 	return company.Save(ctx, db, actor, host, org, token, clear, key)
 }
 
-func TestCompany(ctx context.Context, db *sql.DB, key []byte, gh company.GH) (string, error) {
+func TestCompany(ctx context.Context, db *sql.DB, key []byte, gh company.GH) (company.Access, error) {
 	return company.Test(ctx, db, key, gh)
 }
 

@@ -863,9 +863,23 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 | `host` | Hostname only, no scheme or path |
 | `org` | `^[A-Za-z0-9._-]+$` |
 
-`POST /api/settings/github/test` runs `gh api user` and `gh api orgs/{org}` with `GH_TOKEN` and `GH_HOST` in the child environment and an empty `GH_CONFIG_DIR`. It returns `{ "ok": true, "login": "acme-bot" }` and stores that login as `botLogin`, or `{ "ok": false, "message": "..." }`. A completed check is `200`, including `ok: false`. No stored token is `422`.
+`POST /api/settings/github/test` runs `gh api --include user`, `gh api orgs/{org}`, and the repository list below, with `GH_TOKEN` and `GH_HOST` in the child environment and an empty `GH_CONFIG_DIR`. It stores the login as `botLogin` and returns what the token sees, or `{ "ok": false, "message": "..." }`.
 
-`GET /api/settings/github/repos` lists the organization's repositories for an admin, a Lead Developer, or a tribe admin: `{ "repos": [{ "name": "widget", "defaultBranch": "main", "archived": false }] }`. No stored token is `422`. A failed call is `502`.
+```json
+{
+  "ok": true,
+  "login": "acme-bot",
+  "tokenKind": "classic",
+  "scopes": ["public_repo", "workflow"],
+  "repoCount": 0,
+  "privateCount": 0,
+  "hint": "The token has no repo scope, so private repositories are hidden."
+}
+```
+
+`tokenKind` comes from the token prefix: `ghp_` is `classic`, `github_pat_` is `fine-grained`, anything else is `other`. `scopes` is the `X-OAuth-Scopes` header, empty for a fine-grained token. `hint` is empty when the token sees the organization's repositories. Otherwise it names the likely cause: a classic token without `repo`; a fine-grained token that sees none, which needs the organization as its resource owner; any other token that sees none, which may need SAML SSO authorization. No response contains the token. A completed check is `200`, including `ok: false`. No stored token is `422`.
+
+`GET /api/settings/github/repos` lists the organization's repositories for an admin, a Lead Developer, or a tribe admin: `{ "repos": [{ "name": "widget", "defaultBranch": "main", "archived": false, "private": true }] }`. It merges `orgs/{org}/repos?type=all` with `user/repos?affiliation=owner,collaborator,organization_member` kept to repositories the organization owns, so a repository the token's user reaches as a collaborator is listed too. Names are deduplicated without case and sorted. No stored token is `422`. A failed call is `502`.
 
 `GET /api/projects/{projectId}/settings/repository`
 

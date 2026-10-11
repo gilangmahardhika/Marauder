@@ -119,3 +119,51 @@ func TestProjectRepoGitHubDown(t *testing.T) {
 		t.Fatalf("create = %d %s, want 502", rec.Code, rec.Body.String())
 	}
 }
+
+func TestRepoListIncludesCollaboratorRepos(t *testing.T) {
+	srv := accountServer(t)
+	seedUser(t, srv, "ada@example.com", "password-long-1", "product_owner", true)
+	srv.Tools.Exec = func(_ context.Context, child execx.Child) (execx.Result, error) {
+		if !contains(child.Argv, "user/repos?affiliation=owner,collaborator,organization_member&per_page=100") {
+			return execx.Result{}, nil
+		}
+		filter := child.Argv[len(child.Argv)-1]
+		if !strings.Contains(filter, `ascii_downcase == "acme"`) {
+			return execx.Result{Exit: 1, Out: []byte("unexpected filter " + filter)}, nil
+		}
+		return execx.Result{Out: []byte(`{"name":"scbd-solid-web","defaultBranch":"main","archived":false,"private":true}` + "\n")}, nil
+	}
+	token := loginToken(t, srv, "ada@example.com", "password-long-1")
+	got := getAuth(t, srv, "/api/settings/github/repos", token)
+	if got.Code != 200 || !strings.Contains(got.Body.String(), `"name":"scbd-solid-web"`) || !strings.Contains(got.Body.String(), `"private":true`) {
+		t.Fatalf("repos = %d %s", got.Code, got.Body.String())
+	}
+}
+
+func TestCompanyTestReportsAccess(t *testing.T) {
+	srv := accountServer(t)
+	admin := seedUser(t, srv, "ada@example.com", "password-long-1", "product_owner", true)
+	classic := "ghp_classic-token-value"
+	if _, err := app.SaveCompany(context.Background(), srv.DB, admin, "github.com", "acme", &classic, false, srv.TokenKey); err != nil {
+		t.Fatal(err)
+	}
+	var argv []string
+	srv.Tools.Exec = func(_ context.Context, child execx.Child) (execx.Result, error) {
+		argv = append(argv, child.Argv...)
+		if contains(child.Argv, "--include") {
+			return execx.Result{Out: []byte("HTTP/2.0 200 OK\r\nX-Oauth-Scopes: public_repo, workflow\r\n\r\n{\"login\":\"acme-bot\"}")}, nil
+		}
+		return execx.Result{}, nil
+	}
+	token := loginToken(t, srv, "ada@example.com", "password-long-1")
+	rec := postJSON(t, srv, "/api/settings/github/test", token, map[string]any{})
+	body := rec.Body.String()
+	for _, want := range []string{`"ok":true`, `"login":"acme-bot"`, `"tokenKind":"classic"`, `"repoCount":0`, `"public_repo"`, "no repo scope"} {
+		if rec.Code != 200 || !strings.Contains(body, want) {
+			t.Fatalf("test = %d %s, want %s", rec.Code, body, want)
+		}
+	}
+	if strings.Contains(body, classic) || strings.Contains(strings.Join(argv, " "), classic) {
+		t.Fatal("token leaked into the response or argv")
+	}
+}

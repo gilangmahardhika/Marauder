@@ -4,6 +4,7 @@ import type {
   Board,
   Card,
   CompanyGitHub,
+  CompanyAccess,
   CompanyRepo,
   ConventionCatalog,
   ConventionRule,
@@ -280,7 +281,7 @@ export function putCompanyGitHub(body: Record<string, unknown>) {
 }
 
 export function testCompanyGitHub() {
-  return request<{ ok: boolean; login?: string; message?: string }>('/api/settings/github/test', {
+  return request<CompanyAccess>('/api/settings/github/test', {
     method: 'POST',
     body: '{}'
   });

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ type Repo struct {
 	Name          string `json:"name"`
 	DefaultBranch string `json:"defaultBranch"`
 	Archived      bool   `json:"archived"`
+	Private       bool   `json:"private"`
 }
 
 // CloneURL is the only remote the service talks to for a project.
@@ -144,38 +146,120 @@ func api(ctx context.Context, g GH, acct Account, token string, args ...string) 
 	return g.API(ctx, acct.Host, token, args...)
 }
 
-// Test checks the token and the organization, then stores the token's login as the bot login.
-func Test(ctx context.Context, db *sql.DB, key []byte, gh GH) (string, error) {
+// Access says what the company token can see. Hint names the most likely
+// reason when it sees too little, and is empty otherwise.
+type Access struct {
+	Login        string   `json:"login"`
+	TokenKind    string   `json:"tokenKind"`
+	Scopes       []string `json:"scopes"`
+	RepoCount    int      `json:"repoCount"`
+	PrivateCount int      `json:"privateCount"`
+	Hint         string   `json:"hint"`
+}
+
+// Test checks the token and the organization, stores the token's login as
+// the bot login, and reports which repositories of the organization it sees.
+func Test(ctx context.Context, db *sql.DB, key []byte, gh GH) (Access, error) {
 	acct, err := Load(ctx, db)
 	if err != nil {
-		return "", err
+		return Access{}, err
 	}
 	token, err := Token(ctx, db, key)
 	if err != nil {
-		return "", err
+		return Access{}, err
 	}
 	if token == "" {
-		return "", ErrNoToken
+		return Access{}, ErrNoToken
 	}
-	out, err := api(ctx, gh, acct, token, "user", "--jq", ".login")
+	out, err := api(ctx, gh, acct, token, "--include", "user")
 	if err != nil {
-		return "", err
+		return Access{}, err
 	}
-	login := strings.TrimSpace(string(out))
-	if login == "" {
-		return "", fmt.Errorf("%w: no login returned", ErrGitHub)
+	access := Access{TokenKind: tokenKind(token), Scopes: []string{}}
+	headers, body := splitResponse(string(out))
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal([]byte(body), &user); err != nil || user.Login == "" {
+		return Access{}, fmt.Errorf("%w: no login returned", ErrGitHub)
+	}
+	access.Login = user.Login
+	if access.TokenKind != "fine-grained" {
+		access.Scopes = oauthScopes(headers)
 	}
 	if acct.Org != "" {
 		if _, err := api(ctx, gh, acct, token, "orgs/"+acct.Org, "--jq", ".login"); err != nil {
-			return "", err
+			return Access{}, err
 		}
+		repos, err := listRepos(ctx, gh, acct, token)
+		if err != nil {
+			return Access{}, err
+		}
+		access.RepoCount = len(repos)
+		for _, repo := range repos {
+			if repo.Private {
+				access.PrivateCount++
+			}
+		}
+		access.Hint = accessHint(access, acct.Org)
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE workspace_github SET bot_login = $1 WHERE id = 1`, login); err != nil {
-		return "", err
+	if _, err := db.ExecContext(ctx, `UPDATE workspace_github SET bot_login = $1 WHERE id = 1`, access.Login); err != nil {
+		return Access{}, err
 	}
-	return login, nil
+	return access, nil
 }
 
+func tokenKind(token string) string {
+	switch {
+	case strings.HasPrefix(token, "ghp_"):
+		return "classic"
+	case strings.HasPrefix(token, "github_pat_"):
+		return "fine-grained"
+	default:
+		return "other"
+	}
+}
+
+func splitResponse(out string) (headers, body string) {
+	out = strings.ReplaceAll(out, "\r\n", "\n")
+	if i := strings.Index(out, "\n\n"); i >= 0 {
+		return out[:i], strings.TrimSpace(out[i+2:])
+	}
+	return "", strings.TrimSpace(out)
+}
+
+func oauthScopes(headers string) []string {
+	scopes := []string{}
+	for _, line := range strings.Split(headers, "\n") {
+		name, value, ok := strings.Cut(line, ":")
+		if !ok || !strings.EqualFold(strings.TrimSpace(name), "X-OAuth-Scopes") {
+			continue
+		}
+		for _, scope := range strings.Split(value, ",") {
+			if scope = strings.TrimSpace(scope); scope != "" {
+				scopes = append(scopes, scope)
+			}
+		}
+	}
+	return scopes
+}
+
+func accessHint(a Access, org string) string {
+	switch {
+	case a.TokenKind == "classic" && !slices.Contains(a.Scopes, "repo"):
+		return "The token has no repo scope, so private repositories are hidden."
+	case a.RepoCount > 0:
+		return ""
+	case a.TokenKind == "fine-grained":
+		return "Set the token's resource owner to " + org + " and give it access to the repositories, with Metadata read, Contents read and write, and Pull requests read and write."
+	default:
+		return "The token sees no repositories in " + org + ". If the organization uses SAML SSO, authorize the token for it."
+	}
+}
+
+// Repos lists the organization's repositories the company token can read:
+// the organization list, plus repositories of the organization the token's
+// user reaches as a collaborator.
 func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 	acct, err := Load(ctx, db)
 	if err != nil {
@@ -191,11 +275,46 @@ func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 	if token == "" {
 		return nil, ErrNoToken
 	}
-	out, err := api(ctx, gh, acct, token, "--paginate", "orgs/"+acct.Org+"/repos?per_page=100",
-		"--jq", ".[] | {name: .name, defaultBranch: .default_branch, archived: .archived}")
+	return listRepos(ctx, gh, acct, token)
+}
+
+const repoFields = "{name: .name, defaultBranch: .default_branch, archived: .archived, private: .private}"
+
+func listRepos(ctx context.Context, gh GH, acct Account, token string) ([]Repo, error) {
+	out, err := api(ctx, gh, acct, token, "--paginate", "orgs/"+acct.Org+"/repos?type=all&per_page=100",
+		"--jq", ".[] | "+repoFields)
 	if err != nil {
 		return nil, err
 	}
+	repos, err := parseRepos(out)
+	if err != nil {
+		return nil, err
+	}
+	owned := `.[] | select(.owner.login | ascii_downcase == "` + strings.ToLower(acct.Org) + `") | ` + repoFields
+	more, err := api(ctx, gh, acct, token, "--paginate", "user/repos?affiliation=owner,collaborator,organization_member&per_page=100",
+		"--jq", owned)
+	if err != nil {
+		return nil, err
+	}
+	extra, err := parseRepos(more)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, repo := range repos {
+		seen[strings.ToLower(repo.Name)] = true
+	}
+	for _, repo := range extra {
+		if !seen[strings.ToLower(repo.Name)] {
+			seen[strings.ToLower(repo.Name)] = true
+			repos = append(repos, repo)
+		}
+	}
+	sort.Slice(repos, func(i, j int) bool { return strings.ToLower(repos[i].Name) < strings.ToLower(repos[j].Name) })
+	return repos, nil
+}
+
+func parseRepos(out []byte) ([]Repo, error) {
 	repos := []Repo{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	scanner.Buffer(make([]byte, 64<<10), ghcli.MaxOut)
@@ -210,7 +329,6 @@ func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 		}
 		repos = append(repos, repo)
 	}
-	sort.Slice(repos, func(i, j int) bool { return strings.ToLower(repos[i].Name) < strings.ToLower(repos[j].Name) })
 	return repos, nil
 }
 

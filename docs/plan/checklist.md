@@ -361,3 +361,6 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestProjectRepoCheckedOnGitHub`
 - [x] `TestProjectRepoNeedsCompanyToken`
 - [x] `TestProjectRepoGitHubDown`
+- [x] The repository list adds collaborator repositories of the organization, and Test connection reports what the token sees.
+- [x] `TestRepoListIncludesCollaboratorRepos`
+- [x] `TestCompanyTestReportsAccess`

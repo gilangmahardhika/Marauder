@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation';
   import { ApiError, createProject, getCompanyRepos, getProjects, getTribes, unreachable } from '$lib/api';
   import { session } from '$lib/session';
-  import { canManageTribe, showShell } from '$lib/shell.svelte';
+  import { canManageTribe, shell, showShell } from '$lib/shell.svelte';
   import type { CompanyRepo, ProjectRecord, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
@@ -51,6 +51,14 @@
       detail: item.archived ? `${item.defaultBranch} · archived` : item.defaultBranch,
       disabled: item.archived
     }))
+  );
+  const repoError = $derived(
+    fields.repo ||
+      (reposError
+        ? `The repository list did not load: ${reposError}`
+        : repos?.length === 0
+          ? 'The company token sees no repositories in the organization.'
+          : '')
   );
   const repoPlaceholder = $derived(
     repos === null
@@ -129,16 +137,21 @@
           <option value={tribe.id}>{tribe.name}</option>
         {/each}
       </Select>
-      <SearchSelect
-        label="Repository"
-        id="repo"
-        width="lg"
-        placeholder={repoPlaceholder}
-        options={repoOptions}
-        value={repo}
-        error={fields.repo || (reposError && `The repository list did not load: ${reposError}`)}
-        onchange={pickRepo}
-      />
+      <div class="flex flex-col gap-1.5">
+        <SearchSelect
+          label="Repository"
+          id="repo"
+          width="lg"
+          placeholder={repoPlaceholder}
+          options={repoOptions}
+          value={repo}
+          error={repoError}
+          onchange={pickRepo}
+        />
+        {#if repos?.length === 0 && shell.admin}
+          <a class="inline-flex min-h-11 items-center self-start text-xs font-medium text-accent hover:underline" href="/admin/github">Check Company GitHub</a>
+        {/if}
+      </div>
       <Field label="Name" id="name" error={fields.name} bind:value={name} />
       <Field
         label="Base branch"
