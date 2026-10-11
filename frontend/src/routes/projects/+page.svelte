@@ -39,9 +39,9 @@
     )
   );
 
-  function open(id: string) {
+  function open(id: string, path: string) {
     session.setProject(id);
-    window.location.assign('/');
+    window.location.assign(path);
   }
 
   $effect(() => {
@@ -100,13 +100,23 @@
                   {#if project.repo}{project.repo}<span class="text-muted/70"> · {project.baseBranch}</span>{:else}Not set{/if}
                 </td>
                 <td class="{td} text-right">
-                  <button
-                    type="button"
-                    class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
-                    onclick={() => open(project.id)}
-                  >
-                    Open board
-                  </button>
+                  <span class="inline-flex items-center gap-1">
+                    <button
+                      type="button"
+                      class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
+                      aria-label="Settings for {project.name}"
+                      onclick={() => open(project.id, '/settings/repository')}
+                    >
+                      Settings
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
+                      onclick={() => open(project.id, '/')}
+                    >
+                      Open board
+                    </button>
+                  </span>
                 </td>
               </tr>
             {/each}
