@@ -23,6 +23,10 @@ var repoPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 const defaultProjectConfig = "paths:\n  prd: docs/prd\n  rfc: docs/rfc\n"
 
+// RepoCheck confirms a repository and base branch with GitHub and returns
+// the repository name GitHub reports. Nil skips the check.
+type RepoCheck func(ctx context.Context, repo, base string) (string, error)
+
 type NewProject struct {
 	TribeID    string
 	Name       string
@@ -33,7 +37,7 @@ type NewProject struct {
 
 // CreateProject stores a project and its links in one transaction. A company
 // admin or a tribe admin of the project's tribe may call it (RFC-057).
-func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewProject, dataRoot string) (Project, error) {
+func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewProject, dataRoot string, check RepoCheck) (Project, error) {
 	ok, err := CanManageTribe(ctx, db, actor, in.TribeID)
 	if err != nil {
 		return Project{}, err
@@ -66,6 +70,11 @@ func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewP
 	}
 	if n == 0 {
 		return Project{}, &identity.Validation{Fields: map[string]string{"tribeId": "unknown tribe"}}
+	}
+	if check != nil {
+		if in.Repo, err = check(ctx, in.Repo, in.BaseBranch); err != nil {
+			return Project{}, err
+		}
 	}
 	if err := repoFree(ctx, db, in.Repo, ""); err != nil {
 		return Project{}, err
@@ -217,9 +226,10 @@ func GetProject(ctx context.Context, db *sql.DB, projectID string) (Project, err
 	return project, err
 }
 
-// SaveRepository sets the project's repository and base branch. A Lead
-// Developer member may call it. changed is true when the repository name moved.
-func SaveRepository(ctx context.Context, db *sql.DB, actor identity.User, projectID, repo, base, dataRoot string) (project Project, changed bool, err error) {
+// SaveRepository sets the project's repository and base branch for whoever
+// may edit the project's settings. check runs when either one changes.
+// changed is true when the repository name moved.
+func SaveRepository(ctx context.Context, db *sql.DB, actor identity.User, projectID, repo, base, dataRoot string, check RepoCheck) (project Project, changed bool, err error) {
 	if err := requireSettingsEditor(ctx, db, actor, projectID); err != nil {
 		return Project{}, false, err
 	}
@@ -241,6 +251,11 @@ func SaveRepository(ctx context.Context, db *sql.DB, actor identity.User, projec
 	current, err := GetProject(ctx, db, projectID)
 	if err != nil {
 		return Project{}, false, err
+	}
+	if check != nil && (repo != current.Repo || base != current.BaseBranch) {
+		if repo, err = check(ctx, repo, base); err != nil {
+			return Project{}, false, err
+		}
 	}
 	if err := repoFree(ctx, db, repo, projectID); err != nil {
 		return Project{}, false, err

@@ -130,8 +130,8 @@ func (s *Server) projectRepository(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		if _, _, err := app.SaveRepository(r.Context(), s.DB, user, projectID, body.Repo, body.BaseBranch, s.Data); err != nil {
-			writeAccountErr(w, err)
+		if _, _, err := app.SaveRepository(r.Context(), s.DB, user, projectID, body.Repo, body.BaseBranch, s.Data, app.GitHubRepoCheck(s.DB, s.TokenKey, s.gh())); err != nil {
+			writeRepoErr(w, err)
 			return
 		}
 		s.configChanged(r, projectID, "repository", []string{"repo", "baseBranch"})
@@ -166,6 +166,14 @@ func (s *Server) projectSync(w http.ResponseWriter, r *http.Request) {
 	}
 	view.CanEdit = canEdit
 	writeJSON(w, 200, view)
+}
+
+func writeRepoErr(w http.ResponseWriter, err error) {
+	if errors.Is(err, company.ErrGitHub) {
+		writeErr(w, 502, "github", err.Error())
+		return
+	}
+	writeAccountErr(w, err)
 }
 
 func writeSyncErr(w http.ResponseWriter, err error) {

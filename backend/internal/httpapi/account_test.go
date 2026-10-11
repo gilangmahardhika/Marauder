@@ -154,6 +154,7 @@ func accountServer(t *testing.T) *httpapi.Server {
 	srv := httpapi.New()
 	srv.DB = db
 	srv.TokenKey = bytes.Repeat([]byte("k"), 32)
+	withCompanyGitHub(t, srv)
 	return srv
 }
 

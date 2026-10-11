@@ -13,6 +13,7 @@
 
   let view = $state<Repository | null>(null);
   let repos = $state<CompanyRepo[] | null>(null);
+  let reposError = $state('');
   let repo = $state('');
   let baseBranch = $state('main');
   let fields = $state<Record<string, string>>({});
@@ -28,7 +29,21 @@
   );
 
   const repoOptions = $derived(
-    (repos ?? []).map((item) => ({ value: item.name, label: item.name, detail: item.defaultBranch }))
+    (repos ?? []).map((item) => ({
+      value: item.name,
+      label: item.name,
+      detail: item.archived ? `${item.defaultBranch} · archived` : item.defaultBranch,
+      disabled: item.archived
+    }))
+  );
+  const repoPlaceholder = $derived(
+    repos === null
+      ? reposError
+        ? 'Repositories did not load'
+        : 'Loading repositories'
+      : repos.length === 0
+        ? 'No repositories in the organization'
+        : 'Search repositories'
   );
 
   function show(next: Repository) {
@@ -51,8 +66,9 @@
       .then((body) => {
         repos = body.repos;
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         repos = null;
+        reposError = error instanceof ApiError ? error.message : unreachable();
       });
   });
 
@@ -110,27 +126,23 @@
     <div class="flex flex-col gap-6">
       <Panel title="Source" hint={view ? `${view.host} / ${view.org || 'no organization'}` : ''}>
         <fieldset class="flex min-w-0 flex-col gap-5" disabled={locked}>
-          {#if repos !== null}
-            <SearchSelect
-              label="Repository"
-              id="repo"
-              width="lg"
-              placeholder="Search repositories"
-              options={repoOptions}
-              value={repo}
-              error={fields.repo}
-              onchange={pickRepo}
-            />
-          {:else}
-            <Field label="Repository" id="repo" width="lg" mono error={fields.repo} bind:value={repo} />
-          {/if}
+          <SearchSelect
+            label="Repository"
+            id="repo"
+            width="lg"
+            placeholder={repoPlaceholder}
+            options={repoOptions}
+            value={repo}
+            error={fields.repo || (reposError && !locked ? `The repository list did not load: ${reposError}` : '')}
+            onchange={pickRepo}
+          />
           <Field
             label="Base branch"
             id="base"
             width="sm"
             mono
             error={fields.baseBranch}
-            hint="Card branches start here, and Sync resets the clone to it."
+            hint="Card branches start here, and Sync resets the clone to it. It must exist on GitHub."
             bind:value={baseBranch}
           />
         </fieldset>

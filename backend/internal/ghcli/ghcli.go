@@ -15,7 +15,11 @@ import (
 	"orchestrator/backend/internal/trace"
 )
 
-var ErrGitHub = errors.New("github call failed")
+var (
+	ErrGitHub = errors.New("github call failed")
+	// ErrNotFound wraps ErrGitHub when GitHub answered 404.
+	ErrNotFound = errors.New("github returned not found")
+)
 
 const (
 	timeout = 30 * time.Second
@@ -79,7 +83,11 @@ func (g Runner) Run(ctx context.Context, host, token string, args ...string) ([]
 		return nil, fmt.Errorf("%w: %s", ErrGitHub, trace.Redact(err.Error(), []string{token}))
 	}
 	if res.Exit != 0 {
-		return nil, fmt.Errorf("%w: %s", ErrGitHub, FirstLine(trace.Redact(string(res.Out), []string{token})))
+		msg := FirstLine(trace.Redact(string(res.Out), []string{token}))
+		if strings.Contains(string(res.Out), "(HTTP 404)") {
+			return nil, fmt.Errorf("%w: %w: %s", ErrGitHub, ErrNotFound, msg)
+		}
+		return nil, fmt.Errorf("%w: %s", ErrGitHub, msg)
 	}
 	return res.Out, nil
 }

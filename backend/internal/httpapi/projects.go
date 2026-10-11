@@ -128,9 +128,9 @@ func (s *Server) projectCollection(w http.ResponseWriter, r *http.Request) {
 		}
 		project, err := app.CreateProject(r.Context(), s.DB, actor, app.NewProject{
 			TribeID: body.TribeID, Name: body.Name, Repo: body.Repo, BaseBranch: body.BaseBranch, Links: body.Links,
-		}, s.Data)
+		}, s.Data, app.GitHubRepoCheck(s.DB, s.TokenKey, s.gh()))
 		if err != nil {
-			writeAccountErr(w, err)
+			writeRepoErr(w, err)
 			return
 		}
 		links, err := app.ListLinks(r.Context(), s.DB, project.ID)

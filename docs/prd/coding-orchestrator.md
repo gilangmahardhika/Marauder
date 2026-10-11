@@ -108,6 +108,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-063 | A tribe admin runs one tribe |
 | REQ-064 | A user has a display name |
 | REQ-065 | Admins and tribe admins edit project settings |
+| REQ-066 | GitHub confirms a project's repository |
 
 ## Requirements
 
@@ -925,6 +926,18 @@ A company admin opens and saves the repository, linked projects, deploy, and con
 - A tribe admin with the Developer role saves the repository, deploy, and conventions of a project in their tribe, and receives `404` for a project in another tribe.
 - A Developer member reads each section with `canEdit: false`, and each save is rejected.
 
+### REQ-066 GitHub confirms a project's repository
+
+Creating a project, or saving a new repository or base branch for one, asks GitHub with the company token whether the repository exists in the company organization, is not archived, and has that branch. Otherwise nothing is saved, and the field says why. With no company token saved, the save is rejected and asks an admin to save one. The pages pick the repository from the organization's list, with no free-text field (RFC-060).
+
+#### Acceptance
+
+- Creating a project on a repository GitHub does not find, an archived repository, or a repository of another organization is rejected on `repo`, and stores no project.
+- A base branch GitHub does not find is rejected on `baseBranch`.
+- With no company token, creating a project is rejected and names the company GitHub token.
+- When GitHub fails, the response is `502` and nothing is saved.
+- Saving the repository settings with a missing repository is rejected. A repository GitHub finds is saved.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1028,3 +1041,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 17. Tribe admins, links at project create, and reviewers on the board (REQ-063, REQ-054, REQ-058).
 18. User display names (REQ-064).
 19. Admins and tribe admins edit project settings (REQ-065).
+20. GitHub confirms a project's repository (REQ-066).

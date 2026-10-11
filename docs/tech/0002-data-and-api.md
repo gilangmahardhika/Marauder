@@ -612,7 +612,7 @@ Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of 
 }
 ```
 
-`repo` is a repository name in the company organization, `^[A-Za-z0-9._-]+$`. A repo another project already names is `422` on `repo`. `baseBranch` follows the branch rule below. `links` is optional and follows the PUT links rules below, checked against `tribeId`. The project and its links are written in one transaction, so a bad link is `422` and stores no project. When links were stored, the server appends `config_changed` with `links`. The `201` response is the project object plus `links` in the GET links shape. The server creates `<data>/projects/<project-id>/` at mode `0700`. The clone happens on the first Sync or ingest.
+`repo` is a repository name in the company organization, `^[A-Za-z0-9._-]+$`. A repo another project already names is `422` on `repo`. The server then asks GitHub with the company token (RFC-060): `gh api repos/{org}/{repo}` and `gh api repos/{org}/{repo}/branches/{baseBranch}`. No company organization or token, a repository GitHub does not find, an archived repository, or one owned by another organization is `422` on `repo`. A branch GitHub does not find is `422` on `baseBranch`. Any other failed call is `502`. The name GitHub reports is stored. `baseBranch` follows the branch rule below. `links` is optional and follows the PUT links rules below, checked against `tribeId`. The project and its links are written in one transaction, so a bad link is `422` and stores no project. When links were stored, the server appends `config_changed` with `links`. The `201` response is the project object plus `links` in the GET links shape. The server creates `<data>/projects/<project-id>/` at mode `0700`. The clone happens on the first Sync or ingest.
 
 A project object is:
 
@@ -881,7 +881,7 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
+`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here. When either one changes, the server runs the same GitHub check as `POST /api/projects`, with the same `422` and `502` answers. A save that changes neither makes no GitHub call. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
 
 | Field | Rule |
 | --- | --- |

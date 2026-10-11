@@ -48,8 +48,18 @@
     (repos ?? []).map((item) => ({
       value: item.name,
       label: item.name,
-      detail: item.archived ? `${item.defaultBranch} · archived` : item.defaultBranch
+      detail: item.archived ? `${item.defaultBranch} · archived` : item.defaultBranch,
+      disabled: item.archived
     }))
+  );
+  const repoPlaceholder = $derived(
+    repos === null
+      ? reposError
+        ? 'Repositories did not load'
+        : 'Loading repositories'
+      : repos.length === 0
+        ? 'No repositories in the organization'
+        : 'Search repositories'
   );
 
   $effect(() => {
@@ -119,28 +129,16 @@
           <option value={tribe.id}>{tribe.name}</option>
         {/each}
       </Select>
-      {#if repos !== null}
-        <SearchSelect
-          label="Repository"
-          id="repo"
-          width="lg"
-          placeholder={repos.length === 0 ? 'No repositories in the organization' : 'Search repositories'}
-          options={repoOptions}
-          value={repo}
-          error={fields.repo}
-          onchange={pickRepo}
-        />
-      {:else}
-        <Field
-          label="Repository"
-          id="repo"
-          width="lg"
-          mono
-          error={fields.repo}
-          hint={reposError ? `The repository list did not load: ${reposError}. Type the name instead.` : 'Loading repositories'}
-          bind:value={repo}
-        />
-      {/if}
+      <SearchSelect
+        label="Repository"
+        id="repo"
+        width="lg"
+        placeholder={repoPlaceholder}
+        options={repoOptions}
+        value={repo}
+        error={fields.repo || (reposError && `The repository list did not load: ${reposError}`)}
+        onchange={pickRepo}
+      />
       <Field label="Name" id="name" error={fields.name} bind:value={name} />
       <Field
         label="Base branch"
@@ -148,7 +146,7 @@
         width="sm"
         mono
         error={fields.baseBranch}
-        hint="Card branches start here."
+        hint="Card branches start here. It must exist on GitHub."
         bind:value={baseBranch}
       />
       <div class="flex flex-col gap-1.5">
@@ -167,7 +165,7 @@
       </div>
       {#snippet footer()}
         <Button variant="ghost" href="/projects">Cancel</Button>
-        <Button variant="primary" type="submit" disabled={busy}>Create project</Button>
+        <Button variant="primary" type="submit" disabled={busy || repo === ''}>Create project</Button>
       {/snippet}
     </Panel>
   </form>

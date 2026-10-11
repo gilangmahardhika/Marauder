@@ -353,3 +353,11 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Settings bodies carry `canEdit`, and the pages lock their fields when it is false.
 - [x] `TestAdminEditsProjectSettings`
 - [x] `TestTribeAdminEditsProjectSettings`
+
+## Sprint 23: Repository check
+
+- [x] Project create and the repository save ask GitHub with the company token, and store the name GitHub reports.
+- [x] UI: the repository is picked from the organization list only.
+- [x] `TestProjectRepoCheckedOnGitHub`
+- [x] `TestProjectRepoNeedsCompanyToken`
+- [x] `TestProjectRepoGitHubDown`

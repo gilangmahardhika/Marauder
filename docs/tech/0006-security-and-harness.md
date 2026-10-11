@@ -420,6 +420,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestCreateProjectLinkOtherTribeRollsBack` | A create naming a project in another tribe is `422` on `links` and stores no project |
 | `TestTribeAdminSavesLinks` | A tribe admin who is a Developer saves links. A plain Developer member is `403` |
 | `TestAdminEditsProjectSettings` | A company admin with the Product Owner role, not in the tribe, reads and saves repository, links, deploy, and conventions with `canEdit: true` and passes the Sync role check. The same admin is `404` on the project's cards, and an unknown project is `404` (RFC-059) |
+| `TestProjectRepoCheckedOnGitHub` | Creating a project on a missing, archived, or moved repository is `422` on `repo`, a missing branch is `422` on `baseBranch`, and no project is stored. A repository save with a missing repository is `422`, and one GitHub finds is saved (RFC-060) |
+| `TestProjectRepoNeedsCompanyToken` | With no company token, creating a project is `422` and names the company GitHub token |
+| `TestProjectRepoGitHubDown` | A GitHub call that fails with anything but 404 is `502` |
 | `TestTribeAdminEditsProjectSettings` | A tribe admin who is a Developer saves all four sections of a project in their tribe and is `404` on another tribe's project. A plain Developer member reads each with `canEdit: false` and is `403` on each save |
 | `TestPackIncludesLinkedRequirements` | The implementer pack holds the linked project's accepted requirements as `<project>:REQ-001` |
 | `TestSharedPathConfined` | A shared path with `..`, an absolute path, or `.git` is rejected |

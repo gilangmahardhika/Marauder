@@ -49,8 +49,17 @@ func TribeAdminOf(ctx context.Context, db *sql.DB, userID string) ([]string, err
 	return tenancy.TribeAdminOf(ctx, db, userID)
 }
 
-func CreateProject(ctx context.Context, db *sql.DB, actor User, in NewProject, dataRoot string) (Project, error) {
-	return tenancy.CreateProject(ctx, db, actor, in, dataRoot)
+type RepoCheck = tenancy.RepoCheck
+
+// GitHubRepoCheck confirms a repository and branch with the company token.
+func GitHubRepoCheck(db *sql.DB, key []byte, gh company.GH) RepoCheck {
+	return func(ctx context.Context, repo, base string) (string, error) {
+		return company.CheckRepo(ctx, db, key, gh, repo, base)
+	}
+}
+
+func CreateProject(ctx context.Context, db *sql.DB, actor User, in NewProject, dataRoot string, check RepoCheck) (Project, error) {
+	return tenancy.CreateProject(ctx, db, actor, in, dataRoot, check)
 }
 
 func ListProjects(ctx context.Context, db *sql.DB, actor User) ([]Project, error) {
@@ -73,8 +82,8 @@ func CanEditSettings(ctx context.Context, db *sql.DB, actor User, projectID stri
 	return tenancy.CanEditSettings(ctx, db, actor, projectID)
 }
 
-func SaveRepository(ctx context.Context, db *sql.DB, actor User, projectID, repo, base, dataRoot string) (Project, bool, error) {
-	return tenancy.SaveRepository(ctx, db, actor, projectID, repo, base, dataRoot)
+func SaveRepository(ctx context.Context, db *sql.DB, actor User, projectID, repo, base, dataRoot string, check RepoCheck) (Project, bool, error) {
+	return tenancy.SaveRepository(ctx, db, actor, projectID, repo, base, dataRoot, check)
 }
 
 func ListLinks(ctx context.Context, db *sql.DB, projectID string) ([]Link, error) {

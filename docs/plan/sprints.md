@@ -34,12 +34,15 @@ flowchart LR
   s20[Sprint20_UserNames]
   s21[Sprint21_CardContext]
   s22[Sprint22_SettingsForAdmins]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19 --> s20 --> s21 --> s22
+  s23[Sprint23_RepositoryCheck]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19 --> s20 --> s21 --> s22 --> s23
 ```
 
 Sprint 21 implements display and read fields under RFC-054, RFC-055, and RFC-056. It adds no decision.
 
 Sprint 22 implements [../rfc/0013-project-settings-admins.md](../rfc/0013-project-settings-admins.md).
+
+Sprint 23 implements [../rfc/0014-repository-check.md](../rfc/0014-repository-check.md).
 
 Sprint 20 implements [../rfc/0012-user-names.md](../rfc/0012-user-names.md).
 
@@ -350,3 +353,14 @@ Packages: `internal/tenancy`, `internal/app`, `internal/conventions`, `internal/
 - UI: the four settings pages lock their fields and Save when `canEdit` is false. `SaveBar` takes `disabled`.
 
 Done when: `TestAdminEditsProjectSettings`, `TestTribeAdminEditsProjectSettings`.
+
+## Sprint 23: Repository check
+
+Goal: GitHub confirms a project's repository and base branch before they are saved (RFC-060, REQ-066).
+
+Packages: `internal/ghcli`, `internal/company`, `internal/tenancy`, `internal/app`, `internal/httpapi`.
+
+- `company.CheckRepo` looks up the repository and branch with the company token. Project create and the repository save call it.
+- UI: New project and Repository pick the repository from the organization list only. Archived repositories cannot be picked.
+
+Done when: `TestProjectRepoCheckedOnGitHub`, `TestProjectRepoNeedsCompanyToken`, `TestProjectRepoGitHubDown`.

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -211,4 +212,67 @@ func Repos(ctx context.Context, db *sql.DB, key []byte, gh GH) ([]Repo, error) {
 	}
 	sort.Slice(repos, func(i, j int) bool { return strings.ToLower(repos[i].Name) < strings.ToLower(repos[j].Name) })
 	return repos, nil
+}
+
+// CheckRepo asks GitHub, with the company token, whether repo is an
+// unarchived repository of the company organization with branch base. It
+// returns the name GitHub reports. Answers GitHub gives are validation errors
+// on repo or baseBranch; a failed call is ErrGitHub.
+func CheckRepo(ctx context.Context, db *sql.DB, key []byte, gh GH, repo, base string) (string, error) {
+	acct, err := Load(ctx, db)
+	if err != nil {
+		return "", err
+	}
+	if acct.Org == "" {
+		return "", repoField("an admin must set the company GitHub organization first")
+	}
+	token, err := Token(ctx, db, key)
+	if err != nil {
+		return "", err
+	}
+	if token == "" {
+		return "", repoField("an admin must save the company GitHub token first")
+	}
+	out, err := api(ctx, gh, acct, token, "repos/"+acct.Org+"/"+repo,
+		"--jq", "{name: .name, owner: .owner.login, archived: .archived}")
+	if errors.Is(err, ghcli.ErrNotFound) {
+		return "", repoField("no repository " + repo + " in " + acct.Org + " on " + acct.Host)
+	}
+	if err != nil {
+		return "", err
+	}
+	var found struct {
+		Name     string `json:"name"`
+		Owner    string `json:"owner"`
+		Archived bool   `json:"archived"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out), &found); err != nil || found.Name == "" {
+		return "", fmt.Errorf("%w: unexpected repository reply", ErrGitHub)
+	}
+	if !strings.EqualFold(found.Owner, acct.Org) {
+		return "", repoField(repo + " has moved out of " + acct.Org)
+	}
+	if found.Archived {
+		return "", repoField(found.Name + " is archived")
+	}
+	_, err = api(ctx, gh, acct, token, "repos/"+acct.Org+"/"+found.Name+"/branches/"+branchPath(base), "--jq", ".name")
+	if errors.Is(err, ghcli.ErrNotFound) {
+		return "", &identity.Validation{Fields: map[string]string{"baseBranch": "no branch " + base + " in " + found.Name}}
+	}
+	if err != nil {
+		return "", err
+	}
+	return found.Name, nil
+}
+
+func repoField(msg string) error {
+	return &identity.Validation{Fields: map[string]string{"repo": msg}}
+}
+
+func branchPath(branch string) string {
+	parts := strings.Split(branch, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }
