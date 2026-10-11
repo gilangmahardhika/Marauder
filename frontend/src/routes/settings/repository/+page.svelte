@@ -21,6 +21,12 @@
 
   showShell(() => ({ title: 'Repository', message }));
 
+  const locked = $derived(view !== null && !view.canEdit);
+  const canSync = $derived(
+    view !== null &&
+      (view.canEdit || ['lead_developer', 'senior_developer', 'developer'].includes(shell.role))
+  );
+
   const repoOptions = $derived(
     (repos ?? []).map((item) => ({ value: item.name, label: item.name, detail: item.defaultBranch }))
   );
@@ -103,29 +109,31 @@
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
       <Panel title="Source" hint={view ? `${view.host} / ${view.org || 'no organization'}` : ''}>
-        {#if repos !== null}
-          <SearchSelect
-            label="Repository"
-            id="repo"
-            width="lg"
-            placeholder="Search repositories"
-            options={repoOptions}
-            value={repo}
-            error={fields.repo}
-            onchange={pickRepo}
+        <fieldset class="flex min-w-0 flex-col gap-5" disabled={locked}>
+          {#if repos !== null}
+            <SearchSelect
+              label="Repository"
+              id="repo"
+              width="lg"
+              placeholder="Search repositories"
+              options={repoOptions}
+              value={repo}
+              error={fields.repo}
+              onchange={pickRepo}
+            />
+          {:else}
+            <Field label="Repository" id="repo" width="lg" mono error={fields.repo} bind:value={repo} />
+          {/if}
+          <Field
+            label="Base branch"
+            id="base"
+            width="sm"
+            mono
+            error={fields.baseBranch}
+            hint="Card branches start here, and Sync resets the clone to it."
+            bind:value={baseBranch}
           />
-        {:else}
-          <Field label="Repository" id="repo" width="lg" mono error={fields.repo} bind:value={repo} />
-        {/if}
-        <Field
-          label="Base branch"
-          id="base"
-          width="sm"
-          mono
-          error={fields.baseBranch}
-          hint="Card branches start here, and Sync resets the clone to it."
-          bind:value={baseBranch}
-        />
+        </fieldset>
       </Panel>
       <Panel title="Clone">
         {#snippet actions()}
@@ -139,12 +147,16 @@
         </dl>
         {#if fields.token}<p class="error text-xs">{fields.token}</p>{/if}
         {#snippet footer()}
-          <Button type="button" variant="secondary" disabled={busy || !view || view.repo === ''} onclick={() => void sync()}>
+          <Button type="button" variant="secondary" disabled={busy || !canSync || view?.repo === ''} onclick={() => void sync()}>
             Sync
           </Button>
         {/snippet}
       </Panel>
     </div>
-    <SaveBar {busy} note="Only a Lead Developer can save." />
+    <SaveBar
+      {busy}
+      disabled={locked}
+      note={locked ? 'Only a Lead Developer, a tribe admin, or an admin can change these settings.' : ''}
+    />
   </form>
 </Page>

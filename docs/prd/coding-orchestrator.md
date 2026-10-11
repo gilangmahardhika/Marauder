@@ -107,6 +107,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-062 | Packs carry the rules and skills, and the trace names their versions |
 | REQ-063 | A tribe admin runs one tribe |
 | REQ-064 | A user has a display name |
+| REQ-065 | Admins and tribe admins edit project settings |
 
 ## Requirements
 
@@ -658,17 +659,18 @@ v1 is acceptable when the following script passes on a fixture repo and the same
 
 ### REQ-044 Settings are edited through the API, and secrets stay write-only
 
-A Lead Developer member edits project settings from the web UI, through the JSON API. An admin edits the company GitHub account, LLM APIs, and router, which every project uses (RFC-052). Each user edits their own GitHub settings. There is no approver list and no operator login.
+A Lead Developer member, a tribe admin of the project's tribe, or a company admin edits project settings from the web UI, through the JSON API (REQ-065). An admin edits the company GitHub account, LLM APIs, and router, which every project uses (RFC-052). Each user edits their own GitHub settings. There is no approver list and no operator login.
 
 | Section | Fields | Who saves |
 | --- | --- | --- |
 | Account GitHub | Host, login, token | That user |
 | Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
-| Project repository | Repo in the company organization, base branch | Lead Developer member |
-| Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member, or tribe admin |
+| Project repository | Repo in the company organization, base branch | Lead Developer member, tribe admin, or admin |
+| Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member, tribe admin, or admin |
+| Project conventions | Stacks added by hand, enabled skills | Lead Developer member, tribe admin, or admin |
 | LLM | Families, each with protocol, base URL, model ids, and an API key. One list for the company | Admin |
 | Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
-| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member |
+| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member, tribe admin, or admin |
 
 No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
 
@@ -730,7 +732,7 @@ An admin creates a tribe and adds users to it. A tribe admin may also add and re
 
 ### REQ-049 A project is visible to its tribe
 
-An admin, or a tribe admin of that tribe, creates a project on one tribe and may choose its linked projects in the same request (REQ-054, REQ-063). The project names one repository (REQ-053). Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
+An admin, or a tribe admin of that tribe, creates a project on one tribe and may choose its linked projects in the same request (REQ-054, REQ-063). The project names one repository (REQ-053). Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule, except that a company admin may open any project's settings (REQ-065).
 
 #### Acceptance
 
@@ -861,7 +863,7 @@ The company has one catalog of coding rules. A rule is global (naming, database 
 
 ### REQ-060 A project's stacks are detected, and a Lead Developer may add more
 
-Each Sync detects the project's stacks from the clone's marker files and dependencies, two directory levels deep, without following links. A Lead Developer member may add stacks by hand. A Sync replaces the detected stacks and keeps the added ones. The rules for a card are the global rules plus the rules of the project's stacks (RFC-055).
+Each Sync detects the project's stacks from the clone's marker files and dependencies, two directory levels deep, without following links. A Lead Developer member, a tribe admin, or an admin may add stacks by hand (REQ-065). A Sync replaces the detected stacks and keeps the added ones. The rules for a card are the global rules plus the rules of the project's stacks (RFC-055).
 
 #### Acceptance
 
@@ -871,7 +873,7 @@ Each Sync detects the project's stacks from the clone's marker files and depende
 
 ### REQ-061 A project enables integration skills, and the planner attaches them to cards
 
-An admin writes a skill: a slug, when to use it, and a body with steps, configuration, security rules, and a test checklist. A Lead Developer member enables skills for a project. The planner sees the enabled skills and may attach them to a card with `skillIds`. A skill that is not enabled for the project fails the tool call (RFC-056).
+An admin writes a skill: a slug, when to use it, and a body with steps, configuration, security rules, and a test checklist. A Lead Developer member, a tribe admin, or an admin enables skills for a project (REQ-065). The planner sees the enabled skills and may attach them to a card with `skillIds`. A skill that is not enabled for the project fails the tool call (RFC-056).
 
 #### Acceptance
 
@@ -891,7 +893,7 @@ The implementer and reviewer packs carry the card's rules and skills inside the 
 
 ### REQ-063 A tribe admin runs one tribe
 
-A company admin, or a tribe admin, may make a member of that tribe a tribe admin. A tribe admin adds and removes the tribe's members, grants or clears the tribe admin flag on other members, creates projects on the tribe with their links, and saves the links of any project in the tribe. A tribe admin cannot create tribes or users, edit company settings, or clear their own flag (RFC-057).
+A company admin, or a tribe admin, may make a member of that tribe a tribe admin. A tribe admin adds and removes the tribe's members, grants or clears the tribe admin flag on other members, creates projects on the tribe with their links, and saves the settings of any project in the tribe (REQ-065). A tribe admin cannot create tribes or users, edit company settings, or clear their own flag (RFC-057).
 
 #### Acceptance
 
@@ -912,6 +914,17 @@ An admin gives each new user a display name, and may change it later. Each user 
 - A user changes their own name on the Account page, and the user menu shows it. Another user's name is unchanged.
 - The board and the card page show the owner's and reviewers' names. A user without a name shows the login, then the email.
 
+### REQ-065 Admins and tribe admins edit project settings
+
+A company admin opens and saves the repository, linked projects, deploy, and conventions settings of every project, including a project in a tribe they are not a member of. A tribe admin does the same for every project in their tribe. A Lead Developer member keeps the same rights. Each may run Sync. Other members read the settings and cannot save them, and the pages lock their fields. Opening a project's settings does not open its board (RFC-059).
+
+#### Acceptance
+
+- A company admin with the Product Owner role who is not in the tribe reads and saves all four sections, each with `canEdit: true`, and runs Sync.
+- The same admin receives `404` for the project's cards.
+- A tribe admin with the Developer role saves the repository, deploy, and conventions of a project in their tribe, and receives `404` for a project in another tribe.
+- A Developer member reads each section with `canEdit: false`, and each save is rejected.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -925,7 +938,7 @@ An admin gives each new user a display name, and may change it later. Each user 
 
 ## Configuration defaults
 
-Project settings live in that project's `config.yaml` and secrets (REQ-045). A Lead Developer member edits them from the settings pages (REQ-044). An admin edits the company GitHub account (REQ-052). Each user edits their own GitHub settings (REQ-051). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
+Project settings live in that project's `config.yaml` and secrets (REQ-045). A Lead Developer member, a tribe admin, or an admin edits them from the settings pages (REQ-044, REQ-065). An admin edits the company GitHub account (REQ-052). Each user edits their own GitHub settings (REQ-051). The full shape is in [tech/0002-data-and-api.md](../tech/0002-data-and-api.md). The defaults that shape behavior:
 
 | Setting | v1 default |
 | --- | --- |
@@ -1014,3 +1027,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 16. Coding rules, stacks, and integration skills (REQ-059 through REQ-062).
 17. Tribe admins, links at project create, and reviewers on the board (REQ-063, REQ-054, REQ-058).
 18. User display names (REQ-064).
+19. Admins and tribe admins edit project settings (REQ-065).

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getCards, startRun, unreachable } from '$lib/api';
-  import { filterCards, ownerOptions, personName } from '$lib/board';
-  import { pickParam } from '$lib/filter';
+  import { filterCards, ownerChoices, parseOwners, personName } from '$lib/board';
+  import OwnerFilter from '$lib/components/OwnerFilter.svelte';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import { statusLabel } from '$lib/status';
@@ -12,7 +12,6 @@
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
   import SearchBox from '$lib/ui/SearchBox.svelte';
-  import Segmented from '$lib/ui/Segmented.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
   const labels = [
@@ -88,13 +87,14 @@
   }
 
   const params = $derived($page.url.searchParams);
+  const choices = $derived(ownerChoices(cards, shell.email));
   const filter = $derived({
     q: params.get('q') ?? '',
-    owner: pickParam(params.get('owner'), ['all', 'mine'] as const, 'all'),
+    owners: parseOwners(params.get('owner'), choices, shell.email),
     blocked: params.get('blocked') === '1'
   });
-  const filtered = $derived(filter.q !== '' || filter.owner !== 'all' || filter.blocked);
-  const shown = $derived(filterCards(cards, filter, shell.email));
+  const filtered = $derived(filter.q !== '' || filter.owners.length > 0 || filter.blocked);
+  const shown = $derived(filterCards(cards, filter));
 
   const summary = $derived(
     cards.length === 0
@@ -125,7 +125,7 @@
     <div class="mb-4">
       <Toolbar>
         <SearchBox label="Search cards" value={filter.q} placeholder="Search title, card id, requirement, owner, or reviewer" />
-        <Segmented label="Owner" options={ownerOptions} value={filter.owner} onchange={(owner) => setParams({ owner: owner === 'all' ? '' : owner })} />
+        <OwnerFilter {choices} selected={filter.owners} onchange={(next) => setParams({ owner: next.join(',') })} />
         <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
           <input
             type="checkbox"

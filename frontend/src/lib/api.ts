@@ -12,6 +12,7 @@ import type {
   LLMSettings,
   ProjectConventions,
   ProjectLink,
+  ProjectLinks,
   ProjectRecord,
   Repository,
   RequirementDraft,
@@ -56,7 +57,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(0, 'network', 'API unreachable at http://127.0.0.1:8787');
   }
   const text = await response.text();
-  const payload = text ? (JSON.parse(text) as { error?: { code?: string; message?: string; fields?: Record<string, string> } }) : {};
+  const payload = text
+    ? (JSON.parse(text) as { error?: { code?: string; message?: string; fields?: Record<string, string> } })
+    : {};
   if (response.status === 401 && path !== '/api/session') {
     session.clear();
     try {
@@ -67,7 +70,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (!response.ok) {
     const error = payload.error ?? {};
-    throw new ApiError(response.status, error.code ?? 'error', error.message ?? response.statusText, error.fields ?? {});
+    throw new ApiError(
+      response.status,
+      error.code ?? 'error',
+      error.message ?? response.statusText,
+      error.fields ?? {}
+    );
   }
   return payload as T;
 }
@@ -83,7 +91,12 @@ export function closeSession() {
   return request<void>('/api/session', { method: 'DELETE' });
 }
 
-type Me = SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean; tribeAdminOf: string[] };
+type Me = SessionUser & {
+  githubLogin: string;
+  githubTokenSet: boolean;
+  githubVerified: boolean;
+  tribeAdminOf: string[];
+};
 
 export function getMe() {
   return request<Me>('/api/me');
@@ -130,7 +143,10 @@ export function createProject(body: {
   baseBranch: string;
   links: { projectId: string; sharedPaths: string[] }[];
 }) {
-  return request<ProjectRecord & { links: ProjectLink[] }>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
+  return request<ProjectRecord & { links: ProjectLink[] }>('/api/projects', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
 }
 
 export function getTribes() {
@@ -150,7 +166,10 @@ export function getMembers(tribeId: string) {
 }
 
 export function setTribeAdmin(tribeId: string, userId: string, tribeAdmin: boolean) {
-  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ tribeAdmin }) });
+  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ tribeAdmin })
+  });
 }
 
 export function getTribeCandidates(tribeId: string) {
@@ -284,11 +303,11 @@ export function syncRepository() {
 }
 
 export function getLinks() {
-  return request<{ links: ProjectLink[] }>(`${projectPrefix()}/settings/links`);
+  return request<ProjectLinks>(`${projectPrefix()}/settings/links`);
 }
 
 export function putLinks(links: { projectId: string; sharedPaths: string[] }[]) {
-  return request<{ links: ProjectLink[] }>(`${projectPrefix()}/settings/links`, {
+  return request<ProjectLinks>(`${projectPrefix()}/settings/links`, {
     method: 'PUT',
     body: JSON.stringify({ links })
   });

@@ -220,11 +220,8 @@ func GetProject(ctx context.Context, db *sql.DB, projectID string) (Project, err
 // SaveRepository sets the project's repository and base branch. A Lead
 // Developer member may call it. changed is true when the repository name moved.
 func SaveRepository(ctx context.Context, db *sql.DB, actor identity.User, projectID, repo, base, dataRoot string) (project Project, changed bool, err error) {
-	if err := Visible(ctx, db, projectID, actor.ID); err != nil {
+	if err := requireSettingsEditor(ctx, db, actor, projectID); err != nil {
 		return Project{}, false, err
-	}
-	if actor.Role != "lead_developer" {
-		return Project{}, false, identity.ErrForbidden
 	}
 	repo = strings.TrimSpace(repo)
 	base = strings.TrimSpace(base)
@@ -335,24 +332,15 @@ func ListLinks(ctx context.Context, db *sql.DB, projectID string) ([]Link, error
 	return out, rows.Err()
 }
 
-// SaveLinks replaces the project's links. A Lead Developer member or a tribe
-// admin of the project's tribe may call it.
+// SaveLinks replaces the project's links. Whoever may edit the project's
+// settings may call it (RFC-059).
 func SaveLinks(ctx context.Context, db *sql.DB, actor identity.User, projectID string, links []LinkInput) ([]Link, error) {
-	if err := Visible(ctx, db, projectID, actor.ID); err != nil {
+	if err := requireSettingsEditor(ctx, db, actor, projectID); err != nil {
 		return nil, err
 	}
 	self, err := GetProject(ctx, db, projectID)
 	if err != nil {
 		return nil, err
-	}
-	if actor.Role != "lead_developer" {
-		ok, err := IsTribeAdmin(ctx, db, actor.ID, self.TribeID)
-		if err != nil {
-			return nil, err
-		}
-		if !ok {
-			return nil, identity.ErrForbidden
-		}
 	}
 	clean, err := cleanLinks(ctx, db, self.TribeID, projectID, links)
 	if err != nil {
@@ -448,4 +436,48 @@ func Visible(ctx context.Context, db *sql.DB, projectID, userID string) error {
 		return identity.ErrNotFound
 	}
 	return err
+}
+
+// SettingsVisible lets a company admin read any project's settings. Everyone
+// else must be a member of the project's tribe (RFC-059). It does not grant
+// card access.
+func SettingsVisible(ctx context.Context, db *sql.DB, projectID string, actor identity.User) error {
+	if actor.Admin {
+		_, err := GetProject(ctx, db, projectID)
+		return err
+	}
+	return Visible(ctx, db, projectID, actor.ID)
+}
+
+// CanEditSettings is true for a company admin, a Lead Developer member, or a
+// tribe admin of the project's tribe (RFC-059). Call SettingsVisible first.
+func CanEditSettings(ctx context.Context, db *sql.DB, actor identity.User, projectID string) (bool, error) {
+	if actor.Admin {
+		return true, nil
+	}
+	if err := Visible(ctx, db, projectID, actor.ID); err != nil {
+		return false, err
+	}
+	if actor.Role == "lead_developer" {
+		return true, nil
+	}
+	project, err := GetProject(ctx, db, projectID)
+	if err != nil {
+		return false, err
+	}
+	return IsTribeAdmin(ctx, db, actor.ID, project.TribeID)
+}
+
+func requireSettingsEditor(ctx context.Context, db *sql.DB, actor identity.User, projectID string) error {
+	if err := SettingsVisible(ctx, db, projectID, actor); err != nil {
+		return err
+	}
+	ok, err := CanEditSettings(ctx, db, actor, projectID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return identity.ErrForbidden
+	}
+	return nil
 }

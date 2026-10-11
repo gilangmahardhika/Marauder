@@ -343,3 +343,13 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] UI: the card page shows People, Intake, Rules, Skills, and Details.
 - [x] `TestCardDetail`
 - [x] `status.test.ts`
+- [x] Board owner filter by avatar, several owners at a time, replacing Everyone and Mine.
+- [x] `board.test.ts` owner cases and `OwnerFilter.test.ts`
+
+## Sprint 22: Settings for admins
+
+- [x] A company admin reads and saves every project's settings and runs Sync, without card access.
+- [x] A tribe admin saves every setting of a project in their tribe.
+- [x] Settings bodies carry `canEdit`, and the pages lock their fields when it is false.
+- [x] `TestAdminEditsProjectSettings`
+- [x] `TestTribeAdminEditsProjectSettings`

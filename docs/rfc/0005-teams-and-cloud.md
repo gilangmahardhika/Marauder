@@ -59,6 +59,8 @@ Superseded in part by RFC-053 in [0008-manual-requirements.md](0008-manual-requi
 
 Superseded in part by RFC-057 in [0011-tribe-admin.md](0011-tribe-admin.md). A tribe admin may add and remove members of their tribe, make other members tribe admins, and create projects on their tribe.
 
+Superseded in part by RFC-059 in [0013-project-settings-admins.md](0013-project-settings-admins.md). A company admin may save the settings of every project, and a tribe admin those of every project in their tribe, as well as a Lead Developer member. Opening a project's settings does not grant card access.
+
 ## RFC-047 A tribe owns its projects
 
 Users, sessions, tribes, membership, and projects live in one PostgreSQL database. The connection string is `databaseUrl` in the service `secrets.json`. The API does not return it. A project belongs to one tribe. A tribe has one or more projects. A user may belong to several tribes. The user sees a project's cards, intake, and settings only as a member of that tribe. A non-member, and a request for an unknown project id, gets `404`. Admin manages user, tribe, membership, and project records. Each project has its own repo, settings, worktrees, and intake rows. Requirement ids and decision ids are unique per project.

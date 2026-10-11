@@ -116,7 +116,7 @@ func (s *Server) companyRepos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectRepository(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := s.visibleProject(w, r)
+	projectID, canEdit, ok := s.settingsProject(w, r)
 	if !ok {
 		return
 	}
@@ -141,11 +141,12 @@ func (s *Server) projectRepository(w http.ResponseWriter, r *http.Request) {
 		writeAccountErr(w, err)
 		return
 	}
+	view.CanEdit = canEdit
 	writeJSON(w, 200, view)
 }
 
 func (s *Server) projectSync(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := s.visibleProject(w, r)
+	projectID, canEdit, ok := s.settingsProject(w, r)
 	if !ok {
 		return
 	}
@@ -153,14 +154,17 @@ func (s *Server) projectSync(w http.ResponseWriter, r *http.Request) {
 	switch user.Role {
 	case "lead_developer", "senior_developer", "developer":
 	default:
-		writeErr(w, 403, "forbidden", "forbidden")
-		return
+		if !canEdit {
+			writeErr(w, 403, "forbidden", "forbidden")
+			return
+		}
 	}
 	view, err := app.Sync(r.Context(), s.DB, s.TokenKey, s.Data, projectID, s.Tools)
 	if err != nil {
 		writeSyncErr(w, err)
 		return
 	}
+	view.CanEdit = canEdit
 	writeJSON(w, 200, view)
 }
 
@@ -176,7 +180,7 @@ func writeSyncErr(w http.ResponseWriter, err error) {
 }
 
 func (s *Server) projectLinks(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := s.visibleProject(w, r)
+	projectID, canEdit, ok := s.settingsProject(w, r)
 	if !ok {
 		return
 	}
@@ -195,7 +199,7 @@ func (s *Server) projectLinks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.configChanged(r, projectID, "links", []string{"links"})
-		writeJSON(w, 200, map[string]any{"links": links})
+		writeJSON(w, 200, map[string]any{"links": links, "canEdit": canEdit})
 		return
 	}
 	links, err := app.ListLinks(r.Context(), s.DB, projectID)
@@ -203,11 +207,11 @@ func (s *Server) projectLinks(w http.ResponseWriter, r *http.Request) {
 		writeAccountErr(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"links": links})
+	writeJSON(w, 200, map[string]any{"links": links, "canEdit": canEdit})
 }
 
 func (s *Server) projectDeploy(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := s.visibleProject(w, r)
+	projectID, canEdit, ok := s.settingsProject(w, r)
 	if !ok {
 		return
 	}
@@ -216,8 +220,7 @@ func (s *Server) projectDeploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPut {
-		user, _ := app.CurrentUser(r.Context())
-		if user.Role != "lead_developer" {
+		if !canEdit {
 			writeErr(w, 403, "forbidden", "forbidden")
 			return
 		}
@@ -252,7 +255,9 @@ func (s *Server) projectDeploy(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "internal", "settings")
 		return
 	}
-	writeJSON(w, 200, deployBody(settings.DeployView(cfg), secrets.DeployToken != ""))
+	body := deployBody(settings.DeployView(cfg), secrets.DeployToken != "")
+	body["canEdit"] = canEdit
+	writeJSON(w, 200, body)
 }
 
 func deployBody(d settings.Deploy, tokenSet bool) map[string]any {

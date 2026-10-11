@@ -99,16 +99,12 @@ func (s *Server) conventionsDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) projectConventions(w http.ResponseWriter, r *http.Request) {
-	projectID, ok := s.visibleProject(w, r)
+	projectID, canEdit, ok := s.settingsProject(w, r)
 	if !ok {
 		return
 	}
 	if r.Method == http.MethodPut {
 		user, _ := app.CurrentUser(r.Context())
-		if user.Role != "lead_developer" {
-			writeErr(w, 403, "forbidden", "forbidden")
-			return
-		}
 		var body struct {
 			ManualStackIDs []string `json:"manualStackIds"`
 			SkillIDs       []string `json:"skillIds"`
@@ -117,12 +113,13 @@ func (s *Server) projectConventions(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		view, err := conventions.SaveProject(r.Context(), s.DB, user, projectID, body.ManualStackIDs, body.SkillIDs)
+		view, err := app.SaveProjectConventions(r.Context(), s.DB, user, projectID, body.ManualStackIDs, body.SkillIDs)
 		if err != nil {
 			writeAccountErr(w, err)
 			return
 		}
 		s.configChanged(r, projectID, "conventions", []string{"manualStackIds", "skillIds"})
+		view.CanEdit = canEdit
 		writeJSON(w, 200, view)
 		return
 	}
@@ -131,5 +128,6 @@ func (s *Server) projectConventions(w http.ResponseWriter, r *http.Request) {
 		writeAccountErr(w, err)
 		return
 	}
+	view.CanEdit = canEdit
 	writeJSON(w, 200, view)
 }

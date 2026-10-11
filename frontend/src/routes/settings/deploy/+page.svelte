@@ -27,6 +27,7 @@
   let message = $state('Loading deploy settings');
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
+  let canEdit = $state(true);
 
   showShell(() => ({ title: 'Deploy', message }));
 
@@ -52,6 +53,7 @@
         implementationCap = body.implementationCap || 2;
         prdPath = body.prdPath;
         rfcPath = body.rfcPath;
+        canEdit = body.canEdit;
         message = 'Deploy settings';
       })
       .catch((error: unknown) => {
@@ -83,6 +85,7 @@
         ...omitEmptySecret('deployToken', token, clear)
       });
       tokenSet = saved.deployTokenSet;
+      canEdit = saved.canEdit;
       token = '';
       clear = false;
       message = 'Deploy settings';
@@ -95,9 +98,9 @@
   }
 </script>
 
-<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings. Only a Lead Developer can save.">
+<Page title="Deploy" description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings.">
   <form onsubmit={save}>
-    <div class="flex flex-col gap-6">
+    <fieldset class="flex min-w-0 flex-col gap-6" disabled={!canEdit}>
       <Panel title="Dev server" hint="Empty values can be saved. Deploy stops with deploy_config until they are set.">
         <div class="grid gap-5 sm:grid-cols-2">
           <Field label="Dev URL" id="dev-url" width="full" mono error={fields.devUrl} bind:value={devUrl} />
@@ -143,7 +146,11 @@
           <Field label="RFC path" id="rfc" width="full" mono bind:value={rfcPath} />
         </div>
       </Panel>
-    </div>
-    <SaveBar {busy} />
+    </fieldset>
+    <SaveBar
+      {busy}
+      disabled={!canEdit}
+      note={canEdit ? '' : 'Only a Lead Developer, a tribe admin, or an admin can change these settings.'}
+    />
   </form>
 </Page>

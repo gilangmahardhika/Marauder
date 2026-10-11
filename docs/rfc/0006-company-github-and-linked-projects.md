@@ -53,3 +53,5 @@ Consequences: linked content sits inside the untrusted markers and is redacted l
 Requirements: REQ-016, REQ-017, REQ-054.
 
 Superseded in part by RFC-057 in [0011-tribe-admin.md](0011-tribe-admin.md). A tribe admin may also save the links of any project in their tribe, and the creator of a project may choose its links at create.
+
+Superseded in part by RFC-059 in [0013-project-settings-admins.md](0013-project-settings-admins.md). A company admin may save the links of every project, and a tribe admin those of every project in their tribe.

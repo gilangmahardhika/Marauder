@@ -28,6 +28,7 @@ type Project struct {
 	Stacks   []ProjectStack `json:"stacks"`
 	SkillIDs []string       `json:"skillIds"`
 	Rules    []ProjectRule  `json:"rules"`
+	CanEdit  bool           `json:"canEdit"`
 }
 
 type SkillRef struct {
@@ -123,12 +124,9 @@ func strings1(ctx context.Context, q Querier, query string, args ...any) ([]stri
 	return out, rows.Err()
 }
 
-// SaveProject sets the stacks a Lead Developer added by hand and the enabled
-// skills. A stack that is already detected stays detected.
+// SaveProject sets the stacks added by hand and the enabled skills. A stack
+// that is already detected stays detected. The caller checks who may save.
 func SaveProject(ctx context.Context, db *sql.DB, actor identity.User, projectID string, manualStackIDs, skillIDs []string) (Project, error) {
-	if actor.Role != "lead_developer" {
-		return Project{}, identity.ErrForbidden
-	}
 	manualStackIDs = trimAll(manualStackIDs)
 	skillIDs = trimAll(skillIDs)
 	fields := map[string]string{}

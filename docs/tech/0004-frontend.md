@@ -268,7 +268,7 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 
 | Page | Search | Filters | Show more |
 | --- | --- | --- | --- |
-| Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
+| Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` avatars (comma list of user ids, `none` for no owner), `blocked=1` Blocked only | No |
 | Intake | See Intake | `tab`, `status`, `source` | Yes |
 | Projects | Name, repository, base branch, tribe name | `tribe`, shown when there is more than one tribe | No |
 | Tribes | Name | None | No |
@@ -297,7 +297,7 @@ The primary button is "Run". It is enabled when `canRun` is true and `running` i
 
 When `running` is true, or any card is in the `running` or `shipping` group or in `agent_review`, an `$effect` starts a 3 second `setInterval` that calls `GET /api/cards` again. The effect cleanup clears the timer when the condition becomes false and when the page is destroyed.
 
-Above the lanes, a toolbar searches the cards and filters them to Everyone or Mine and to Blocked only (see Search and filters). "Mine" compares `owner.email` with the signed-in email, ignoring case. While a filter is on, each lane header counts "x of y". The poll keeps the filter.
+Above the lanes, a toolbar searches the cards, filters them by owner, and has Blocked only (see Search and filters). The owner filter is a row of overlapping 36px avatars in 44px toggle buttons, one per distinct card owner (`ownerChoices` in `src/lib/board.ts`). The signed-in user comes first, matched by `owner.email` ignoring case (RFC-058). The others follow by display name. A dashed "No owner" circle comes last when a card has no owner. Each button has `aria-pressed`, the label "Cards owned by {name}", and the name and card count in `title`. Several owners can be on at once, and the board keeps cards owned by any of them. Past six owners, the rest sit behind a "+n" button that opens a checklist. It has a ring while one of its owners is selected. The selection is `?owner=` with user ids separated by commas. An old `?owner=mine` link maps to the signed-in user's id, or is dropped when that user owns no card. Clear filters also clears the owners. While a filter is on, each lane header counts "x of y". The poll keeps the filter.
 
 Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" to `/intake`. No table of placeholder rows.
 
@@ -381,6 +381,8 @@ A list, oldest first. Each item shows time, kind, attempt id, and the payload in
 
 Disable the submit button and set the live message while the PUT is in flight. On `422`, paint `fields` under the matching inputs and keep what the operator typed.
 
+The four project settings pages (Repository, Linked projects, Deploy, Conventions) read `canEdit` from their GET body (RFC-059). When it is false, the fields sit in a disabled `fieldset`, or the pickers get `disabled`, and `SaveBar` gets `disabled`. Its note reads "Only a Lead Developer, a tribe admin, or an admin can change these settings." When it is true, the note names no role. The client never decides `canEdit` from the role itself.
+
 ### Account
 
 `src/routes/account/+page.svelte`. `GET /api/me` and `GET /api/me/github`.
@@ -403,11 +405,11 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 ### Repository
 
-`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. "Sync" calls `POST /api/projects/{id}/sync`.
+`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. "Sync" calls `POST /api/projects/{id}/sync`. It is enabled when `canEdit` is true or the caller is a Developer, Senior Developer, or Lead Developer, matching the server.
 
 ### Linked projects
 
-`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. Projects from other tribes that the user can see follow as disabled options with "Other tribe: name" as the detail, so a search explains why they cannot be picked. The hint names the tribe. The picker clears after a pick. When the projects do not load, a notice says so. The save note says only a Lead Developer or tribe admin can save. The page explains that linked context is read only.
+`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. Projects from other tribes that the user can see follow as disabled options with "Other tribe: name" as the detail, so a search explains why they cannot be picked. The hint names the tribe. The picker clears after a pick. When the projects do not load, a notice says so. The save note says links are one way. The page explains that linked context is read only.
 
 ### LLM APIs
 
@@ -450,7 +452,7 @@ The save result line includes "Applies to the next route decision."
 
 ### Project conventions
 
-`src/routes/settings/conventions/+page.svelte`. GET and PUT `/api/projects/{id}/settings/conventions`, and GET `/api/conventions` for the options. Detected stacks show as badges with a hint to Sync when there are none. "Added by hand" is a `MultiSearchSelect` of enabled stacks that are not detected. "Enabled skills" is a `MultiSearchSelect` of enabled skills, with the slug as the detail line. Both allow 30. A read-only table lists the rules that apply: title, Global or the stack name, category, version. The `SaveBar` note says only a Lead Developer can save.
+`src/routes/settings/conventions/+page.svelte`. GET and PUT `/api/projects/{id}/settings/conventions`, and GET `/api/conventions` for the options. Detected stacks show as badges with a hint to Sync when there are none. "Added by hand" is a `MultiSearchSelect` of enabled stacks that are not detected. "Enabled skills" is a `MultiSearchSelect` of enabled skills, with the slug as the detail line. Both allow 30. A read-only table lists the rules that apply: title, Global or the stack name, category, version. The `SaveBar` note says saved rules apply from the next attempt. A disabled `MultiSearchSelect` shows its picks without remove buttons, or "None".
 
 ### Deploy and checks
 
@@ -551,7 +553,8 @@ npm run build
 | `IntakeActions` | Ingest and Add requirement render, and no accept button |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
-| `board` filters | "Mine" keeps cards whose owner email matches the signed-in email in any case. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
+| `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
+| `OwnerFilter` | Clicking an avatar adds its owner and clicking again removes it. Owners past the limit are in the "+n" checklist |
 | `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |

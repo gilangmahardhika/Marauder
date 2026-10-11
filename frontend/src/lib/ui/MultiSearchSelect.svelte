@@ -75,5 +75,7 @@
         </li>
       {/each}
     </ul>
+  {:else if disabled}
+    <p class="text-sm text-muted">None</p>
   {/if}
 </div>

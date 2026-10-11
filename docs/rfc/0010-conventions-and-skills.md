@@ -46,3 +46,5 @@ Set aside: a `read_skill` tool that reads a skill on demand. It changes the impl
 Consequences: `skills`, `project_skills`, and `card_skills` are new tables. The card JSON adds `skills`. The project conventions route also saves enabled skills.
 
 Requirements: REQ-016, REQ-017, REQ-061, REQ-062.
+
+Superseded in part by RFC-059 in [0013-project-settings-admins.md](0013-project-settings-admins.md). A company admin, a tribe admin of the project's tribe, or a Lead Developer member may add stacks by hand and enable skills for a project.

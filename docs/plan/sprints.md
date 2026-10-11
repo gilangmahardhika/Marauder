@@ -33,10 +33,13 @@ flowchart LR
   s19[Sprint19_TribeAdmin]
   s20[Sprint20_UserNames]
   s21[Sprint21_CardContext]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19 --> s20 --> s21
+  s22[Sprint22_SettingsForAdmins]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19 --> s20 --> s21 --> s22
 ```
 
 Sprint 21 implements display and read fields under RFC-054, RFC-055, and RFC-056. It adds no decision.
+
+Sprint 22 implements [../rfc/0013-project-settings-admins.md](../rfc/0013-project-settings-admins.md).
 
 Sprint 20 implements [../rfc/0012-user-names.md](../rfc/0012-user-names.md).
 
@@ -332,5 +335,18 @@ Packages: `internal/httpapi`, `internal/conventions`.
 
 - The single-card response adds `requirements` and `rules`. `skills` adds `useWhen`.
 - UI: `statusLabel` and `reasonLabel` replace raw codes. Board tiles show the owner's avatar and name and a reviewer avatar stack. The card page has People, Intake, Rules, Skills, and Details panels.
+- UI: the board filters by owner with a row of owner avatars, several at a time. It replaces Everyone and Mine.
 
-Done when: `TestCardDetail`, `status.test.ts`.
+Done when: `TestCardDetail`, `status.test.ts`, the owner cases in `board.test.ts`, `OwnerFilter.test.ts`.
+
+## Sprint 22: Settings for admins
+
+Goal: A company admin edits every project's settings, and a tribe admin edits its tribe's (RFC-059, REQ-065).
+
+Packages: `internal/tenancy`, `internal/app`, `internal/conventions`, `internal/httpapi`.
+
+- `SettingsVisible` and `CanEditSettings` back repository, links, deploy, conventions, and Sync. A company admin who is not a member opens settings and still gets `404` on cards.
+- Every project settings body adds `canEdit`.
+- UI: the four settings pages lock their fields and Save when `canEdit` is false. `SaveBar` takes `disabled`.
+
+Done when: `TestAdminEditsProjectSettings`, `TestTribeAdminEditsProjectSettings`.

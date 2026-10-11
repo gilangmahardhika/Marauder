@@ -18,7 +18,7 @@
   import Table from '$lib/ui/Table.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
-  let view = $state<ProjectConventions>({ stacks: [], skillIds: [], rules: [] });
+  let view = $state<ProjectConventions>({ stacks: [], skillIds: [], rules: [], canEdit: true });
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
   let manual = $state<string[]>([]);
   let skillIds = $state<string[]>([]);
@@ -29,6 +29,7 @@
 
   showShell(() => ({ title: 'Conventions', message }));
 
+  const locked = $derived(!view.canEdit);
   const detected = $derived(view.stacks.filter((stack) => stack.source === 'detected'));
   const stackOptions = $derived(
     catalog.stacks
@@ -114,6 +115,7 @@
             placeholder={stackOptions.length === 0 ? 'No other stacks in the catalog' : 'Search stacks'}
             options={stackOptions}
             bind:values={manual}
+            disabled={locked}
             error={fields.manualStackIds ?? ''}
           />
         </div>
@@ -127,6 +129,7 @@
           placeholder={skillOptions.length === 0 ? 'No skills in the catalog' : 'Search skills'}
           options={skillOptions}
           bind:values={skillIds}
+          disabled={locked}
           error={fields.skillIds ?? ''}
         />
       </Panel>
@@ -175,6 +178,12 @@
         {/if}
       </Panel>
     </div>
-    <SaveBar {busy} note="Only a Lead Developer can save. Saved rules apply from the next attempt." />
+    <SaveBar
+      {busy}
+      disabled={locked}
+      note={locked
+        ? 'Only a Lead Developer, a tribe admin, or an admin can change these settings.'
+        : 'Saved rules apply from the next attempt.'}
+    />
   </form>
 </Page>

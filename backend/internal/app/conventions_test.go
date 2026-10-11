@@ -26,7 +26,10 @@ func TestSyncKeepsManualStacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conventions.SaveProject(ctx, f.db, lead, "proj_default", []string{"stk_django"}, nil); err != nil {
+	if _, err := f.db.Exec(`INSERT INTO tribe_members (tribe_id, user_id) VALUES ('tribe_default', $1)`, lead.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.SaveProjectConventions(ctx, f.db, lead, "proj_default", []string{"stk_django"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := conventions.ReplaceDetected(ctx, f.db, "proj_default", []string{"stk_python"}); err != nil {
@@ -88,7 +91,7 @@ func conventionsCard(t *testing.T, db *sql.DB) string {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := conventions.SaveProject(ctx, db, admin, "proj_default", []string{"stk_go"}, []string{"skl_oauth2"}); err != nil {
+	if _, err := app.SaveProjectConventions(ctx, db, admin, "proj_default", []string{"stk_go"}, []string{"skl_oauth2"}); err != nil {
 		t.Fatal(err)
 	}
 	card := insertReady(t, db, "true")

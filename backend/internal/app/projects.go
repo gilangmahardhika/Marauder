@@ -65,6 +65,14 @@ func SeeProject(ctx context.Context, db *sql.DB, projectID, userID string) error
 	return tenancy.Visible(ctx, db, projectID, userID)
 }
 
+func SettingsVisible(ctx context.Context, db *sql.DB, projectID string, actor User) error {
+	return tenancy.SettingsVisible(ctx, db, projectID, actor)
+}
+
+func CanEditSettings(ctx context.Context, db *sql.DB, actor User, projectID string) (bool, error) {
+	return tenancy.CanEditSettings(ctx, db, actor, projectID)
+}
+
 func SaveRepository(ctx context.Context, db *sql.DB, actor User, projectID, repo, base, dataRoot string) (Project, bool, error) {
 	return tenancy.SaveRepository(ctx, db, actor, projectID, repo, base, dataRoot)
 }

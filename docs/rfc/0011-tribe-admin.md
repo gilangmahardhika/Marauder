@@ -30,3 +30,5 @@ Set aside: a tribe admin who creates tribes, creates users, or edits company set
 Consequences: `tribe_members.admin` is a new column. The member JSON adds `tribeAdmin`, and `GET /api/me` adds `tribeAdminOf`, the tribe ids where the caller has the flag. `PUT /api/tribes/{id}/members/{userId}` sets the flag. `GET /api/tribes/{id}/candidates` lists users who could be added, for a tribe admin who cannot list every user. `POST /api/projects` accepts `links`, checked with the same rules as the links route and stored in the same transaction as the project, so a bad link stores no project.
 
 Requirements: REQ-048, REQ-049, REQ-054, REQ-063.
+
+Superseded in part by RFC-059 in [0013-project-settings-admins.md](0013-project-settings-admins.md). A tribe admin saves every setting of a project in their tribe, not only its links. A company admin saves every project's settings.

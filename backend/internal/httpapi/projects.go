@@ -441,6 +441,31 @@ func (s *Server) projectRuns(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, body)
 }
 
+// settingsProject admits a company admin to any project's settings and
+// everyone else to their tribes' projects (RFC-059). canEdit says whether the
+// caller may save them.
+func (s *Server) settingsProject(w http.ResponseWriter, r *http.Request) (projectID string, canEdit, ok bool) {
+	projectID = r.PathValue("projectId")
+	if s.DB == nil {
+		return projectID, true, true
+	}
+	user, found := app.CurrentUser(r.Context())
+	if !found {
+		writeErr(w, 401, "unauthenticated", "bearer")
+		return "", false, false
+	}
+	if err := app.SettingsVisible(r.Context(), s.DB, projectID, user); err != nil {
+		writeAccountErr(w, err)
+		return "", false, false
+	}
+	canEdit, err := app.CanEditSettings(r.Context(), s.DB, user, projectID)
+	if err != nil {
+		writeAccountErr(w, err)
+		return "", false, false
+	}
+	return projectID, canEdit, true
+}
+
 func (s *Server) visibleProject(w http.ResponseWriter, r *http.Request) (string, bool) {
 	projectID := r.PathValue("projectId")
 	if s.DB == nil {

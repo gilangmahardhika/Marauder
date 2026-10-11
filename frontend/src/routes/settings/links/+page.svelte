@@ -22,6 +22,7 @@
   let fields = $state<Record<string, string>>({});
   let message = $state('Loading linked projects');
   let busy = $state(false);
+  let canEdit = $state(true);
 
   showShell(() => ({ title: 'Linked projects', message }));
 
@@ -49,6 +50,7 @@
     void Promise.all([getLinks(), getProjects(), getTribes().catch(() => ({ tribes: [] }))])
       .then(([linkBody, projectBody, tribeBody]) => {
         links = linkBody.links;
+        canEdit = linkBody.canEdit;
         projects = projectBody.projects;
         tribes = tribeBody.tribes;
         loaded = true;
@@ -92,6 +94,7 @@
         }))
       );
       links = saved.links;
+      canEdit = saved.canEdit;
       message = 'Linked projects saved';
     } catch (error) {
       fields = error instanceof ApiError ? error.fields : {};
@@ -107,7 +110,7 @@
   description="Projects in the same tribe whose context this project reads. The implementer sees their accepted requirements, decisions, and shared paths, read only."
 >
   <form onsubmit={save}>
-    <div class="flex flex-col gap-6">
+    <fieldset class="flex min-w-0 flex-col gap-6" disabled={!canEdit}>
       {#if loadError}
         <Notice tone="danger">The projects did not load: {loadError}</Notice>
       {/if}
@@ -163,7 +166,13 @@
           onchange={addLink}
         />
       </Panel>
-    </div>
-    <SaveBar {busy} note="Only a Lead Developer or tribe admin can save. Links are one way." />
+    </fieldset>
+    <SaveBar
+      {busy}
+      disabled={!canEdit}
+      note={canEdit
+        ? 'Links are one way.'
+        : 'Only a Lead Developer, a tribe admin, or an admin can change these settings.'}
+    />
   </form>
 </Page>

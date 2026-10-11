@@ -24,6 +24,7 @@ type Repository struct {
 	BaseBranch string `json:"baseBranch"`
 	Cloned     bool   `json:"cloned"`
 	HeadSHA    any    `json:"headSha"`
+	CanEdit    bool   `json:"canEdit"`
 }
 
 // Tools are the binaries and the runner used for git and gh calls.

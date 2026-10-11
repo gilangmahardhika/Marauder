@@ -2,9 +2,9 @@
   import { displayName, type Person } from '$lib/people';
   import { initials } from '$lib/roles';
 
-  let { person, size = 'md' }: { person: Person | null; size?: 'sm' | 'md' } = $props();
+  let { person, size = 'md' }: { person: Person | null; size?: 'sm' | 'md' | 'lg' } = $props();
 
-  const box = $derived(size === 'sm' ? 'size-5 text-[9px]' : 'size-8 text-xs');
+  const box = $derived(size === 'sm' ? 'size-5 text-[9px]' : size === 'lg' ? 'size-9 text-xs' : 'size-8 text-xs');
 </script>
 
 {#if person}

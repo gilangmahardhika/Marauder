@@ -181,7 +181,10 @@ export type Repository = {
   baseBranch: string;
   cloned: boolean;
   headSha: string | null;
+  canEdit: boolean;
 };
+
+export type ProjectLinks = { links: ProjectLink[]; canEdit: boolean };
 
 export type ProjectLink = {
   projectId: string;
@@ -226,6 +229,7 @@ export type DeploySettings = {
   rollbackCommand: string;
   healthUrl: string;
   deployTokenSet: boolean;
+  canEdit: boolean;
   localCheck: string;
   devCheck: string;
   allowExecutables: string[];
@@ -310,4 +314,5 @@ export type ProjectConventions = {
     category: RuleCategory;
     version: number;
   }[];
+  canEdit: boolean;
 };

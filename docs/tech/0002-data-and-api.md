@@ -16,7 +16,7 @@ If a field here and a PRD acceptance check disagree, the PRD wins. See [../READM
 - Without `ORCHESTRATOR_CLOUD`, the API listens on `127.0.0.1:8787`. CORS allows the exact `--ui-origin`, default `http://127.0.0.1:4173`. The `Host` header must be `127.0.0.1:<port>`, `localhost:<port>`, or `[::1]:<port>`. Anything else is `403`.
 - With `ORCHESTRATOR_CLOUD=1`, the API may bind the configured address. TLS is terminated in front of the process. The `Host` header must be on the configured allowlist. CORS allows the configured UI origin. A missing cloud flag still refuses a non-loopback `--addr` (RFC-045).
 - Every route except `POST /api/session` requires `Authorization: Bearer <token>`. The bearer names a user.
-- Board, intake, run, card, and project-settings routes are under `/api/projects/{projectId}/`. A caller who is not a member of that project's tribe gets `404`. An unknown project id gets the same `404`.
+- Board, intake, run, card, and project-settings routes are under `/api/projects/{projectId}/`. A caller who is not a member of that project's tribe gets `404`. An unknown project id gets the same `404`. The one exception: a company admin may open the `settings/*` routes and `sync` of any project (RFC-059). Cards, intake, and runs still need membership.
 - JSON errors use one shape. Handlers do not invent a second shape.
 
 ```json
@@ -840,7 +840,8 @@ Secret fields are write-only.
 | Event | `config_changed` records the section and the field names, not the values |
 | In-flight job | Keeps that project's settings snapshot it started with |
 | Failure | `422` with `fields`. Files on disk are unchanged |
-| Caller | Lead Developer member for project sections. Admin for the company GitHub account and the conventions catalog. The account GitHub route is the signed-in user. Anyone else is `403`, or `404` when they are not a member |
+| Caller | For project sections, a Lead Developer member, a tribe admin of the project's tribe, or a company admin, member or not (RFC-059). Admin for the company GitHub account and the conventions catalog. The account GitHub route is the signed-in user. Another member is `403`. A non-member who is not a company admin is `404` |
+| `canEdit` | Every project settings `GET` and `PUT` body includes it. True when the caller may save that section |
 
 Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me/github/test` runs `gh api user` with the caller's stored token in the child environment. On success it stores the login and numeric id GitHub reports, sets `verified_at`, and returns `{ "ok": true, "login": "octocat" }`. A failure returns `{ "ok": false, "message": "authentication failed" }` and leaves the row unverified. A login another user already holds as verified on that host is `{ "ok": false, "message": "login already verified by another user" }`.
 
@@ -875,18 +876,19 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
   "repo": "widget",
   "baseBranch": "main",
   "cloned": true,
-  "headSha": "0123456789abcdef0123456789abcdef01234567"
+  "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "canEdit": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here.
+`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
 
 | Field | Rule |
 | --- | --- |
 | `repo` | `^[A-Za-z0-9._-]+$`, not named by another project |
 | `baseBranch` | Valid by `git check-ref-format --branch`, and not `orch/*` |
 
-`POST /api/projects/{projectId}/sync` clones the repository into `<data>/projects/<id>/repo` when it is missing, otherwise fetches `baseBranch`, then returns the repository object. The token is passed through askpass and the child environment. A missing company token is `422`. A failed git call is `502` with a redacted message. Lead Developer, Senior Developer, and Developer members may sync.
+`POST /api/projects/{projectId}/sync` clones the repository into `<data>/projects/<id>/repo` when it is missing, otherwise fetches `baseBranch`, then returns the repository object. The token is passed through askpass and the child environment. A missing company token is `422`. A failed git call is `502` with a redacted message. Lead Developer, Senior Developer, and Developer members may sync, and so may anyone who may save the project's settings (RFC-059).
 
 `GET /api/projects/{projectId}/settings/links` returns the projects this project reads from (RFC-051).
 
@@ -894,11 +896,12 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 {
   "links": [
     { "projectId": "proj_0123456789ab", "name": "Widget API", "repo": "widget-api", "sharedPaths": ["api/openapi.yaml"] }
-  ]
+  ],
+  "canEdit": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/links` accepts `{ "links": [{ "projectId": "...", "sharedPaths": ["..."] }] }` and replaces the list. A Lead Developer member or a tribe admin of the project's tribe may save (RFC-057). Another member is `403`.
+`PUT /api/projects/{projectId}/settings/links` accepts `{ "links": [{ "projectId": "...", "sharedPaths": ["..."] }] }` and replaces the list. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
 
 | Field | Rule |
 | --- | --- |
@@ -1043,7 +1046,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `slug` | `^[a-z0-9][a-z0-9-]{1,59}$`, unique |
 | `useWhen` | 1 to 500 characters |
 
-`GET /api/projects/{projectId}/settings/conventions` is the project's stacks, enabled skills, and the rules that apply. Every member may read it.
+`GET /api/projects/{projectId}/settings/conventions` is the project's stacks, enabled skills, and the rules that apply. Every member, and a company admin, may read it.
 
 ```json
 {
@@ -1054,11 +1057,12 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
   "skillIds": ["skl_oauth2"],
   "rules": [
     { "id": "rule_0123456789ab", "title": "Go names", "scope": "stack", "stackName": "Go", "category": "naming", "version": 2 }
-  ]
+  ],
+  "canEdit": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/conventions` accepts `{ "manualStackIds": [], "skillIds": [] }`, at most 30 of each, and returns the GET body. Each id must name an enabled stack or skill, else `422` on that field. A manual id that is already detected stays detected. A Lead Developer member may save. Anyone else is `403`. A save appends `config_changed` with section `conventions` for the project.
+`PUT /api/projects/{projectId}/settings/conventions` accepts `{ "manualStackIds": [], "skillIds": [] }`, at most 30 of each, and returns the GET body. Each id must name an enabled stack or skill, else `422` on that field. A manual id that is already detected stays detected. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`. A save appends `config_changed` with section `conventions` for the project.
 
 `GET /api/projects/{projectId}/settings/deploy`
 
@@ -1071,6 +1075,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
   "rollbackCommand": "",
   "healthUrl": "",
   "deployTokenSet": false,
+  "canEdit": true,
   "localCheck": "",
   "devCheck": "",
   "allowExecutables": [],
@@ -1082,7 +1087,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/deploy` accepts those fields plus optional `deployToken` and `clear`.
+`PUT /api/projects/{projectId}/settings/deploy` accepts those fields plus optional `deployToken` and `clear`. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
 
 | Field | Rule when non-empty |
 | --- | --- |
