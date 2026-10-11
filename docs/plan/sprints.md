@@ -379,3 +379,16 @@ Packages: `migrations`, `internal/app`, `internal/httpapi`.
 - The worker loop that consumes these rows is a later sprint.
 
 Done when: `TestCardRunQueues`, `TestCardRunNeedsDependencies`, `TestCardRunNotReady`, `TestCardRunRole`, `TestRunReadyCards`, and `BoardCard.test.ts`.
+
+## Sprint 25: The worker makes cards
+
+Goal: Accepted requirements become cards on the board without a model (RFC-062, REQ-068).
+
+Packages: `internal/worker`, `internal/loop`, `internal/app`, `internal/cli`, `internal/httpapi`.
+
+- `worker.Pass` promotes backlog cards, makes one card per accepted requirement without a card, and closes the project's run rows when idle. Card-scoped rows stay open.
+- `worker.Run` in `serve` runs one loop per project with that project's lock, and stops on shutdown.
+- `run-next` runs the passes until idle when the project lock is free.
+- The board's `running` flag follows open project rows, so the board polls until the worker is idle.
+
+Done when: `TestPassCreatesCardPerRequirement`, `TestPassPromotesReady`, `TestPassMarksRunsProcessed`, `TestWorkerCreatesCardsAfterAccept`, `TestProjectLockSkips`, `TestRunNextPlans`, `TestBoardRunningWhileProjectRunOpen`.

@@ -60,7 +60,7 @@ Every command runs these steps before its own work:
 | Command | Lock behavior |
 | --- | --- |
 | `serve` | Takes each project's lock and runs that worker. A project whose lock is already held is logged and skipped. The process still serves the others |
-| `run-next --project` | Inserts a `runs` row for that project. If that project's lock is free, takes it, runs `Reconcile` for that project, processes until idle, exits. If held, prints `queued for the running server` and exits `0` |
+| `run-next --project` | Inserts a `runs` row for that project. If that project's lock is free, takes it, runs `Reconcile` for that project, processes until idle, exits. If held, prints `queued for the running server` and exits `0`. `Reconcile` is not built yet, so today it only runs the passes (RFC-062) |
 | Human gates, `ingest`, `accept`, `status`, `trace` | Do not take it |
 
 ## Transition
@@ -103,7 +103,9 @@ Runs only in the worker that holds that project's lock, before any job for that 
 
 One loop goroutine per project ticks every 2 seconds. Projects run those loops at the same time (RFC-048). While an unprocessed `runs` row exists for that project, each tick runs a pass. When a pass starts nothing, no job is running for that project, and no card of that project waits on CI, the loop sets `processed_at` on that project's open `runs` rows. The project is then idle until the next row.
 
-A row with `card_id` set asks for that one card (RFC-061). The pass starts that card's implement job when the card is still `ready`, its dependencies are `done`, and the cap has room, and sets `processed_at` on that row when the job starts. A row without `card_id` wakes the whole project as above. The API never starts a job itself. Until this loop is built, card-scoped rows stay open and the board shows those cards as queued.
+A row with `card_id` set asks for that one card (RFC-061). The pass starts that card's implement job when the card is still `ready`, its dependencies are `done`, and the cap has room, and sets `processed_at` on that row when the job starts. A row without `card_id` wakes the whole project as above. The API never starts a job itself.
+
+What runs today (RFC-062): `worker.Run` in `serve` starts one loop per project and retries a busy project lock on the next tick. A pass runs step 3 (promote), then a model-free step 5 that makes one `backlog` card per accepted requirement without a card through `loop.CreateCard`, then closes the project's rows that have no `card_id` when nothing changed. `worker.Drain` repeats passes until one changes nothing. Steps 1, 2, 4, and 6 to 10 are not built, so card-scoped rows stay open and the board shows those cards as queued.
 
 Jobs run in goroutines beside that project's loop. Implement and plan jobs are capped by that project's `scheduler.implementationCap`. At most one deploy job runs per project. Review and verify jobs are capped at 2 each, per project. Every job takes its card lock with a fresh random holder and releases it with that holder. The job uses that project's repo and that project's data directory.
 
@@ -124,7 +126,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 ### Plan job
 
-1. Route `plan`. No model configured: set `planError` to `router_config` and stop.
+1. Route `plan`. No model configured: set `planError` to `router_config` and stop. Until a model provider exists, the worker plans without a model instead (RFC-062).
 2. When `draftPending`, the planner pack holds the PRD outline. `propose_requirements` writes rows with `source_kind = 'draft'` and `accepted_at` null, then clears `draftPending`.
 3. Otherwise the pack holds accepted requirements without cards, decisions, existing card titles and dependencies, and the project's enabled skills as `SKILL <slug>: <use when>` lines (RFC-056). `create_card` takes `ref`, `title`, `requirementIds`, `decisionIds`, `dependsOn` (card ids or refs from this job), `risk`, `manual`, and `skillIds`.
 4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected. The owner is the `created_by` shared by the named requirements. Requirements with different creators are rejected with `ErrOwners`, so the planner splits them. An owner in the arguments is ignored (RFC-054). Each `skillIds` entry must be a skill enabled for the project and not disabled, else `ErrSkill` and no card is stored. The card's skills are stored in `card_skills` in the same transaction as the card (RFC-056).

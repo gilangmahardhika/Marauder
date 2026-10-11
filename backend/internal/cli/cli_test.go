@@ -276,6 +276,50 @@ func TestRunNextIdle(t *testing.T) {
 	}
 }
 
+func TestRunNextPlans(t *testing.T) {
+	repo, data, databaseURL := cliDirs(t)
+	db, err := board.Open(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO requirements (
+			id, project_id, source_kind, source_path, heading, statement,
+			acceptance_json, non_goals_json, content_hash, accepted_at
+		) VALUES ('REQ-001', 'proj_default', 'prd', 'docs/prd', 'Export', 'text', '["csv"]', '[]', 'hash', '2026-10-11T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := cli.Execute(cli.Options{
+		Args:   []string{"run-next", "--repo", repo, "--data", data},
+		Stdout: &stdout,
+		Stderr: &stderr,
+		Getenv: func(key string) string {
+			if key == "ORCHESTRATOR_DATABASE_URL" {
+				return databaseURL
+			}
+			return ""
+		},
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d stderr %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "created 1\npromoted 1\n") {
+		t.Fatalf("stdout = %q", stdout.String())
+	}
+	var open int
+	if err := db.QueryRow(`SELECT count(*) FROM runs WHERE trigger = 'cli' AND processed_at IS NULL`).Scan(&open); err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 {
+		t.Fatalf("open cli runs = %d", open)
+	}
+}
+
 func TestUnblockReset(t *testing.T) {
 	repo, data, databaseURL := cliDirs(t)
 	db, err := board.Open(databaseURL)

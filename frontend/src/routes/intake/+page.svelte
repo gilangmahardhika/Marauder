@@ -129,7 +129,7 @@
     try {
       intake = await acceptRequirements(ids);
       selected = [];
-      message = 'Intake';
+      message = 'Accepted. Cards appear on the board shortly.';
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {

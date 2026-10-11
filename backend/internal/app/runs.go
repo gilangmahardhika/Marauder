@@ -136,6 +136,27 @@ func ReadyCount(ctx context.Context, db querier, projectID string) (int, error) 
 	return n, nil
 }
 
+// RunNext records a CLI run request for the project. When no server holds the
+// project's worker lock, it runs worker passes until idle; queued reports that
+// a running server will process the request instead.
+func RunNext(ctx context.Context, db *sql.DB, dataRoot, projectID string) (result worker.Result, queued bool, err error) {
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'cli', $2, $3)`,
+		mustID("run_"), time.Now().UTC().Format(time.RFC3339), projectID); err != nil {
+		return result, false, err
+	}
+	lock, err := worker.LockProject(dataRoot, projectID)
+	if errors.Is(err, worker.ErrBusy) {
+		return result, true, nil
+	}
+	if err != nil {
+		return result, false, err
+	}
+	defer lock.Close()
+	result, err = worker.Drain(ctx, db, dataRoot, projectID)
+	return result, false, err
+}
+
 func runnable(card board.Card, done map[string]bool) bool {
 	return card.Status == "ready" && worker.CanStart(done, card.DependsOn)
 }

@@ -2,7 +2,7 @@
 
 A Go harness keeps a PostgreSQL board of coding cards. A SvelteKit client talks to that API. The browser shows the actions the API returns. It does not change card status on its own.
 
-People sign in with email and password. An admin creates users. A user has one job role and may belong to several tribes. A tribe's projects are hidden from everyone else. Each project has its own repo, settings, and worker, and two projects may run at the same time. Sprints 11–13 in [docs/plan/sprints.md](docs/plan/sprints.md) are the schedule for that behavior. Until those boxes are checked, `serve` still prints a UI token and still binds one repo.
+People sign in with email and password. An admin creates users. A user has one job role and may belong to several tribes. A tribe's projects are hidden from everyone else. Each project has its own repo, settings, and worker, and two projects may run at the same time. The worker turns each accepted requirement into a card and moves cards to Ready. It does not call a model or start implementation yet (RFC-062).
 
 Specification lives in [docs/README.md](docs/README.md).
 
@@ -70,7 +70,7 @@ cd backend
 go run ./cmd/orchestrator serve --repo /path/to/target-repo
 ```
 
-Until Sprint 11, the process prints a line like `UI token: ...` and keeps listening. A second `serve` on the same project data directory exits while that project's lock is held. After Sprint 13, one `serve` runs a worker per project, and two projects may deploy at the same time.
+The process keeps listening and runs one worker loop per project. A second `serve` on the same data directory exits while the first holds its lock. Log lines such as `worker: project proj_... created 1 promoted 1` show the worker making cards after an accept. `orchestrator run-next --project ID` runs the same passes once when no server holds that project's lock.
 
 ## 5. Start the client by itself
 

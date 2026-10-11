@@ -185,7 +185,7 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 		}
 		cards = append(cards, body)
 	}
-	writeJSON(w, 200, s.boardBody(r, cards, ready))
+	writeJSON(w, 200, s.boardBody(r, projectID, cards, ready))
 }
 
 func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {

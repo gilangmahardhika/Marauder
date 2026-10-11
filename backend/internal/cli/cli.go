@@ -162,8 +162,18 @@ func Execute(opts Options) int {
 		Use: "run-next",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				projectID := projectOr(project)
+				result, queued, err := app.RunNext(ctx, db, paths.Data, projectID)
+				if err != nil {
+					return err
+				}
+				if queued {
+					fmt.Fprint(opts.Stdout, "queued for the running server\n")
+					return nil
+				}
+				fmt.Fprintf(opts.Stdout, "created %d\npromoted %d\n", result.Created, result.Promoted)
 				var n int
-				if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cards WHERE status = 'ready'`).Scan(&n); err != nil {
+				if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cards WHERE project_id = $1 AND status = 'ready'`, projectID).Scan(&n); err != nil {
 					return err
 				}
 				if n == 0 {

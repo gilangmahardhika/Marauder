@@ -44,9 +44,10 @@ func ImplementerTools() []providers.Tool {
 }
 
 type Settings struct {
-	LocalCheck string
-	DevCheck   string
-	Allow      []string
+	LocalCheck  string
+	DevCheck    string
+	Allow       []string
+	MaxAttempts int
 }
 
 type Input struct {

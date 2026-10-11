@@ -127,6 +127,7 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 		RequirementIDs: ids,
 		LocalCheck:     in.Settings.LocalCheck,
 		DevCheck:       in.Settings.DevCheck,
+		MaxAttempts:    in.Settings.MaxAttempts,
 	})
 	if err != nil {
 		return board.Card{}, err

@@ -13,6 +13,7 @@ import (
 	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/settings"
+	"orchestrator/backend/internal/worker"
 )
 
 func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,7 @@ func (s *Server) listCards(w http.ResponseWriter, r *http.Request) {
 		}
 		cards = append(cards, body)
 	}
-	writeJSON(w, 200, s.boardBody(r, cards, ready))
+	writeJSON(w, 200, s.boardBody(r, "", cards, ready))
 }
 
 // readyToRun is true for a ready card whose dependencies are done and that
@@ -52,11 +53,17 @@ func readyToRun(body map[string]any) bool {
 	return body["status"] == "ready" && !queued && len(waitingOn) == 0
 }
 
-func (s *Server) boardBody(r *http.Request, cards []any, ready int) map[string]any {
+// boardBody reports running while the project has an open run request that
+// is not scoped to one card, so the board polls until the worker is idle.
+func (s *Server) boardBody(r *http.Request, projectID string, cards []any, ready int) map[string]any {
 	user, _ := app.CurrentUser(r.Context())
+	running := false
+	if projectID != "" {
+		running, _ = worker.Pending(r.Context(), s.DB, projectID)
+	}
 	return map[string]any{
 		"canRun": ready > 0 && actionAllowed(user.Role, "run"), "readyCount": ready,
-		"running": false, "cards": cards,
+		"running": running, "cards": cards,
 	}
 }
 

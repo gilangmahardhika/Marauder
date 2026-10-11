@@ -376,3 +376,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestCardRunRole`
 - [x] `TestRunReadyCards`
 - [x] `BoardCard.test.ts`
+
+## Sprint 25: The worker makes cards
+
+- [x] One card per accepted requirement, made without a model, and backlog cards promoted to Ready.
+- [x] `serve` runs one worker loop per project with that project's lock. `run-next` runs the same passes.
+- [x] The board polls while a project run row is open.
+- [x] `TestPassCreatesCardPerRequirement`
+- [x] `TestPassPromotesReady`
+- [x] `TestPassMarksRunsProcessed`
+- [x] `TestWorkerCreatesCardsAfterAccept`
+- [x] `TestProjectLockSkips`
+- [x] `TestRunNextPlans`
+- [x] `TestBoardRunningWhileProjectRunOpen`

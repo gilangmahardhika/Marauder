@@ -21,6 +21,7 @@ type runCard struct {
 
 type runBoard struct {
 	CanRun     bool      `json:"canRun"`
+	Running    bool      `json:"running"`
 	ReadyCount int       `json:"readyCount"`
 	Cards      []runCard `json:"cards"`
 }
@@ -146,6 +147,34 @@ func TestCardRunRole(t *testing.T) {
 	}
 	if b := boardOf(t, srv, token); b.CanRun || b.ReadyCount != 1 {
 		t.Fatalf("board = canRun %t readyCount %d", b.CanRun, b.ReadyCount)
+	}
+}
+
+func TestBoardRunningWhileProjectRunOpen(t *testing.T) {
+	srv := accountServer(t)
+	token := runMember(t, srv, "developer")
+	if b := boardOf(t, srv, token); b.Running {
+		t.Fatal("running with no run request")
+	}
+	card := statusCard(t, srv, "ready")
+	if rec := postJSON(t, srv, "/api/projects/proj_default/cards/"+card.ID+"/run", token, map[string]any{}); rec.Code != 200 {
+		t.Fatalf("run = %d %s", rec.Code, rec.Body.String())
+	}
+	if b := boardOf(t, srv, token); b.Running {
+		t.Fatal("a card-scoped request set running")
+	}
+	if _, err := srv.DB.Exec(`
+		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ('run_accept000001', 'accept', '2026-10-11T00:00:00Z', 'proj_default')`); err != nil {
+		t.Fatal(err)
+	}
+	if b := boardOf(t, srv, token); !b.Running {
+		t.Fatal("open project request did not set running")
+	}
+	if _, err := srv.DB.Exec(`UPDATE runs SET processed_at = '2026-10-11T00:00:01Z' WHERE id = 'run_accept000001'`); err != nil {
+		t.Fatal(err)
+	}
+	if b := boardOf(t, srv, token); b.Running {
+		t.Fatal("processed request still running")
 	}
 }
 

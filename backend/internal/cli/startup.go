@@ -13,8 +13,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
@@ -110,7 +113,29 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 			srv.AllowOrigin = origin
 		}
 	}
-	return http.ListenAndServe(addr, srv.Handler())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		worker.Run(ctx, db, paths.Data, 2*time.Second, func(format string, args ...any) {
+			fmt.Fprintf(opts.Stderr, format+"\n", args...)
+		})
+	}()
+	server := &http.Server{Addr: addr, Handler: srv.Handler()}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+	}()
+	err = server.ListenAndServe()
+	stop()
+	<-done
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 // lookTool returns an absolute path, or "" when the tool is not installed.

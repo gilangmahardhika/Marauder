@@ -110,6 +110,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-065 | Admins and tribe admins edit project settings |
 | REQ-066 | GitHub confirms a project's repository |
 | REQ-067 | Run one ready card |
+| REQ-068 | Accepted requirements become cards |
 
 ## Requirements
 
@@ -951,6 +952,18 @@ A Lead Developer, Senior Developer, Developer, or QA member can queue one ready 
 - A Product Owner sees no `run` action and is refused with `403`.
 - The top button queues only the ready cards with done dependencies, a repeat queues none, and the board's `readyCount` then reads `0`.
 
+### REQ-068 Accepted requirements become cards
+
+After a requirement is accepted, the project's worker makes one card for it, owned by the person who brought it in, without a model call. A card whose requirements are accepted, whose dependencies are done, and that has acceptance lines or is manual moves to Ready. The board refreshes until the worker is idle. A project whose worker lock another process holds is skipped (RFC-062).
+
+#### Acceptance
+
+- Two accepted requirements and one unaccepted requirement make two backlog cards, titled with the headings and owned by each requirement's creator. A second pass makes none.
+- A card with accepted requirements and acceptance lines moves to `ready`. A card without acceptance lines that is not manual, and a card with an unfinished dependency, stay in `backlog`.
+- An idle pass marks the project's run requests processed, and leaves card-scoped requests open.
+- With `serve` running, an accept row leads to a ready card, then a processed row.
+- `run-next` on a project with one accepted requirement prints `created 1`.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1056,3 +1069,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 19. Admins and tribe admins edit project settings (REQ-065).
 20. GitHub confirms a project's repository (REQ-066).
 21. Run one ready card (REQ-067).
+22. Accepted requirements become cards (REQ-068).

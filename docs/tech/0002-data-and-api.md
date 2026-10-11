@@ -708,7 +708,7 @@ Routes in this section include `/api/projects/{projectId}/`. A non-member is `40
 
 An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `cards: []`. It does not return an error.
 
-`readyCount` counts the project's `ready` cards whose dependencies are all `done` and that have no open run request, the cards that list `run`. `canRun` is true when `readyCount` is above zero and the caller's role may run (RFC-061). `running` is true while an unprocessed `runs` row exists for that project.
+`readyCount` counts the project's `ready` cards whose dependencies are all `done` and that have no open run request, the cards that list `run`. `canRun` is true when `readyCount` is above zero and the caller's role may run (RFC-061). `running` is true while that project has an unprocessed `runs` row with no `card_id`. The worker closes those rows once a pass changes nothing (RFC-062), and the board polls while `running` is true.
 
 `GET /api/projects/{projectId}/cards/{id}` returns one card object. Unknown id, or a card in another project, is `404`.
 
@@ -1228,7 +1228,7 @@ The CLI calls the same `internal/app` functions, not the HTTP API. It prints the
 | `orchestrator users bootstrap` | Creates the first admin when `users` is empty. No HTTP twin |
 | `orchestrator ingest --project ID` | `POST /api/projects/{id}/ingest` |
 | `orchestrator accept --project ID` | `POST /api/projects/{id}/accept` with every current unaccepted id |
-| `orchestrator run-next --project ID` | `POST /api/projects/{id}/runs`, and runs that project's worker when its lock is free (RFC-048) |
+| `orchestrator run-next --project ID` | Inserts a `cli` run row. When that project's lock is free, runs worker passes until idle and prints `created N` and `promoted M`, then `no card is ready` when none is. When the lock is held, prints `queued for the running server` (RFC-048, RFC-062) |
 | `orchestrator status --project ID` | `GET /api/projects/{id}/cards` |
 | `orchestrator status --project ID CARD` | `GET /api/projects/{id}/cards/{card}` |
 | `orchestrator trace --project ID CARD` | `GET /api/projects/{id}/cards/{card}/trace` |
