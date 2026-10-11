@@ -1,3 +1,4 @@
+import { matchText, type Option } from './filter';
 import type { ConventionRule, RuleCategory, RuleInput, Skill, SkillInput, Stack, StackInput } from '$lib/types';
 
 export const categories: { value: RuleCategory; label: string }[] = [
@@ -86,6 +87,51 @@ export function ruleGroups(rules: ConventionRule[], stacks: Stack[]): RuleGroup[
 export function markersSummary(stack: Stack) {
   const parts = [...stack.detect.files, ...stack.detect.npmDeps.map((dep) => `npm ${dep}`), ...stack.detect.pyDeps.map((dep) => `py ${dep}`)];
   return parts.length > 0 ? parts.join(', ') : 'Added by hand only';
+}
+
+export const categoryOptions: Option[] = [{ value: '', label: 'All categories' }, ...categories];
+
+export function appliesOptions(stacks: Stack[]): Option[] {
+  const named = [...stacks].sort((a, b) => a.name.localeCompare(b.name));
+  return [{ value: '', label: 'Any scope' }, { value: 'global', label: 'Global' }, ...named.map((stack) => ({ value: stack.id, label: stack.name }))];
+}
+
+/** `applies` is empty for every rule, `global`, or a stack id. */
+export type RuleFilter = { q: string; category: string; applies: string };
+
+type FilterableRule = { title: string; category: string; scope: 'global' | 'stack'; stackId?: string; body?: string; stackName?: string };
+
+export function filterRules<T extends FilterableRule>(rules: T[], filter: RuleFilter): T[] {
+  return rules.filter(
+    (rule) =>
+      (filter.category === '' || rule.category === filter.category) &&
+      (filter.applies === '' || (filter.applies === 'global' ? rule.scope === 'global' : rule.stackId === filter.applies)) &&
+      matchText([rule.title, rule.body, rule.stackName], filter.q)
+  );
+}
+
+export function filterStacks(stacks: Stack[], q: string) {
+  return stacks.filter((stack) => matchText([stack.name, ...stack.detect.files, ...stack.detect.npmDeps, ...stack.detect.pyDeps], q));
+}
+
+export type SkillState = 'all' | 'enabled' | 'disabled';
+export const skillStates: readonly SkillState[] = ['all', 'enabled', 'disabled'];
+
+export function skillStateOptions(skills: Skill[]): Option<SkillState>[] {
+  const disabled = skills.filter((skill) => skill.disabled).length;
+  return [
+    { value: 'all', label: 'All', count: skills.length },
+    { value: 'enabled', label: 'Enabled', count: skills.length - disabled },
+    { value: 'disabled', label: 'Disabled', count: disabled }
+  ];
+}
+
+export function filterSkills(skills: Skill[], filter: { q: string; state: SkillState }) {
+  return skills.filter(
+    (skill) =>
+      (filter.state === 'all' || skill.disabled === (filter.state === 'disabled')) &&
+      matchText([skill.slug, skill.title, skill.useWhen, skill.body], filter.q)
+  );
 }
 
 export function editedBy(item: { updatedBy: string | null; updatedAt: string }) {

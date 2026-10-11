@@ -1,15 +1,29 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getConventions, unreachable } from '$lib/api';
-  import { categoryLabel, markersSummary, ruleGroups } from '$lib/conventions';
+  import {
+    appliesOptions,
+    categories,
+    categoryLabel,
+    categoryOptions,
+    filterRules,
+    filterStacks,
+    markersSummary,
+    ruleGroups
+  } from '$lib/conventions';
+  import { pickParam } from '$lib/filter';
+  import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
   import type { ConventionCatalog } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FilterSelect from '$lib/ui/FilterSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
   import Table from '$lib/ui/Table.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
   let loaded = $state(false);
@@ -17,8 +31,21 @@
 
   showShell(() => ({ title: 'Conventions', message }));
 
-  const tab = $derived($page.url.searchParams.get('tab') === 'stacks' ? 'stacks' : 'rules');
-  const groups = $derived(ruleGroups(catalog.rules, catalog.stacks));
+  const params = $derived($page.url.searchParams);
+  const tab = $derived(params.get('tab') === 'stacks' ? 'stacks' : 'rules');
+  const scopes = $derived(appliesOptions(catalog.stacks));
+  const filter = $derived({
+    q: params.get('q') ?? '',
+    category: pickParam(params.get('category'), ['', ...categories.map((item) => item.value)], ''),
+    applies: pickParam(
+      params.get('applies'),
+      scopes.map((option) => option.value),
+      ''
+    )
+  });
+  const groups = $derived(ruleGroups(filterRules(catalog.rules, filter), catalog.stacks));
+  const ruleMatches = $derived(groups.reduce((total, group) => total + group.rules.length, 0));
+  const stacks = $derived(filterStacks(catalog.stacks, filter.q));
   const tabs = [
     { key: 'rules', label: 'Rules', href: '/admin/conventions' },
     { key: 'stacks', label: 'Stacks', href: '/admin/conventions?tab=stacks' }
@@ -71,85 +98,107 @@
       <EmptyState title="No rules yet" description="Add a global rule for naming or database columns, or a rule for one stack.">
         <Button variant="primary" href="/admin/conventions/new">Add rule</Button>
       </EmptyState>
-    {:else}
-      <div class="flex flex-col gap-8">
-        {#each groups as group (group.key)}
-          {#if group.rules.length > 0}
-            <section>
-              <div class="mb-3 flex items-baseline justify-between gap-4">
-                <h2 class="text-[15px] font-semibold text-ink">{group.label}</h2>
-                <a
-                  class="text-sm text-accent hover:underline"
-                  href={group.stackId ? `/admin/conventions/new?stack=${encodeURIComponent(group.stackId)}` : '/admin/conventions/new'}
-                  >Add {group.stackId ? `${group.label} rule` : 'global rule'}</a
-                >
-              </div>
-              <Table label={`${group.label} rules`}>
-                <thead>
-                  <tr class="border-b border-line bg-ground/50">
-                    <th class={th} scope="col">Rule</th>
-                    <th class={th} scope="col">Category</th>
-                    <th class={th} scope="col">Version</th>
-                    <th class={th} scope="col"><span class="sr-only">Edit</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each group.rules as rule (rule.id)}
-                    <tr class={tr}>
-                      <td class="{td} py-2.5">
-                        <span class="block font-medium text-ink">{rule.title}</span>
-                        <span class="mt-0.5 line-clamp-1 text-xs text-muted">{rule.body}</span>
-                      </td>
-                      <td class={td}><Badge>{categoryLabel(rule.category)}</Badge></td>
-                      <td class="{td} text-sm text-muted">
-                        v{rule.version}
-                        {#if rule.disabled}<span class="ml-2"><Badge tone="amber">Disabled</Badge></span>{/if}
-                      </td>
-                      <td class="{td} text-right">
-                        <a class={link} href={`/admin/conventions/${encodeURIComponent(rule.id)}`} aria-label={`Edit ${rule.title}`}
-                          >Edit</a
-                        >
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </Table>
-            </section>
-          {/if}
-        {/each}
+    {:else if catalog.rules.length > 0}
+      <div class="flex flex-col gap-6">
+        <Toolbar>
+          <SearchBox label="Search rules" value={filter.q} placeholder="Search title or text" />
+          <FilterSelect label="Category" options={categoryOptions} value={filter.category} onchange={(category) => setParams({ category })} />
+          <FilterSelect label="Applies to" options={scopes} value={filter.applies} onchange={(applies) => setParams({ applies })} />
+        </Toolbar>
+        {#if ruleMatches === 0}
+          <EmptyState title="No rules match" description="Change the search or filters to see more rules.">
+            <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '', applies: '' })}>Clear filters</Button>
+          </EmptyState>
+        {:else}
+          <div class="flex flex-col gap-8">
+            {#each groups as group (group.key)}
+              {#if group.rules.length > 0}
+                <section>
+                  <div class="mb-3 flex items-baseline justify-between gap-4">
+                    <h2 class="text-[15px] font-semibold text-ink">{group.label}</h2>
+                    <a
+                      class="text-sm text-accent hover:underline"
+                      href={group.stackId ? `/admin/conventions/new?stack=${encodeURIComponent(group.stackId)}` : '/admin/conventions/new'}
+                      >Add {group.stackId ? `${group.label} rule` : 'global rule'}</a
+                    >
+                  </div>
+                  <Table label={`${group.label} rules`}>
+                    <thead>
+                      <tr class="border-b border-line bg-ground/50">
+                        <th class={th} scope="col">Rule</th>
+                        <th class={th} scope="col">Category</th>
+                        <th class={th} scope="col">Version</th>
+                        <th class={th} scope="col"><span class="sr-only">Edit</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each group.rules as rule (rule.id)}
+                        <tr class={tr}>
+                          <td class="{td} py-2.5">
+                            <span class="block font-medium text-ink">{rule.title}</span>
+                            <span class="mt-0.5 line-clamp-1 text-xs text-muted">{rule.body}</span>
+                          </td>
+                          <td class={td}><Badge>{categoryLabel(rule.category)}</Badge></td>
+                          <td class="{td} text-sm text-muted">
+                            v{rule.version}
+                            {#if rule.disabled}<span class="ml-2"><Badge tone="amber">Disabled</Badge></span>{/if}
+                          </td>
+                          <td class="{td} text-right">
+                            <a class={link} href={`/admin/conventions/${encodeURIComponent(rule.id)}`} aria-label={`Edit ${rule.title}`}
+                              >Edit</a
+                            >
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </Table>
+                </section>
+              {/if}
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   {:else if loaded && catalog.stacks.length === 0}
     <EmptyState title="No stacks yet" description="A stack is a language or framework, with the files and dependencies that identify it.">
       <Button variant="primary" href="/admin/conventions/new?kind=stack">Add stack</Button>
     </EmptyState>
-  {:else}
-    <Table label="Stacks">
-      <thead>
-        <tr class="border-b border-line bg-ground/50">
-          <th class={th} scope="col">Stack</th>
-          <th class={th} scope="col">Detected by</th>
-          <th class={th} scope="col">Rules</th>
-          <th class={th} scope="col"><span class="sr-only">Edit</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each catalog.stacks as stack (stack.id)}
-          <tr class={tr}>
-            <td class="{td} py-2.5">
-              <span class="block font-medium text-ink">{stack.name}</span>
-              {#if stack.disabled}<span class="mt-1 block"><Badge tone="amber">Disabled</Badge></span>{/if}
-            </td>
-            <td class="{td} font-mono text-xs text-muted">{markersSummary(stack)}</td>
-            <td class="{td} text-sm text-muted">
-              {catalog.rules.filter((rule) => rule.stackId === stack.id).length}
-            </td>
-            <td class="{td} text-right">
-              <a class={link} href={`/admin/conventions/${encodeURIComponent(stack.id)}`} aria-label={`Edit ${stack.name}`}>Edit</a>
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </Table>
+  {:else if catalog.stacks.length > 0}
+    <div class="flex flex-col gap-4">
+      <SearchBox label="Search stacks" value={filter.q} placeholder="Search name or marker, such as go.mod" />
+      {#if stacks.length === 0}
+        <EmptyState title="No stacks match" description="Change the search to see more stacks.">
+          <Button type="button" variant="secondary" onclick={() => setParams({ q: '' })}>Clear search</Button>
+        </EmptyState>
+      {:else}
+        <Table label="Stacks">
+          <thead>
+            <tr class="border-b border-line bg-ground/50">
+              <th class={th} scope="col">Stack</th>
+              <th class={th} scope="col">Detected by</th>
+              <th class={th} scope="col">Rules</th>
+              <th class={th} scope="col"><span class="sr-only">Edit</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each stacks as stack (stack.id)}
+              <tr class={tr}>
+                <td class="{td} py-2.5">
+                  <span class="block font-medium text-ink">{stack.name}</span>
+                  {#if stack.disabled}<span class="mt-1 block"><Badge tone="amber">Disabled</Badge></span>{/if}
+                </td>
+                <td class="{td} font-mono text-xs text-muted">{markersSummary(stack)}</td>
+                <td class="{td} text-sm text-muted">
+                  {catalog.rules.filter((rule) => rule.stackId === stack.id).length}
+                </td>
+                <td class="{td} text-right">
+                  <a class={link} href={`/admin/conventions/${encodeURIComponent(stack.id)}`} aria-label={`Edit ${stack.name}`}>Edit</a>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </Table>
+      {/if}
+    </div>
   {/if}
 </Page>

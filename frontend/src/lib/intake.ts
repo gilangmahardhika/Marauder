@@ -1,3 +1,4 @@
+import { matchText } from './filter';
 import type { Decision, Requirement } from './types';
 
 export type StatusFilter = 'open' | 'accepted' | 'all';
@@ -8,8 +9,6 @@ export type IntakeFilter = {
   status: StatusFilter;
   source: SourceFilter;
 };
-
-export const pageSize = 50;
 
 export const statusOptions: { value: StatusFilter; label: string }[] = [
   { value: 'open', label: 'Needs acceptance' },
@@ -41,22 +40,17 @@ export function parseSource(value: string | null): SourceFilter {
   return sourceOptions.some((option) => option.value === value) ? (value as SourceFilter) : '';
 }
 
-function matches(text: string[], q: string) {
-  const needle = q.trim().toLowerCase();
-  return needle === '' || text.some((part) => part.toLowerCase().includes(needle));
-}
-
 export function filterRequirements(reqs: Requirement[], filter: IntakeFilter) {
   return reqs.filter(
     (req) =>
       (filter.status === 'all' || req.accepted === (filter.status === 'accepted')) &&
       (filter.source === '' || req.sourceKind === filter.source) &&
-      matches([req.id, req.statement, req.heading, req.sourcePath, ...req.acceptance], filter.q)
+      matchText([req.id, req.statement, req.heading, req.sourcePath, ...req.acceptance], filter.q)
   );
 }
 
 export function filterDecisions(decisions: Decision[], q: string) {
-  return decisions.filter((decision) => matches([decision.id, decision.statement, decision.sourcePath], q));
+  return decisions.filter((decision) => matchText([decision.id, decision.statement, decision.sourcePath], q));
 }
 
 export function intakeCounts(reqs: Requirement[]): Record<StatusFilter, number> {

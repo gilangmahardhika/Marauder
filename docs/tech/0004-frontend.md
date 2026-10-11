@@ -137,7 +137,18 @@ frontend/
   src/lib/ui/Checkbox.svelte
   src/lib/ui/Notice.svelte
   src/lib/ui/EmptyState.svelte
+  src/lib/ui/Toolbar.svelte
+  src/lib/ui/SearchBox.svelte
+  src/lib/ui/Segmented.svelte
+  src/lib/ui/FilterSelect.svelte
+  src/lib/ui/ShowMore.svelte
   src/lib/ui/control.ts
+  src/lib/filter.ts
+  src/lib/params.ts
+  src/lib/pager.svelte.ts
+  src/lib/board.ts
+  src/lib/people.ts
+  src/lib/trace.ts
   src/lib/components/Live.svelte
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
@@ -154,6 +165,10 @@ frontend/
   src/lib/api.test.ts
   src/lib/conventions.test.ts
   src/lib/intake.test.ts
+  src/lib/filter.test.ts
+  src/lib/board.test.ts
+  src/lib/people.test.ts
+  src/lib/trace.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
@@ -240,6 +255,32 @@ Buttons that submit a form use `type="submit"`. Buttons that do not submit use `
 
 Pages set `message` to "Loading board", "Running the worker", "Saving GitHub settings", or the error string. The paragraph stays in the page so the text change is announced.
 
+## Search and filters
+
+A list page that can grow long has a `Toolbar` above it, and every page filters the same way. Filtering runs in the browser on the list the page already loaded. The API takes no filter parameters.
+
+- `SearchBox` is a search input with a screen-reader-only label. It writes `q` to the URL 200 ms after the last keystroke, and Enter does not submit a surrounding form. `matchText` in `src/lib/filter.ts` matches when any searched field contains the query, ignoring case. A blank query matches everything.
+- `Segmented` is a button group for a few fixed choices, with `aria-pressed` and an optional count on each button. `FilterSelect` is a compact native select for longer or data-driven choices. Both have screen-reader-only labels and are 44px tall.
+- Filter state lives in the URL, so a reload, Back, or a return from an edit page keeps it. `setParams` in `src/lib/params.ts` updates the URL with `replaceState`, `keepFocus`, and `noScroll`, and an empty value removes the parameter. `pickParam` ignores a value that is not a known option.
+- A long list renders 50 rows, then `ShowMore`: "Showing x of y" and a "Show n more" button. `pager` in `src/lib/pager.svelte.ts` goes back to 50 rows when a filter changes, and not when a poll replaces the data.
+- When filters hide every row, an `EmptyState` titled "No ... match" offers "Clear filters", which removes the page's filter parameters. When the list itself is empty, the page keeps its own empty state and shows no toolbar.
+
+| Page | Search | Filters | Show more |
+| --- | --- | --- | --- |
+| Board | Card id, title, status, owner email and login, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
+| Intake | See Intake | `tab`, `status`, `source` | Yes |
+| Projects | Name, repository, base branch, tribe name | `tribe`, shown when there is more than one tribe | No |
+| Tribes | Name | None | No |
+| Tribe members | Email | `role` | Yes |
+| Users | Email | `role`, `access` All, Admins, Active, or Disabled with counts | Yes |
+| Conventions, Rules tab | Title and body | `category`, `applies` Any scope, Global, or one stack | No |
+| Conventions, Stacks tab | Name and markers | None | No |
+| Skills | Slug, title, "use when", body | `state` All, Enabled, or Disabled with counts | No |
+| Project Conventions | Rule title and stack name | `category`, on the rules table only | No |
+| Card trace | Kind, attempt id, payload JSON | `kind`, and `attempt` when there is more than one attempt, built from the events present with counts | Yes |
+
+LLM families, Router, Company GitHub, Linked projects, and Account have no toolbar. Their lists are short or are edit forms.
+
 ## Login
 
 `src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
@@ -253,6 +294,8 @@ Render six sections in this order: Waiting, Running, Review, Shipping, Finished,
 The primary button is "Run". It is enabled when `canRun` is true and `running` is false. It POSTs `/api/runs`, then reloads the list. The live message is "Running the worker" while the request is in flight, and the button is disabled.
 
 When `running` is true, or any card is in the `running` or `shipping` group or in `agent_review`, an `$effect` starts a 3 second `setInterval` that calls `GET /api/cards` again. The effect cleanup clears the timer when the condition becomes false and when the page is destroyed.
+
+Above the lanes, a toolbar searches the cards and filters them to Everyone or Mine and to Blocked only (see Search and filters). "Mine" compares `owner.email` with the signed-in email, ignoring case. While a filter is on, each lane header counts "x of y". The poll keeps the filter.
 
 Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" to `/intake`. No table of placeholder rows.
 
@@ -316,7 +359,7 @@ While `draftPending` is true, the live message is "Planner is drafting requireme
 
 `GET /api/cards/{id}/trace`.
 
-A list, oldest first. Each item shows time, kind, attempt id, and the payload inside `<pre>{JSON.stringify(payload, null, 2)}</pre>`. No model call from this page.
+A list, oldest first. Each item shows time, kind, attempt id, and the payload inside `<pre>{JSON.stringify(payload, null, 2)}</pre>`. No model call from this page. A toolbar searches kind, attempt id, and payload text, and filters by kind and attempt. The list renders 50 events at a time.
 
 ## Settings pages
 
@@ -497,6 +540,11 @@ npm run build
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
 | `IntakeActions` | Ingest and Add requirement render, and no accept button |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
+| `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
+| `board` filters | "Mine" keeps cards whose owner email matches the signed-in email in any case. Blocked only keeps blocked cards. Search matches title, id, requirement id, and owner login |
+| `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
+| `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |
+| `trace` filters | Events filter by kind, attempt, and payload text. Kind and attempt options come from the events present |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | Built `build/index.html` | Contains a CSP meta tag with `script-src 'self'` and a hash, and no `unsafe-inline` |

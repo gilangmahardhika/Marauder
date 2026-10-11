@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ruleBody, ruleGroups, splitList, stackDraft, stackInput } from './conventions';
+import { filterRules, filterStacks, ruleBody, ruleGroups, splitList, stackDraft, stackInput } from './conventions';
 import type { ConventionRule, Stack } from './types';
 
 function stack(id: string, name: string): Stack {
@@ -48,6 +48,19 @@ describe('conventions helpers', () => {
       [stack('stk_ts', 'TypeScript'), stack('stk_go', 'Go'), stack('stk_py', 'Python')]
     );
     expect(groups.map((group) => group.label)).toEqual(['Global', 'Go', 'TypeScript']);
+  });
+
+  it('filters rules by search, category, and scope', () => {
+    const rules = [rule('Naming'), { ...rule('Go errors', 'stk_go'), category: 'framework' as const, body: 'wrap with %w' }];
+    expect(filterRules(rules, { q: '%W', category: '', applies: '' }).map((item) => item.id)).toEqual(['Go errors']);
+    expect(filterRules(rules, { q: '', category: 'style', applies: '' }).map((item) => item.id)).toEqual(['Naming']);
+    expect(filterRules(rules, { q: '', category: '', applies: 'global' }).map((item) => item.id)).toEqual(['Naming']);
+    expect(filterRules(rules, { q: '', category: '', applies: 'stk_go' }).map((item) => item.id)).toEqual(['Go errors']);
+  });
+
+  it('finds a stack by a marker', () => {
+    const go = { ...stack('stk_go', 'Go'), detect: { files: ['go.mod'], npmDeps: [], pyDeps: [] } };
+    expect(filterStacks([go, stack('stk_ts', 'TypeScript')], 'go.MOD').map((item) => item.id)).toEqual(['stk_go']);
   });
 
   it('sends no stack for a global rule', () => {

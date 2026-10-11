@@ -1,10 +1,17 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { ApiError, getCards, startRun, unreachable } from '$lib/api';
+  import { filterCards, ownerOptions } from '$lib/board';
+  import { pickParam } from '$lib/filter';
+  import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
+  import Segmented from '$lib/ui/Segmented.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   const labels = [
     ['waiting', 'Waiting'],
@@ -78,6 +85,15 @@
     return 'bg-ink/30';
   }
 
+  const params = $derived($page.url.searchParams);
+  const filter = $derived({
+    q: params.get('q') ?? '',
+    owner: pickParam(params.get('owner'), ['all', 'mine'] as const, 'all'),
+    blocked: params.get('blocked') === '1'
+  });
+  const filtered = $derived(filter.q !== '' || filter.owner !== 'all' || filter.blocked);
+  const shown = $derived(filterCards(cards, filter, shell.email));
+
   const summary = $derived(
     cards.length === 0
       ? ''
@@ -104,43 +120,67 @@
       link="Ingest requirements"
     />
   {:else if cards.length > 0}
-    <div
-      class="grid grid-cols-1 gap-3 min-[720px]:auto-cols-[minmax(15rem,1fr)] min-[720px]:grid-flow-col min-[720px]:grid-cols-none min-[720px]:overflow-x-auto min-[720px]:pb-3"
-    >
-      {#each labels as [group, label] (group)}
-        {@const column = cards.filter((card) => card.group === group)}
-        <section class="flex min-w-0 flex-col rounded-panel bg-sidebar/70 p-2" aria-label={label}>
-          <h2 class="flex items-center justify-between px-2 pb-2.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
-            {label}
-            <span class="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tracking-normal text-ink">{column.length}</span>
-          </h2>
-          <div class="flex flex-col gap-2">
-            {#each column as card (card.id)}
-              <a
-                class="block rounded-control border border-line bg-surface p-3 text-ink hover:border-line-strong hover:shadow-sm"
-                href={`/cards/${card.id}`}
-              >
-                <span class="block text-sm font-medium leading-snug">{card.title}</span>
-                <span class="mt-2 flex items-center gap-1.5 text-xs {card.status === 'blocked' ? 'danger' : 'text-muted'}">
-                  <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
-                  {card.status}
-                </span>
-                {#if card.owner}
-                  <span class="mt-1.5 block truncate text-xs text-muted">
-                    {card.owner.githubLogin || card.owner.email}
-                  </span>
-                {/if}
-                <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
-                  <span>Attempt {card.attemptsUsed} of {card.maxAttempts}</span>
-                  {#if card.headSha}<span class="font-mono">{card.headSha.slice(0, 7)}</span>{/if}
-                </span>
-              </a>
-            {:else}
-              <p class="rounded-control border border-dashed border-line-strong px-3 py-4 text-xs text-muted">No cards</p>
-            {/each}
-          </div>
-        </section>
-      {/each}
+    <div class="mb-4">
+      <Toolbar>
+        <SearchBox label="Search cards" value={filter.q} placeholder="Search title, card id, requirement, or owner" />
+        <Segmented label="Owner" options={ownerOptions} value={filter.owner} onchange={(owner) => setParams({ owner: owner === 'all' ? '' : owner })} />
+        <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            class="size-4 accent-accent"
+            checked={filter.blocked}
+            onchange={(event) => setParams({ blocked: event.currentTarget.checked ? '1' : '' })}
+          />
+          Blocked only
+        </label>
+      </Toolbar>
     </div>
+    {#if shown.length === 0}
+      <EmptyState title="No cards match" description="Change the search or filters to see more cards.">
+        <Button type="button" variant="secondary" onclick={() => setParams({ q: '', owner: '', blocked: '' })}>Clear filters</Button>
+      </EmptyState>
+    {:else}
+      <div
+        class="grid grid-cols-1 gap-3 min-[720px]:auto-cols-[minmax(15rem,1fr)] min-[720px]:grid-flow-col min-[720px]:grid-cols-none min-[720px]:overflow-x-auto min-[720px]:pb-3"
+      >
+        {#each labels as [group, label] (group)}
+          {@const column = shown.filter((card) => card.group === group)}
+          {@const total = cards.filter((card) => card.group === group).length}
+          <section class="flex min-w-0 flex-col rounded-panel bg-sidebar/70 p-2" aria-label={label}>
+            <h2 class="flex items-center justify-between px-2 pb-2.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted">
+              {label}
+              <span class="rounded-full bg-surface px-2 py-0.5 text-[11px] font-medium tracking-normal text-ink"
+                >{filtered ? `${column.length} of ${total}` : column.length}</span
+              >
+            </h2>
+            <div class="flex flex-col gap-2">
+              {#each column as card (card.id)}
+                <a
+                  class="block rounded-control border border-line bg-surface p-3 text-ink hover:border-line-strong hover:shadow-sm"
+                  href={`/cards/${card.id}`}
+                >
+                  <span class="block text-sm font-medium leading-snug">{card.title}</span>
+                  <span class="mt-2 flex items-center gap-1.5 text-xs {card.status === 'blocked' ? 'danger' : 'text-muted'}">
+                    <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
+                    {card.status}
+                  </span>
+                  {#if card.owner}
+                    <span class="mt-1.5 block truncate text-xs text-muted">
+                      {card.owner.githubLogin || card.owner.email}
+                    </span>
+                  {/if}
+                  <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
+                    <span>Attempt {card.attemptsUsed} of {card.maxAttempts}</span>
+                    {#if card.headSha}<span class="font-mono">{card.headSha.slice(0, 7)}</span>{/if}
+                  </span>
+                </a>
+              {:else}
+                <p class="rounded-control border border-dashed border-line-strong px-3 py-4 text-xs text-muted">No cards</p>
+              {/each}
+            </div>
+          </section>
+        {/each}
+      </div>
+    {/if}
   {/if}
 </Page>

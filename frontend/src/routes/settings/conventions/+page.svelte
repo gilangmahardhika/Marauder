@@ -1,15 +1,22 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { ApiError, getConventions, getProjectConventions, putProjectConventions, unreachable } from '$lib/api';
-  import { categoryLabel } from '$lib/conventions';
+  import { categories, categoryLabel, categoryOptions, filterRules } from '$lib/conventions';
+  import { pickParam } from '$lib/filter';
+  import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { ConventionCatalog, ProjectConventions } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
+  import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
+  import FilterSelect from '$lib/ui/FilterSelect.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
   import Table from '$lib/ui/Table.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let view = $state<ProjectConventions>({ stacks: [], skillIds: [], rules: [] });
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
@@ -33,6 +40,14 @@
       .filter((skill) => !skill.disabled)
       .map((skill) => ({ value: skill.id, label: skill.title, detail: skill.slug }))
   );
+
+  const params = $derived($page.url.searchParams);
+  const ruleFilter = $derived({
+    q: params.get('q') ?? '',
+    category: pickParam(params.get('category'), ['', ...categories.map((item) => item.value)], ''),
+    applies: ''
+  });
+  const rules = $derived(filterRules(view.rules, ruleFilter));
 
   function apply(next: ProjectConventions) {
     view = next;
@@ -119,26 +134,44 @@
         {#if view.rules.length === 0}
           <p class="text-sm text-muted">{loaded ? 'No rules apply yet.' : ''}</p>
         {:else}
-          <Table label="Rules that apply">
-            <thead>
-              <tr class="border-b border-line bg-ground/50">
-                <th class={th} scope="col">Rule</th>
-                <th class={th} scope="col">From</th>
-                <th class={th} scope="col">Category</th>
-                <th class={th} scope="col">Version</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each view.rules as rule (rule.id)}
-                <tr class={tr}>
-                  <td class="{td} font-medium text-ink">{rule.title}</td>
-                  <td class="{td} text-sm text-muted">{rule.scope === 'global' ? 'Global' : rule.stackName}</td>
-                  <td class={td}><Badge>{categoryLabel(rule.category)}</Badge></td>
-                  <td class="{td} text-sm text-muted">v{rule.version}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </Table>
+          <div class="flex flex-col gap-4">
+            <Toolbar>
+              <SearchBox label="Search rules" value={ruleFilter.q} placeholder="Search rules" />
+              <FilterSelect
+                label="Category"
+                options={categoryOptions}
+                value={ruleFilter.category}
+                onchange={(category) => setParams({ category })}
+              />
+            </Toolbar>
+            {#if rules.length === 0}
+              <div class="flex flex-wrap items-center gap-3">
+                <p class="text-sm text-muted">No rules match.</p>
+                <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
+              </div>
+            {:else}
+              <Table label="Rules that apply">
+                <thead>
+                  <tr class="border-b border-line bg-ground/50">
+                    <th class={th} scope="col">Rule</th>
+                    <th class={th} scope="col">From</th>
+                    <th class={th} scope="col">Category</th>
+                    <th class={th} scope="col">Version</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each rules as rule (rule.id)}
+                    <tr class={tr}>
+                      <td class="{td} font-medium text-ink">{rule.title}</td>
+                      <td class="{td} text-sm text-muted">{rule.scope === 'global' ? 'Global' : rule.stackName}</td>
+                      <td class={td}><Badge>{categoryLabel(rule.category)}</Badge></td>
+                      <td class="{td} text-sm text-muted">v{rule.version}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </Table>
+            {/if}
+          </div>
         {/if}
       </Panel>
     </div>

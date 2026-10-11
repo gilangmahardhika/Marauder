@@ -1,6 +1,5 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { ApiError, acceptRequirements, getIntake, ingest, unreachable } from '$lib/api';
   import IntakeActions from '$lib/components/IntakeActions.svelte';
@@ -10,30 +9,33 @@
     filterDecisions,
     filterRequirements,
     intakeCounts,
-    pageSize,
     parseSource,
     parseStatus,
     sourceOptions,
     statusOptions
   } from '$lib/intake';
+  import { pager } from '$lib/pager.svelte';
+  import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { Intake } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
-  import { control, td, th, tr } from '$lib/ui/control';
+  import { td, th, tr } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FilterSelect from '$lib/ui/FilterSelect.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
+  import Segmented from '$lib/ui/Segmented.svelte';
+  import ShowMore from '$lib/ui/ShowMore.svelte';
   import Table from '$lib/ui/Table.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let intake = $state<Intake | null>(null);
   let skipped = $state<string[]>([]);
   let message = $state('Loading intake');
   let busy = $state(false);
   let selected = $state<string[]>([]);
-  let limit = $state(pageSize);
-  let query = $state(untrack(() => $page.url.searchParams.get('q') ?? ''));
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
 
   async function load() {
     try {
@@ -78,23 +80,14 @@
   const narrowHidden = 'max-[720px]:hidden';
 
   const filterKey = $derived(`${tab}|${filter.q}|${filter.status}|${filter.source}`);
+  const paging = pager(() => filterKey);
 
   $effect(() => {
     void filterKey;
     untrack(() => {
-      limit = pageSize;
       selected = selected.filter((id) => acceptable.includes(id));
     });
   });
-
-  function navigate(updates: Record<string, string>) {
-    const url = new URL($page.url);
-    for (const [key, value] of Object.entries(updates)) {
-      if (value === '') url.searchParams.delete(key);
-      else url.searchParams.set(key, value);
-    }
-    void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
-  }
 
   function tabHref(key: 'requirements' | 'decisions') {
     const url = new URL($page.url);
@@ -103,16 +96,8 @@
     return `${url.pathname}${url.search}`;
   }
 
-  function search(value: string) {
-    query = value;
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => navigate({ q: value.trim() }), 200);
-  }
-
   function clearFilters() {
-    clearTimeout(searchTimer);
-    query = '';
-    navigate({ q: '', source: '', status: 'all' });
+    setParams({ q: '', source: '', status: 'all' });
   }
 
   function toggle(id: string, checked: boolean) {
@@ -206,42 +191,20 @@
         {/each}
       </nav>
 
-      <div class="flex flex-wrap items-center gap-3">
-        <label class="min-w-64 flex-1">
-          <span class="sr-only">Search {tab}</span>
-          <input
-            type="search"
-            class={control}
-            placeholder={tab === 'decisions' ? 'Search id, text, or file' : 'Search id, text, acceptance, or file'}
-            value={query}
-            oninput={(event) => search(event.currentTarget.value)}
-          />
-        </label>
+      <Toolbar>
+        <SearchBox
+          label={`Search ${tab}`}
+          value={filter.q}
+          placeholder={tab === 'decisions' ? 'Search id, text, or file' : 'Search id, text, acceptance, or file'}
+        />
         {#if tab === 'requirements'}
-          <div class="inline-flex overflow-hidden rounded-control border border-line bg-surface" role="group" aria-label="Status">
-            {#each statusOptions as option, index (option.value)}
-              <button
-                type="button"
-                aria-pressed={filter.status === option.value}
-                class="min-h-11 px-3 text-sm whitespace-nowrap {index > 0 ? 'border-l border-line' : ''} {filter.status ===
-                option.value
-                  ? 'bg-ground font-medium text-ink'
-                  : 'text-muted hover:text-ink'}"
-                onclick={() => navigate({ status: option.value })}
-              >
-                {option.label}
-                <span class="ml-1 text-xs text-muted">{counts[option.value]}</span>
-              </button>
-            {/each}
-          </div>
-          <label class="w-40">
-            <span class="sr-only">Source</span>
-            <select class={control} value={filter.source} onchange={(event) => navigate({ source: event.currentTarget.value })}>
-              {#each sourceOptions as option (option.value)}
-                <option value={option.value}>{option.label}</option>
-              {/each}
-            </select>
-          </label>
+          <Segmented
+            label="Status"
+            options={statusOptions.map((option) => ({ ...option, count: counts[option.value] }))}
+            value={filter.status}
+            onchange={(status) => setParams({ status })}
+          />
+          <FilterSelect label="Source" options={sourceOptions} value={filter.source} onchange={(source) => setParams({ source })} />
           {#if acceptable.length > 0}
             <div class="ml-auto">
               <Button
@@ -255,7 +218,7 @@
             </div>
           {/if}
         {/if}
-      </div>
+      </Toolbar>
 
       {#if tab === 'requirements'}
         {#if shown.length === 0}
@@ -290,7 +253,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each shown.slice(0, limit) as requirement (requirement.id)}
+              {#each shown.slice(0, paging.limit) as requirement (requirement.id)}
                 <RequirementRow
                   {requirement}
                   {columns}
@@ -301,17 +264,7 @@
               {/each}
             </tbody>
           </Table>
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-sm text-muted">
-              Showing {Math.min(limit, shown.length)} of {shown.length}
-              {shown.length === 1 ? 'requirement' : 'requirements'}
-            </p>
-            {#if shown.length > limit}
-              <Button type="button" variant="secondary" onclick={() => (limit += pageSize)}>
-                Show {Math.min(pageSize, shown.length - limit)} more
-              </Button>
-            {/if}
-          </div>
+          <ShowMore total={shown.length} limit={paging.limit} noun={['requirement', 'requirements']} onmore={paging.more} />
         {/if}
       {:else if shownDecisions.length === 0}
         <EmptyState
@@ -330,7 +283,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each shownDecisions.slice(0, limit) as decision (decision.id)}
+            {#each shownDecisions.slice(0, paging.limit) as decision (decision.id)}
               <tr class="{tr} align-top">
                 <td class="{td} w-24 py-3.5 font-mono text-xs whitespace-nowrap text-ink">{decision.id}</td>
                 <td class="{td} min-w-56 py-3 text-sm text-ink">{decision.statement}</td>
@@ -339,14 +292,7 @@
             {/each}
           </tbody>
         </Table>
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <p class="text-sm text-muted">Showing {Math.min(limit, shownDecisions.length)} of {shownDecisions.length} decisions</p>
-          {#if shownDecisions.length > limit}
-            <Button type="button" variant="secondary" onclick={() => (limit += pageSize)}>
-              Show {Math.min(pageSize, shownDecisions.length - limit)} more
-            </Button>
-          {/if}
-        </div>
+        <ShowMore total={shownDecisions.length} limit={paging.limit} noun={['decision', 'decisions']} onmore={paging.more} />
       {/if}
     {/if}
   </div>

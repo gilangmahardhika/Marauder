@@ -1,6 +1,10 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, addMember, getMembers, getTribes, getUsers, removeMember, unreachable } from '$lib/api';
+  import { pickParam } from '$lib/filter';
+  import { pager } from '$lib/pager.svelte';
+  import { setParams } from '$lib/params';
+  import { filterUsers, roleOptions } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
   import { showShell } from '$lib/shell.svelte';
   import type { SessionUser } from '$lib/types';
@@ -8,10 +12,14 @@
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FilterSelect from '$lib/ui/FilterSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
+  import ShowMore from '$lib/ui/ShowMore.svelte';
   import Table from '$lib/ui/Table.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let tribeName = $state('');
   let members = $state<SessionUser[]>([]);
@@ -27,6 +35,15 @@
   let busy = $state(false);
 
   showShell(() => ({ title: tribeName || 'Tribe', message }));
+
+  const params = $derived($page.url.searchParams);
+  const filter = $derived({
+    q: params.get('q') ?? '',
+    role: pickParam(params.get('role'), roleOptions.map((option) => option.value), ''),
+    access: 'all' as const
+  });
+  const shown = $derived(filterUsers(members, filter));
+  const paging = pager(() => `${filter.q}|${filter.role}`);
 
   async function load(id: string) {
     try {
@@ -104,43 +121,56 @@
       </Panel>
     </form>
     {#if members.length > 0}
-      <Table label="Members">
-        <thead>
-          <tr class="border-b border-line bg-ground/50">
-            <th class={th} scope="col">Member</th>
-            <th class={th} scope="col">Role</th>
-            <th class={th} scope="col"><span class="sr-only">Remove</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each members as member (member.id)}
-            <tr class={tr}>
-              <td class={td}>
-                <span class="flex items-center gap-3">
-                  <span
-                    class="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar text-xs font-medium text-ink"
-                    aria-hidden="true">{initials(member.email)}</span
-                  >
-                  <span class="font-medium text-ink">{member.email}</span>
-                  {#if member.disabled}<Badge tone="red">Disabled</Badge>{/if}
-                </span>
-              </td>
-              <td class="{td} text-muted">{roleLabel(member.role)}</td>
-              <td class="{td} text-right">
-                {#if pending === member.id}
-                  <span class="inline-flex flex-wrap items-center justify-end gap-2">
-                    <span class="text-sm text-ink">Remove from {tribeName}?</span>
-                    <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = '')}>Cancel</Button>
-                    <Button type="button" variant="danger" disabled={busy} onclick={() => void remove(member.id)}>Remove</Button>
-                  </span>
-                {:else}
-                  <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = member.id)}>Remove</Button>
-                {/if}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </Table>
+      <div class="flex flex-col gap-4">
+        <Toolbar>
+          <SearchBox label="Search members" value={filter.q} placeholder="Search by email" />
+          <FilterSelect label="Role" options={roleOptions} value={filter.role} onchange={(role) => setParams({ role })} />
+        </Toolbar>
+        {#if shown.length === 0}
+          <EmptyState title="No members match" description="Change the search or role to see more members.">
+            <Button type="button" variant="secondary" onclick={() => setParams({ q: '', role: '' })}>Clear filters</Button>
+          </EmptyState>
+        {:else}
+          <Table label="Members">
+            <thead>
+              <tr class="border-b border-line bg-ground/50">
+                <th class={th} scope="col">Member</th>
+                <th class={th} scope="col">Role</th>
+                <th class={th} scope="col"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each shown.slice(0, paging.limit) as member (member.id)}
+                <tr class={tr}>
+                  <td class={td}>
+                    <span class="flex items-center gap-3">
+                      <span
+                        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar text-xs font-medium text-ink"
+                        aria-hidden="true">{initials(member.email)}</span
+                      >
+                      <span class="font-medium text-ink">{member.email}</span>
+                      {#if member.disabled}<Badge tone="red">Disabled</Badge>{/if}
+                    </span>
+                  </td>
+                  <td class="{td} text-muted">{roleLabel(member.role)}</td>
+                  <td class="{td} text-right">
+                    {#if pending === member.id}
+                      <span class="inline-flex flex-wrap items-center justify-end gap-2">
+                        <span class="text-sm text-ink">Remove from {tribeName}?</span>
+                        <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = '')}>Cancel</Button>
+                        <Button type="button" variant="danger" disabled={busy} onclick={() => void remove(member.id)}>Remove</Button>
+                      </span>
+                    {:else}
+                      <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = member.id)}>Remove</Button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </Table>
+          <ShowMore total={shown.length} limit={paging.limit} noun={['member', 'members']} onmore={paging.more} />
+        {/if}
+      </div>
     {:else}
       <EmptyState title="No members yet" description="Search for a user by email to add them." />
     {/if}
