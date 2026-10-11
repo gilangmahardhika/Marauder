@@ -23,6 +23,8 @@ import type {
   Stack,
   StackInput,
   TraceEvent,
+  TribeCandidate,
+  TribeMember,
   TribeRecord
 } from '$lib/types';
 
@@ -82,7 +84,9 @@ export function closeSession() {
 }
 
 export function getMe() {
-  return request<SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean }>('/api/me');
+  return request<
+    SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean; tribeAdminOf: string[] }
+  >('/api/me');
 }
 
 export function changePassword(currentPassword: string, newPassword: string) {
@@ -115,8 +119,14 @@ export function getProjects() {
   return request<{ projects: ProjectRecord[] }>('/api/projects');
 }
 
-export function createProject(body: { tribeId: string; name: string; repo: string; baseBranch: string }) {
-  return request<ProjectRecord>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
+export function createProject(body: {
+  tribeId: string;
+  name: string;
+  repo: string;
+  baseBranch: string;
+  links: { projectId: string; sharedPaths: string[] }[];
+}) {
+  return request<ProjectRecord & { links: ProjectLink[] }>('/api/projects', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function getTribes() {
@@ -132,7 +142,15 @@ export function addMember(tribeId: string, userId: string) {
 }
 
 export function getMembers(tribeId: string) {
-  return request<{ members: SessionUser[] }>(`/api/tribes/${tribeId}/members`);
+  return request<{ members: TribeMember[] }>(`/api/tribes/${tribeId}/members`);
+}
+
+export function setTribeAdmin(tribeId: string, userId: string, tribeAdmin: boolean) {
+  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, { method: 'PUT', body: JSON.stringify({ tribeAdmin }) });
+}
+
+export function getTribeCandidates(tribeId: string) {
+  return request<{ users: TribeCandidate[] }>(`/api/tribes/${tribeId}/candidates`);
 }
 
 export function removeMember(tribeId: string, userId: string) {

@@ -4,7 +4,7 @@
   import { matchText } from '$lib/filter';
   import { setParams } from '$lib/params';
   import { session } from '$lib/session';
-  import { shell, showShell } from '$lib/shell.svelte';
+  import { managesAnyTribe, shell, showShell } from '$lib/shell.svelte';
   import type { ProjectRecord, TribeRecord } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -60,7 +60,7 @@
 
 <Page title="Projects" description="Each project is one repository with its own board and settings.">
   {#snippet actions()}
-    {#if shell.admin}<Button variant="primary" href="/projects/new">New project</Button>{/if}
+    {#if managesAnyTribe()}<Button variant="primary" href="/projects/new">New project</Button>{/if}
   {/snippet}
   {#if loaded && projects.length === 0}
     <EmptyState title="No projects yet" description="Projects you can see belong to your tribes." />

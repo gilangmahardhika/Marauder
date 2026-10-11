@@ -28,8 +28,13 @@ flowchart LR
   s14[Sprint14_CompanyRepos]
   s15[Sprint15_LinkedProjects]
   s16[Sprint16_ManualIntake]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16
+  s17[Sprint17_CardOwner]
+  s18[Sprint18_Conventions]
+  s19[Sprint19_TribeAdmin]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19
 ```
+
+Sprint 19 implements [../rfc/0011-tribe-admin.md](../rfc/0011-tribe-admin.md).
 
 Sprint 16 implements [../rfc/0008-manual-requirements.md](../rfc/0008-manual-requirements.md).
 
@@ -286,3 +291,17 @@ Migration `00010` adds `stacks`, `convention_rules`, `skills`, `convention_revis
 - UI: admin Conventions and Skills pages, a project Conventions tab, and skills on the card page.
 
 Done when: `TestConventionCatalogAdminOnly`, `TestConventionRevisions`, `TestDetectStacks`, `TestSyncKeepsManualStacks`, `TestProjectConventionsLeadOnly`, `TestCreateCardSkills`, `TestPackConventions`, `TestConventionsCannotAddTool`, `TestConventionsContextEvent`, `TestReviewerPackConventions`, and `TestPromptMarkers` with the new system hash.
+
+## Sprint 19: Tribe admins and people on the board
+
+Goal: A tribe admin manages one tribe's members and projects, and chooses a new project's links when creating it. The board shows who owns a card and who reviews it (RFC-057, REQ-058).
+
+Migration `00011` adds `tribe_members.admin`. Migration `00012` fills `cards.owner_id` for cards created before `00009`, when every requirement on the card has the same creator. Packages: `internal/tenancy`, `internal/app`, `internal/httpapi`.
+
+- Members, candidates, and the tribe admin flag are allowed for an admin or a tribe admin of that tribe. A tribe admin cannot clear their own flag or remove themselves.
+- `POST /api/projects` is allowed for an admin or a tribe admin of the tribe, and accepts `links`, checked and stored in the project's transaction.
+- `PUT /api/projects/{id}/settings/links` is allowed for a Lead Developer member or a tribe admin.
+- `GET /api/me` adds `tribeAdminOf`. The card JSON adds `reviewers`.
+- UI: tribe admins see Tribes and New project, the members page grants the flag, New project picks linked projects, the board and card page show owner and reviewers, LLM APIs gets search and filters, and Linked projects explains an empty list.
+
+Done when: `TestTribeAdminManagesMembers`, `TestTribeAdminGrantsTribeAdmin`, `TestNonTribeAdminCannotManage`, `TestTribeAdminCreatesProjectWithLinks`, `TestCreateProjectLinkOtherTribeRollsBack`, `TestTribeAdminSavesLinks`, `TestCardReviewers`.

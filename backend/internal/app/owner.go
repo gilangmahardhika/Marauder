@@ -15,6 +15,7 @@ import (
 	"orchestrator/backend/internal/company"
 	"orchestrator/backend/internal/ghcli"
 	"orchestrator/backend/internal/identity"
+	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/tenancy"
@@ -143,6 +144,39 @@ func CardReviewers(ctx context.Context, db *sql.DB, card board.Card, host, botLo
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// CardReviewerUsers lists the reviewers named on each card's requirements in
+// projectID, keyed by card id, without the card owner, disabled users, and
+// users who left the project's tribe. cardID "" lists every card in the
+// project in one query.
+func CardReviewerUsers(ctx context.Context, db *sql.DB, projectID, cardID string) (map[string][]intake.Reviewer, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT DISTINCT c.id, u.id, u.email,
+			CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
+		FROM cards c
+		CROSS JOIN LATERAL jsonb_array_elements_text(c.requirement_ids_json::jsonb) AS req(id)
+		JOIN requirement_reviewers rr ON rr.project_id = c.project_id AND rr.requirement_id = req.id
+		JOIN users u ON u.id = rr.user_id AND u.disabled = false
+		JOIN projects p ON p.id = c.project_id
+		JOIN tribe_members m ON m.tribe_id = p.tribe_id AND m.user_id = u.id
+		LEFT JOIN user_github g ON g.user_id = u.id
+		WHERE c.project_id = $1 AND ($2 = '' OR c.id = $2) AND u.id <> COALESCE(c.owner_id, '')
+		ORDER BY c.id, u.email`, projectID, cardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]intake.Reviewer{}
+	for rows.Next() {
+		var id string
+		var r intake.Reviewer
+		if err := rows.Scan(&id, &r.ID, &r.Email, &r.GitHubLogin); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], r)
+	}
+	return out, rows.Err()
 }
 
 type PublishInput struct {

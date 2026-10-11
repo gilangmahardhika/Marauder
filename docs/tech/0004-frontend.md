@@ -169,6 +169,7 @@ frontend/
   src/lib/board.test.ts
   src/lib/people.test.ts
   src/lib/trace.test.ts
+  src/lib/llm.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
@@ -221,7 +222,7 @@ frontend/
 | `/settings/deploy` | Deploy and checks for the project |
 | `/settings/conventions` | The project's stacks, enabled skills, and the rules that apply |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
@@ -267,7 +268,7 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 
 | Page | Search | Filters | Show more |
 | --- | --- | --- | --- |
-| Board | Card id, title, status, owner email and login, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
+| Board | Card id, title, status, owner and reviewer emails and logins, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
 | Intake | See Intake | `tab`, `status`, `source` | Yes |
 | Projects | Name, repository, base branch, tribe name | `tribe`, shown when there is more than one tribe | No |
 | Tribes | Name | None | No |
@@ -277,9 +278,10 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 | Conventions, Stacks tab | Name and markers | None | No |
 | Skills | Slug, title, "use when", body | `state` All, Enabled, or Disabled with counts | No |
 | Project Conventions | Rule title and stack name | `category`, on the rules table only | No |
+| LLM APIs | Family id, base URL, model ids | `protocol` All, Anthropic, or OpenAI and `key` All, Saved, or Not set, with counts. Any protocol other than `openai` counts as Anthropic | No |
 | Card trace | Kind, attempt id, payload JSON | `kind`, and `attempt` when there is more than one attempt, built from the events present with counts | Yes |
 
-LLM families, Router, Company GitHub, Linked projects, and Account have no toolbar. Their lists are short or are edit forms.
+Router, Company GitHub, Linked projects, and Account have no toolbar. Their lists are short or are edit forms.
 
 ## Login
 
@@ -289,7 +291,7 @@ LLM families, Router, Company GitHub, Linked projects, and Account have no toolb
 
 `src/routes/+page.svelte` calls `GET /api/cards` from `onMount` (or `$effect` on first run).
 
-Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print `status` as text on the row. When `owner` is set, the row shows the owner's `githubLogin`, or the email when the login is empty (RFC-054). The row links to `/cards/{id}`.
+Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print `status` as text on the row. Each row shows "Owner" with the owner's `githubLogin`, or the email when the login is empty, or "No owner" (RFC-054). When `reviewers` is not empty, a second line shows "Reviewers" with the first two names and "+n" for the rest. Both lines clamp to one line. The row links to `/cards/{id}`.
 
 The primary button is "Run". It is enabled when `canRun` is true and `running` is false. It POSTs `/api/runs`, then reloads the list. The live message is "Running the worker" while the request is in flight, and the button is disabled.
 
@@ -303,7 +305,7 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-Show title, raw status, owner (login and email, or "None"), requirement ids, decision ids, skills by title (or "None"), risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
+Show title, raw status, owner (login and email, or "None"), reviewers (login and email each, or "None"), requirement ids, decision ids, skills by title (or "None"), risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 
 Render a control only when its name is in `actions`:
 
@@ -385,7 +387,7 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 `src/routes/admin/users/+page.svelte` lists users. Create is `/admin/users/new` (email, password, role, admin) and calls `POST /api/users`. Edit is `/admin/users/[id]` and calls `PUT /api/users/{id}`. A `403` sets the live message from `error.message`.
 
-`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user who is not yet a member in a `SearchSelect` searched by email. The request still sends `userId`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, and base branch. Picking a repository fills the base branch with its default branch. When the list cannot load, the repository is a text field.
+`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by email. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository, and shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage. Picking a repository fills the base branch with its default branch. When the list cannot load, the repository is a text field. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
 
 ### Company GitHub
 
@@ -397,11 +399,11 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 ### Linked projects
 
-`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. The page explains that linked context is read only.
+`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. Projects from other tribes that the user can see follow as disabled options with "Other tribe: name" as the detail, so a search explains why they cannot be picked. The hint names the tribe. The picker clears after a pick. When the projects do not load, a notice says so. The save note says only a Lead Developer or tribe admin can save. The page explains that linked context is read only.
 
 ### LLM APIs
 
-`src/routes/admin/llm/+page.svelte` lists the company families from GET `/api/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/admin/llm/new`.
+`src/routes/admin/llm/+page.svelte` lists the company families from GET `/api/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/admin/llm/new`. A toolbar searches and filters the families (see Search and filters).
 
 `src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
 

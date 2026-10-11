@@ -28,10 +28,17 @@ type NewProject struct {
 	Name       string
 	Repo       string
 	BaseBranch string
+	Links      []LinkInput
 }
 
+// CreateProject stores a project and its links in one transaction. A company
+// admin or a tribe admin of the project's tribe may call it (RFC-057).
 func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewProject, dataRoot string) (Project, error) {
-	if !actor.Admin {
+	ok, err := CanManageTribe(ctx, db, actor, in.TribeID)
+	if err != nil {
+		return Project{}, err
+	}
+	if !ok {
 		return Project{}, identity.ErrForbidden
 	}
 	in.Name = strings.TrimSpace(in.Name)
@@ -63,6 +70,10 @@ func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewP
 	if err := repoFree(ctx, db, in.Repo, ""); err != nil {
 		return Project{}, err
 	}
+	links, err := cleanLinks(ctx, db, in.TribeID, "", in.Links)
+	if err != nil {
+		return Project{}, err
+	}
 	id, err := board.NewID("proj_")
 	if err != nil {
 		return Project{}, err
@@ -92,6 +103,9 @@ func CreateProject(ctx context.Context, db *sql.DB, actor identity.User, in NewP
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO deploy_lock (id, project_id) VALUES (1, $1)`, id); err != nil {
+		return Project{}, err
+	}
+	if err := insertLinks(ctx, tx, id, links, now); err != nil {
 		return Project{}, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -321,24 +335,54 @@ func ListLinks(ctx context.Context, db *sql.DB, projectID string) ([]Link, error
 	return out, rows.Err()
 }
 
-// SaveLinks replaces the project's links. Each linked project shares the
-// tribe, is not this project, and each shared path stays inside its repo.
+// SaveLinks replaces the project's links. A Lead Developer member or a tribe
+// admin of the project's tribe may call it.
 func SaveLinks(ctx context.Context, db *sql.DB, actor identity.User, projectID string, links []LinkInput) ([]Link, error) {
 	if err := Visible(ctx, db, projectID, actor.ID); err != nil {
 		return nil, err
-	}
-	if actor.Role != "lead_developer" {
-		return nil, identity.ErrForbidden
 	}
 	self, err := GetProject(ctx, db, projectID)
 	if err != nil {
 		return nil, err
 	}
+	if actor.Role != "lead_developer" {
+		ok, err := IsTribeAdmin(ctx, db, actor.ID, self.TribeID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, identity.ErrForbidden
+		}
+	}
+	clean, err := cleanLinks(ctx, db, self.TribeID, projectID, links)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_links WHERE project_id = $1`, projectID); err != nil {
+		return nil, err
+	}
+	if err := insertLinks(ctx, tx, projectID, clean, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ListLinks(ctx, db, projectID)
+}
+
+// cleanLinks checks each link: an existing project in tribeID, not selfID,
+// listed once, with at most 20 shared paths that stay inside its repo.
+func cleanLinks(ctx context.Context, db *sql.DB, tribeID, selfID string, links []LinkInput) ([]LinkInput, error) {
 	seen := map[string]bool{}
 	clean := make([]LinkInput, 0, len(links))
 	for _, link := range links {
 		id := strings.TrimSpace(link.ProjectID)
-		if id == projectID {
+		if selfID != "" && id == selfID {
 			return nil, &identity.Validation{Fields: map[string]string{"links": "a project cannot link to itself"}}
 		}
 		if seen[id] {
@@ -352,7 +396,7 @@ func SaveLinks(ctx context.Context, db *sql.DB, actor identity.User, projectID s
 		if err != nil {
 			return nil, err
 		}
-		if other.TribeID != self.TribeID {
+		if other.TribeID != tribeID {
 			return nil, &identity.Validation{Fields: map[string]string{"links": "linked projects must be in the same tribe"}}
 		}
 		if len(link.SharedPaths) > maxSharedPaths {
@@ -376,30 +420,22 @@ func SaveLinks(ctx context.Context, db *sql.DB, actor identity.User, projectID s
 		}
 		clean = append(clean, LinkInput{ProjectID: id, SharedPaths: paths})
 	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM project_links WHERE project_id = $1`, projectID); err != nil {
-		return nil, err
-	}
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, link := range clean {
+	return clean, nil
+}
+
+func insertLinks(ctx context.Context, tx *sql.Tx, projectID string, links []LinkInput, now string) error {
+	for _, link := range links {
 		raw, err := json.Marshal(link.SharedPaths)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO project_links (project_id, linked_project_id, shared_paths_json, created_at)
 			VALUES ($1, $2, $3, $4)`, projectID, link.ProjectID, string(raw), now); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return ListLinks(ctx, db, projectID)
+	return nil
 }
 
 func Visible(ctx context.Context, db *sql.DB, projectID, userID string) error {

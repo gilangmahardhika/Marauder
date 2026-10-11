@@ -98,6 +98,12 @@
                 : `${card.owner.email}, no verified GitHub login`
               : 'None'
           )}
+          {@render item(
+            'Reviewers',
+            (card.reviewers ?? [])
+              .map((reviewer) => (reviewer.githubLogin ? `${reviewer.githubLogin} (${reviewer.email})` : reviewer.email))
+              .join(', ') || 'None'
+          )}
           {@render item('Requirements', card.requirementIds.join(', ') || '—', true)}
           {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
           {@render item('Skills', (card.skills ?? []).map((skill) => skill.title).join(', ') || 'None')}

@@ -3,7 +3,7 @@
   import { ApiError, getMembers, getTribes, unreachable } from '$lib/api';
   import { matchText } from '$lib/filter';
   import { setParams } from '$lib/params';
-  import { shell, showShell } from '$lib/shell.svelte';
+  import { canManageTribe, shell, showShell } from '$lib/shell.svelte';
   import type { TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
@@ -35,8 +35,8 @@
   });
 
   $effect(() => {
-    if (!shell.admin) return;
     for (const tribe of tribes) {
+      if (!canManageTribe(tribe.id)) continue;
       void getMembers(tribe.id)
         .then((body) => (counts[tribe.id] = body.members.length))
         .catch(() => {});
@@ -72,11 +72,13 @@
                 <td class="{td} font-medium text-ink">{tribe.name}</td>
                 <td class="{td} text-muted">{counts[tribe.id] ?? '—'}</td>
                 <td class="{td} text-right">
-                  <a
-                    class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
-                    href={`/tribes/${tribe.id}`}
-                    aria-label={`Manage ${tribe.name}`}>Manage</a
-                  >
+                  {#if canManageTribe(tribe.id)}
+                    <a
+                      class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
+                      href={`/tribes/${tribe.id}`}
+                      aria-label={`Manage ${tribe.name}`}>Manage</a
+                    >
+                  {/if}
                 </td>
               </tr>
             {/each}

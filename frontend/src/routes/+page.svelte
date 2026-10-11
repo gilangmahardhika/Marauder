@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getCards, startRun, unreachable } from '$lib/api';
-  import { filterCards, ownerOptions } from '$lib/board';
+  import { filterCards, ownerOptions, personName, reviewerSummary } from '$lib/board';
   import { pickParam } from '$lib/filter';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
@@ -122,7 +122,7 @@
   {:else if cards.length > 0}
     <div class="mb-4">
       <Toolbar>
-        <SearchBox label="Search cards" value={filter.q} placeholder="Search title, card id, requirement, or owner" />
+        <SearchBox label="Search cards" value={filter.q} placeholder="Search title, card id, requirement, owner, or reviewer" />
         <Segmented label="Owner" options={ownerOptions} value={filter.owner} onchange={(owner) => setParams({ owner: owner === 'all' ? '' : owner })} />
         <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
           <input
@@ -164,9 +164,12 @@
                     <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
                     {card.status}
                   </span>
-                  {#if card.owner}
-                    <span class="mt-1.5 block truncate text-xs text-muted">
-                      {card.owner.githubLogin || card.owner.email}
+                  <span class="mt-1.5 line-clamp-1 break-all text-xs text-muted">
+                    {card.owner ? `Owner ${personName(card.owner)}` : 'No owner'}
+                  </span>
+                  {#if card.reviewers?.length}
+                    <span class="mt-0.5 line-clamp-1 break-all text-xs text-muted">
+                      Reviewers {reviewerSummary(card.reviewers)}
                     </span>
                   {/if}
                   <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">

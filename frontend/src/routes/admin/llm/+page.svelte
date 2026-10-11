@@ -1,6 +1,9 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { ApiError, getLLM, unreachable } from '$lib/api';
-  import { protocolLabel } from '$lib/llm';
+  import { pickParam } from '$lib/filter';
+  import { filterFamilies, keyFilters, keyOptions, protocolFilters, protocolLabel, protocolOptions } from '$lib/llm';
+  import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
   import type { Family } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
@@ -8,13 +11,24 @@
   import { td, th, tr } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
+  import SearchBox from '$lib/ui/SearchBox.svelte';
+  import Segmented from '$lib/ui/Segmented.svelte';
   import Table from '$lib/ui/Table.svelte';
+  import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let families = $state<Family[]>([]);
   let loaded = $state(false);
   let message = $state('Loading LLM settings');
 
   showShell(() => ({ title: 'LLM APIs', message }));
+
+  const params = $derived($page.url.searchParams);
+  const filter = $derived({
+    q: params.get('q') ?? '',
+    protocol: pickParam(params.get('protocol'), protocolFilters, 'all'),
+    key: pickParam(params.get('key'), keyFilters, 'all')
+  });
+  const shown = $derived(filterFamilies(families, filter));
 
   $effect(() => {
     void getLLM()
@@ -47,38 +61,56 @@
       <Button variant="primary" href="/admin/llm/new">Add family</Button>
     </EmptyState>
   {:else if families.length > 0}
-    <Table label="LLM families">
-      <thead>
-        <tr class="border-b border-line bg-ground/50">
-          <th class={th} scope="col">Family</th>
-          <th class={th} scope="col">Models</th>
-          <th class={th} scope="col">Key</th>
-          <th class={th} scope="col"><span class="sr-only">Edit</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each families as family (family.id)}
-          <tr class={tr}>
-            <td class="{td} py-2.5">
-              <span class="block break-all font-mono text-[13px] font-medium text-ink">{family.id}</span>
-              <span class="mt-0.5 block break-all text-xs text-muted">
-                {protocolLabel(family.protocol)} · <span class="font-mono">{family.baseUrl || 'no base URL'}</span>
-              </span>
-            </td>
-            <td class="{td} font-mono text-xs text-muted">{models(family.models)}</td>
-            <td class={td}>
-              {#if family.keySet}<Badge tone="green">Saved</Badge>{:else}<Badge>Not set</Badge>{/if}
-            </td>
-            <td class="{td} text-right">
-              <a
-                class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
-                href={`/admin/llm/${encodeURIComponent(family.id)}`}
-                aria-label={`Edit ${family.id}`}>Edit</a
-              >
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </Table>
+    <div class="flex flex-col gap-4">
+      <Toolbar>
+        <SearchBox label="Search LLM families" value={filter.q} placeholder="Search family, base URL, or model" />
+        <Segmented
+          label="Protocol"
+          options={protocolOptions(families)}
+          value={filter.protocol}
+          onchange={(protocol) => setParams({ protocol: protocol === 'all' ? '' : protocol })}
+        />
+        <Segmented label="Key" options={keyOptions(families)} value={filter.key} onchange={(key) => setParams({ key: key === 'all' ? '' : key })} />
+      </Toolbar>
+      {#if shown.length === 0}
+        <EmptyState title="No families match" description="Change the search or filters to see more families.">
+          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', protocol: '', key: '' })}>Clear filters</Button>
+        </EmptyState>
+      {:else}
+        <Table label="LLM families">
+          <thead>
+            <tr class="border-b border-line bg-ground/50">
+              <th class={th} scope="col">Family</th>
+              <th class={th} scope="col">Models</th>
+              <th class={th} scope="col">Key</th>
+              <th class={th} scope="col"><span class="sr-only">Edit</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each shown as family (family.id)}
+              <tr class={tr}>
+                <td class="{td} py-2.5">
+                  <span class="block break-all font-mono text-[13px] font-medium text-ink">{family.id}</span>
+                  <span class="mt-0.5 block break-all text-xs text-muted">
+                    {protocolLabel(family.protocol)} · <span class="font-mono">{family.baseUrl || 'no base URL'}</span>
+                  </span>
+                </td>
+                <td class="{td} font-mono text-xs text-muted">{models(family.models)}</td>
+                <td class={td}>
+                  {#if family.keySet}<Badge tone="green">Saved</Badge>{:else}<Badge>Not set</Badge>{/if}
+                </td>
+                <td class="{td} text-right">
+                  <a
+                    class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
+                    href={`/admin/llm/${encodeURIComponent(family.id)}`}
+                    aria-label={`Edit ${family.id}`}>Edit</a
+                  >
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </Table>
+      {/if}
+    </div>
   {/if}
 </Page>

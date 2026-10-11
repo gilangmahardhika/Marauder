@@ -1,17 +1,20 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, createProject, getCompanyRepos, getTribes, unreachable } from '$lib/api';
+  import { ApiError, createProject, getCompanyRepos, getProjects, getTribes, unreachable } from '$lib/api';
   import { session } from '$lib/session';
-  import { showShell } from '$lib/shell.svelte';
-  import type { CompanyRepo, TribeRecord } from '$lib/types';
+  import { canManageTribe, showShell } from '$lib/shell.svelte';
+  import type { CompanyRepo, ProjectRecord, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
   import Select from '$lib/ui/Select.svelte';
 
   let tribes = $state<TribeRecord[]>([]);
+  let projects = $state<ProjectRecord[]>([]);
+  let links = $state<string[]>([]);
   let repos = $state<CompanyRepo[] | null>(null);
   let reposError = $state('');
   let tribeId = $state('');
@@ -23,6 +26,23 @@
   let busy = $state(false);
 
   showShell(() => ({ title: 'New project', message }));
+
+  const manageable = $derived(tribes.filter((tribe) => canManageTribe(tribe.id)));
+  const linkOptions = $derived(
+    projects
+      .filter((project) => project.tribeId === tribeId)
+      .map((project) => ({ value: project.id, label: project.name, detail: project.repo }))
+  );
+  const tribeName = $derived(tribes.find((tribe) => tribe.id === tribeId)?.name ?? 'this tribe');
+
+  $effect(() => {
+    if (manageable.length > 0 && !manageable.some((tribe) => tribe.id === tribeId)) tribeId = manageable[0].id;
+  });
+
+  $effect(() => {
+    const allowed = new Set(linkOptions.map((option) => option.value));
+    if (links.some((id) => !allowed.has(id))) links = links.filter((id) => allowed.has(id));
+  });
 
   const repoOptions = $derived(
     (repos ?? []).map((item) => ({
@@ -36,10 +56,16 @@
     void getTribes()
       .then((body) => {
         tribes = body.tribes;
-        if (tribeId === '' && tribes[0]) tribeId = tribes[0].id;
       })
       .catch((error: unknown) => {
         message = error instanceof ApiError ? error.message : unreachable();
+      });
+    void getProjects()
+      .then((body) => {
+        projects = body.projects;
+      })
+      .catch(() => {
+        projects = [];
       });
     void getCompanyRepos()
       .then((body) => {
@@ -63,7 +89,13 @@
     fields = {};
     message = 'Creating project';
     try {
-      const project = await createProject({ tribeId, name, repo, baseBranch });
+      const project = await createProject({
+        tribeId,
+        name,
+        repo,
+        baseBranch,
+        links: links.map((projectId) => ({ projectId, sharedPaths: [] }))
+      });
       session.setProject(project.id);
       message = 'Project created';
       await goto('/settings/repository');
@@ -83,7 +115,7 @@
   <form onsubmit={submit}>
     <Panel title="Project">
       <Select label="Tribe" id="tribe" error={fields.tribeId} bind:value={tribeId}>
-        {#each tribes as tribe (tribe.id)}
+        {#each manageable as tribe (tribe.id)}
           <option value={tribe.id}>{tribe.name}</option>
         {/each}
       </Select>
@@ -119,6 +151,20 @@
         hint="Card branches start here."
         bind:value={baseBranch}
       />
+      <div class="flex flex-col gap-1.5">
+        <MultiSearchSelect
+          label="Linked projects"
+          id="links"
+          width="lg"
+          placeholder={linkOptions.length === 0 ? `No other projects in ${tribeName}` : 'Search projects'}
+          options={linkOptions}
+          bind:values={links}
+          error={fields.links ?? fields.sharedPaths ?? ''}
+        />
+        <p class="text-xs text-muted">
+          The new project reads requirements, decisions, and files from these projects. Add shared paths later in Linked projects.
+        </p>
+      </div>
       {#snippet footer()}
         <Button variant="ghost" href="/projects">Cancel</Button>
         <Button variant="primary" type="submit" disabled={busy}>Create project</Button>

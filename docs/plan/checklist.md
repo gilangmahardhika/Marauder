@@ -307,3 +307,20 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestConventionsContextEvent`
 - [x] `TestReviewerPackConventions`
 - [x] `TestPromptMarkers` with the new system hash
+
+## Sprint 19: Tribe admins and people on the board
+
+- [x] A tribe admin adds and removes members and grants the tribe admin flag.
+- [x] A tribe admin or an admin creates a project with links in one transaction.
+- [x] A tribe admin saves a project's links.
+- [x] Cards created before migration `00009` get their owner back.
+- [x] The card JSON lists reviewers. The board and card page show owner and reviewers.
+- [x] UI: Tribes and New project for tribe admins, linked projects on New project, LLM APIs search and filters, Linked projects empty-list hint.
+- [x] `TestTribeAdminManagesMembers`
+- [x] `TestTribeAdminGrantsTribeAdmin`
+- [x] `TestNonTribeAdminCannotManage`
+- [x] `TestTribeAdminCreatesProjectWithLinks`
+- [x] `TestCreateProjectLinkOtherTribeRollsBack`
+- [x] `TestTribeAdminSavesLinks`
+- [x] `TestCardReviewers`
+- [x] `llm.test.ts`

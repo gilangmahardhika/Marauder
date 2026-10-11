@@ -51,6 +51,12 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	body["githubLogin"] = user.GitHubLogin
 	body["githubTokenSet"] = user.GitHubTokenSet
 	body["githubVerified"] = user.GitHubVerified
+	tribes, err := app.TribeAdminOf(r.Context(), s.DB, user.ID)
+	if err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	body["tribeAdminOf"] = tribes
 	writeJSON(w, 200, body)
 }
 

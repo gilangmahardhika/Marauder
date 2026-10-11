@@ -374,6 +374,7 @@ CREATE TABLE tribes (
 CREATE TABLE tribe_members (
   tribe_id TEXT NOT NULL REFERENCES tribes(id),
   user_id TEXT NOT NULL REFERENCES users(id),
+  admin BOOLEAN NOT NULL DEFAULT false,
   PRIMARY KEY (tribe_id, user_id)
 );
 
@@ -545,7 +546,7 @@ Ids use the prefixes `stk_`, `rule_`, and `skl_`. `detect_json` is `{ "files": [
 
 A wrong password is `401`. Five wrong passwords for that email pause further attempts for one minute with `429`. A disabled user is `401`. The bearer is 32 random bytes. The row stores its SHA-256. The process checks the hash and `expires_at` on every request. `DELETE /api/session` requires the bearer and deletes that row.
 
-`GET /api/me` returns the `user` object plus `githubLogin`, `githubTokenSet`, and `githubVerified`.
+`GET /api/me` returns the `user` object plus `githubLogin`, `githubTokenSet`, `githubVerified`, and `tribeAdminOf`, the ids of the tribes where the caller is a tribe admin (RFC-057).
 
 `PUT /api/me/password`
 
@@ -578,21 +579,33 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 
 `GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
 
-`GET /api/tribes/{id}/members` requires admin. A non-admin is `403`. A missing tribe is `404`.
+Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of that tribe (RFC-057). Anyone else is `403`. A missing tribe is `404`.
+
+`GET /api/tribes/{id}/members` lists members. `tribeAdmin` is the per-tribe flag. `admin` is the company flag.
 
 ```json
-{ "members": [{ "id": "user_0123456789ab", "email": "ada@example.com", "role": "lead_developer", "admin": false, "disabled": false }] }
+{ "members": [{ "id": "user_0123456789ab", "email": "ada@example.com", "role": "lead_developer", "admin": false, "disabled": false, "tribeAdmin": true }] }
 ```
 
-`POST /api/tribes/{id}/members` with `{ "userId": "user_0123456789ab" }` and `DELETE /api/tribes/{id}/members/{userId}` require admin. A non-admin is `403`. A missing tribe is `404`.
+`GET /api/tribes/{id}/candidates` lists enabled users who are not members, for the add picker: `{ "users": [{ "id": "user_0123456789ab", "email": "grace@example.com", "role": "developer" }] }`.
 
-`GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires admin.
+`POST /api/tribes/{id}/members` with `{ "userId": "user_0123456789ab" }` adds a member. `DELETE /api/tribes/{id}/members/{userId}` removes one. A tribe admin who is not an admin cannot remove themselves (`422` on `userId`).
+
+`PUT /api/tribes/{id}/members/{userId}` with `{ "tribeAdmin": true }` sets or clears the flag and returns `204`. A user who is not a member is `404`. A tribe admin who is not an admin cannot clear their own flag (`422` on `tribeAdmin`).
+
+`GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires an admin or a tribe admin of `tribeId`. Anyone else is `403`.
 
 ```json
-{ "tribeId": "tribe_0123456789ab", "name": "Widget", "repo": "widget", "baseBranch": "main" }
+{
+  "tribeId": "tribe_0123456789ab",
+  "name": "Widget",
+  "repo": "widget",
+  "baseBranch": "main",
+  "links": [{ "projectId": "proj_0123456789ab", "sharedPaths": [] }]
+}
 ```
 
-`repo` is a repository name in the company organization, `^[A-Za-z0-9._-]+$`. A repo another project already names is `422` on `repo`. `baseBranch` follows the branch rule below. The server creates `<data>/projects/<project-id>/` at mode `0700`. The clone happens on the first Sync or ingest.
+`repo` is a repository name in the company organization, `^[A-Za-z0-9._-]+$`. A repo another project already names is `422` on `repo`. `baseBranch` follows the branch rule below. `links` is optional and follows the PUT links rules below, checked against `tribeId`. The project and its links are written in one transaction, so a bad link is `422` and stores no project. When links were stored, the server appends `config_changed` with `links`. The `201` response is the project object plus `links` in the GET links shape. The server creates `<data>/projects/<project-id>/` at mode `0700`. The clone happens on the first Sync or ingest.
 
 A project object is:
 
@@ -617,6 +630,7 @@ A project object is:
   "actions": ["approve", "request_changes", "reject"],
   "projectId": "proj_0123456789ab",
   "owner": { "id": "user_0123456789ab", "email": "ada@example.com", "githubLogin": "ada" },
+  "reviewers": [{ "id": "user_0123456789ac", "email": "grace@example.com", "githubLogin": "grace" }],
   "skills": [{ "id": "skl_0123456789ab", "slug": "oauth2-integration", "title": "OAuth 2.0 integration" }],
   "unblockTo": null,
   "requirementIds": ["REQ-001"],
@@ -643,7 +657,7 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `skills` lists the card's skills, `[]` when it has none (RFC-056).
+`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. The board reads every card's reviewers in one query. `skills` lists the card's skills, `[]` when it has none (RFC-056).
 
 ## Board and intake
 
@@ -823,7 +837,7 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 
 `POST /api/settings/github/test` runs `gh api user` and `gh api orgs/{org}` with `GH_TOKEN` and `GH_HOST` in the child environment and an empty `GH_CONFIG_DIR`. It returns `{ "ok": true, "login": "acme-bot" }` and stores that login as `botLogin`, or `{ "ok": false, "message": "..." }`. A completed check is `200`, including `ok: false`. No stored token is `422`.
 
-`GET /api/settings/github/repos` lists the organization's repositories for an admin or a Lead Developer: `{ "repos": [{ "name": "widget", "defaultBranch": "main", "archived": false }] }`. No stored token is `422`. A failed call is `502`.
+`GET /api/settings/github/repos` lists the organization's repositories for an admin, a Lead Developer, or a tribe admin: `{ "repos": [{ "name": "widget", "defaultBranch": "main", "archived": false }] }`. No stored token is `422`. A failed call is `502`.
 
 `GET /api/projects/{projectId}/settings/repository`
 
@@ -857,7 +871,7 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/links` accepts `{ "links": [{ "projectId": "...", "sharedPaths": ["..."] }] }` and replaces the list.
+`PUT /api/projects/{projectId}/settings/links` accepts `{ "links": [{ "projectId": "...", "sharedPaths": ["..."] }] }` and replaces the list. A Lead Developer member or a tribe admin of the project's tribe may save (RFC-057). Another member is `403`.
 
 | Field | Rule |
 | --- | --- |

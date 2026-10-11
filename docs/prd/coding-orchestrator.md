@@ -105,6 +105,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-060 | A project's stacks are detected, and a Lead Developer may add more |
 | REQ-061 | A project enables integration skills, and the planner attaches them to cards |
 | REQ-062 | Packs carry the rules and skills, and the trace names their versions |
+| REQ-063 | A tribe admin runs one tribe |
 
 ## Requirements
 
@@ -663,7 +664,7 @@ A Lead Developer member edits project settings from the web UI, through the JSON
 | Account GitHub | Host, login, token | That user |
 | Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
 | Project repository | Repo in the company organization, base branch | Lead Developer member |
-| Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member |
+| Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member, or tribe admin |
 | LLM | Families, each with protocol, base URL, model ids, and an API key. One list for the company | Admin |
 | Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
 | Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member |
@@ -718,17 +719,17 @@ The server allows a human action only when the caller is a member of the project
 
 ### REQ-048 A tribe has members
 
-An admin creates a tribe and adds users to it. A user may be in more than one tribe. Removing a member hides that tribe's projects from them. The membership row is the only visibility grant.
+An admin creates a tribe and adds users to it. A tribe admin may also add and remove that tribe's members (REQ-063). A user may be in more than one tribe. Removing a member hides that tribe's projects from them. The membership row is the only visibility grant.
 
 #### Acceptance
 
 - An admin can create a tribe and add a user.
-- A non-admin cannot create a tribe or change its members.
+- A non-admin cannot create a tribe. A user who is neither an admin nor a tribe admin of that tribe cannot change its members.
 - A user in two tribes is a member of both.
 
 ### REQ-049 A project is visible to its tribe
 
-An admin creates a project on one tribe. The project names one repository (REQ-053). Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
+An admin, or a tribe admin of that tribe, creates a project on one tribe and may choose its linked projects in the same request (REQ-054, REQ-063). The project names one repository (REQ-053). Members of that tribe can list and open it. Anyone else receives `404`, including for an id that does not exist. Cards, intake, runs, and project settings for that project are included in that rule.
 
 #### Acceptance
 
@@ -787,11 +788,11 @@ A project names one repository in the company organization and one base branch. 
 
 ### REQ-054 A project can read context from linked projects
 
-A Lead Developer member links their project to other projects in the same tribe. A link is one way. Each link may name shared paths, which are relative paths in the linked repository. The implementer and reviewer packs add each linked project's accepted requirements and decisions, and the shared files read at the linked base branch, inside the untrusted markers. The implementer may call `read_linked_file` to read any other file of a linked project at that SHA. It cannot write there.
+A Lead Developer member, or a tribe admin of the tribe, links a project to other projects in the same tribe. A link is one way. Each link may name shared paths, which are relative paths in the linked repository. The implementer and reviewer packs add each linked project's accepted requirements and decisions, and the shared files read at the linked base branch, inside the untrusted markers. The implementer may call `read_linked_file` to read any other file of a linked project at that SHA. It cannot write there.
 
 #### Acceptance
 
-- A link to a project in another tribe is rejected.
+- A link to a project in another tribe is rejected, also when it is sent with a new project, and then no project is stored.
 - A link from a project to itself is rejected.
 - A shared path that escapes the repository is rejected.
 - The implementer pack contains the linked project's accepted requirement statements, marked untrusted.
@@ -836,7 +837,7 @@ A card's commits use the owner's verified GitHub login as the author and committ
 
 ### REQ-058 The requirement's creator picks pull request reviewers
 
-The member who brought a requirement in, or a Lead Developer member, names reviewers for it on the Intake page. Reviewers are tribe members with a verified GitHub login. When a card's pull request is open, the worker requests the union of its requirements' reviewers on GitHub, without the owner and the company bot. A failed request writes an event and does not change the card (RFC-054).
+The member who brought a requirement in, or a Lead Developer member, names reviewers for it on the Intake page. Reviewers are tribe members with a verified GitHub login. When a card's pull request is open, the worker requests the union of its requirements' reviewers on GitHub, without the owner and the company bot. A failed request writes an event and does not change the card (RFC-054). The board and the card page show that union as the card's reviewers.
 
 #### Acceptance
 
@@ -844,6 +845,7 @@ The member who brought a requirement in, or a Lead Developer member, names revie
 - A reviewer who is not a tribe member with a verified login is rejected.
 - The reviewer request on the pull request excludes the owner and the bot.
 - A failed reviewer request leaves the card status unchanged.
+- The card JSON lists the reviewers of its requirements, without the owner, and only from the card's project.
 
 ### REQ-059 An admin keeps the company coding rules
 
@@ -885,6 +887,18 @@ The implementer and reviewer packs carry the card's rules and skills inside the 
 - A section over the cap ends with an `omitted` note, and the pack stays under the pack cap.
 - A rule that asks for a deploy tool leaves the implementer tool list unchanged.
 - An attempt's trace lists the rules and skills it used, with versions and hashes.
+
+### REQ-063 A tribe admin runs one tribe
+
+A company admin, or a tribe admin, may make a member of that tribe a tribe admin. A tribe admin adds and removes the tribe's members, grants or clears the tribe admin flag on other members, creates projects on the tribe with their links, and saves the links of any project in the tribe. A tribe admin cannot create tribes or users, edit company settings, or clear their own flag (RFC-057).
+
+#### Acceptance
+
+- A tribe admin adds a user to their tribe and removes one. A plain member is rejected.
+- A tribe admin cannot change the members of another tribe.
+- A tribe admin makes another member a tribe admin, and cannot clear their own flag.
+- A tribe admin creates a project on their tribe with a link to another project in it, and is rejected on another tribe.
+- A tribe admin who is not a Lead Developer saves a project's links.
 
 ## Non-goals
 
@@ -986,3 +1000,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 14. Manual requirements and senior accept (REQ-055).
 15. Card owner, owner pull requests, and intake reviewers (REQ-056 through REQ-058).
 16. Coding rules, stacks, and integration skills (REQ-059 through REQ-062).
+17. Tribe admins, links at project create, and reviewers on the board (REQ-063, REQ-054, REQ-058).

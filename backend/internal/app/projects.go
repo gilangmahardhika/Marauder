@@ -11,6 +11,7 @@ import (
 type Tribe = tenancy.Tribe
 type Project = tenancy.Project
 type Member = tenancy.Member
+type Candidate = tenancy.Candidate
 type NewProject = tenancy.NewProject
 type Link = tenancy.Link
 type LinkInput = tenancy.LinkInput
@@ -34,6 +35,18 @@ func AddMember(ctx context.Context, db *sql.DB, actor User, tribeID, userID stri
 
 func RemoveMember(ctx context.Context, db *sql.DB, actor User, tribeID, userID string) error {
 	return tenancy.RemoveMember(ctx, db, actor, tribeID, userID)
+}
+
+func SetTribeAdmin(ctx context.Context, db *sql.DB, actor User, tribeID, userID string, on bool) error {
+	return tenancy.SetTribeAdmin(ctx, db, actor, tribeID, userID, on)
+}
+
+func TribeCandidates(ctx context.Context, db *sql.DB, actor User, tribeID string) ([]Candidate, error) {
+	return tenancy.Candidates(ctx, db, actor, tribeID)
+}
+
+func TribeAdminOf(ctx context.Context, db *sql.DB, userID string) ([]string, error) {
+	return tenancy.TribeAdminOf(ctx, db, userID)
 }
 
 func CreateProject(ctx context.Context, db *sql.DB, actor User, in NewProject, dataRoot string) (Project, error) {

@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { ApiError, getLinks, getProjects, putLinks, unreachable } from '$lib/api';
+  import { ApiError, getLinks, getProjects, getTribes, putLinks, unreachable } from '$lib/api';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { ProjectLink, ProjectRecord } from '$lib/types';
+  import type { ProjectLink, ProjectRecord, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import { labelClass } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -15,7 +15,9 @@
 
   let links = $state<ProjectLink[]>([]);
   let projects = $state<ProjectRecord[]>([]);
+  let tribes = $state<TribeRecord[]>([]);
   let loaded = $state(false);
+  let loadError = $state('');
   let adding = $state('');
   let fields = $state<Record<string, string>>({});
   let message = $state('Loading linked projects');
@@ -24,28 +26,37 @@
   showShell(() => ({ title: 'Linked projects', message }));
 
   const self = $derived(projects.find((project) => project.id === shell.projectId));
-  const candidates = $derived(
-    projects
-      .filter(
-        (project) =>
-          project.tribeId === self?.tribeId &&
-          project.id !== shell.projectId &&
-          !links.some((link) => link.projectId === project.id)
-      )
-      .map((project) => ({ value: project.id, label: project.name, detail: project.repo }))
+  const tribeName = $derived(tribes.find((tribe) => tribe.id === self?.tribeId)?.name ?? 'this tribe');
+  const unlinked = $derived(
+    projects.filter((project) => project.id !== shell.projectId && !links.some((link) => link.projectId === project.id))
   );
+  const sameTribe = $derived(unlinked.filter((project) => project.tribeId === self?.tribeId));
+  const candidates = $derived([
+    ...sameTribe.map((project) => ({ value: project.id, label: project.name, detail: project.repo })),
+    ...unlinked
+      .filter((project) => project.tribeId !== self?.tribeId)
+      .map((project) => ({
+        value: project.id,
+        label: project.name,
+        detail: `Other tribe: ${tribes.find((tribe) => tribe.id === project.tribeId)?.name ?? project.tribeId}`,
+        disabled: true
+      }))
+  ]);
 
   $effect(() => {
     if (shell.projectId === '') return;
-    void Promise.all([getLinks(), getProjects()])
-      .then(([linkBody, projectBody]) => {
+    loadError = '';
+    void Promise.all([getLinks(), getProjects(), getTribes().catch(() => ({ tribes: [] }))])
+      .then(([linkBody, projectBody, tribeBody]) => {
         links = linkBody.links;
         projects = projectBody.projects;
+        tribes = tribeBody.tribes;
         loaded = true;
         message = 'Linked projects';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = error instanceof ApiError ? error.message : unreachable();
+        message = loadError;
       });
   });
 
@@ -97,6 +108,9 @@
 >
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
+      {#if loadError}
+        <Notice tone="danger">The projects did not load: {loadError}</Notice>
+      {/if}
       {#if fields.links || fields.sharedPaths}
         <Notice tone="danger">{fields.links ?? fields.sharedPaths}</Notice>
       {/if}
@@ -138,18 +152,18 @@
           </div>
         </Panel>
       {/each}
-      <Panel title="Add link" hint="Only projects in this project's tribe can be linked.">
+      <Panel title="Add link" hint={`Only projects in ${tribeName} can be linked. Projects in other tribes are listed but cannot be picked.`}>
         <SearchSelect
           label="Project"
           id="add-link"
           width="lg"
-          placeholder={candidates.length === 0 ? 'No other projects in this tribe' : 'Search projects'}
+          placeholder={sameTribe.length === 0 ? `No other projects in ${tribeName}` : 'Search projects'}
           options={candidates}
-          value={adding}
+          bind:value={adding}
           onchange={addLink}
         />
       </Panel>
     </div>
-    <SaveBar {busy} note="Only a Lead Developer can save. Links are one way." />
+    <SaveBar {busy} note="Only a Lead Developer or tribe admin can save. Links are one way." />
   </form>
 </Page>

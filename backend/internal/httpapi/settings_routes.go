@@ -92,8 +92,15 @@ func (s *Server) companyGitHubTest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) companyRepos(w http.ResponseWriter, r *http.Request) {
 	user, _ := app.CurrentUser(r.Context())
 	if !user.Admin && user.Role != "lead_developer" {
-		writeErr(w, 403, "forbidden", "forbidden")
-		return
+		admins, err := app.TribeAdminOf(r.Context(), s.DB, user.ID)
+		if err != nil {
+			writeAccountErr(w, err)
+			return
+		}
+		if len(admins) == 0 {
+			writeErr(w, 403, "forbidden", "forbidden")
+			return
+		}
 	}
 	repos, err := app.CompanyRepos(r.Context(), s.DB, s.TokenKey, s.gh())
 	switch {

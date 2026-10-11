@@ -51,6 +51,13 @@
     }
   ];
 
+  const tribeGroup = { label: 'Tribe', items: [{ href: '/tribes', label: 'Tribes', icon: 'shield' as IconName }] };
+  const navGroups = $derived(
+    shell.admin
+      ? groups
+      : [...groups.filter((group) => !group.admin), ...(shell.tribeAdminOf.length > 0 ? [tribeGroup] : [])]
+  );
+
   const login = $derived($page.url.pathname === '/login');
   const projectName = $derived(projects.find((project) => project.id === selected)?.name ?? 'No project');
   const projectOptions = $derived(
@@ -87,9 +94,11 @@
         shell.admin = me.admin;
         shell.email = me.email;
         shell.role = me.role;
+        shell.tribeAdminOf = me.tribeAdminOf ?? [];
       })
       .catch(() => {
         shell.admin = false;
+        shell.tribeAdminOf = [];
       });
     void getProjects()
       .then((body) => {
@@ -133,21 +142,19 @@
         />
       </div>
       <nav class="mt-4 flex-1 overflow-auto px-3" aria-label="Sections">
-        {#each groups as group (group.label)}
-          {#if !group.admin || shell.admin}
-            <p class="px-2.5 pb-2 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted">{group.label}</p>
-            {#each group.items as item (item.href)}
-              <a
-                href={item.href}
-                class="mb-1 flex h-10 items-center gap-3 border-l-2 px-2.5 text-sm {active(item.href)
-                  ? 'border-accent bg-surface font-medium text-ink'
-                  : 'border-transparent text-muted hover:bg-surface hover:text-ink'}"
-              >
-                <Icon name={item.icon} />
-                {item.label}
-              </a>
-            {/each}
-          {/if}
+        {#each navGroups as group (group.label)}
+          <p class="px-2.5 pb-2 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted">{group.label}</p>
+          {#each group.items as item (item.href)}
+            <a
+              href={item.href}
+              class="mb-1 flex h-10 items-center gap-3 border-l-2 px-2.5 text-sm {active(item.href)
+                ? 'border-accent bg-surface font-medium text-ink'
+                : 'border-transparent text-muted hover:bg-surface hover:text-ink'}"
+            >
+              <Icon name={item.icon} />
+              {item.label}
+            </a>
+          {/each}
         {/each}
       </nav>
       <div class="border-t border-line p-3">
@@ -185,19 +192,17 @@
             onchange={choose}
           />
           <nav class="mt-4 flex flex-1 flex-col gap-1" aria-label="Sections">
-            {#each groups as group (group.label)}
-              {#if !group.admin || shell.admin}
-                {#each group.items as item (item.href)}
-                  <a
-                    href={item.href}
-                    class="flex h-11 items-center gap-3 rounded-control px-3 text-sm hover:bg-surface"
-                    onclick={() => (mobile = false)}
-                  >
-                    <Icon name={item.icon} />
-                    {item.label}
-                  </a>
-                {/each}
-              {/if}
+            {#each navGroups as group (group.label)}
+              {#each group.items as item (item.href)}
+                <a
+                  href={item.href}
+                  class="flex h-11 items-center gap-3 rounded-control px-3 text-sm hover:bg-surface"
+                  onclick={() => (mobile = false)}
+                >
+                  <Icon name={item.icon} />
+                  {item.label}
+                </a>
+              {/each}
             {/each}
             <a href="/account" class="flex h-11 items-center rounded-control px-3 text-sm hover:bg-surface" onclick={() => (mobile = false)}>Account</a>
             <button type="button" class="flex h-11 items-center rounded-control px-3 text-left text-sm hover:bg-surface" onclick={() => void signOut()}>Sign out</button>

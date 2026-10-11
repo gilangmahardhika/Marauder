@@ -1,13 +1,22 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, addMember, getMembers, getTribes, getUsers, removeMember, unreachable } from '$lib/api';
+  import {
+    ApiError,
+    addMember,
+    getMembers,
+    getTribeCandidates,
+    getTribes,
+    removeMember,
+    setTribeAdmin,
+    unreachable
+  } from '$lib/api';
   import { pickParam } from '$lib/filter';
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
   import { filterUsers, roleOptions } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
-  import { showShell } from '$lib/shell.svelte';
-  import type { SessionUser } from '$lib/types';
+  import { shell, showShell } from '$lib/shell.svelte';
+  import type { TribeCandidate, TribeMember } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
@@ -22,8 +31,8 @@
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let tribeName = $state('');
-  let members = $state<SessionUser[]>([]);
-  let users = $state<SessionUser[]>([]);
+  let members = $state<TribeMember[]>([]);
+  let users = $state<TribeCandidate[]>([]);
   let userId = $state('');
   const candidates = $derived(
     users
@@ -47,7 +56,7 @@
 
   async function load(id: string) {
     try {
-      const [memberBody, userBody, tribeBody] = await Promise.all([getMembers(id), getUsers(), getTribes()]);
+      const [memberBody, userBody, tribeBody] = await Promise.all([getMembers(id), getTribeCandidates(id), getTribes()]);
       members = memberBody.members;
       users = userBody.users;
       tribeName = tribeBody.tribes.find((tribe) => tribe.id === id)?.name ?? 'Tribe';
@@ -73,6 +82,27 @@
       userId = '';
       await load(id);
       message = 'Member added';
+    } catch (error) {
+      message = error instanceof ApiError ? error.message : unreachable();
+    } finally {
+      busy = false;
+    }
+  }
+
+  /** A tribe admin may not remove or demote themselves; a company admin may. */
+  function isSelf(member: TribeMember) {
+    return !shell.admin && member.email.toLowerCase() === shell.email.toLowerCase();
+  }
+
+  async function toggleAdmin(member: TribeMember) {
+    const id = $page.params.id;
+    if (!id) return;
+    busy = true;
+    message = member.tribeAdmin ? 'Removing tribe admin' : 'Making tribe admin';
+    try {
+      await setTribeAdmin(id, member.id, !member.tribeAdmin);
+      await load(id);
+      message = member.tribeAdmin ? `${member.email} is no longer a tribe admin` : `${member.email} is a tribe admin`;
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -136,7 +166,7 @@
               <tr class="border-b border-line bg-ground/50">
                 <th class={th} scope="col">Member</th>
                 <th class={th} scope="col">Role</th>
-                <th class={th} scope="col"><span class="sr-only">Remove</span></th>
+                <th class={th} scope="col"><span class="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -149,6 +179,7 @@
                         aria-hidden="true">{initials(member.email)}</span
                       >
                       <span class="font-medium text-ink">{member.email}</span>
+                      {#if member.tribeAdmin}<Badge tone="green">Tribe admin</Badge>{/if}
                       {#if member.disabled}<Badge tone="red">Disabled</Badge>{/if}
                     </span>
                   </td>
@@ -160,8 +191,13 @@
                         <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = '')}>Cancel</Button>
                         <Button type="button" variant="danger" disabled={busy} onclick={() => void remove(member.id)}>Remove</Button>
                       </span>
-                    {:else}
-                      <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = member.id)}>Remove</Button>
+                    {:else if !isSelf(member)}
+                      <span class="inline-flex flex-wrap items-center justify-end gap-1">
+                        <Button type="button" variant="ghost" disabled={busy} onclick={() => void toggleAdmin(member)}
+                          >{member.tribeAdmin ? 'Remove tribe admin' : 'Make tribe admin'}</Button
+                        >
+                        <Button type="button" variant="ghost" disabled={busy} onclick={() => (pending = member.id)}>Remove</Button>
+                      </span>
                     {/if}
                   </td>
                 </tr>

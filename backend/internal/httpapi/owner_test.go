@@ -2,10 +2,12 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"orchestrator/backend/internal/app"
+	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/httpapi"
 	"orchestrator/backend/internal/identity"
@@ -172,6 +174,83 @@ func TestOwnerCannotApprove(t *testing.T) {
 	if approved.Code != 200 || !strings.Contains(approved.Body.String(), `"status":"approved"`) {
 		t.Fatalf("other approve = %d %s", approved.Code, approved.Body.String())
 	}
+}
+
+func TestCardReviewers(t *testing.T) {
+	srv := accountServer(t)
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	adminToken := loginToken(t, srv, "admin@example.com", "password-long-0")
+	owner := verifiedMember(t, srv, admin, "ada@example.com", "ada", 31)
+	grace := verifiedMember(t, srv, admin, "grace@example.com", "grace", 32)
+	lin := seedUser(t, srv, "lin@example.com", "password-long-8", "developer", false)
+	if err := app.AddMember(context.Background(), srv.DB, admin, "tribe_default", lin.ID); err != nil {
+		t.Fatal(err)
+	}
+	gadget := newProject(t, srv, adminToken, "tribe_default", "Gadget", "gadget")
+	for _, project := range []string{"proj_default", gadget} {
+		if _, err := srv.DB.Exec(`
+			INSERT INTO requirements (
+				id, source_kind, source_path, heading, statement, acceptance_json, non_goals_json,
+				content_hash, project_id, created_by
+			) VALUES ('REQ-001', 'prd', 'docs/prd/a.md', 'Export', 'statement', '[]', '[]', 'h1', $1, $2)`,
+			project, owner.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, reviewer := range []string{grace.ID, lin.ID, owner.ID} {
+		if _, err := srv.DB.Exec(`
+			INSERT INTO requirement_reviewers (project_id, requirement_id, user_id, added_by, created_at)
+			VALUES ('proj_default', 'REQ-001', $1, $2, 'now')`, reviewer, admin.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reviewed := reviewerCard(t, srv, "proj_default", owner.ID)
+	elsewhere := reviewerCard(t, srv, gadget, owner.ID)
+	token := loginToken(t, srv, "ada@example.com", "password-long-9")
+
+	var list struct {
+		Cards []struct {
+			ID        string `json:"id"`
+			Reviewers []struct {
+				ID          string `json:"id"`
+				Email       string `json:"email"`
+				GitHubLogin string `json:"githubLogin"`
+			} `json:"reviewers"`
+		} `json:"cards"`
+	}
+	rec := getAuth(t, srv, "/api/projects/proj_default/cards", token)
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || len(list.Cards) != 1 || list.Cards[0].ID != reviewed {
+		t.Fatalf("cards = %d %s", rec.Code, rec.Body.String())
+	}
+	got := list.Cards[0].Reviewers
+	if len(got) != 2 || got[0].Email != "grace@example.com" || got[0].GitHubLogin != "grace" || got[1].Email != "lin@example.com" || got[1].GitHubLogin != "" {
+		t.Fatalf("reviewers = %+v", got)
+	}
+	one := getAuth(t, srv, "/api/projects/proj_default/cards/"+reviewed, token)
+	var card struct {
+		Reviewers []struct {
+			ID string `json:"id"`
+		} `json:"reviewers"`
+	}
+	if err := json.Unmarshal(one.Body.Bytes(), &card); err != nil || len(card.Reviewers) != 2 || card.Reviewers[0].ID != grace.ID || card.Reviewers[1].ID != lin.ID {
+		t.Fatalf("card = %s", one.Body.String())
+	}
+	other := getAuth(t, srv, "/api/projects/"+gadget+"/cards/"+elsewhere, token)
+	if !strings.Contains(other.Body.String(), `"reviewers":[]`) {
+		t.Fatalf("reviewers leaked across projects: %s", other.Body.String())
+	}
+}
+
+func reviewerCard(t *testing.T, srv *httpapi.Server, project, ownerID string) string {
+	t.Helper()
+	card, err := board.InsertCard(context.Background(), srv.DB, board.Card{Status: "backlog", RequirementIDs: []string{"REQ-001"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.DB.Exec(`UPDATE cards SET project_id = $2, owner_id = $3 WHERE id = $1`, card.ID, project, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	return card.ID
 }
 
 func verifiedMember(t *testing.T, srv *httpapi.Server, admin app.User, email, login string, id int64) app.User {

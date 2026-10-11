@@ -40,6 +40,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/tribes/{id}/members", s.listMembers)
 	mux.HandleFunc("POST /api/tribes/{id}/members", s.addMember)
 	mux.HandleFunc("DELETE /api/tribes/{id}/members/{userId}", s.removeMember)
+	mux.HandleFunc("PUT /api/tribes/{id}/members/{userId}", s.setTribeAdmin)
+	mux.HandleFunc("GET /api/tribes/{id}/candidates", s.tribeCandidates)
 	mux.HandleFunc("GET /api/projects", s.projectCollection)
 	mux.HandleFunc("POST /api/projects", s.projectCollection)
 	mux.HandleFunc("/api/projects/{projectId}/cards", s.projectCards)

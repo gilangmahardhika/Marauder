@@ -104,6 +104,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestIngestRecordsCreator` | A web ingest stores the caller as `created_by` on new parsed rows. A second ingest by another user keeps the first. A CLI ingest stores null |
 | `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |
 | `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |
+| `TestCardReviewers` | The board and the card route list the requirement reviewers sorted by email, without the owner, with `githubLogin` `""` when unverified. A card in another project naming the same requirement id has `"reviewers": []` |
 | `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer, an unverified reviewer, or the creator is `422` |
 | `TestConventionCatalogAdminOnly` | Every signed-in user reads `/api/conventions`. A Lead Developer who is not an admin gets `403` on create, update, and delete. An admin save appends `config_changed` with section `conventions` (RFC-055) |
 | `TestConventionRevisions` | Editing a rule increments its version, changes its hash, and keeps the old text in `convention_revisions`. A save with the same text keeps the version |

@@ -12,6 +12,7 @@ export type Card = {
   actions: string[];
   unblockTo: string | null;
   owner: CardOwner | null;
+  reviewers: Reviewer[];
   skills: SkillRef[];
   requirementIds: string[];
   decisionIds: string[];
@@ -103,6 +104,16 @@ export type SessionUser = {
   role: string;
   admin: boolean;
   disabled?: boolean;
+};
+
+export type TribeMember = SessionUser & {
+  tribeAdmin: boolean;
+};
+
+export type TribeCandidate = {
+  id: string;
+  email: string;
+  role: string;
 };
 
 export type TribeRecord = {

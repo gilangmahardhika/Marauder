@@ -410,6 +410,12 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestProjectLinkSameTribeOnly` | A link to a project in another tribe is `422` |
 | `TestProjectLinkNoSelf` | A link from a project to itself is `422` |
 | `TestProjectLinkOutsiderMisses` | A non-member reading links is `404` |
+| `TestTribeAdminManagesMembers` | A tribe admin who is a Developer lists candidates, adds and removes members, and cannot remove themselves (`422`) (RFC-057) |
+| `TestTribeAdminGrantsTribeAdmin` | A tribe admin sets and clears another member's flag, `/api/me` lists the tribe in `tribeAdminOf`, clearing their own flag is `422`, and a non-member is `404` |
+| `TestNonTribeAdminCannotManage` | A plain member is `403` on add, remove, flag, candidates, and project create. A tribe admin is `403` on another tribe's members and projects |
+| `TestTribeAdminCreatesProjectWithLinks` | A tribe admin creates a project with a same-tribe link. The `201` lists the link and `project_links` holds it |
+| `TestCreateProjectLinkOtherTribeRollsBack` | A create naming a project in another tribe is `422` on `links` and stores no project |
+| `TestTribeAdminSavesLinks` | A tribe admin who is a Developer saves links. A plain Developer member is `403` |
 | `TestPackIncludesLinkedRequirements` | The implementer pack holds the linked project's accepted requirements as `<project>:REQ-001` |
 | `TestSharedPathConfined` | A shared path with `..`, an absolute path, or `.git` is rejected |
 | `TestReadLinkedFileReadOnly` | `read_linked_file` reads the linked export, rejects an unlinked project, and there is no linked write tool |

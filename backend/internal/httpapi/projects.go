@@ -78,6 +78,32 @@ func (s *Server) removeMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) setTribeAdmin(w http.ResponseWriter, r *http.Request) {
+	actor, _ := app.CurrentUser(r.Context())
+	var body struct {
+		TribeAdmin bool `json:"tribeAdmin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	if err := app.SetTribeAdmin(r.Context(), s.DB, actor, r.PathValue("id"), r.PathValue("userId"), body.TribeAdmin); err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) tribeCandidates(w http.ResponseWriter, r *http.Request) {
+	actor, _ := app.CurrentUser(r.Context())
+	list, err := app.TribeCandidates(r.Context(), s.DB, actor, r.PathValue("id"))
+	if err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"users": list})
+}
+
 func (s *Server) projectCollection(w http.ResponseWriter, r *http.Request) {
 	actor, _ := app.CurrentUser(r.Context())
 	switch r.Method {
@@ -90,23 +116,35 @@ func (s *Server) projectCollection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"projects": list})
 	case http.MethodPost:
 		var body struct {
-			TribeID    string `json:"tribeId"`
-			Name       string `json:"name"`
-			Repo       string `json:"repo"`
-			BaseBranch string `json:"baseBranch"`
+			TribeID    string          `json:"tribeId"`
+			Name       string          `json:"name"`
+			Repo       string          `json:"repo"`
+			BaseBranch string          `json:"baseBranch"`
+			Links      []app.LinkInput `json:"links"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
 		project, err := app.CreateProject(r.Context(), s.DB, actor, app.NewProject{
-			TribeID: body.TribeID, Name: body.Name, Repo: body.Repo, BaseBranch: body.BaseBranch,
+			TribeID: body.TribeID, Name: body.Name, Repo: body.Repo, BaseBranch: body.BaseBranch, Links: body.Links,
 		}, s.Data)
 		if err != nil {
 			writeAccountErr(w, err)
 			return
 		}
-		writeJSON(w, 201, project)
+		links, err := app.ListLinks(r.Context(), s.DB, project.ID)
+		if err != nil {
+			writeAccountErr(w, err)
+			return
+		}
+		if len(links) > 0 {
+			s.configChanged(r, project.ID, "links", []string{"links"})
+		}
+		writeJSON(w, 201, map[string]any{
+			"id": project.ID, "tribeId": project.TribeID, "name": project.Name,
+			"repo": project.Repo, "baseBranch": project.BaseBranch, "links": links,
+		})
 	default:
 		writeErr(w, 404, "not_found", "not found")
 	}
@@ -115,6 +153,11 @@ func (s *Server) projectCollection(w http.ResponseWriter, r *http.Request) {
 func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
+		return
+	}
+	reviewers, err := app.CardReviewerUsers(r.Context(), s.DB, projectID, "")
+	if err != nil {
+		writeErr(w, 500, "internal", "cards")
 		return
 	}
 	rows, err := s.DB.QueryContext(r.Context(), `SELECT id FROM cards WHERE project_id = $1 ORDER BY updated_at`, projectID)
@@ -139,7 +182,7 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 		if card.Status == "ready" || card.Status == "changes_requested" || card.Status == "approved" || card.Status == "backlog" {
 			canRun = true
 		}
-		body := s.cardBody(r, card)
+		body := s.cardJSON(r, card, reviewers[card.ID])
 		body["projectId"] = projectID
 		cards = append(cards, body)
 	}

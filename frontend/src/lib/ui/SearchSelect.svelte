@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  export type SearchOption = { value: string; label: string; detail?: string };
+  export type SearchOption = { value: string; label: string; detail?: string; disabled?: boolean };
 </script>
 
 <script lang="ts">
@@ -70,6 +70,7 @@
   }
 
   function pick(option: SearchOption) {
+    if (option.disabled) return;
     const changed = option.value !== value;
     value = option.value;
     close();
@@ -151,15 +152,18 @@
             role="option"
             tabindex="-1"
             aria-selected={option.value === value}
-            class="flex min-h-11 cursor-pointer items-center gap-2 rounded-control px-3 py-1.5 {index === active
-              ? 'bg-ground'
-              : ''}"
+            aria-disabled={option.disabled ? 'true' : undefined}
+            class="flex min-h-11 items-center gap-2 rounded-control px-3 py-1.5 {option.disabled
+              ? 'cursor-not-allowed'
+              : 'cursor-pointer'} {index === active ? 'bg-ground' : ''}"
             onpointerdown={(event) => event.preventDefault()}
             onpointerenter={() => (active = index)}
             onclick={() => pick(option)}
           >
             <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm {option.value === '' ? 'text-muted' : 'text-ink'}">{option.label}</span>
+              <span class="block truncate text-sm {option.value === '' || option.disabled ? 'text-muted' : 'text-ink'}"
+                >{option.label}</span
+              >
               {#if option.detail}<span class="block truncate text-xs text-muted">{option.detail}</span>{/if}
             </span>
             {#if option.value === value}<Icon name="check" class="size-4 shrink-0 text-accent" />{/if}

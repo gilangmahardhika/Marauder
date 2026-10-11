@@ -51,3 +51,5 @@ Set aside: links across tribes. Membership is what keeps one tribe out of anothe
 Consequences: linked content sits inside the untrusted markers and is redacted like the rest of the pack. Ids are shown as `<project>:REQ-001`. The linked project ids and SHAs are written to an event with the attempt, so the pack can be rebuilt. The implementer tool list snapshot changes in the same release.
 
 Requirements: REQ-016, REQ-017, REQ-054.
+
+Superseded in part by RFC-057 in [0011-tribe-admin.md](0011-tribe-admin.md). A tribe admin may also save the links of any project in their tribe, and the creator of a project may choose its links at create.

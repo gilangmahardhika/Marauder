@@ -27,7 +27,7 @@ function hasAccess(user: SessionUser, access: Access) {
   }
 }
 
-export function filterUsers(users: SessionUser[], filter: UserFilter) {
+export function filterUsers<T extends SessionUser>(users: T[], filter: UserFilter): T[] {
   return users.filter(
     (user) =>
       (filter.role === '' || user.role === filter.role) &&

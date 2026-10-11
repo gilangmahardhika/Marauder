@@ -57,6 +57,8 @@ Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-
 
 Superseded in part by RFC-053 in [0008-manual-requirements.md](0008-manual-requirements.md). A Lead Developer, Senior Developer, QA Lead, or Product Owner member may accept requirements. Any member may add a requirement by hand.
 
+Superseded in part by RFC-057 in [0011-tribe-admin.md](0011-tribe-admin.md). A tribe admin may add and remove members of their tribe, make other members tribe admins, and create projects on their tribe.
+
 ## RFC-047 A tribe owns its projects
 
 Users, sessions, tribes, membership, and projects live in one PostgreSQL database. The connection string is `databaseUrl` in the service `secrets.json`. The API does not return it. A project belongs to one tribe. A tribe has one or more projects. A user may belong to several tribes. The user sees a project's cards, intake, and settings only as a member of that tribe. A non-member, and a request for an unknown project id, gets `404`. Admin manages user, tribe, membership, and project records. Each project has its own repo, settings, worktrees, and intake rows. Requirement ids and decision ids are unique per project.
@@ -74,6 +76,8 @@ Superseded in part by RFC-049 and RFC-050 in [0006-company-github-and-linked-pro
 Superseded in part by RFC-052 in [0007-global-models-and-router.md](0007-global-models-and-router.md). Model keys are in the service secrets file, not the project secrets file.
 
 Superseded in part by RFC-054 in [0009-card-owner.md](0009-card-owner.md). Jobs push and open pull requests with the card owner's verified token. Clone and fetch keep the company token.
+
+Superseded in part by RFC-057 in [0011-tribe-admin.md](0011-tribe-admin.md). A tribe admin also manages that tribe's membership and creates its projects.
 
 ## RFC-048 Workers run per project
 

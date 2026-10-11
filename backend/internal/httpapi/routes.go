@@ -316,6 +316,14 @@ func (s *Server) gate(r *http.Request) app.GateConfig {
 }
 
 func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
+	reviewers, err := app.CardReviewerUsers(r.Context(), s.DB, card.ProjectID, card.ID)
+	if err != nil {
+		reviewers = nil
+	}
+	return s.cardJSON(r, card, reviewers[card.ID])
+}
+
+func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.Reviewer) map[string]any {
 	open := true
 	if card.BlockedReason == "source_changed" {
 		_, open = app.UnblockTo(r.Context(), s.DB, card)
@@ -336,9 +344,12 @@ func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
 	if err != nil {
 		skills = []conventions.SkillRef{}
 	}
+	if reviewers == nil {
+		reviewers = []intake.Reviewer{}
+	}
 	return map[string]any{
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
-		"actions": actions, "unblockTo": unblock, "owner": owner, "skills": skills,
+		"actions": actions, "unblockTo": unblock, "owner": owner, "reviewers": reviewers, "skills": skills,
 		"requirementIds": nonNil(card.RequirementIDs), "decisionIds": []string{},
 		"dependsOn": nonNil(card.DependsOn), "risk": card.Risk, "service": "default",
 		"manual": card.Manual, "localCheck": nullString(card.LocalCheck), "devCheck": nullString(card.DevCheck),
