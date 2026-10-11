@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { ApiError, changePassword, getMe, getMyGitHub, putMyGitHub, testMyGitHub, unreachable } from '$lib/api';
+  import { ApiError, changePassword, getMe, getMyGitHub, putMe, putMyGitHub, testMyGitHub, unreachable } from '$lib/api';
   import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
   import { roleLabel } from '$lib/roles';
-  import { showShell } from '$lib/shell.svelte';
+  import { shell, showShell } from '$lib/shell.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
@@ -10,6 +10,8 @@
   import Panel from '$lib/ui/Panel.svelte';
 
   let email = $state('');
+  let name = $state('');
+  let savedName = $state('');
   let role = $state('');
   let admin = $state(false);
   let currentPassword = $state('');
@@ -31,6 +33,8 @@
     void Promise.all([getMe(), getMyGitHub()])
       .then(([me, github]) => {
         email = me.email;
+        name = me.name;
+        savedName = me.name;
         role = me.role;
         admin = me.admin;
         host = github.host || 'github.com';
@@ -43,6 +47,25 @@
         message = error instanceof ApiError ? error.message : unreachable();
       });
   });
+
+  async function saveName(event: SubmitEvent) {
+    event.preventDefault();
+    busy = true;
+    message = 'Saving name';
+    fields = {};
+    try {
+      const me = await putMe({ name });
+      name = me.name;
+      savedName = me.name;
+      shell.name = me.name;
+      message = 'Name saved';
+    } catch (error) {
+      fields = error instanceof ApiError ? error.fields : {};
+      message = error instanceof ApiError ? error.message : unreachable();
+    } finally {
+      busy = false;
+    }
+  }
 
   async function savePassword(event: SubmitEvent) {
     event.preventDefault();
@@ -101,7 +124,7 @@
 </script>
 
 <Page
-  title={email || 'Account'}
+  title={savedName || email || 'Account'}
   description="Your sign-in and your own GitHub identity. Project bot and deploy tokens live in project settings."
 >
   {#snippet meta()}
@@ -109,6 +132,14 @@
     {#if admin}<Badge tone="green">Admin</Badge>{/if}
   {/snippet}
   <div class="flex flex-col gap-6">
+    <form onsubmit={saveName}>
+      <Panel title="Name" hint={`Shown on the board, cards, and member lists instead of your email. You sign in with ${email || 'your email'}.`}>
+        <Field label="Name" id="name" autocomplete="name" error={fields.name} bind:value={name} />
+        {#snippet footer()}
+          <Button variant="secondary" type="submit" disabled={busy || name.trim() === savedName}>Save name</Button>
+        {/snippet}
+      </Panel>
+    </form>
     <form onsubmit={savePassword}>
       <Panel title="Password" hint="Use at least 12 characters.">
         <Field

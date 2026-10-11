@@ -216,7 +216,7 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardBody(r, next))
+		writeJSON(w, 200, s.cardDetail(r, next))
 		return
 	}
 	s.cardRoute(w, r, id, action)

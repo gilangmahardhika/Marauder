@@ -31,9 +31,10 @@ type Project struct {
 }
 
 type SkillRef struct {
-	ID    string `json:"id"`
-	Slug  string `json:"slug"`
-	Title string `json:"title"`
+	ID      string `json:"id"`
+	Slug    string `json:"slug"`
+	Title   string `json:"title"`
+	UseWhen string `json:"useWhen"`
 }
 
 // Item is one rule or skill as a pack carries it. Label is "global" or the
@@ -278,7 +279,7 @@ func SetCardSkills(ctx context.Context, q Execer, projectID, cardID string, skil
 // CardSkills is the skills stored on one card.
 func CardSkills(ctx context.Context, q Querier, projectID, cardID string) ([]SkillRef, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT k.id, k.slug, k.title FROM card_skills cs JOIN skills k ON k.id = cs.skill_id
+		SELECT k.id, k.slug, k.title, k.use_when FROM card_skills cs JOIN skills k ON k.id = cs.skill_id
 		WHERE cs.project_id = $1 AND cs.card_id = $2 ORDER BY k.slug`, projectID, cardID)
 	if err != nil {
 		return nil, err
@@ -287,7 +288,7 @@ func CardSkills(ctx context.Context, q Querier, projectID, cardID string) ([]Ski
 	out := []SkillRef{}
 	for rows.Next() {
 		var k SkillRef
-		if err := rows.Scan(&k.ID, &k.Slug, &k.Title); err != nil {
+		if err := rows.Scan(&k.ID, &k.Slug, &k.Title, &k.UseWhen); err != nil {
 			return nil, err
 		}
 		out = append(out, k)

@@ -27,12 +27,26 @@ function hasAccess(user: SessionUser, access: Access) {
   }
 }
 
+export type Person = { name?: string; email: string; githubLogin?: string | null };
+
+/** The label for a person: their name, else their GitHub login, else their email (RFC-058). */
+export function displayName(person: Person) {
+  return person.name || person.githubLogin || person.email;
+}
+
+/** The label plus what tells two people apart: "Ada Lovelace (ada)", or "ada (ada@example.com)" without a name. */
+export function describePerson(person: Person) {
+  const label = displayName(person);
+  const detail = person.name ? person.githubLogin || person.email : person.githubLogin ? person.email : '';
+  return detail ? `${label} (${detail})` : label;
+}
+
 export function filterUsers<T extends SessionUser>(users: T[], filter: UserFilter): T[] {
   return users.filter(
     (user) =>
       (filter.role === '' || user.role === filter.role) &&
       hasAccess(user, filter.access) &&
-      matchText([user.email], filter.q)
+      matchText([user.name, user.email], filter.q)
   );
 }
 

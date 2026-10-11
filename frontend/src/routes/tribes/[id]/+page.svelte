@@ -13,10 +13,11 @@
   import { pickParam } from '$lib/filter';
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
-  import { filterUsers, roleOptions } from '$lib/people';
-  import { initials, roleLabel } from '$lib/roles';
+  import { displayName, filterUsers, roleOptions } from '$lib/people';
+  import { roleLabel } from '$lib/roles';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { TribeCandidate, TribeMember } from '$lib/types';
+  import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
@@ -37,7 +38,11 @@
   const candidates = $derived(
     users
       .filter((user) => !members.some((member) => member.id === user.id))
-      .map((user) => ({ value: user.id, label: user.email, detail: roleLabel(user.role) }))
+      .map((user) => ({
+        value: user.id,
+        label: displayName(user),
+        detail: user.name ? `${user.email} · ${roleLabel(user.role)}` : roleLabel(user.role)
+      }))
   );
   let pending = $state('');
   let message = $state('Loading members');
@@ -102,7 +107,9 @@
     try {
       await setTribeAdmin(id, member.id, !member.tribeAdmin);
       await load(id);
-      message = member.tribeAdmin ? `${member.email} is no longer a tribe admin` : `${member.email} is a tribe admin`;
+      message = member.tribeAdmin
+        ? `${displayName(member)} is no longer a tribe admin`
+        : `${displayName(member)} is a tribe admin`;
     } catch (error) {
       message = error instanceof ApiError ? error.message : unreachable();
     } finally {
@@ -140,9 +147,9 @@
       <Panel title="Add member">
         <div class="flex flex-wrap items-end gap-3">
           <SearchSelect
-            label="Email"
+            label="User"
             id="member-search"
-            placeholder="Search by email"
+            placeholder="Search by name or email"
             options={candidates}
             bind:value={userId}
           />
@@ -153,7 +160,7 @@
     {#if members.length > 0}
       <div class="flex flex-col gap-4">
         <Toolbar>
-          <SearchBox label="Search members" value={filter.q} placeholder="Search by email" />
+          <SearchBox label="Search members" value={filter.q} placeholder="Search name or email" />
           <FilterSelect label="Role" options={roleOptions} value={filter.role} onchange={(role) => setParams({ role })} />
         </Toolbar>
         {#if shown.length === 0}
@@ -174,11 +181,11 @@
                 <tr class={tr}>
                   <td class={td}>
                     <span class="flex items-center gap-3">
-                      <span
-                        class="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar text-xs font-medium text-ink"
-                        aria-hidden="true">{initials(member.email)}</span
-                      >
-                      <span class="font-medium text-ink">{member.email}</span>
+                      <Avatar person={member} />
+                      <span class="min-w-0">
+                        <span class="block font-medium text-ink">{displayName(member)}</span>
+                        {#if member.name}<span class="block break-all text-xs text-muted">{member.email}</span>{/if}
+                      </span>
                       {#if member.tribeAdmin}<Badge tone="green">Tribe admin</Badge>{/if}
                       {#if member.disabled}<Badge tone="red">Disabled</Badge>{/if}
                     </span>
@@ -208,7 +215,7 @@
         {/if}
       </div>
     {:else}
-      <EmptyState title="No members yet" description="Search for a user by email to add them." />
+      <EmptyState title="No members yet" description="Search for a user by name or email to add them." />
     {/if}
   </div>
 </Page>

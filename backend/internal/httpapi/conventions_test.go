@@ -157,7 +157,7 @@ func TestCreateCardSkills(t *testing.T) {
 		t.Fatalf("card_skills = %d %v", n, err)
 	}
 	view := getAuth(t, srv, "/api/projects/proj_default/cards/"+card.ID, leadToken)
-	if view.Code != 200 || !strings.Contains(view.Body.String(), `"skills":[{"id":"skl_oauth2","slug":"oauth2-integration","title":"OAuth 2.0 integration"}]`) {
+	if view.Code != 200 || !strings.Contains(view.Body.String(), `"skills":[{"id":"skl_oauth2","slug":"oauth2-integration","title":"OAuth 2.0 integration","useWhen":"A requirement adds sign-in`) {
 		t.Fatalf("card json = %d %s", view.Code, view.Body.String())
 	}
 }

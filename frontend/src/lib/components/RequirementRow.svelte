@@ -1,5 +1,6 @@
 <script lang="ts">
   import { sourceLabel } from '$lib/intake';
+  import { displayName } from '$lib/people';
   import type { Requirement } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import { td } from '$lib/ui/control';
@@ -129,7 +130,7 @@
             {:else}
               <ul class="flex flex-wrap gap-1.5" aria-label={`Reviewers of ${requirement.id}`}>
                 {#each requirement.reviewers as reviewer (reviewer.id)}
-                  <li><Badge>{reviewer.githubLogin || reviewer.email}</Badge></li>
+                  <li><Badge>{displayName(reviewer)}</Badge></li>
                 {/each}
               </ul>
             {/if}

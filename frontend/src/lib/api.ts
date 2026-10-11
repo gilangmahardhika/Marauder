@@ -83,10 +83,14 @@ export function closeSession() {
   return request<void>('/api/session', { method: 'DELETE' });
 }
 
+type Me = SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean; tribeAdminOf: string[] };
+
 export function getMe() {
-  return request<
-    SessionUser & { githubLogin: string; githubTokenSet: boolean; githubVerified: boolean; tribeAdminOf: string[] }
-  >('/api/me');
+  return request<Me>('/api/me');
+}
+
+export function putMe(body: { name: string }) {
+  return request<Me>('/api/me', { method: 'PUT', body: JSON.stringify(body) });
 }
 
 export function changePassword(currentPassword: string, newPassword: string) {
@@ -161,13 +165,13 @@ export function getUsers() {
   return request<{ users: SessionUser[] }>('/api/users');
 }
 
-export function createUser(body: { email: string; password: string; role: string; admin: boolean }) {
+export function createUser(body: { name: string; email: string; password: string; role: string; admin: boolean }) {
   return request<SessionUser>('/api/users', { method: 'POST', body: JSON.stringify(body) });
 }
 
 export function updateUser(
   id: string,
-  body: { role: string; admin: boolean; disabled: boolean; password?: string }
+  body: { name?: string; role: string; admin: boolean; disabled: boolean; password?: string }
 ) {
   return request<SessionUser>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
 }

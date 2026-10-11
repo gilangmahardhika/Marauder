@@ -30,6 +30,7 @@ type Project struct {
 
 type Member struct {
 	ID         string `json:"id"`
+	Name       string `json:"name"`
 	Email      string `json:"email"`
 	Role       string `json:"role"`
 	Admin      bool   `json:"admin"`
@@ -40,6 +41,7 @@ type Member struct {
 // Candidate is a user who could be added to a tribe.
 type Candidate struct {
 	ID    string `json:"id"`
+	Name  string `json:"name"`
 	Email string `json:"email"`
 	Role  string `json:"role"`
 }
@@ -153,7 +155,7 @@ func ListMembers(ctx context.Context, db *sql.DB, actor identity.User, tribeID s
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.role, u.admin, u.disabled, m.admin
+		SELECT u.id, u.name, u.email, u.role, u.admin, u.disabled, m.admin
 		FROM tribe_members m
 		JOIN users u ON u.id = m.user_id
 		WHERE m.tribe_id = $1
@@ -165,7 +167,7 @@ func ListMembers(ctx context.Context, db *sql.DB, actor identity.User, tribeID s
 	out := []Member{}
 	for rows.Next() {
 		var member Member
-		if err := rows.Scan(&member.ID, &member.Email, &member.Role, &member.Admin, &member.Disabled, &member.TribeAdmin); err != nil {
+		if err := rows.Scan(&member.ID, &member.Name, &member.Email, &member.Role, &member.Admin, &member.Disabled, &member.TribeAdmin); err != nil {
 			return nil, err
 		}
 		out = append(out, member)
@@ -241,7 +243,7 @@ func Candidates(ctx context.Context, db *sql.DB, actor identity.User, tribeID st
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.role FROM users u
+		SELECT u.id, u.name, u.email, u.role FROM users u
 		WHERE NOT u.disabled
 		  AND NOT EXISTS (SELECT 1 FROM tribe_members m WHERE m.tribe_id = $1 AND m.user_id = u.id)
 		ORDER BY u.email`, tribeID)
@@ -252,7 +254,7 @@ func Candidates(ctx context.Context, db *sql.DB, actor identity.User, tribeID st
 	out := []Candidate{}
 	for rows.Next() {
 		var c Candidate
-		if err := rows.Scan(&c.ID, &c.Email, &c.Role); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Email, &c.Role); err != nil {
 			return nil, err
 		}
 		out = append(out, c)

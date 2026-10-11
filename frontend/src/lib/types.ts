@@ -1,5 +1,6 @@
 export type CardOwner = {
   id: string;
+  name: string;
   email: string;
   githubLogin: string;
 };
@@ -14,6 +15,8 @@ export type Card = {
   owner: CardOwner | null;
   reviewers: Reviewer[];
   skills: SkillRef[];
+  requirements?: CardRequirement[];
+  rules?: CardRule[];
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -41,6 +44,25 @@ export type SkillRef = {
   id: string;
   slug: string;
   title: string;
+  useWhen: string;
+};
+
+/** On the single-card response only. */
+export type CardRequirement = {
+  id: string;
+  heading: string;
+  statement: string;
+  sourceKind: string;
+  sourcePath: string;
+  accepted: boolean;
+};
+
+/** On the single-card response only. `label` is "global" or the stack name. */
+export type CardRule = {
+  id: string;
+  title: string;
+  label: string;
+  category: string;
 };
 
 export type Board = {
@@ -73,6 +95,7 @@ export type Requirement = {
 
 export type Reviewer = {
   id: string;
+  name: string;
   email: string;
   githubLogin: string;
 };
@@ -100,6 +123,7 @@ export type Intake = {
 
 export type SessionUser = {
   id: string;
+  name: string;
   email: string;
   role: string;
   admin: boolean;
@@ -112,6 +136,7 @@ export type TribeMember = SessionUser & {
 
 export type TribeCandidate = {
   id: string;
+  name: string;
   email: string;
   role: string;
 };
@@ -277,5 +302,12 @@ export type SkillInput = Pick<Skill, 'slug' | 'title' | 'useWhen' | 'body' | 'di
 export type ProjectConventions = {
   stacks: { id: string; name: string; source: 'detected' | 'manual' }[];
   skillIds: string[];
-  rules: { id: string; title: string; scope: 'global' | 'stack'; stackName: string; category: RuleCategory; version: number }[];
+  rules: {
+    id: string;
+    title: string;
+    scope: 'global' | 'stack';
+    stackName: string;
+    category: RuleCategory;
+    version: number;
+  }[];
 };

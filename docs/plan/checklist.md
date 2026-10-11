@@ -324,3 +324,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestTribeAdminSavesLinks`
 - [x] `TestCardReviewers`
 - [x] `llm.test.ts`
+
+## Sprint 20: User display names
+
+- [x] An admin names a user on create and edit, and each user renames themselves on Account.
+- [x] The user, member, candidate, owner, and reviewer objects carry `name`.
+- [x] UI: the board, card page, user menu, Users, tribe members, and reviewer pickers show the name first.
+- [x] `TestUserNameRequired`
+- [x] `TestAdminRenamesUser`
+- [x] `TestOwnName`
+- [x] `TestCardPeopleNames`
+- [x] `people.test.ts` display name fallback
+
+## Sprint 21: Card context
+
+- [x] The single-card response carries `requirements`, `rules`, and `skills[].useWhen`.
+- [x] UI: status and reasons read as words. Board tiles show the owner's avatar and name.
+- [x] UI: the card page shows People, Intake, Rules, Skills, and Details.
+- [x] `TestCardDetail`
+- [x] `status.test.ts`

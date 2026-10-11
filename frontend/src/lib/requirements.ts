@@ -1,3 +1,4 @@
+import { displayName } from './people';
 import type { Reviewer } from './types';
 import type { SearchOption } from './ui/SearchSelect.svelte';
 
@@ -24,7 +25,11 @@ export function reviewerChoices(
   for (const reviewer of [...current, ...options]) {
     if (seen.has(reviewer.id) || reviewer.email === creatorEmail) continue;
     seen.add(reviewer.id);
-    out.push({ value: reviewer.id, label: reviewer.githubLogin || reviewer.email, detail: reviewer.email });
+    out.push({
+      value: reviewer.id,
+      label: displayName(reviewer),
+      detail: [reviewer.githubLogin, reviewer.email].filter(Boolean).join(' · ')
+    });
   }
   return out;
 }

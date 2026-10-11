@@ -31,8 +31,14 @@ flowchart LR
   s17[Sprint17_CardOwner]
   s18[Sprint18_Conventions]
   s19[Sprint19_TribeAdmin]
-  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19
+  s20[Sprint20_UserNames]
+  s21[Sprint21_CardContext]
+  s1 --> s2 --> s3 --> s4 --> s5 --> s6 --> s7 --> s8 --> s9 --> s10 --> s11 --> s12 --> s13 --> s14 --> s15 --> s16 --> s17 --> s18 --> s19 --> s20 --> s21
 ```
+
+Sprint 21 implements display and read fields under RFC-054, RFC-055, and RFC-056. It adds no decision.
+
+Sprint 20 implements [../rfc/0012-user-names.md](../rfc/0012-user-names.md).
 
 Sprint 19 implements [../rfc/0011-tribe-admin.md](../rfc/0011-tribe-admin.md).
 
@@ -305,3 +311,26 @@ Migration `00011` adds `tribe_members.admin`. Migration `00012` fills `cards.own
 - UI: tribe admins see Tribes and New project, the members page grants the flag, New project picks linked projects, the board and card page show owner and reviewers, LLM APIs gets search and filters, and Linked projects explains an empty list.
 
 Done when: `TestTribeAdminManagesMembers`, `TestTribeAdminGrantsTribeAdmin`, `TestNonTribeAdminCannotManage`, `TestTribeAdminCreatesProjectWithLinks`, `TestCreateProjectLinkOtherTribeRollsBack`, `TestTribeAdminSavesLinks`, `TestCardReviewers`.
+
+## Sprint 20: User display names
+
+Goal: Pages show a person's name instead of their email (RFC-058, REQ-064).
+
+Migration `00013` adds `users.name`, empty for existing rows. Packages: `internal/identity`, `internal/app`, `internal/intake`, `internal/tenancy`, `internal/httpapi`.
+
+- `POST /api/users` requires `name`. `PUT /api/users/{id}` accepts it. `PUT /api/me` changes the caller's own name.
+- The user, member, candidate, card owner, and reviewer objects add `name`.
+- UI: Name on New user, Edit user, and Account. The board, card page, user menu, Users, tribe members, and reviewer pickers show `name`, then the GitHub login, then the email.
+
+Done when: `TestUserNameRequired`, `TestAdminRenamesUser`, `TestOwnName`, `TestCardPeopleNames`.
+
+## Sprint 21: Card context
+
+Goal: The board and the card page read in words and show who and what a card is built from.
+
+Packages: `internal/httpapi`, `internal/conventions`.
+
+- The single-card response adds `requirements` and `rules`. `skills` adds `useWhen`.
+- UI: `statusLabel` and `reasonLabel` replace raw codes. Board tiles show the owner's avatar and name and a reviewer avatar stack. The card page has People, Intake, Rules, Skills, and Details panels.
+
+Done when: `TestCardDetail`, `status.test.ts`.

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getCards, startRun, unreachable } from '$lib/api';
-  import { filterCards, ownerOptions, personName, reviewerSummary } from '$lib/board';
+  import { filterCards, ownerOptions, personName } from '$lib/board';
   import { pickParam } from '$lib/filter';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { statusLabel } from '$lib/status';
   import type { Card } from '$lib/types';
+  import Avatar from '$lib/ui/Avatar.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
@@ -162,16 +164,23 @@
                   <span class="block text-sm font-medium leading-snug">{card.title}</span>
                   <span class="mt-2 flex items-center gap-1.5 text-xs {card.status === 'blocked' ? 'danger' : 'text-muted'}">
                     <span class="size-1.5 shrink-0 rounded-full {tone(card)}"></span>
-                    {card.status}
+                    <span title={card.status}>{statusLabel(card.status)}</span>
                   </span>
-                  <span class="mt-1.5 line-clamp-1 break-all text-xs text-muted">
-                    {card.owner ? `Owner ${personName(card.owner)}` : 'No owner'}
+                  <span class="mt-2 flex items-center gap-2 text-xs text-muted">
+                    <Avatar person={card.owner} size="sm" />
+                    <span class="min-w-0 flex-1 truncate">{card.owner ? personName(card.owner) : 'No owner'}</span>
+                    {#if card.reviewers?.length}
+                      {@const names = card.reviewers.map(personName).join(', ')}
+                      <span class="flex shrink-0 items-center" role="img" aria-label={`Reviewers: ${names}`} title={`Reviewers: ${names}`}>
+                        {#each card.reviewers.slice(0, 3) as reviewer (reviewer.id)}
+                          <span class="-ml-1.5 rounded-full ring-2 ring-surface first:ml-0"><Avatar person={reviewer} size="sm" /></span>
+                        {/each}
+                        {#if card.reviewers.length > 3}
+                          <span class="ml-1 text-[11px]">+{card.reviewers.length - 3}</span>
+                        {/if}
+                      </span>
+                    {/if}
                   </span>
-                  {#if card.reviewers?.length}
-                    <span class="mt-0.5 line-clamp-1 break-all text-xs text-muted">
-                      Reviewers {reviewerSummary(card.reviewers)}
-                    </span>
-                  {/if}
                   <span class="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-muted">
                     <span>Attempt {card.attemptsUsed} of {card.maxAttempts}</span>
                     {#if card.headSha}<span class="font-mono">{card.headSha.slice(0, 7)}</span>{/if}

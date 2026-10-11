@@ -386,6 +386,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestLastAdmin` | Disabling or removing the admin flag from the last admin is `422` |
 | `TestUserGitHubOmitted` | `GET /api/me/github` has `tokenSet` and no token |
 | `TestNonAdminForbidden` | A non-admin `POST /api/users` is `403` |
+| `TestUserNameRequired` | `POST /api/users` without a name, with only spaces, over 80 characters, or with a control character is `422` on `name`. A trimmed name is stored and listed (RFC-058) |
+| `TestAdminRenamesUser` | An admin renames a user with `PUT /api/users/{id}`. An empty name is `422`. A save without `name` keeps it. A non-admin is `403` |
+| `TestOwnName` | `PUT /api/me` sets the caller's name and `GET /api/me` returns it. An empty name is `422`. Another user's name is unchanged |
 | `TestMemberSeesProject` | A member lists the project and its cards |
 | `TestOutsiderMissesProject` | A non-member receives `404` for the project and for a card |
 | `TestReqIdsPerProject` | Two projects can both store `REQ-001` |

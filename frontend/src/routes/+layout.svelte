@@ -3,6 +3,7 @@
   import type { Snippet } from 'svelte';
   import { closeSession, getMe, getProjects } from '$lib/api';
   import Live from '$lib/components/Live.svelte';
+  import { displayName } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
   import { session } from '$lib/session';
   import { shell } from '$lib/shell.svelte';
@@ -92,6 +93,7 @@
     void getMe()
       .then((me) => {
         shell.admin = me.admin;
+        shell.name = me.name;
         shell.email = me.email;
         shell.role = me.role;
         shell.tribeAdminOf = me.tribeAdminOf ?? [];
@@ -159,9 +161,9 @@
       </nav>
       <div class="border-t border-line p-3">
         <Menu
-          label={shell.email || 'Account'}
+          label={shell.email ? displayName(shell) : 'Account'}
           detail={roleLabel(shell.role)}
-          initials={initials(shell.email || 'M')}
+          initials={initials(shell.email ? displayName(shell) : 'M')}
           placement="up"
           items={[
             { label: 'Account', href: '/account' },

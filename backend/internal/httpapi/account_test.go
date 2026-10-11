@@ -134,14 +134,14 @@ func TestNonAdminForbidden(t *testing.T) {
 	seedUser(t, srv, "ada@example.com", "password-long-1", "product_owner", true)
 	adminToken := loginToken(t, srv, "ada@example.com", "password-long-1")
 	created := postJSON(t, srv, "/api/users", adminToken, map[string]any{
-		"email": "dev@example.com", "password": "password-long-2", "role": "developer", "admin": false,
+		"name": "Dev", "email": "dev@example.com", "password": "password-long-2", "role": "developer", "admin": false,
 	})
 	if created.Code != 201 {
 		t.Fatalf("create = %d %s", created.Code, created.Body.String())
 	}
 	devToken := loginToken(t, srv, "dev@example.com", "password-long-2")
 	denied := postJSON(t, srv, "/api/users", devToken, map[string]any{
-		"email": "other@example.com", "password": "password-long-3", "role": "qa", "admin": false,
+		"name": "Other", "email": "other@example.com", "password": "password-long-3", "role": "qa", "admin": false,
 	})
 	if denied.Code != 403 {
 		t.Fatalf("non-admin = %d %s", denied.Code, denied.Body.String())

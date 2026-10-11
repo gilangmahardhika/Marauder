@@ -197,7 +197,7 @@ frontend/
 | `/intake/[id]` | Edit or delete a manual requirement, and name its reviewers |
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
-| `/account` | Password and the caller's GitHub settings |
+| `/account` | Name, password, and the caller's GitHub settings |
 | `/admin/users` | Admin user list |
 | `/admin/users/new` | Create a user |
 | `/admin/users/[id]` | Edit role, admin, disabled, and an optional password |
@@ -224,7 +224,7 @@ frontend/
 
 `+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu links to Account and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
+The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -268,12 +268,12 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 
 | Page | Search | Filters | Show more |
 | --- | --- | --- | --- |
-| Board | Card id, title, status, owner and reviewer emails and logins, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
+| Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` Everyone or Mine, `blocked=1` Blocked only | No |
 | Intake | See Intake | `tab`, `status`, `source` | Yes |
 | Projects | Name, repository, base branch, tribe name | `tribe`, shown when there is more than one tribe | No |
 | Tribes | Name | None | No |
-| Tribe members | Email | `role` | Yes |
-| Users | Email | `role`, `access` All, Admins, Active, or Disabled with counts | Yes |
+| Tribe members | Name, email | `role` | Yes |
+| Users | Name, email | `role`, `access` All, Admins, Active, or Disabled with counts | Yes |
 | Conventions, Rules tab | Title and body | `category`, `applies` Any scope, Global, or one stack | No |
 | Conventions, Stacks tab | Name and markers | None | No |
 | Skills | Slug, title, "use when", body | `state` All, Enabled, or Disabled with counts | No |
@@ -291,7 +291,7 @@ Router, Company GitHub, Linked projects, and Account have no toolbar. Their list
 
 `src/routes/+page.svelte` calls `GET /api/cards` from `onMount` (or `$effect` on first run).
 
-Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print `status` as text on the row. Each row shows "Owner" with the owner's `githubLogin`, or the email when the login is empty, or "No owner" (RFC-054). When `reviewers` is not empty, a second line shows "Reviewers" with the first two names and "+n" for the rest. Both lines clamp to one line. The row links to `/cards/{id}`.
+Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print the status as words from `statusLabel` in `src/lib/status.ts`, such as "Waiting for review" for `human_review`, with the raw status in `title`. Below it, the row shows the owner's initials avatar and display name, `name`, then `githubLogin`, then the email, or a dashed avatar and "No owner" (RFC-054, RFC-058). Every page that lists a person uses that order (`displayName` in `src/lib/people.ts`) and the `Avatar` component. When `reviewers` is not empty, the same line ends with up to three overlapping reviewer avatars and "+n" for the rest. Their names are in the `title` and `aria-label` ("Reviewers: ..."). The name clamps to one line. The row links to `/cards/{id}`.
 
 The primary button is "Run". It is enabled when `canRun` is true and `running` is false. It POSTs `/api/runs`, then reloads the list. The live message is "Running the worker" while the request is in flight, and the button is disabled.
 
@@ -305,7 +305,13 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-Show title, raw status, owner (login and email, or "None"), reviewers (login and email each, or "None"), requirement ids, decision ids, skills by title (or "None"), risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
+The header shows the title and a badge with `statusLabel`, with the raw status in `title`. Under Next step, the page has five panels in this order:
+
+- People: the owner and each reviewer with avatar, display name, email, and "GitHub @login" or "No verified GitHub login", labelled Owner or Reviewer. With no reviewers, a line says reviewers come from the card's requirements and links "Edit reviewers" to `/intake/{first requirement id}`.
+- Intake: each of `requirements` with its id, heading, the statement clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
+- Rules: `rules` grouped by `label`, Global first, each with its title and category badge. The footer links to `/settings/conventions`.
+- Skills: each skill's title and `useWhen`, clamped to two lines.
+- Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 
 Render a control only when its name is in `actions`:
 
@@ -343,7 +349,7 @@ The page has two tabs, Requirements and Decisions, each with its count. `?tab=de
 
 A toolbar sits above each table. The search box matches id, statement, heading, source path, and acceptance lines, ignoring case. On Decisions it matches id, statement, and source path. The Requirements tab also has a status filter, "Needs acceptance", "Accepted", or "All", each with its count, and a source select: All sources, PRD, RFC, Manual, or Draft. The filters live in the URL as `q`, `status`, and `source`, so returning from `/intake/[id]` keeps them. Without `status`, the page shows "Needs acceptance" while any requirement is unaccepted, and "All" otherwise. When nothing matches, an empty state offers "Clear filters".
 
-Requirements are a table: a select checkbox, id, statement clamped to two lines with the source path under it ("Added by" with `createdBy` for a manual row), source badge ("Draft" in amber), reviewer count, the first of `linkedCards` as a link to `/cards/[id]` with "+n" for the rest, Accepted or Not accepted, and a details button with `aria-expanded`. The checkbox column renders only when a shown row can be accepted. Under 1280px wide the reviewer column is hidden, and under 720px the source and card columns are hidden too. Clicking the statement or the details button opens a row under it with the full statement, the acceptance lines, the source path or "Added by" with `createdBy`, "Ingested by" for a parsed row with `createdBy`, the `reviewers` as badges by GitHub login, and the card links. A manual row has an "Edit requirement" link to `/intake/[id]`. A parsed row whose `canEditReviewers` is true has an "Edit reviewers" link to the same page (RFC-054). Decisions are a table of id, statement, and source path.
+Requirements are a table: a select checkbox, id, statement clamped to two lines with the source path under it ("Added by" with `createdBy` for a manual row), source badge ("Draft" in amber), reviewer count, the first of `linkedCards` as a link to `/cards/[id]` with "+n" for the rest, Accepted or Not accepted, and a details button with `aria-expanded`. The checkbox column renders only when a shown row can be accepted. Under 1280px wide the reviewer column is hidden, and under 720px the source and card columns are hidden too. Clicking the statement or the details button opens a row under it with the full statement, the acceptance lines, the source path or "Added by" with `createdBy`, "Ingested by" for a parsed row with `createdBy`, the `reviewers` as badges by name, and the card links. A manual row has an "Edit requirement" link to `/intake/[id]`. A parsed row whose `canEditReviewers` is true has an "Edit reviewers" link to the same page (RFC-054). Decisions are a table of id, statement, and source path.
 
 Each table renders 50 rows, then a "Show 50 more" button. Changing the tab, search, or a filter goes back to 50 rows and drops selected ids that are no longer shown.
 
@@ -353,7 +359,7 @@ Acceptance needs `canAccept` (RFC-053). When it is false, there are no checkboxe
 
 `/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
 
-Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by GitHub login with the email as the detail line. On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
+Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by name with the login and email as the detail line. The search placeholder is "Search by name, login, or email". On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
 
 While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Accepting 3 requirements".
 
@@ -379,15 +385,17 @@ Disable the submit button and set the live message while the PUT is in flight. O
 
 `src/routes/account/+page.svelte`. `GET /api/me` and `GET /api/me/github`.
 
+The first panel is Name. "Save name" calls `PUT /api/me` and is disabled while the name is unchanged. A `422` shows on the field. After a save the sidebar menu shows the new name. The page title is the name, or the email when unnamed.
+
 Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
 
 GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that cards built from requirements the caller brought in are committed, pushed, and opened as pull requests with this token (RFC-054). Clones and fetches still use the company account. The panel header shows a "Verified" or "Not verified" badge from `verified`. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`. After the test, reload `GET /api/me/github` so the login and badge show what GitHub reported.
 
 ### Users and tribes
 
-`src/routes/admin/users/+page.svelte` lists users. Create is `/admin/users/new` (email, password, role, admin) and calls `POST /api/users`. Edit is `/admin/users/[id]` and calls `PUT /api/users/{id}`. A `403` sets the live message from `error.message`.
+`src/routes/admin/users/+page.svelte` lists users. Each row shows the name with the email under it, or the email alone when unnamed. Create is `/admin/users/new` (name, email, password, role, admin) and calls `POST /api/users`. The name is required. Edit is `/admin/users/[id]` with a Name panel and calls `PUT /api/users/{id}`. It sends `name` unless the field is blank and the user never had one, so changing the role of an unnamed user still saves. A `403` sets the live message from `error.message`.
 
-`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by email. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository, and shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage. Picking a repository fills the base branch with its default branch. When the list cannot load, the repository is a text field. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
+`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by name or email, labelled by name with the email and role as the detail line. Member rows show the name with the email under it. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository, and shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage. Picking a repository fills the base branch with its default branch. When the list cannot load, the repository is a text field. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
 
 ### Company GitHub
 
@@ -543,7 +551,9 @@ npm run build
 | `IntakeActions` | Ingest and Add requirement render, and no accept button |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
-| `board` filters | "Mine" keeps cards whose owner email matches the signed-in email in any case. Blocked only keeps blocked cards. Search matches title, id, requirement id, and owner login |
+| `board` filters | "Mine" keeps cards whose owner email matches the signed-in email in any case. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
+| `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
+| `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
 | `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |
 | `trace` filters | Events filter by kind, attempt, and payload text. Kind and attempt options come from the events present |

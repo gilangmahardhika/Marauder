@@ -10,6 +10,7 @@
   import Panel from '$lib/ui/Panel.svelte';
   import Select from '$lib/ui/Select.svelte';
 
+  let name = $state('');
   let email = $state('');
   let password = $state('');
   let role = $state('developer');
@@ -26,7 +27,7 @@
     message = 'Creating user';
     fields = {};
     try {
-      await createUser({ email, password, role, admin });
+      await createUser({ name, email, password, role, admin });
       message = 'User created';
       await goto('/admin/users');
     } catch (error) {
@@ -42,6 +43,7 @@
   <form onsubmit={submit}>
     <div class="flex flex-col gap-6">
       <Panel title="Sign-in">
+        <Field label="Name" id="name" autocomplete="off" hint="Shown on the board and member lists." error={fields.name} bind:value={name} />
         <Field label="Email" id="email" type="email" autocomplete="off" error={fields.email} bind:value={email} />
         <Field
           label="Password"

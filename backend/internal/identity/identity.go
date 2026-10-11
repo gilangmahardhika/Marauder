@@ -12,6 +12,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 
@@ -19,6 +21,7 @@ import (
 )
 
 const (
+	maxName     = 80
 	minPassword = 12
 	sessionLife = 12 * time.Hour
 )
@@ -49,6 +52,7 @@ func (v *Validation) Unwrap() error { return ErrValidation }
 
 type User struct {
 	ID             string
+	Name           string
 	Email          string
 	Role           string
 	Admin          bool
@@ -95,24 +99,36 @@ func Bootstrap(ctx context.Context, db *sql.DB, email, password string) (User, e
 	return Insert(ctx, db, email, password, "product_owner", true)
 }
 
-func CreateUser(ctx context.Context, db *sql.DB, actor User, email, password, role string, admin bool) (User, error) {
+func CreateUser(ctx context.Context, db *sql.DB, actor User, name, email, password, role string, admin bool) (User, error) {
 	if !actor.Admin {
 		return User{}, ErrForbidden
 	}
-	return Insert(ctx, db, email, password, role, admin)
+	clean, err := cleanName(name)
+	if err != nil {
+		return User{}, err
+	}
+	return insertUser(ctx, db, clean, email, password, role, admin)
 }
 
+// Insert adds a user without a name. The bootstrap admin and fixtures use it;
+// such a user shows their login or email until a name is set (RFC-058).
 func Insert(ctx context.Context, db *sql.DB, email, password, role string, admin bool) (User, error) {
-	return insertUser(ctx, db, email, password, role, admin)
+	return insertUser(ctx, db, "", email, password, role, admin)
 }
 
-func UpdateUser(ctx context.Context, db *sql.DB, actor User, id string, role *string, admin *bool, disabled *bool, password string) (User, error) {
+func UpdateUser(ctx context.Context, db *sql.DB, actor User, id string, name, role *string, admin *bool, disabled *bool, password string) (User, error) {
 	if !actor.Admin {
 		return User{}, ErrForbidden
 	}
 	current, err := userByID(ctx, db, id)
 	if err != nil {
 		return User{}, err
+	}
+	nextName := current.Name
+	if name != nil {
+		if nextName, err = cleanName(*name); err != nil {
+			return User{}, err
+		}
 	}
 	nextRole := current.Role
 	if role != nil {
@@ -143,10 +159,36 @@ func UpdateUser(ctx context.Context, db *sql.DB, actor User, id string, role *st
 			return User{}, err
 		}
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE users SET role = $1, admin = $2, disabled = $3 WHERE id = $4`, nextRole, nextAdmin, nextDisabled, id); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE users SET name = $1, role = $2, admin = $3, disabled = $4 WHERE id = $5`, nextName, nextRole, nextAdmin, nextDisabled, id); err != nil {
 		return User{}, err
 	}
 	return userByID(ctx, db, id)
+}
+
+// SetOwnName changes the caller's own display name.
+func SetOwnName(ctx context.Context, db *sql.DB, user User, name string) (User, error) {
+	clean, err := cleanName(name)
+	if err != nil {
+		return User{}, err
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE users SET name = $1 WHERE id = $2`, clean, user.ID); err != nil {
+		return User{}, err
+	}
+	return userByID(ctx, db, user.ID)
+}
+
+func cleanName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", &Validation{Fields: map[string]string{"name": "Enter a name."}}
+	}
+	if utf8.RuneCountInString(name) > maxName {
+		return "", &Validation{Fields: map[string]string{"name": "Use at most 80 characters."}}
+	}
+	if strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return "", &Validation{Fields: map[string]string{"name": "A name cannot contain control characters."}}
+	}
+	return name, nil
 }
 
 func ChangePassword(ctx context.Context, db *sql.DB, user User, current, next string) error {
@@ -398,7 +440,7 @@ func ListUsers(ctx context.Context, db *sql.DB, actor User) ([]User, error) {
 	return out, rows.Err()
 }
 
-func insertUser(ctx context.Context, db *sql.DB, email, password, role string, admin bool) (User, error) {
+func insertUser(ctx context.Context, db *sql.DB, name, email, password, role string, admin bool) (User, error) {
 	email = normalizeEmail(email)
 	if !strings.Contains(email, "@") || strings.ContainsAny(email, " \t") {
 		return User{}, &Validation{Fields: map[string]string{"email": "email is invalid"}}
@@ -416,8 +458,8 @@ func insertUser(ctx context.Context, db *sql.DB, email, password, role string, a
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO users (id, email, password_hash, role, admin, disabled, created_at)
-		VALUES ($1, $2, $3, $4, $5, false, $6)`, id, email, hash, role, admin, now)
+		INSERT INTO users (id, name, email, password_hash, role, admin, disabled, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, false, $7)`, id, name, email, hash, role, admin, now)
 	if err != nil {
 		if strings.Contains(err.Error(), "users_email") || strings.Contains(err.Error(), "duplicate key") {
 			return User{}, &Validation{Fields: map[string]string{"email": "email is already used"}}
@@ -430,8 +472,8 @@ func insertUser(ctx context.Context, db *sql.DB, email, password, role string, a
 func userByID(ctx context.Context, db *sql.DB, id string) (User, error) {
 	var user User
 	err := db.QueryRowContext(ctx, `
-		SELECT id, email, role, admin, disabled FROM users WHERE id = $1`, id).
-		Scan(&user.ID, &user.Email, &user.Role, &user.Admin, &user.Disabled)
+		SELECT id, name, email, role, admin, disabled FROM users WHERE id = $1`, id).
+		Scan(&user.ID, &user.Name, &user.Email, &user.Role, &user.Admin, &user.Disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return User{}, ErrNotFound
 	}

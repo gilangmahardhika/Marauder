@@ -30,6 +30,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/session", s.login)
 	mux.HandleFunc("DELETE /api/session", s.logout)
 	mux.HandleFunc("GET /api/me", s.me)
+	mux.HandleFunc("PUT /api/me", s.updateMe)
 	mux.HandleFunc("PUT /api/me/password", s.changePassword)
 	mux.HandleFunc("POST /api/me/github/test", s.testMyGitHub)
 	mux.HandleFunc("/api/me/github", s.myGitHub)

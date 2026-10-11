@@ -2,8 +2,12 @@
   import { page } from '$app/stores';
   import { ApiError, getCard, unreachable } from '$lib/api';
   import CardActions from '$lib/components/CardActions.svelte';
+  import { categoryLabel } from '$lib/conventions';
+  import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
-  import type { Card } from '$lib/types';
+  import { reasonLabel, statusLabel } from '$lib/status';
+  import type { Card, CardOwner, CardRequirement, CardRule } from '$lib/types';
+  import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -55,6 +59,25 @@
     if (value.group === 'running' || value.group === 'shipping') return 'sky';
     return 'default';
   }
+
+  /** Rules in API order, grouped by label: global first, then each stack. */
+  function groupRules(rules: CardRule[]) {
+    const groups: { label: string; rules: CardRule[] }[] = [];
+    for (const rule of rules) {
+      const last = groups[groups.length - 1];
+      if (last && last.label === rule.label) last.rules.push(rule);
+      else groups.push({ label: rule.label, rules: [rule] });
+    }
+    return groups;
+  }
+
+  const ruleGroups = $derived(groupRules(card?.rules ?? []));
+
+  /** The heading without the requirement id it often starts with. */
+  function headingText(requirement: CardRequirement) {
+    const heading = requirement.heading.trim();
+    return heading.startsWith(requirement.id) ? heading.slice(requirement.id.length).trim() : heading;
+  }
 </script>
 
 {#snippet item(label: string, value: string, mono = false, danger = false)}
@@ -64,6 +87,19 @@
   </div>
 {/snippet}
 
+{#snippet person(who: CardOwner, role: string)}
+  <li class="flex items-center gap-3">
+    <Avatar person={who} />
+    <span class="min-w-0 flex-1">
+      <span class="block truncate text-sm font-medium text-ink">{displayName(who)}</span>
+      <span class="block truncate text-xs text-muted">
+        {who.email} · {who.githubLogin ? `GitHub @${who.githubLogin}` : 'No verified GitHub login'}
+      </span>
+    </span>
+    <span class="shrink-0 text-xs text-muted">{role}</span>
+  </li>
+{/snippet}
+
 {#if missing}
   <Page title="Card not found">
     <EmptyState title="This card is not on the board for this project." href="/" link="Back to the board" />
@@ -71,7 +107,7 @@
 {:else if card}
   <Page title={card.title}>
     {#snippet meta()}
-      <Badge tone={tone(card!)}>{card!.status}</Badge>
+      <span title={card!.status}><Badge tone={tone(card!)}>{statusLabel(card!.status)}</Badge></span>
     {/snippet}
     {#snippet actions()}
       <Button href={`/cards/${card!.id}/trace`}>View trace</Button>
@@ -88,25 +124,89 @@
           <CardActions bind:card />
         </Panel>
       {/if}
+      <Panel title="People">
+        <ul class="flex flex-col gap-4">
+          {#if card.owner}
+            {@render person(card.owner, 'Owner')}
+          {:else}
+            <li class="flex items-center gap-3 text-sm text-muted"><Avatar person={null} />No owner</li>
+          {/if}
+          {#each card.reviewers ?? [] as reviewer (reviewer.id)}
+            {@render person(reviewer, 'Reviewer')}
+          {/each}
+        </ul>
+        {#if (card.reviewers ?? []).length === 0}
+          <p class="text-sm text-muted">
+            No reviewers. Reviewers come from the card's requirements.
+            {#if card.requirementIds.length > 0}
+              <a class="text-accent underline" href={`/intake/${card.requirementIds[0]}`}>Edit reviewers</a>
+            {/if}
+          </p>
+        {/if}
+      </Panel>
+      <Panel title="Intake" hint="The requirements this card builds.">
+        {#if (card.requirements ?? []).length === 0}
+          <p class="text-sm text-muted">No requirements.</p>
+        {:else}
+          <ul class="flex flex-col divide-y divide-line">
+            {#each card.requirements ?? [] as requirement (requirement.id)}
+              <li class="py-3 first:pt-0 last:pb-0">
+                <a class="group block" href={`/intake/${requirement.id}`}>
+                  <span class="flex flex-wrap items-center gap-2">
+                    <span class="font-mono text-[13px] text-muted">{requirement.id}</span>
+                    {#if headingText(requirement)}
+                      <span class="text-sm font-medium text-ink group-hover:underline">{headingText(requirement)}</span>
+                    {/if}
+                    {#if !requirement.accepted}<Badge tone="amber">Draft</Badge>{/if}
+                  </span>
+                  <span class="mt-1 line-clamp-3 text-sm text-muted">{requirement.statement}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Panel>
+      <Panel title="Rules" hint="Coding rules the implementer and reviewer follow for this project.">
+        {#if ruleGroups.length === 0}
+          <p class="text-sm text-muted">No rules apply to this project yet.</p>
+        {:else}
+          {#each ruleGroups as group (group.label)}
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-muted">
+                {group.label === 'global' ? 'Global' : group.label}
+              </h3>
+              <ul class="mt-2 flex flex-col gap-2">
+                {#each group.rules as rule (rule.id)}
+                  <li class="flex items-center justify-between gap-3 text-sm text-ink">
+                    <span class="min-w-0">{rule.title}</span>
+                    <Badge>{categoryLabel(rule.category)}</Badge>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/each}
+        {/if}
+        {#snippet footer()}
+          <Button href="/settings/conventions">Project conventions</Button>
+        {/snippet}
+      </Panel>
+      <Panel title="Skills" hint="Integration procedures attached to this card.">
+        {#if card.skills.length === 0}
+          <p class="text-sm text-muted">No skills attached.</p>
+        {:else}
+          <ul class="flex flex-col gap-3">
+            {#each card.skills as skill (skill.id)}
+              <li>
+                <span class="block text-sm font-medium text-ink">{skill.title}</span>
+                {#if skill.useWhen}<span class="mt-0.5 line-clamp-2 text-sm text-muted">{skill.useWhen}</span>{/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </Panel>
       <Panel title="Details">
         <dl class="grid gap-x-10 gap-y-5 sm:grid-cols-2">
-          {@render item(
-            'Owner',
-            card.owner
-              ? card.owner.githubLogin
-                ? `${card.owner.githubLogin} (${card.owner.email})`
-                : `${card.owner.email}, no verified GitHub login`
-              : 'None'
-          )}
-          {@render item(
-            'Reviewers',
-            (card.reviewers ?? [])
-              .map((reviewer) => (reviewer.githubLogin ? `${reviewer.githubLogin} (${reviewer.email})` : reviewer.email))
-              .join(', ') || 'None'
-          )}
-          {@render item('Requirements', card.requirementIds.join(', ') || '—', true)}
           {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
-          {@render item('Skills', (card.skills ?? []).map((skill) => skill.title).join(', ') || 'None')}
           {@render item('Risk', card.risk)}
           {@render item('Attempts', `${card.attemptsUsed} of ${card.maxAttempts}`)}
           {#if card.branch}{@render item('Branch', card.branch, true)}{/if}
@@ -127,8 +227,8 @@
           {#if card.reviewIndependent !== null}{@render item('Review independent', card.reviewIndependent ? 'yes' : 'no')}{/if}
           {#if card.approvedSha}{@render item('Approved SHA', card.approvedSha, true)}{/if}
           {#if card.deployedSha}{@render item('Deployed SHA', card.deployedSha, true)}{/if}
-          {#if card.failureReason}{@render item('Failure reason', card.failureReason)}{/if}
-          {#if card.blockedReason}{@render item('Blocked reason', card.blockedReason, false, true)}{/if}
+          {#if card.failureReason}{@render item('Failure reason', reasonLabel(card.failureReason))}{/if}
+          {#if card.blockedReason}{@render item('Blocked reason', reasonLabel(card.blockedReason), false, true)}{/if}
         </dl>
       </Panel>
     </div>

@@ -106,6 +106,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-061 | A project enables integration skills, and the planner attaches them to cards |
 | REQ-062 | Packs carry the rules and skills, and the trace names their versions |
 | REQ-063 | A tribe admin runs one tribe |
+| REQ-064 | A user has a display name |
 
 ## Requirements
 
@@ -900,6 +901,17 @@ A company admin, or a tribe admin, may make a member of that tribe a tribe admin
 - A tribe admin creates a project on their tribe with a link to another project in it, and is rejected on another tribe.
 - A tribe admin who is not a Lead Developer saves a project's links.
 
+### REQ-064 A user has a display name
+
+An admin gives each new user a display name, and may change it later. Each user may change their own name. Pages that list a person show the name first, and the email second where there is room. A user without a name shows their verified GitHub login, then their email. The email stays the sign-in id (RFC-058).
+
+#### Acceptance
+
+- Creating a user without a name, or with only spaces, is rejected. With a name, the user list shows it.
+- An admin renames a user. An empty name is rejected.
+- A user changes their own name on the Account page, and the user menu shows it. Another user's name is unchanged.
+- The board and the card page show the owner's and reviewers' names. A user without a name shows the login, then the email.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1001,3 +1013,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 15. Card owner, owner pull requests, and intake reviewers (REQ-056 through REQ-058).
 16. Coding rules, stacks, and integration skills (REQ-059 through REQ-062).
 17. Tribe admins, links at project create, and reviewers on the board (REQ-063, REQ-054, REQ-058).
+18. User display names (REQ-064).

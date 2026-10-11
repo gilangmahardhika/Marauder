@@ -15,6 +15,7 @@ var ErrForbidden = errors.New("only the person who brought this requirement in, 
 // Reviewer is a user named to review the pull requests of a requirement.
 type Reviewer struct {
 	ID          string `json:"id"`
+	Name        string `json:"name"`
 	Email       string `json:"email"`
 	GitHubLogin string `json:"githubLogin"`
 }
@@ -96,7 +97,7 @@ func SetReviewers(ctx context.Context, db *sql.DB, projectID, id, actorID, role 
 // Reviewers lists the reviewers of every requirement on projectID, by requirement id.
 func Reviewers(ctx context.Context, db *sql.DB, projectID string) (map[string][]Reviewer, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT rr.requirement_id, u.id, u.email,
+		SELECT rr.requirement_id, u.id, u.name, u.email,
 			CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
 		FROM requirement_reviewers rr
 		JOIN users u ON u.id = rr.user_id
@@ -111,7 +112,7 @@ func Reviewers(ctx context.Context, db *sql.DB, projectID string) (map[string][]
 	for rows.Next() {
 		var reqID string
 		var r Reviewer
-		if err := rows.Scan(&reqID, &r.ID, &r.Email, &r.GitHubLogin); err != nil {
+		if err := rows.Scan(&reqID, &r.ID, &r.Name, &r.Email, &r.GitHubLogin); err != nil {
 			return nil, err
 		}
 		out[reqID] = append(out[reqID], r)
@@ -123,7 +124,7 @@ func Reviewers(ctx context.Context, db *sql.DB, projectID string) (map[string][]
 // verified GitHub login.
 func ReviewerOptions(ctx context.Context, db *sql.DB, projectID string) ([]Reviewer, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT u.id, u.email, g.login
+		SELECT u.id, u.name, u.email, g.login
 		FROM projects p
 		JOIN tribe_members m ON m.tribe_id = p.tribe_id
 		JOIN users u ON u.id = m.user_id AND u.disabled = false
@@ -137,7 +138,7 @@ func ReviewerOptions(ctx context.Context, db *sql.DB, projectID string) ([]Revie
 	out := []Reviewer{}
 	for rows.Next() {
 		var r Reviewer
-		if err := rows.Scan(&r.ID, &r.Email, &r.GitHubLogin); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Email, &r.GitHubLogin); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

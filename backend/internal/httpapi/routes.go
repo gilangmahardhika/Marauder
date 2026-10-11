@@ -56,7 +56,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 	switch action {
 	case "":
 		if r.Method == http.MethodGet {
-			writeJSON(w, 200, s.cardBody(r, card))
+			writeJSON(w, 200, s.cardDetail(r, card))
 		}
 	case "approve":
 		var body struct {
@@ -75,21 +75,21 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardBody(r, next))
+		writeJSON(w, 200, s.cardDetail(r, next))
 	case "request-changes":
 		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r))
 		if err != nil {
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardBody(r, next))
+		writeJSON(w, 200, s.cardDetail(r, next))
 	case "reject":
 		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r))
 		if err != nil {
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardBody(r, next))
+		writeJSON(w, 200, s.cardDetail(r, next))
 	case "unblock":
 		var body struct {
 			ResetAttempts bool `json:"resetAttempts"`
@@ -100,7 +100,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardBody(r, next))
+		writeJSON(w, 200, s.cardDetail(r, next))
 	default:
 		writeErr(w, 404, "not_found", "not found")
 	}
@@ -338,7 +338,7 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	}
 	var owner any
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
-		owner = map[string]any{"id": found.ID, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
+		owner = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
 	}
 	skills, err := conventions.CardSkills(r.Context(), s.DB, card.ProjectID, card.ID)
 	if err != nil {

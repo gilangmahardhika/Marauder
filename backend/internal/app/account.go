@@ -31,12 +31,16 @@ func Bootstrap(ctx context.Context, db *sql.DB, email, password string) (User, e
 	return identity.Bootstrap(ctx, db, email, password)
 }
 
-func CreateUser(ctx context.Context, db *sql.DB, actor User, email, password, role string, admin bool) (User, error) {
-	return identity.CreateUser(ctx, db, actor, email, password, role, admin)
+func CreateUser(ctx context.Context, db *sql.DB, actor User, name, email, password, role string, admin bool) (User, error) {
+	return identity.CreateUser(ctx, db, actor, name, email, password, role, admin)
 }
 
-func UpdateUser(ctx context.Context, db *sql.DB, actor User, id string, role *string, admin, disabled *bool, password string) (User, error) {
-	return identity.UpdateUser(ctx, db, actor, id, role, admin, disabled, password)
+func UpdateUser(ctx context.Context, db *sql.DB, actor User, id string, name, role *string, admin, disabled *bool, password string) (User, error) {
+	return identity.UpdateUser(ctx, db, actor, id, name, role, admin, disabled, password)
+}
+
+func SetOwnName(ctx context.Context, db *sql.DB, user User, name string) (User, error) {
+	return identity.SetOwnName(ctx, db, user, name)
 }
 
 func ChangePassword(ctx context.Context, db *sql.DB, user User, current, next string) error {

@@ -4,10 +4,11 @@
   import { pickParam } from '$lib/filter';
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
-  import { accessOptions, accessValues, filterUsers, roleOptions } from '$lib/people';
-  import { initials, roleLabel } from '$lib/roles';
+  import { accessOptions, accessValues, displayName, filterUsers, roleOptions } from '$lib/people';
+  import { roleLabel } from '$lib/roles';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { SessionUser } from '$lib/types';
+  import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
@@ -57,7 +58,7 @@
   {:else if users.length > 0}
     <div class="flex flex-col gap-4">
       <Toolbar>
-        <SearchBox label="Search users" value={filter.q} placeholder="Search by email" />
+        <SearchBox label="Search users" value={filter.q} placeholder="Search name or email" />
         <FilterSelect label="Role" options={roleOptions} value={filter.role} onchange={(role) => setParams({ role })} />
         <Segmented
           label="Access"
@@ -85,11 +86,11 @@
               <tr class={tr}>
                 <td class={td}>
                   <span class="flex items-center gap-3">
-                    <span
-                      class="flex size-8 shrink-0 items-center justify-center rounded-full bg-sidebar text-xs font-medium text-ink"
-                      aria-hidden="true">{initials(user.email)}</span
-                    >
-                    <span class="font-medium text-ink">{user.email}</span>
+                    <Avatar person={user} />
+                    <span class="min-w-0">
+                      <span class="block font-medium text-ink">{displayName(user)}</span>
+                      {#if user.name}<span class="block break-all text-xs text-muted">{user.email}</span>{/if}
+                    </span>
                   </span>
                 </td>
                 <td class="{td} text-muted">{roleLabel(user.role)}</td>
@@ -103,7 +104,7 @@
                   <a
                     class="inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline"
                     href={`/admin/users/${user.id}`}
-                    aria-label={`Edit ${user.email}`}>Edit</a
+                    aria-label={`Edit ${displayName(user)}`}>Edit</a
                   >
                 </td>
               </tr>

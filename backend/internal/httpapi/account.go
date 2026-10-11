@@ -47,6 +47,27 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	user, _ := app.CurrentUser(r.Context())
+	s.writeMe(w, r, user)
+}
+
+func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) {
+	user, _ := app.CurrentUser(r.Context())
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	fresh, err := app.SetOwnName(r.Context(), s.DB, user, body.Name)
+	if err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	s.writeMe(w, r, fresh)
+}
+
+func (s *Server) writeMe(w http.ResponseWriter, r *http.Request, user app.User) {
 	body := userJSON(user)
 	body["githubLogin"] = user.GitHubLogin
 	body["githubTokenSet"] = user.GitHubTokenSet
@@ -160,6 +181,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"users": out})
 	case http.MethodPost:
 		var body struct {
+			Name     string `json:"name"`
 			Email    string `json:"email"`
 			Password string `json:"password"`
 			Role     string `json:"role"`
@@ -169,7 +191,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		user, err := app.CreateUser(r.Context(), s.DB, actor, body.Email, body.Password, body.Role, body.Admin)
+		user, err := app.CreateUser(r.Context(), s.DB, actor, body.Name, body.Email, body.Password, body.Role, body.Admin)
 		if err != nil {
 			writeAccountErr(w, err)
 			return
@@ -184,6 +206,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 	actor, _ := app.CurrentUser(r.Context())
 	id := r.PathValue("id")
 	var body struct {
+		Name     *string `json:"name"`
 		Role     *string `json:"role"`
 		Admin    *bool   `json:"admin"`
 		Disabled *bool   `json:"disabled"`
@@ -193,7 +216,7 @@ func (s *Server) updateUser(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 422, "validation", "body")
 		return
 	}
-	user, err := app.UpdateUser(r.Context(), s.DB, actor, id, body.Role, body.Admin, body.Disabled, body.Password)
+	user, err := app.UpdateUser(r.Context(), s.DB, actor, id, body.Name, body.Role, body.Admin, body.Disabled, body.Password)
 	if err != nil {
 		writeAccountErr(w, err)
 		return
@@ -206,7 +229,7 @@ func userJSON(user app.User) map[string]any {
 		user.GitHubHost = "github.com"
 	}
 	return map[string]any{
-		"id": user.ID, "email": user.Email, "role": user.Role, "admin": user.Admin, "disabled": user.Disabled,
+		"id": user.ID, "name": user.Name, "email": user.Email, "role": user.Role, "admin": user.Admin, "disabled": user.Disabled,
 	}
 }
 

@@ -80,7 +80,7 @@
         id="requirement-reviewers"
         width="lg"
         options={choices}
-        placeholder={choices.length === 0 ? 'No verified tribe members yet' : 'Search by login or email'}
+        placeholder={choices.length === 0 ? 'No verified tribe members yet' : 'Search by name, login, or email'}
         max={15}
         error={fields.userIds}
         bind:values={reviewers}

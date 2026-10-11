@@ -13,6 +13,8 @@
   import Select from '$lib/ui/Select.svelte';
 
   let email = $state('');
+  let name = $state('');
+  let savedName = $state('');
   let role = $state('developer');
   let admin = $state(false);
   let disabled = $state(false);
@@ -21,7 +23,7 @@
   let busy = $state(false);
   let fields = $state<Record<string, string>>({});
 
-  showShell(() => ({ title: email || 'Edit user', message }));
+  showShell(() => ({ title: savedName || email || 'Edit user', message }));
 
   $effect(() => {
     const id = $page.params.id;
@@ -34,6 +36,8 @@
           return;
         }
         email = user.email;
+        name = user.name;
+        savedName = user.name;
         role = user.role;
         admin = user.admin;
         disabled = Boolean(user.disabled);
@@ -53,12 +57,15 @@
     fields = {};
     try {
       const saved = await updateUser(id, {
+        ...(name.trim() === '' && savedName === '' ? {} : { name }),
         role,
         admin,
         disabled,
         ...(password === '' ? {} : { password })
       });
       email = saved.email;
+      name = saved.name;
+      savedName = saved.name;
       role = saved.role;
       admin = saved.admin;
       disabled = Boolean(saved.disabled);
@@ -73,7 +80,7 @@
   }
 </script>
 
-<Page title={email || 'Edit user'}>
+<Page title={savedName || email || 'Edit user'} description={savedName ? email : undefined}>
   {#snippet meta()}
     {#if disabled}<Badge tone="red">Disabled</Badge>{/if}
   {/snippet}
@@ -82,6 +89,16 @@
   {/snippet}
   <form onsubmit={submit}>
     <div class="flex flex-col gap-6">
+      <Panel title="Name">
+        <Field
+          label="Name"
+          id="name"
+          autocomplete="off"
+          hint={savedName ? 'Shown on the board and member lists.' : 'Not set yet. Until it is, pages show the GitHub login or the email.'}
+          error={fields.name}
+          bind:value={name}
+        />
+      </Panel>
       <Panel title="Role and access">
         <Select label="Job role" id="role" error={fields.role} bind:value={role}>
           {#each jobRoles as item (item.value)}

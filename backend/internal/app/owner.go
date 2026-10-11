@@ -35,6 +35,7 @@ var pullURL = regexp.MustCompile(`^https://[^\s/]+/[^\s/]+/[^\s/]+/pull/([0-9]+)
 // Owner is the card owner as the API shows it.
 type Owner struct {
 	ID          string
+	Name        string
 	Email       string
 	GitHubLogin string
 }
@@ -46,9 +47,9 @@ func OwnerOf(ctx context.Context, db *sql.DB, userID string) (Owner, bool, error
 	}
 	var owner Owner
 	err := db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
+		SELECT u.id, u.name, u.email, CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
 		FROM users u LEFT JOIN user_github g ON g.user_id = u.id
-		WHERE u.id = $1`, userID).Scan(&owner.ID, &owner.Email, &owner.GitHubLogin)
+		WHERE u.id = $1`, userID).Scan(&owner.ID, &owner.Name, &owner.Email, &owner.GitHubLogin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Owner{}, false, nil
 	}
@@ -152,7 +153,7 @@ func CardReviewers(ctx context.Context, db *sql.DB, card board.Card, host, botLo
 // project in one query.
 func CardReviewerUsers(ctx context.Context, db *sql.DB, projectID, cardID string) (map[string][]intake.Reviewer, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT DISTINCT c.id, u.id, u.email,
+		SELECT DISTINCT c.id, u.id, u.name, u.email,
 			CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
 		FROM cards c
 		CROSS JOIN LATERAL jsonb_array_elements_text(c.requirement_ids_json::jsonb) AS req(id)
@@ -171,7 +172,7 @@ func CardReviewerUsers(ctx context.Context, db *sql.DB, projectID, cardID string
 	for rows.Next() {
 		var id string
 		var r intake.Reviewer
-		if err := rows.Scan(&id, &r.ID, &r.Email, &r.GitHubLogin); err != nil {
+		if err := rows.Scan(&id, &r.ID, &r.Name, &r.Email, &r.GitHubLogin); err != nil {
 			return nil, err
 		}
 		out[id] = append(out[id], r)

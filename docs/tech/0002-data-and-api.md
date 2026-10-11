@@ -340,6 +340,7 @@ Migration `00003` and any later file in that series. Passwords use argon2id. A p
 ```sql
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN (
@@ -537,6 +538,7 @@ Ids use the prefixes `stk_`, `rule_`, and `skl_`. `detect_json` is `{ "files": [
   "expiresAt": "2026-10-10T17:00:00Z",
   "user": {
     "id": "user_0123456789ab",
+    "name": "Ada Lovelace",
     "email": "ada@example.com",
     "role": "lead_developer",
     "admin": false
@@ -544,9 +546,13 @@ Ids use the prefixes `stk_`, `rule_`, and `skl_`. `detect_json` is `{ "files": [
 }
 ```
 
+`name` is the display name (RFC-058). It is `""` for a user created before names existed. Pages show `name`, then the GitHub login, then the email.
+
 A wrong password is `401`. Five wrong passwords for that email pause further attempts for one minute with `429`. A disabled user is `401`. The bearer is 32 random bytes. The row stores its SHA-256. The process checks the hash and `expires_at` on every request. `DELETE /api/session` requires the bearer and deletes that row.
 
 `GET /api/me` returns the `user` object plus `githubLogin`, `githubTokenSet`, `githubVerified`, and `tribeAdminOf`, the ids of the tribes where the caller is a tribe admin (RFC-057).
+
+`PUT /api/me` with `{ "name": "Ada Lovelace" }` sets the caller's own name and returns the same body as `GET /api/me`. The name is trimmed, 1 to 80 characters, and has no control characters. It is not unique. Anything else is `422` on `name`.
 
 `PUT /api/me/password`
 
@@ -568,6 +574,7 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 
 ```json
 {
+  "name": "Ada Lovelace",
   "email": "ada@example.com",
   "password": "a long passphrase",
   "role": "product_owner",
@@ -575,7 +582,7 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 }
 ```
 
-`PUT /api/users/{id}` accepts `role`, `admin`, `disabled`, and optional `password`. The response user object has no password and no token. Removing or disabling the last admin is `422`.
+`name` is required on create, with the same rules as `PUT /api/me`. `PUT /api/users/{id}` accepts optional `name`, `role`, `admin`, `disabled`, and optional `password`. A `name` that is sent and empty is `422` on `name`. The response user object has no password and no token. Removing or disabling the last admin is `422`.
 
 `GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
 
@@ -584,10 +591,10 @@ Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of 
 `GET /api/tribes/{id}/members` lists members. `tribeAdmin` is the per-tribe flag. `admin` is the company flag.
 
 ```json
-{ "members": [{ "id": "user_0123456789ab", "email": "ada@example.com", "role": "lead_developer", "admin": false, "disabled": false, "tribeAdmin": true }] }
+{ "members": [{ "id": "user_0123456789ab", "name": "Ada Lovelace", "email": "ada@example.com", "role": "lead_developer", "admin": false, "disabled": false, "tribeAdmin": true }] }
 ```
 
-`GET /api/tribes/{id}/candidates` lists enabled users who are not members, for the add picker: `{ "users": [{ "id": "user_0123456789ab", "email": "grace@example.com", "role": "developer" }] }`.
+`GET /api/tribes/{id}/candidates` lists enabled users who are not members, for the add picker: `{ "users": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "role": "developer" }] }`.
 
 `POST /api/tribes/{id}/members` with `{ "userId": "user_0123456789ab" }` adds a member. `DELETE /api/tribes/{id}/members/{userId}` removes one. A tribe admin who is not an admin cannot remove themselves (`422` on `userId`).
 
@@ -629,9 +636,9 @@ A project object is:
   "group": "review",
   "actions": ["approve", "request_changes", "reject"],
   "projectId": "proj_0123456789ab",
-  "owner": { "id": "user_0123456789ab", "email": "ada@example.com", "githubLogin": "ada" },
-  "reviewers": [{ "id": "user_0123456789ac", "email": "grace@example.com", "githubLogin": "grace" }],
-  "skills": [{ "id": "skl_0123456789ab", "slug": "oauth2-integration", "title": "OAuth 2.0 integration" }],
+  "owner": { "id": "user_0123456789ab", "name": "Ada Lovelace", "email": "ada@example.com", "githubLogin": "ada" },
+  "reviewers": [{ "id": "user_0123456789ac", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
+  "skills": [{ "id": "skl_0123456789ab", "slug": "oauth2-integration", "title": "OAuth 2.0 integration", "useWhen": "A requirement adds sign-in with an outside identity provider." }],
   "unblockTo": null,
   "requirementIds": ["REQ-001"],
   "decisionIds": ["RFC-018"],
@@ -657,7 +664,27 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. The board reads every card's reviewers in one query. `skills` lists the card's skills, `[]` when it has none (RFC-056).
+`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056).
+
+`GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
+
+```json
+{
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "heading": "CSV export",
+      "statement": "Export orders as CSV.",
+      "sourceKind": "prd",
+      "sourcePath": "docs/prd/orders.md",
+      "accepted": true
+    }
+  ],
+  "rules": [{ "id": "rule_naming", "title": "Naming", "label": "global", "category": "naming" }]
+}
+```
+
+`requirements` lists the rows of `requirementIds` in the card's project, in the card's order. An id with no row in that project is left out. `rules` lists the rules the card's packs carry, as `conventions.ForCard` reads them (RFC-055): global rules first, then each stack's rules. `label` is `global` or the stack name. The rule body is not returned.
 
 ## Board and intake
 
@@ -715,11 +742,11 @@ Oldest first. Payload is the redacted JSON already stored. New transition payloa
       "accepted": false,
       "createdBy": null,
       "canEditReviewers": true,
-      "reviewers": [{ "id": "user_0123456789ab", "email": "grace@example.com", "githubLogin": "grace" }],
+      "reviewers": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
       "linkedCards": []
     }
   ],
-  "reviewerOptions": [{ "id": "user_0123456789ab", "email": "grace@example.com", "githubLogin": "grace" }],
+  "reviewerOptions": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
   "decisions": [
     {
       "id": "RFC-001",

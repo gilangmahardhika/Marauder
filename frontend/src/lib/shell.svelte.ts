@@ -2,6 +2,7 @@ export const shell = $state({
   title: 'Marauder',
   message: '',
   admin: false,
+  name: '',
   email: '',
   role: '',
   projectId: '',
