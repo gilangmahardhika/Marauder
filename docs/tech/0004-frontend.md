@@ -144,13 +144,16 @@ frontend/
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
   src/lib/components/IntakeActions.svelte
+  src/lib/components/RequirementRow.svelte
   src/lib/components/ReviewersPanel.svelte
   src/lib/components/RuleForm.svelte
   src/lib/components/StackForm.svelte
   src/lib/components/SkillForm.svelte
   src/lib/requirements.ts
+  src/lib/intake.ts
   src/lib/api.test.ts
   src/lib/conventions.test.ts
+  src/lib/intake.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
@@ -291,15 +294,23 @@ A link "Trace" goes to `/cards/{id}/trace`.
 
 `GET /api/projects/{projectId}/intake`.
 
-Each requirement is a block: id, accepted or not, a "Draft" badge when `sourceKind` is `draft`, a "Manual" badge when it is `manual`, statement, acceptance lines, source path or "Added by" with `createdBy`, and links to `linkedCards`. A parsed block with `createdBy` also says "Ingested by" that email. The block footer lists `reviewers` as badges, by GitHub login. A manual block has an Edit link to `/intake/[id]`. A parsed block whose `canEditReviewers` is true has a Reviewers link to the same page (RFC-054). Decisions are a list under them: id and statement.
+The page has two tabs, Requirements and Decisions, each with its count. `?tab=decisions` selects Decisions. The header badge says how many requirements are accepted.
 
-Button "Ingest" POSTs `ingest` and replaces the list. When the response has `skipped`, a notice names those ids and says the manual text was kept. Button "Add requirement" links to `/intake/new`. Button "Accept unaccepted ids" POSTs `accept` with the ids on screen whose `accepted` is false. It renders only when `canAccept` is true, and it is disabled while `draftPending` is true (RFC-053).
+A toolbar sits above each table. The search box matches id, statement, heading, source path, and acceptance lines, ignoring case. On Decisions it matches id, statement, and source path. The Requirements tab also has a status filter, "Needs acceptance", "Accepted", or "All", each with its count, and a source select: All sources, PRD, RFC, Manual, or Draft. The filters live in the URL as `q`, `status`, and `source`, so returning from `/intake/[id]` keeps them. Without `status`, the page shows "Needs acceptance" while any requirement is unaccepted, and "All" otherwise. When nothing matches, an empty state offers "Clear filters".
+
+Requirements are a table: a select checkbox, id, statement clamped to two lines with the source path under it ("Added by" with `createdBy` for a manual row), source badge ("Draft" in amber), reviewer count, the first of `linkedCards` as a link to `/cards/[id]` with "+n" for the rest, Accepted or Not accepted, and a details button with `aria-expanded`. The checkbox column renders only when a shown row can be accepted. Under 1280px wide the reviewer column is hidden, and under 720px the source and card columns are hidden too. Clicking the statement or the details button opens a row under it with the full statement, the acceptance lines, the source path or "Added by" with `createdBy`, "Ingested by" for a parsed row with `createdBy`, the `reviewers` as badges by GitHub login, and the card links. A manual row has an "Edit requirement" link to `/intake/[id]`. A parsed row whose `canEditReviewers` is true has an "Edit reviewers" link to the same page (RFC-054). Decisions are a table of id, statement, and source path.
+
+Each table renders 50 rows, then a "Show 50 more" button. Changing the tab, search, or a filter goes back to 50 rows and drops selected ids that are no longer shown.
+
+Button "Ingest" POSTs `ingest` and replaces the list. When the response has `skipped`, a notice names those ids and says the manual text was kept. Button "Add requirement" links to `/intake/new`.
+
+Acceptance needs `canAccept` (RFC-053). When it is false, there are no checkboxes and no accept buttons. When it is true, each unaccepted row has a checkbox, and the header checkbox selects every unaccepted row that the filter shows, including rows past the first 50. While any row is selected, a sticky bar at the bottom says how many, with Clear and the page's primary button, "Accept selected", which POSTs `accept` with the selected ids. "Accept all shown (n)" in the toolbar POSTs `accept` with every unaccepted id the filter shows. Both accept buttons are disabled while `draftPending` is true. After an accept, the selection is cleared and the page shows the returned intake.
 
 `/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
 
 Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by GitHub login with the email as the detail line. On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
 
-While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Saving acceptance".
+While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Accepting 3 requirements".
 
 ## Trace
 
@@ -484,6 +495,8 @@ npm run build
 | `CardActions` with `actions: []` | No Approve, Request changes, Reject, or Unblock control is rendered |
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
+| `IntakeActions` | Ingest and Add requirement render, and no accept button |
+| `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | Built `build/index.html` | Contains a CSP meta tag with `script-src 'self'` and a hash, and no `unsafe-inline` |

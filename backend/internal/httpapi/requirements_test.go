@@ -12,12 +12,13 @@ import (
 )
 
 type intakeRequirement struct {
-	ID         string   `json:"id"`
-	SourceKind string   `json:"sourceKind"`
-	Statement  string   `json:"statement"`
-	Acceptance []string `json:"acceptance"`
-	Accepted   bool     `json:"accepted"`
-	CreatedBy  *string  `json:"createdBy"`
+	ID          string   `json:"id"`
+	SourceKind  string   `json:"sourceKind"`
+	Statement   string   `json:"statement"`
+	Acceptance  []string `json:"acceptance"`
+	Accepted    bool     `json:"accepted"`
+	CreatedBy   *string  `json:"createdBy"`
+	LinkedCards []string `json:"linkedCards"`
 }
 
 type intakeReply struct {
@@ -124,6 +125,36 @@ func TestManualRequirementEdit(t *testing.T) {
 		if req.ID == "REQ-005" {
 			t.Fatal("REQ-005 still listed")
 		}
+	}
+}
+
+func TestIntakeLinkedCards(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	seedRequirement(t, srv, "REQ-001", "prd")
+	seedRequirement(t, srv, "REQ-002", "prd")
+	if _, err := srv.DB.Exec(`
+		INSERT INTO projects (id, tribe_id, name, repo_path, created_at)
+		VALUES ('proj_other', 'tribe_default', 'Other', '/tmp/other', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	mine, err := board.InsertCard(ctx, srv.DB, board.Card{Status: "backlog", RequirementIDs: []string{"REQ-001"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := board.InsertCard(ctx, srv.DB, board.Card{ProjectID: "proj_other", Status: "backlog", RequirementIDs: []string{"REQ-001", "REQ-002"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := getAuth(t, srv, "/api/projects/proj_default/intake", dev)
+	if rec.Code != 200 {
+		t.Fatalf("intake = %d %s", rec.Code, rec.Body.String())
+	}
+	if got := find(t, rec.Body.Bytes(), "REQ-001").LinkedCards; len(got) != 1 || got[0] != mine.ID {
+		t.Fatalf("REQ-001 linkedCards = %v, want [%s]", got, mine.ID)
+	}
+	if got := find(t, rec.Body.Bytes(), "REQ-002").LinkedCards; got == nil || len(got) != 0 {
+		t.Fatalf("REQ-002 linkedCards = %v, want []", got)
 	}
 }
 

@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"orchestrator/backend/internal/app"
@@ -365,6 +367,10 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
+	linked, err := linkedCards(r.Context(), db, projectID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
 			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, '')
@@ -394,7 +400,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		reqs = append(reqs, map[string]any{
 			"id": id, "sourceKind": kind, "sourcePath": path, "heading": heading,
 			"statement": statement, "acceptance": lines, "accepted": accepted,
-			"createdBy": nullString(createdBy.String), "linkedCards": []any{},
+			"createdBy": nullString(createdBy.String), "linkedCards": nonNil(linked[id]),
 			"reviewers":        named,
 			"canEditReviewers": intake.CanEditReviewers(user.ID, user.Role, creatorID),
 		})
@@ -420,6 +426,33 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		"draftPending": draft, "planError": plan, "canAccept": canAccept(user.Role),
 		"requirements": reqs, "decisions": decisions, "reviewerOptions": options,
 	}, nil
+}
+
+// linkedCards maps each requirement id to the ids of the project's cards
+// that name it, in card creation order.
+func linkedCards(ctx context.Context, db *sql.DB, projectID string) (map[string][]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, requirement_ids_json FROM cards
+		WHERE project_id = $1 ORDER BY created_at, id`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var id, reqs string
+		if err := rows.Scan(&id, &reqs); err != nil {
+			return nil, err
+		}
+		var ids []string
+		if err := json.Unmarshal([]byte(reqs), &ids); err != nil {
+			return nil, fmt.Errorf("card %s requirement ids: %w", id, err)
+		}
+		for _, req := range ids {
+			out[req] = append(out[req], id)
+		}
+	}
+	return out, rows.Err()
 }
 
 // canAccept reports whether a job role may accept requirements (RFC-053).

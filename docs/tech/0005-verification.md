@@ -92,6 +92,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
 | `TestManualRequirementAdd` | A Developer member adds with a blank id after `REQ-001` and gets `REQ-002`, unaccepted. A typed `REQ-010` is stored. A duplicate id is `409`. A bad id or empty statement is `422`. A non-member is `404` |
 | `TestManualRequirementEdit` | An edit of an accepted manual row clears acceptance. Editing or deleting a parsed row is `409`. Deleting a manual id a card lists is `409`. Deleting an unused manual row removes it |
+| `TestIntakeLinkedCards` | A card naming `REQ-001` is listed in that requirement's `linkedCards`. A card in another project naming `REQ-001` and `REQ-002` is not listed, and `REQ-002` has `[]` |
 | `TestIngestKeepsManual` | A manual `REQ-001`, then ingest of a PRD that defines `REQ-001`. The row stays manual with its text, and `Skipped` is `[REQ-001]` |
 | `TestSecretOmitted` | GET of the company GitHub, LLM, and project deploy settings has no token or key substring from the secrets file |
 | `TestModelSettingsAdminOnly` | A Lead Developer who is not an admin reads LLM and router settings, and gets `403` on PUT and on a family test. An admin saves them, and no response has the saved key |
