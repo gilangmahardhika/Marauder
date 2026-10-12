@@ -41,6 +41,59 @@ func New(baseURL, key string) *Client {
 }
 
 func (c *Client) Complete(ctx context.Context, req providers.Request) (providers.Response, error) {
+	params, opts := newParams(req)
+	completion, err := c.client.Chat.Completions.New(ctx, params, opts...)
+	if err != nil {
+		return providers.Response{}, c.wrap(err)
+	}
+	if len(completion.Choices) == 0 {
+		return providers.Response{}, errors.New("openai: response has no choices")
+	}
+	reasoning := ""
+	if field, ok := completion.Choices[0].Message.JSON.ExtraFields["reasoning_content"]; ok {
+		_ = json.Unmarshal([]byte(field.Raw()), &reasoning)
+	}
+	return response(completion, req.Model, reasoning), nil
+}
+
+// Stream sends req as a streaming request and calls onText with each piece of
+// reply text as it arrives. The returned Response is the whole reply, with the
+// usage of the final chunk.
+func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	params, opts := newParams(req)
+	params.StreamOptions = sdk.ChatCompletionStreamOptionsParam{IncludeUsage: sdk.Bool(true)}
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params, opts...)
+	defer stream.Close()
+	var acc sdk.ChatCompletionAccumulator
+	var reasoning strings.Builder
+	for stream.Next() {
+		chunk := stream.Current()
+		acc.AddChunk(chunk)
+		for _, choice := range chunk.Choices {
+			if choice.Index != 0 {
+				continue
+			}
+			if field, ok := choice.Delta.JSON.ExtraFields["reasoning_content"]; ok {
+				var text string
+				if json.Unmarshal([]byte(field.Raw()), &text) == nil {
+					reasoning.WriteString(text)
+				}
+			}
+			if choice.Delta.Content != "" {
+				onText(choice.Delta.Content)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return providers.Response{}, c.wrap(err)
+	}
+	if len(acc.Choices) == 0 {
+		return providers.Response{}, errors.New("openai: response has no choices")
+	}
+	return response(&acc.ChatCompletion, req.Model, reasoning.String()), nil
+}
+
+func newParams(req providers.Request) (sdk.ChatCompletionNewParams, []option.RequestOption) {
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = providers.DefaultMaxTokens
@@ -65,13 +118,12 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 	if req.Thinking == "enabled" || req.Thinking == "disabled" {
 		opts = append(opts, option.WithJSONSet("thinking", map[string]string{"type": req.Thinking}))
 	}
-	completion, err := c.client.Chat.Completions.New(ctx, params, opts...)
-	if err != nil {
-		return providers.Response{}, c.wrap(err)
-	}
-	if len(completion.Choices) == 0 {
-		return providers.Response{}, errors.New("openai: response has no choices")
-	}
+	return params, opts
+}
+
+// response maps the first choice of completion. reasoning is the reply's
+// reasoning_content, which the SDK keeps outside its typed fields.
+func response(completion *sdk.ChatCompletion, model, reasoning string) providers.Response {
 	choice := completion.Choices[0]
 	cached := int(completion.Usage.PromptTokensDetails.CachedTokens)
 	out := providers.Response{
@@ -81,11 +133,8 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		OutputTokens:      int(completion.Usage.CompletionTokens),
 		StopReason:        choice.FinishReason,
 	}
-	if field, ok := choice.Message.JSON.ExtraFields["reasoning_content"]; ok {
-		var text string
-		if json.Unmarshal([]byte(field.Raw()), &text) == nil && text != "" {
-			out.Reasoning = []providers.Reasoning{{Model: req.Model, Kind: "reasoning_content", Text: text}}
-		}
+	if reasoning != "" {
+		out.Reasoning = []providers.Reasoning{{Model: model, Kind: "reasoning_content", Text: reasoning}}
 	}
 	for _, call := range choice.Message.ToolCalls {
 		if call.Function.Name == "" {
@@ -99,7 +148,7 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 			BadArgs: bad,
 		})
 	}
-	return out, nil
+	return out
 }
 
 func messages(req providers.Request) []sdk.ChatCompletionMessageParamUnion {

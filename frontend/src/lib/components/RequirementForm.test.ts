@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { expect, test, vi } from 'vitest';
+import type { RefineEvent, RefineRequest } from '$lib/types';
 import RequirementForm from './RequirementForm.svelte';
 
 test('statement and acceptance start tall and grow', () => {
@@ -59,56 +60,85 @@ test('an empty statement and acceptance have nothing to preview', async () => {
   }
 });
 
-const proposal = {
-  statement: 'Members export the board as CSV.',
-  acceptance: ['The export has one row per card.', 'Each row lists the card id.'],
-  notes: 'Split the vague line.',
-  modelId: 'model-a'
-};
+/** A stream that replies with text in two deltas and then done. */
+function replying(text: string, acceptance?: string[]) {
+  return vi.fn(async (_body: RefineRequest, onEvent: (event: RefineEvent) => void) => {
+    onEvent({ kind: 'start', modelId: 'model-a' });
+    const cut = Math.floor(text.length / 2);
+    onEvent({ kind: 'delta', text: text.slice(0, cut) });
+    onEvent({ kind: 'delta', text: text.slice(cut) });
+    onEvent({ kind: 'done', text, acceptance, modelId: 'model-a' });
+  });
+}
 
-test('without refine there is no refine button', () => {
+test('without refine there are no refine buttons', () => {
   render(RequirementForm, { statement: 'Export', acceptance: '' });
-  expect(screen.queryByRole('button', { name: 'Refine with AI' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /with AI/ })).toBeNull();
 });
 
-test('Refine shows the comparison and Apply fills the fields', async () => {
-  const refine = vi.fn().mockResolvedValue(proposal);
+test('each field has its own refine icon, and opening one does not open the other', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine: replying('x') });
+  const statementButton = screen.getByRole('button', { name: 'Refine statement with AI' });
+  const acceptanceButton = screen.getByRole('button', { name: 'Refine acceptance with AI' });
+  expect(statementButton.getAttribute('aria-expanded')).toBe('false');
+  expect(statementButton.className).toContain('size-11');
+
+  await fireEvent.click(statementButton);
+  expect(statementButton.getAttribute('aria-expanded')).toBe('true');
+  expect(acceptanceButton.getAttribute('aria-expanded')).toBe('false');
+  expect(screen.getAllByLabelText('What to improve (optional)')).toHaveLength(1);
+  expect(document.getElementById('refine-statement-panel')).toBeTruthy();
+  expect(document.getElementById('refine-acceptance-panel')).toBeNull();
+
+  await fireEvent.click(acceptanceButton);
+  expect(screen.getAllByLabelText('What to improve (optional)')).toHaveLength(2);
+  await fireEvent.click(statementButton);
+  expect(document.getElementById('refine-statement-panel')).toBeNull();
+  expect(document.getElementById('refine-acceptance-panel')).toBeTruthy();
+});
+
+test('Apply on the statement changes only the statement', async () => {
+  const refine = replying('Members export the board as CSV.');
   render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine });
-  await fireEvent.input(screen.getByLabelText('What to improve (optional)'), { target: { value: ' Make it testable ' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Refine with AI' }));
-  expect(refine).toHaveBeenCalledWith({ statement: 'Export the board.', acceptance: ['Works well.'], instructions: 'Make it testable' });
-  expect(await screen.findByRole('region', { name: 'Refined requirement' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(refine.mock.calls[0][0]).toEqual({ field: 'statement', statement: 'Export the board.', acceptance: ['Works well.'], instructions: '' });
+  await screen.findByRole('region', { name: 'Refined statement' });
   expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Export the board.');
 
-  await fireEvent.click(screen.getByRole('button', { name: 'Apply to form' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Members export the board as CSV.');
+  expect((screen.getByLabelText('Acceptance') as HTMLTextAreaElement).value).toBe('- Works well.');
+  expect(document.getElementById('refine-statement-panel')).toBeNull();
+});
+
+test('Apply on acceptance changes only the acceptance lines', async () => {
+  const lines = ['The export has one row per card.', 'Each row lists the card id.'];
+  const refine = replying(lines.join('\n'), lines);
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(refine.mock.calls[0][0].field).toBe('acceptance');
+  await screen.findByRole('region', { name: 'Refined acceptance' });
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   expect((screen.getByLabelText('Acceptance') as HTMLTextAreaElement).value).toBe(
     '- The export has one row per card.\n- Each row lists the card id.'
   );
-  expect(screen.queryByRole('region', { name: 'Refined requirement' })).toBeNull();
+  expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Export the board.');
 });
 
-test('Discard keeps the original and an edit after asking is flagged', async () => {
-  const refine = vi.fn().mockResolvedValue(proposal);
-  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine });
-  await fireEvent.click(screen.getByRole('button', { name: 'Refine with AI' }));
-  await screen.findByRole('region', { name: 'Refined requirement' });
-  const statement = screen.getByLabelText('Statement') as HTMLTextAreaElement;
-  await fireEvent.input(statement, { target: { value: 'Export the board today.' } });
+test('an edit after asking is flagged, and Preview hides the refine icons', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine: replying('Members export the board.') });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  await screen.findByRole('region', { name: 'Refined statement' });
+  await fireEvent.input(screen.getByLabelText('Statement'), { target: { value: 'Export the board today.' } });
   expect(screen.getByText(/Apply replaces those edits/)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
-  expect(screen.queryByRole('region', { name: 'Refined requirement' })).toBeNull();
-  expect(statement.value).toBe('Export the board today.');
-});
+  expect(screen.queryByRole('region', { name: 'Refined statement' })).toBeNull();
+  expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Export the board today.');
 
-test('a failed refine shows its message and an empty statement sends nothing', async () => {
-  const refine = vi.fn().mockRejectedValue(new Error('set a model for the implement route in Router settings to refine requirements'));
-  render(RequirementForm, { statement: '  ', acceptance: '', refine });
-  await fireEvent.click(screen.getByRole('button', { name: 'Refine with AI' }));
-  expect(screen.getByRole('alert').textContent).toBe('Write a statement first, then refine it.');
-  expect(refine).not.toHaveBeenCalled();
-
-  await fireEvent.input(screen.getByLabelText('Statement'), { target: { value: 'Export' } });
-  await fireEvent.click(screen.getByRole('button', { name: 'Refine with AI' }));
-  expect((await screen.findByRole('alert')).textContent).toContain('implement route');
+  await fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+  expect(screen.queryByRole('button', { name: /with AI/ })).toBeNull();
 });

@@ -736,3 +736,15 @@ Packages: `internal/intake`, `internal/contextpack`, `internal/app`, `internal/h
 - A "Refine with AI" button, a before and after comparison, and Apply and Discard on the new and edit pages.
 
 Done when: `TestRefineRequirementProposal`, `TestRefineDoesNotSave`, `TestRefineNoImplementRoute`, `TestRefineInvalidProposal`, `TestRefineRequiresMember`, `TestRefinePromptMarkers`, `TestRefineRedactsKeys`, the `textdiff`, `RefineCompare`, `RequirementForm`, and edit page Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 51: Refine one field at a time, streamed
+
+Goal: The statement and the acceptance lines refine apart, and the reply streams into the page (RFC-087, under REQ-083).
+
+Packages: `internal/providers`, `internal/router`, `internal/app`, `internal/contextpack`, `internal/httpapi`, frontend `api.ts`, `Field`, `RequirementForm`, `RefinePanel`, `RefineCompare`.
+
+- `providers.Streamer` in the anthropic, openai, and fake clients, and a routed stream that falls back only before the first piece of text.
+- `app.RefineField` with plain-text field prompts, a redact buffer, the save rules on the finished text, and `field` on the event. The refine route streams `start`, `delta`, and `done` or `error`.
+- A spark button and a refine box per field, with streamed text, Stop, the field's comparison, Apply, and Discard.
+
+Done when: `TestAnthropicStream`, `TestOpenAIStream`, `TestRoutedStreamFallsBackBeforeFirstToken`, `TestRoutedStreamNoRetryAfterToken`, `TestRefineFieldStreams`, `TestRefineFieldAcceptanceLines`, `TestRefineFieldRedactsSplitKey`, `TestRefineFieldErrorsBeforeStream`, `TestRefineFieldCancel`, `TestRefinePromptMarkers`, the `streamRefine`, `RefinePanel`, `RequirementForm`, and edit page Vitest cases, `npm run check`, and the rest of the suite.

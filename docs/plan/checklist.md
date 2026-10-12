@@ -806,3 +806,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestRefineRedactsKeys`
 - [x] `textdiff`, `RefineCompare`, `RequirementForm`, and edit page Vitest
 - [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
+
+## Sprint 51: Refine one field at a time, streamed
+
+- [x] `providers.Streamer` in anthropic, openai, and fake.
+- [x] Routed stream falls back only before the first piece of text.
+- [x] `app.RefineField`, redact buffer, save rules on the finished text, streamed refine route.
+- [x] Spark button and refine box per field, streamed text, Stop, comparison, Apply, Discard.
+- [x] `TestAnthropicStream`
+- [x] `TestOpenAIStream`
+- [x] `TestRoutedStreamFallsBackBeforeFirstToken`
+- [x] `TestRoutedStreamNoRetryAfterToken`
+- [x] `TestRefineFieldStreams`
+- [x] `TestRefineFieldAcceptanceLines`
+- [x] `TestRefineFieldRedactsSplitKey`
+- [x] `TestRefineFieldErrorsBeforeStream`
+- [x] `TestRefineFieldCancel`
+- [x] `TestRefinePromptMarkers`
+- [x] `streamRefine`, `RefinePanel`, `RequirementForm`, and edit page Vitest
+- [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes

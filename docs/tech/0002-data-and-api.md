@@ -339,7 +339,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
-| `requirement_refined` | `requirementId` (`new` on the new-requirement form), `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens`. No requirement or proposal text. The row has the project and the actor, and no card (RFC-086) |
+| `requirement_refined` | `requirementId` (`new` on the new-requirement form), `field` (`statement` or `acceptance`, RFC-087), `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens`. No requirement or refined text. The row has the project and the actor, and no card (RFC-086) |
 | `assertion_failed` | `name`, `detail` |
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
@@ -924,13 +924,24 @@ Allowed for a Lead Developer or an admin who is a member. Anyone else is `403`, 
 
 `PUT /api/projects/{projectId}/requirements/{id}` takes `{ "statement": "...", "acceptance": [] }` with the same rules. It changes only a manual row. A changed statement or acceptance list clears `accepted_at` and `accepted_by` (REQ-004). A row parsed from the repository or drafted by the planner is `409`. An unknown id is `404`.
 
-`POST /api/projects/{projectId}/requirements/refine` takes `{ "requirementId": "", "statement": "...", "acceptance": [], "instructions": "" }` and returns the implement model's proposal without saving it (RFC-086):
+`POST /api/projects/{projectId}/requirements/refine` takes `{ "field": "statement", "requirementId": "", "statement": "...", "acceptance": [], "instructions": "" }` and streams the implement model's new text for that one field without saving it (RFC-086, RFC-087). `field` is `statement` or `acceptance`.
 
-```json
-{ "statement": "...", "acceptance": ["..."], "notes": "What changed and why", "modelId": "claude-sonnet" }
+Any member who can see the project may call it. A missing or unknown `field` is `422` on `field`. `statement` and `acceptance` follow the save rules and `instructions` is at most 1,000 characters, otherwise `422` with field errors. No model on the `implement` route is `409 router_config`. These are JSON replies, sent before anything streams. A provider failure or a timeout before the first piece of text is `502 provider_error`, also JSON.
+
+Otherwise the reply is `200` with `Content-Type: text/event-stream` and `Cache-Control: no-store`, flushed after each event:
+
+```text
+event: start
+data: {"modelId":"claude-sonnet"}
+
+event: delta
+data: {"text":"Members export "}
+
+event: done
+data: {"text":"The export has one row per card.\nEach row lists the card id.","acceptance":["The export has one row per card.","Each row lists the card id."],"modelId":"claude-sonnet"}
 ```
 
-Any member who can see the project may call it. `statement` and `acceptance` follow the save rules and `instructions` is at most 1,000 characters, otherwise `422` with field errors. No model on the `implement` route is `409 router_config`. A provider failure, a timeout, or a reply that is not one valid `propose_refinement` call is `502 provider_error`. The proposal passes the save rules, so its acceptance lines have no list markers, and `notes` is at most 2,000 characters.
+`start` comes once, before the first `delta`, and names the model that answers, which may be the route's fallback. Each `delta` is a piece of redacted text in order. `done` has the whole text after the save rules; for `acceptance` it also has the lines, with blank lines and list markers dropped, and `text` is those lines joined by newlines. A provider failure after text has streamed, or finished text that fails the save rules (an empty statement, more than 50 lines, a line over 1,000 characters, no lines), ends the stream with `event: error` and `{"code":"provider_error","message":"..."}` instead of `done`. Closing the connection cancels the model request. Model keys never appear in any event.
 
 `DELETE /api/projects/{projectId}/requirements/{id}` removes a manual row and returns the intake shape. A row that is not manual, or a manual row that a card in that project lists in `requirementIds`, is `409`. An unknown id is `404`.
 

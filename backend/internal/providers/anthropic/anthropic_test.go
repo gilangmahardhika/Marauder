@@ -367,3 +367,48 @@ func TestAnthropicCacheUsage(t *testing.T) {
 		t.Fatalf("usage = in %d cached %d out %d, want 107, 500, 3", resp.InputTokens, resp.CachedInputTokens, resp.OutputTokens)
 	}
 }
+
+func TestAnthropicStream(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":9,"cache_creation_input_tokens":2,"cache_read_input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"there"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":4}}`,
+			`{"type":"message_stop"}`,
+		}
+		for _, event := range events {
+			var head struct{ Type string }
+			_ = json.Unmarshal([]byte(event), &head)
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", head.Type, event)
+			w.(http.Flusher).Flush()
+		}
+	}))
+	defer srv.Close()
+
+	var deltas []string
+	resp, err := anthropic.New(srv.URL, key).Stream(context.Background(), providers.Request{Model: "claude-test", User: "hi"}, func(text string) {
+		deltas = append(deltas, text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["stream"] != true {
+		t.Fatalf("body = %v", got)
+	}
+	if strings.Join(deltas, "|") != "Hello |there" {
+		t.Fatalf("deltas = %q", deltas)
+	}
+	if resp.Text != "Hello there" || resp.StopReason != "end_turn" {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if resp.InputTokens != 11 || resp.CachedInputTokens != 5 || resp.OutputTokens != 4 {
+		t.Fatalf("usage = %+v", resp)
+	}
+}

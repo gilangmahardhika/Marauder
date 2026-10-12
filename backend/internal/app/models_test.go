@@ -137,3 +137,80 @@ func TestRateLimitWaitsThenRetries(t *testing.T) {
 		t.Fatalf("did not wait for retry-after: %s", waited)
 	}
 }
+
+func streamChunk(text string) string {
+	return `data: {"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"` + text + `"},"finish_reason":null}]}` + "\n\n"
+}
+
+func streamFamilies(url string) (settings.Config, settings.Secrets) {
+	var cfg settings.Config
+	cfg.LLM.Families = []settings.Family{
+		{ID: "primary", Protocol: "openai", BaseURL: url + "/primary", Models: []settings.Model{{ID: "big"}}},
+		{ID: "backup", Protocol: "openai", BaseURL: url + "/backup", Models: []settings.Model{{ID: "small"}}},
+	}
+	return cfg, settings.Secrets{LLMKeys: map[string]string{"primary": "k-primary-1", "backup": "k-backup-1"}}
+}
+
+func TestRoutedStreamFallsBackBeforeFirstToken(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls[r.URL.Path]++
+		mu.Unlock()
+		if strings.HasPrefix(r.URL.Path, "/primary/") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":{"message":"overloaded","type":"server_error"}}`)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, streamChunk("fallback ")+streamChunk("answer")+"data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	cfg, secrets := streamFamilies(srv.URL)
+
+	var deltas []string
+	streamer := app.RoutedProvider(cfg, secrets, "big", "small").(providers.Streamer)
+	resp, err := streamer.Stream(context.Background(), providers.Request{User: "hi"}, func(text string) {
+		deltas = append(deltas, text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(deltas, "|") != "fallback |answer" || resp.Text != "fallback answer" || resp.Model != "small" {
+		t.Fatalf("deltas %q resp %+v", deltas, resp)
+	}
+	if calls["/primary/chat/completions"] != 2 || calls["/backup/chat/completions"] != 1 {
+		t.Fatalf("calls = %v", calls)
+	}
+}
+
+func TestRoutedStreamNoRetryAfterToken(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls[r.URL.Path]++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, streamChunk("partial ")+`data: {"error":{"message":"connection reset by k-primary-1"}}`+"\n\n")
+	}))
+	defer srv.Close()
+	cfg, secrets := streamFamilies(srv.URL)
+
+	var deltas []string
+	streamer := app.RoutedProvider(cfg, secrets, "big", "small").(providers.Streamer)
+	_, err := streamer.Stream(context.Background(), providers.Request{User: "hi"}, func(text string) {
+		deltas = append(deltas, text)
+	})
+	if !errors.Is(err, app.ErrProvider) {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Join(deltas, "|") != "partial " {
+		t.Fatalf("deltas = %q", deltas)
+	}
+	if calls["/primary/chat/completions"] != 1 || calls["/backup/chat/completions"] != 0 {
+		t.Fatalf("calls = %v", calls)
+	}
+}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, deleteRequirement, getIntake, refineRequirement, unreachable, updateRequirement } from '$lib/api';
+  import { ApiError, deleteRequirement, getIntake, streamRefine, unreachable, updateRequirement } from '$lib/api';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
   import { fromLines, toLines } from '$lib/requirements';
@@ -115,14 +115,14 @@
     {/snippet}
     <div class="flex flex-col gap-6">
       <form onsubmit={save}>
-        <Panel title="Requirement" hint="Changing the text, by hand or with Refine with AI, clears acceptance when you save.">
+        <Panel title="Requirement" hint="Changing the text, by hand or with the refine buttons, clears acceptance when you save.">
           <RequirementForm
             id={requirementId}
             idLocked
             bind:statement
             bind:acceptance
             {fields}
-            refine={(body) => refineRequirement({ ...body, requirementId })}
+            refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId }, onEvent, signal)}
           />
           {#snippet footer()}
             <Button variant="primary" type="submit" disabled={busy}>Save</Button>

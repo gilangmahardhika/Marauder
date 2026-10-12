@@ -1,4 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
+import type { RefineEvent } from './types';
 import {
   addRequirement,
   createProject,
@@ -11,6 +12,7 @@ import {
   setAIReviewMode,
   setInstructions,
   setTribeAdmin,
+  streamRefine,
   syncRepository
 } from './api';
 import { session } from './session';
@@ -150,4 +152,86 @@ test('putMe saves the caller name', async () => {
   );
   await putMe({ name: 'Ada Lovelace' });
   expect(calls).toEqual([{ url: 'http://127.0.0.1:8787/api/me', method: 'PUT', body: '{"name":"Ada Lovelace"}' }]);
+});
+
+function chunked(parts: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const part of parts) controller.enqueue(encoder.encode(part));
+      controller.close();
+    }
+  });
+}
+
+const refineBody = {
+  field: 'acceptance' as const,
+  statement: 'Export the board.',
+  acceptance: ['Works well.'],
+  instructions: '',
+  requirementId: 'REQ-005'
+};
+
+test('streamRefine reads events split across chunks', async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(
+        chunked([
+          'event: start\ndata: {"modelId":"model-a"}\n\nevent: del',
+          'ta\ndata: {"text":"One row "}\n',
+          '\nevent: delta\ndata: {"text":"per card."}\n\n',
+          'event: done\ndata: {"text":"One row per card.","acceptance":["One row per card."],"modelId":"model-a"}\n\n'
+        ]),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      );
+    })
+  );
+  session.setProject('proj_widget');
+  const events: RefineEvent[] = [];
+  await streamRefine(refineBody, (event) => events.push(event), new AbortController().signal);
+  expect(calls[0].url).toBe('http://127.0.0.1:8787/api/projects/proj_widget/requirements/refine');
+  expect(new Headers(calls[0].init.headers).get('Authorization')).toBe('Bearer stored-bearer');
+  expect(JSON.parse(String(calls[0].init.body))).toEqual(refineBody);
+  expect(events).toEqual([
+    { kind: 'start', modelId: 'model-a' },
+    { kind: 'delta', text: 'One row ' },
+    { kind: 'delta', text: 'per card.' },
+    { kind: 'done', text: 'One row per card.', acceptance: ['One row per card.'], modelId: 'model-a' }
+  ]);
+});
+
+test('streamRefine throws ApiError for a 409 before the stream', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { code: 'router_config', message: 'set a model for the implement route in Router settings' } }),
+          { status: 409, headers: { 'Content-Type': 'application/json' } }
+        )
+    )
+  );
+  const onEvent = vi.fn();
+  await expect(streamRefine(refineBody, onEvent, new AbortController().signal)).rejects.toMatchObject({
+    name: 'ApiError',
+    status: 409,
+    code: 'router_config',
+    message: expect.stringContaining('implement route')
+  });
+  expect(onEvent).not.toHaveBeenCalled();
+});
+
+test('streamRefine passes an abort through instead of calling it a network error', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      throw init.signal?.aborted ? new DOMException('aborted', 'AbortError') : new TypeError('failed');
+    })
+  );
+  const controller = new AbortController();
+  controller.abort();
+  await expect(streamRefine(refineBody, vi.fn(), controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
 });

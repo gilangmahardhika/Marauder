@@ -41,6 +41,40 @@ func New(baseURL, key string) *Client {
 }
 
 func (c *Client) Complete(ctx context.Context, req providers.Request) (providers.Response, error) {
+	params, maxTokens := newParams(req)
+	msg, err := c.client.Messages.New(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
+	if err != nil {
+		return providers.Response{}, c.wrap(err)
+	}
+	return response(msg, req.Model), nil
+}
+
+// Stream sends req as a streaming request and calls onText with each piece of
+// reply text as it arrives. The returned Response is the whole reply, as
+// Complete would return it.
+func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	params, maxTokens := newParams(req)
+	stream := c.client.Messages.NewStreaming(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
+	defer stream.Close()
+	var msg sdk.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := msg.Accumulate(event); err != nil {
+			return providers.Response{}, c.wrap(err)
+		}
+		if event.Type == "content_block_delta" {
+			if delta := event.AsContentBlockDelta().Delta; delta.Type == "text_delta" && delta.Text != "" {
+				onText(delta.Text)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return providers.Response{}, c.wrap(err)
+	}
+	return response(&msg, req.Model), nil
+}
+
+func newParams(req providers.Request) (sdk.MessageNewParams, int) {
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = providers.DefaultMaxTokens
@@ -80,10 +114,10 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		}
 		params.Tools = append(params.Tools, sdk.ToolUnionParam{OfTool: &param})
 	}
-	msg, err := c.client.Messages.New(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
-	if err != nil {
-		return providers.Response{}, c.wrap(err)
-	}
+	return params, maxTokens
+}
+
+func response(msg *sdk.Message, model string) providers.Response {
 	out := providers.Response{
 		InputTokens:       int(msg.Usage.InputTokens + msg.Usage.CacheCreationInputTokens),
 		CachedInputTokens: int(msg.Usage.CacheReadInputTokens),
@@ -93,9 +127,9 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 	for _, block := range msg.Content {
 		switch block.Type {
 		case "thinking":
-			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: req.Model, Kind: "thinking", Text: block.Thinking, Signature: block.Signature})
+			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: model, Kind: "thinking", Text: block.Thinking, Signature: block.Signature})
 		case "redacted_thinking":
-			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: req.Model, Kind: "redacted_thinking", Data: block.Data})
+			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: model, Kind: "redacted_thinking", Data: block.Data})
 		case "text":
 			out.Text += block.Text
 		case "tool_use":
@@ -108,7 +142,7 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 			out.ToolCalls = append(out.ToolCalls, call)
 		}
 	}
-	return out, nil
+	return out
 }
 
 // requestTimeout is the SDK's own estimate for a non-streaming reply of

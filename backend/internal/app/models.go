@@ -101,6 +101,67 @@ func (p routedProvider) Complete(ctx context.Context, req providers.Request) (pr
 	return resp, err
 }
 
+// Stream is Complete for a streaming reply. The rate-limit wait, the retry,
+// and the fallback apply only until the first text reaches onText; after that
+// an error ends the request (RFC-087).
+func (p routedProvider) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	return p.streamFrom(ctx, req, nil, onText)
+}
+
+// streamFrom is Stream that also calls onStart with the answering model, once,
+// right before its first text.
+func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, onStart func(model string), onText func(string)) (providers.Response, error) {
+	var resp providers.Response
+	sent := false
+	err := router.Call(p.primary, p.fallback, func(model string) error {
+		client, _, _, err := llm.ForModel(p.cfg, p.secrets, model)
+		if err != nil {
+			return err
+		}
+		next := llm.WithOptions(req, llm.Options(p.cfg, model))
+		next.Model = model
+		forward := func(text string) {
+			if !sent {
+				sent = true
+				if onStart != nil {
+					onStart(model)
+				}
+			}
+			onText(text)
+		}
+		resp, err = stream(ctx, client, next, forward)
+		var limited *providers.RateLimited
+		if !sent && errors.As(err, &limited) {
+			if werr := sleepCtx(ctx, rateWait(limited.Wait)); werr != nil {
+				return werr
+			}
+			resp, err = stream(ctx, client, next, forward)
+		}
+		resp.Model = model
+		if err != nil && sent {
+			return router.ErrNoRetry{Err: err}
+		}
+		return err
+	})
+	if err != nil && ctx.Err() == nil {
+		return resp, fmt.Errorf("%w: %s", ErrProvider, strings.TrimPrefix(err.Error(), "provider_error: "))
+	}
+	return resp, err
+}
+
+// stream sends req through the client's Stream, or through Complete as one
+// piece of text for a client that cannot stream.
+func stream(ctx context.Context, client providers.Provider, req providers.Request, onText func(string)) (providers.Response, error) {
+	if s, ok := client.(providers.Streamer); ok {
+		return s.Stream(ctx, req, onText)
+	}
+	resp, err := client.Complete(ctx, req)
+	if err == nil && resp.Text != "" {
+		onText(resp.Text)
+	}
+	return resp, err
+}
+
 func rateWait(asked time.Duration) time.Duration {
 	if asked <= 0 {
 		return rateLimitDefault

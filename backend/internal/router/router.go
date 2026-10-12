@@ -1,6 +1,9 @@
 package router
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 func TaskClass(risk string, attemptsUsed int) (string, error) {
 	if risk != "low" && risk != "high" {
@@ -49,13 +52,25 @@ func ReviewModel(authorFamily string, families []Family) (model string, independ
 
 type Caller func(model string) error
 
+// ErrNoRetry wraps an error that Call returns at once, without the retry or
+// the fallback, such as a stream that failed after its first text.
+type ErrNoRetry struct{ Err error }
+
+func (e ErrNoRetry) Error() string { return e.Err.Error() }
+func (e ErrNoRetry) Unwrap() error { return e.Err }
+
 func Call(primary, fallback string, call Caller) error {
 	err := call(primary)
 	if err == nil {
 		return nil
 	}
+	if errors.As(err, new(ErrNoRetry)) {
+		return fmt.Errorf("provider_error: %w", err)
+	}
 	if err2 := call(primary); err2 == nil {
 		return nil
+	} else if errors.As(err2, new(ErrNoRetry)) {
+		return fmt.Errorf("provider_error: %w", err2)
 	} else {
 		err = err2
 	}

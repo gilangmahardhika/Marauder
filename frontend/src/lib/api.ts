@@ -1,4 +1,4 @@
-import { session } from '$lib/session';
+import { session } from "$lib/session";
 import type {
   AccountGitHub,
   AIReviewMode,
@@ -18,9 +18,9 @@ import type {
   ProjectLinks,
   ProjectRecord,
   Repository,
+  RefineEvent,
   RefineRequest,
   RequirementDraft,
-  RequirementRefinement,
   RouterSettings,
   RuleInput,
   SessionUser,
@@ -31,69 +31,114 @@ import type {
   TraceResponse,
   TribeCandidate,
   TribeMember,
-  TribeRecord
-} from '$lib/types';
+  TribeRecord,
+} from "$lib/types";
 
-const base = 'http://127.0.0.1:8787';
+const base = "http://127.0.0.1:8787";
 
 export class ApiError extends Error {
   status: number;
   code: string;
   fields: Record<string, string>;
 
-  constructor(status: number, code: string, message: string, fields: Record<string, string> = {}) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    fields: Record<string, string> = {},
+  ) {
     super(message);
-    this.name = 'ApiError';
+    this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.fields = fields;
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+type ErrorBody = {
+  error?: { code?: string; message?: string; fields?: Record<string, string> };
+};
+
+/** Sends one request with the session's bearer. An abort rethrows as is; any other fetch failure is a network ApiError. */
+async function send(path: string, init: RequestInit): Promise<Response> {
   const headers = new Headers(init.headers);
   const bearer = session.bearer();
-  if (bearer) headers.set('Authorization', `Bearer ${bearer}`);
-  if (init.body != null) headers.set('Content-Type', 'application/json');
+  if (bearer) headers.set("Authorization", `Bearer ${bearer}`);
+  if (init.body != null) headers.set("Content-Type", "application/json");
   let response: Response;
   try {
     response = await fetch(base + path, { ...init, headers });
-  } catch {
-    throw new ApiError(0, 'network', 'API unreachable at http://127.0.0.1:8787');
+  } catch (error) {
+    if (init.signal?.aborted) throw error;
+    throw new ApiError(
+      0,
+      "network",
+      "API unreachable at http://127.0.0.1:8787",
+    );
   }
-  const text = await response.text();
-  const payload = text
-    ? (JSON.parse(text) as { error?: { code?: string; message?: string; fields?: Record<string, string> } })
-    : {};
-  if (response.status === 401 && path !== '/api/session') {
+  if (response.status === 401 && path !== "/api/session") {
     session.clear();
     try {
-      window.location.assign('/login');
+      window.location.assign("/login");
     } catch {
       /* The test runner has no navigation. */
     }
   }
-  if (!response.ok) {
-    const error = payload.error ?? {};
-    throw new ApiError(
-      response.status,
-      error.code ?? 'error',
-      error.message ?? response.statusText,
-      error.fields ?? {}
-    );
-  }
+  return response;
+}
+
+function failure(response: Response, payload: ErrorBody): ApiError {
+  const error = payload.error ?? {};
+  return new ApiError(
+    response.status,
+    error.code ?? "error",
+    error.message ?? response.statusText,
+    error.fields ?? {},
+  );
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await send(path, init);
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as ErrorBody) : {};
+  if (!response.ok) throw failure(response, payload);
   return payload as T;
 }
 
+/** Reads complete server-sent events from buffer and returns them with the unfinished rest. */
+export function parseEvents(buffer: string): {
+  events: RefineEvent[];
+  rest: string;
+} {
+  const blocks = buffer.replace(/\r\n?/g, "\n").split("\n\n");
+  const rest = blocks.pop() ?? "";
+  const events: RefineEvent[] = [];
+  for (const block of blocks) {
+    let kind = "";
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) kind = line.slice(6).trim();
+      else if (line.startsWith("data:"))
+        data.push(line.slice(5).replace(/^ /, ""));
+    }
+    if (!kind || data.length === 0) continue;
+    events.push({ kind, ...JSON.parse(data.join("\n")) } as RefineEvent);
+  }
+  return { events, rest };
+}
+
 export function openSession(email: string, password: string) {
-  return request<{ bearer: string; expiresAt: string; user: SessionUser }>('/api/session', {
-    method: 'POST',
-    body: JSON.stringify({ email, password })
-  });
+  return request<{ bearer: string; expiresAt: string; user: SessionUser }>(
+    "/api/session",
+    {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    },
+  );
 }
 
 export function closeSession() {
-  return request<void>('/api/session', { method: 'DELETE' });
+  return request<void>("/api/session", { method: "DELETE" });
 }
 
 type Me = SessionUser & {
@@ -104,33 +149,39 @@ type Me = SessionUser & {
 };
 
 export function getMe() {
-  return request<Me>('/api/me');
+  return request<Me>("/api/me");
 }
 
 export function putMe(body: { name: string }) {
-  return request<Me>('/api/me', { method: 'PUT', body: JSON.stringify(body) });
+  return request<Me>("/api/me", { method: "PUT", body: JSON.stringify(body) });
 }
 
 export function changePassword(currentPassword: string, newPassword: string) {
-  return request<void>('/api/me/password', {
-    method: 'PUT',
-    body: JSON.stringify({ currentPassword, newPassword })
+  return request<void>("/api/me/password", {
+    method: "PUT",
+    body: JSON.stringify({ currentPassword, newPassword }),
   });
 }
 
 export function getMyGitHub() {
-  return request<AccountGitHub>('/api/me/github');
+  return request<AccountGitHub>("/api/me/github");
 }
 
 export function putMyGitHub(body: Record<string, unknown>) {
-  return request<AccountGitHub>('/api/me/github', { method: 'PUT', body: JSON.stringify(body) });
+  return request<AccountGitHub>("/api/me/github", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function testMyGitHub() {
-  return request<{ ok: boolean; login?: string; message?: string }>('/api/me/github/test', {
-    method: 'POST',
-    body: '{}'
-  });
+  return request<{ ok: boolean; login?: string; message?: string }>(
+    "/api/me/github/test",
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
 }
 
 function projectPrefix() {
@@ -138,7 +189,7 @@ function projectPrefix() {
 }
 
 export function getProjects() {
-  return request<{ projects: ProjectRecord[] }>('/api/projects');
+  return request<{ projects: ProjectRecord[] }>("/api/projects");
 }
 
 export function createProject(body: {
@@ -148,56 +199,88 @@ export function createProject(body: {
   baseBranch: string;
   links: { projectId: string; sharedPaths: string[] }[];
 }) {
-  return request<ProjectRecord & { links: ProjectLink[] }>('/api/projects', {
-    method: 'POST',
-    body: JSON.stringify(body)
+  return request<ProjectRecord & { links: ProjectLink[] }>("/api/projects", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
 export function getTribes() {
-  return request<{ tribes: TribeRecord[] }>('/api/tribes');
+  return request<{ tribes: TribeRecord[] }>("/api/tribes");
 }
 
 export function createTribe(name: string) {
-  return request<TribeRecord>('/api/tribes', { method: 'POST', body: JSON.stringify({ name }) });
+  return request<TribeRecord>("/api/tribes", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
 }
 
 export function addMember(tribeId: string, userId: string) {
-  return request<void>(`/api/tribes/${tribeId}/members`, { method: 'POST', body: JSON.stringify({ userId }) });
+  return request<void>(`/api/tribes/${tribeId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
 }
 
 export function getMembers(tribeId: string) {
   return request<{ members: TribeMember[] }>(`/api/tribes/${tribeId}/members`);
 }
 
-export function setTribeAdmin(tribeId: string, userId: string, tribeAdmin: boolean) {
+export function setTribeAdmin(
+  tribeId: string,
+  userId: string,
+  tribeAdmin: boolean,
+) {
   return request<void>(`/api/tribes/${tribeId}/members/${userId}`, {
-    method: 'PUT',
-    body: JSON.stringify({ tribeAdmin })
+    method: "PUT",
+    body: JSON.stringify({ tribeAdmin }),
   });
 }
 
 export function getTribeCandidates(tribeId: string) {
-  return request<{ users: TribeCandidate[] }>(`/api/tribes/${tribeId}/candidates`);
+  return request<{ users: TribeCandidate[] }>(
+    `/api/tribes/${tribeId}/candidates`,
+  );
 }
 
 export function removeMember(tribeId: string, userId: string) {
-  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, { method: 'DELETE' });
+  return request<void>(`/api/tribes/${tribeId}/members/${userId}`, {
+    method: "DELETE",
+  });
 }
 
 export function getUsers() {
-  return request<{ users: SessionUser[] }>('/api/users');
+  return request<{ users: SessionUser[] }>("/api/users");
 }
 
-export function createUser(body: { name: string; email: string; password: string; role: string; admin: boolean }) {
-  return request<SessionUser>('/api/users', { method: 'POST', body: JSON.stringify(body) });
+export function createUser(body: {
+  name: string;
+  email: string;
+  password: string;
+  role: string;
+  admin: boolean;
+}) {
+  return request<SessionUser>("/api/users", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function updateUser(
   id: string,
-  body: { name?: string; role: string; admin: boolean; disabled: boolean; password?: string }
+  body: {
+    name?: string;
+    role: string;
+    admin: boolean;
+    disabled: boolean;
+    password?: string;
+  },
 ) {
-  return request<SessionUser>(`/api/users/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  return request<SessionUser>(`/api/users/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function getCards() {
@@ -214,7 +297,7 @@ export function getCardDiff(id: string) {
 
 /** With `since`, the server returns events from 10 seconds before it; merge them by id. */
 export function getTrace(id: string, since?: string) {
-  const query = since ? `?since=${encodeURIComponent(since)}` : '';
+  const query = since ? `?since=${encodeURIComponent(since)}` : "";
   return request<TraceResponse>(`${projectPrefix()}/cards/${id}/trace${query}`);
 }
 
@@ -223,125 +306,203 @@ export function getIntake() {
 }
 
 export function ingest() {
-  return request<Intake>(`${projectPrefix()}/ingest`, { method: 'POST', body: '{}' });
+  return request<Intake>(`${projectPrefix()}/ingest`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function acceptRequirements(requirementIds: string[]) {
-  return request<Intake>(`${projectPrefix()}/accept`, { method: 'POST', body: JSON.stringify({ requirementIds }) });
+  return request<Intake>(`${projectPrefix()}/accept`, {
+    method: "POST",
+    body: JSON.stringify({ requirementIds }),
+  });
 }
 
 export function addRequirement(
-  body: RequirementDraft & { id: string; selfReview?: boolean; aiReviewMode?: AIReviewMode }
+  body: RequirementDraft & {
+    id: string;
+    selfReview?: boolean;
+    aiReviewMode?: AIReviewMode;
+  },
 ) {
-  return request<Intake>(`${projectPrefix()}/requirements`, { method: 'POST', body: JSON.stringify(body) });
+  return request<Intake>(`${projectPrefix()}/requirements`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function updateRequirement(id: string, body: RequirementDraft) {
-  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(body)
-  });
+  return request<Intake>(
+    `${projectPrefix()}/requirements/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+    },
+  );
 }
 
-/** Asks the implement model to refine a draft. requirementId is empty for a new requirement. Nothing is saved. */
-export function refineRequirement(body: RefineRequest & { requirementId: string }) {
-  return request<RequirementRefinement>(`${projectPrefix()}/requirements/refine`, {
-    method: 'POST',
-    body: JSON.stringify(body)
+/**
+ * Streams the implement model's new text for one field of a draft (RFC-087). requirementId is empty for a new
+ * requirement. Nothing is saved. EventSource cannot send the bearer, so this reads the fetch body.
+ */
+export async function streamRefine(
+  body: RefineRequest & { requirementId: string },
+  onEvent: (event: RefineEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await send(`${projectPrefix()}/requirements/refine`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
   });
+  if (!response.ok || !response.body) {
+    const text = await response.text();
+    let payload: ErrorBody = {};
+    try {
+      payload = text ? (JSON.parse(text) as ErrorBody) : {};
+    } catch {
+      /* A proxy page is not JSON; the status text stands. */
+    }
+    throw failure(response, payload);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const parsed = parseEvents(done ? buffer + "\n\n" : buffer);
+    buffer = parsed.rest;
+    for (const event of parsed.events) onEvent(event);
+    if (done) return;
+  }
 }
 
 export function setReviewers(id: string, userIds: string[]) {
-  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/reviewers`, {
-    method: 'PUT',
-    body: JSON.stringify({ userIds })
-  });
+  return request<Intake>(
+    `${projectPrefix()}/requirements/${encodeURIComponent(id)}/reviewers`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ userIds }),
+    },
+  );
 }
 
 export function setSelfReview(id: string, selfReview: boolean) {
-  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/self-review`, {
-    method: 'PUT',
-    body: JSON.stringify({ selfReview })
-  });
+  return request<Intake>(
+    `${projectPrefix()}/requirements/${encodeURIComponent(id)}/self-review`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ selfReview }),
+    },
+  );
 }
 
 export function setAIReviewMode(id: string, aiReviewMode: AIReviewMode) {
-  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/ai-review-mode`, {
-    method: 'PUT',
-    body: JSON.stringify({ aiReviewMode })
-  });
+  return request<Intake>(
+    `${projectPrefix()}/requirements/${encodeURIComponent(id)}/ai-review-mode`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ aiReviewMode }),
+    },
+  );
 }
 
 export function deleteRequirement(id: string) {
-  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return request<Intake>(
+    `${projectPrefix()}/requirements/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function startRun() {
-  return request<{ queued: number; readyCount: number }>(`${projectPrefix()}/runs`, {
-    method: 'POST',
-    body: '{}'
-  });
+  return request<{ queued: number; readyCount: number }>(
+    `${projectPrefix()}/runs`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
 }
 
 export function runCard(id: string, instructions?: string) {
   const body = instructions === undefined ? {} : { instructions };
-  return request<Card>(`${projectPrefix()}/cards/${id}/run`, { method: 'POST', body: JSON.stringify(body) });
+  return request<Card>(`${projectPrefix()}/cards/${id}/run`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function setInstructions(id: string, instructions: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/instructions`, {
-    method: 'PUT',
-    body: JSON.stringify({ instructions })
+    method: "PUT",
+    body: JSON.stringify({ instructions }),
   });
 }
 
 export function deployCard(id: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/deploy`, { method: 'POST', body: '{}' });
+  return request<Card>(`${projectPrefix()}/cards/${id}/deploy`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function retryReview(id: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/retry-review`, { method: 'POST', body: '{}' });
+  return request<Card>(`${projectPrefix()}/cards/${id}/retry-review`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function approveCard(id: string, sha: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/approve`, { method: 'POST', body: JSON.stringify({ sha }) });
+  return request<Card>(`${projectPrefix()}/cards/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ sha }),
+  });
 }
 
-export function requestChanges(id: string, reason = '') {
+export function requestChanges(id: string, reason = "") {
   return request<Card>(`${projectPrefix()}/cards/${id}/request-changes`, {
-    method: 'POST',
-    body: JSON.stringify({ reason })
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }
 
 export function rejectCard(id: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/reject`, { method: 'POST', body: '{}' });
+  return request<Card>(`${projectPrefix()}/cards/${id}/reject`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function unblockCard(id: string, resetAttempts: boolean) {
   return request<Card>(`${projectPrefix()}/cards/${id}/unblock`, {
-    method: 'POST',
-    body: JSON.stringify({ resetAttempts })
+    method: "POST",
+    body: JSON.stringify({ resetAttempts }),
   });
 }
 
 export function getCompanyGitHub() {
-  return request<CompanyGitHub>('/api/settings/github');
+  return request<CompanyGitHub>("/api/settings/github");
 }
 
 export function putCompanyGitHub(body: Record<string, unknown>) {
-  return request<CompanyGitHub>('/api/settings/github', { method: 'PUT', body: JSON.stringify(body) });
+  return request<CompanyGitHub>("/api/settings/github", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function testCompanyGitHub() {
-  return request<CompanyAccess>('/api/settings/github/test', {
-    method: 'POST',
-    body: '{}'
+  return request<CompanyAccess>("/api/settings/github/test", {
+    method: "POST",
+    body: "{}",
   });
 }
 
 export function getCompanyRepos() {
-  return request<{ repos: CompanyRepo[] }>('/api/settings/github/repos');
+  return request<{ repos: CompanyRepo[] }>("/api/settings/github/repos");
 }
 
 export function getRepository() {
@@ -349,45 +510,62 @@ export function getRepository() {
 }
 
 export function putRepository(body: { repo: string; baseBranch: string }) {
-  return request<Repository>(`${projectPrefix()}/settings/repository`, { method: 'PUT', body: JSON.stringify(body) });
+  return request<Repository>(`${projectPrefix()}/settings/repository`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function syncRepository() {
-  return request<Repository>(`${projectPrefix()}/sync`, { method: 'POST', body: '{}' });
+  return request<Repository>(`${projectPrefix()}/sync`, {
+    method: "POST",
+    body: "{}",
+  });
 }
 
 export function getLinks() {
   return request<ProjectLinks>(`${projectPrefix()}/settings/links`);
 }
 
-export function putLinks(links: { projectId: string; sharedPaths: string[] }[]) {
+export function putLinks(
+  links: { projectId: string; sharedPaths: string[] }[],
+) {
   return request<ProjectLinks>(`${projectPrefix()}/settings/links`, {
-    method: 'PUT',
-    body: JSON.stringify({ links })
+    method: "PUT",
+    body: JSON.stringify({ links }),
   });
 }
 
 export function getLLM() {
-  return request<LLMSettings>('/api/settings/llm');
+  return request<LLMSettings>("/api/settings/llm");
 }
 
 export function putLLM(body: Record<string, unknown>) {
-  return request<LLMSettings>('/api/settings/llm', { method: 'PUT', body: JSON.stringify(body) });
-}
-
-export function testLLM(family: string) {
-  return request<{ ok: boolean; message?: string }>(`/api/settings/llm/${family}/test`, {
-    method: 'POST',
-    body: '{}'
+  return request<LLMSettings>("/api/settings/llm", {
+    method: "PUT",
+    body: JSON.stringify(body),
   });
 }
 
+export function testLLM(family: string) {
+  return request<{ ok: boolean; message?: string }>(
+    `/api/settings/llm/${family}/test`,
+    {
+      method: "POST",
+      body: "{}",
+    },
+  );
+}
+
 export function getRouter() {
-  return request<RouterSettings>('/api/settings/router');
+  return request<RouterSettings>("/api/settings/router");
 }
 
 export function putRouter(body: Record<string, unknown>) {
-  return request<RouterSettings>('/api/settings/router', { method: 'PUT', body: JSON.stringify(body) });
+  return request<RouterSettings>("/api/settings/router", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function getDeploy() {
@@ -395,47 +573,63 @@ export function getDeploy() {
 }
 
 export function putDeploy(body: Record<string, unknown>) {
-  return request<DeploySettings>(`${projectPrefix()}/settings/deploy`, { method: 'PUT', body: JSON.stringify(body) });
+  return request<DeploySettings>(`${projectPrefix()}/settings/deploy`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export function getConventions() {
-  return request<ConventionCatalog>('/api/conventions');
+  return request<ConventionCatalog>("/api/conventions");
 }
 
-export type ConventionKind = 'rules' | 'stacks' | 'skills';
+export type ConventionKind = "rules" | "stacks" | "skills";
 
 function saveConvention<T>(kind: ConventionKind, id: string, body: unknown) {
-  const path = id ? `/api/conventions/${kind}/${encodeURIComponent(id)}` : `/api/conventions/${kind}`;
-  return request<T>(path, { method: id ? 'PUT' : 'POST', body: JSON.stringify(body) });
+  const path = id
+    ? `/api/conventions/${kind}/${encodeURIComponent(id)}`
+    : `/api/conventions/${kind}`;
+  return request<T>(path, {
+    method: id ? "PUT" : "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export function saveRule(id: string, body: RuleInput) {
-  return saveConvention<ConventionRule>('rules', id, body);
+  return saveConvention<ConventionRule>("rules", id, body);
 }
 
 export function saveStack(id: string, body: StackInput) {
-  return saveConvention<Stack>('stacks', id, body);
+  return saveConvention<Stack>("stacks", id, body);
 }
 
 export function saveSkill(id: string, body: SkillInput) {
-  return saveConvention<Skill>('skills', id, body);
+  return saveConvention<Skill>("skills", id, body);
 }
 
 export function deleteConvention(kind: ConventionKind, id: string) {
-  return request<void>(`/api/conventions/${kind}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return request<void>(`/api/conventions/${kind}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 export function getProjectConventions() {
   return request<ProjectConventions>(`${projectPrefix()}/settings/conventions`);
 }
 
-export function putProjectConventions(body: { manualStackIds: string[]; skillIds: string[] }) {
-  return request<ProjectConventions>(`${projectPrefix()}/settings/conventions`, {
-    method: 'PUT',
-    body: JSON.stringify(body)
-  });
+export function putProjectConventions(body: {
+  manualStackIds: string[];
+  skillIds: string[];
+}) {
+  return request<ProjectConventions>(
+    `${projectPrefix()}/settings/conventions`,
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+    },
+  );
 }
 
 export function unreachable() {
-  return 'API unreachable at http://127.0.0.1:8787';
+  return "API unreachable at http://127.0.0.1:8787";
 }

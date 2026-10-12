@@ -1143,13 +1143,15 @@ A project may list commands the implementer may run. `run_command` runs one argv
 
 ### REQ-083 A member can refine a requirement with AI and compare it before applying
 
-On the new-requirement form and the edit page of a manual requirement, a member can ask the model of the `implement` route to refine the statement and acceptance lines, optionally saying what to improve. The page shows the proposal against the current text, and the member applies it to the form or discards it (RFC-086).
+On the new-requirement form and the edit page of a manual requirement, a member can ask the model of the `implement` route to refine the statement or the acceptance lines, each from its own button, optionally saying what to improve. The reply appears as the model writes it. The page then shows it against the current text of that field, and the member applies it to the form or discards it (RFC-086, RFC-087).
 
 #### Acceptance
 
 - A refinement never changes a saved requirement on its own.
-- The page shows the statement and acceptance changes and the model's notes before Apply.
-- Apply puts the proposal in the form, and nothing is saved until the member presses Save.
+- Refining the statement leaves the acceptance lines alone, and refining the acceptance lines leaves the statement alone.
+- Text appears on the page before the whole reply is finished, and Stop ends the request.
+- The page shows that field's changes before Apply.
+- Apply puts the proposal in that field of the form, and nothing is saved until the member presses Save.
 - Saving a refined requirement clears its acceptance.
 - With no model on the `implement` route, the page says so and nothing is sent.
 

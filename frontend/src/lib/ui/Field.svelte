@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { HTMLInputAttributes } from 'svelte/elements';
   import { autogrow } from './autogrow';
   import { control, controlBase, labelClass, widths, type Width } from './control';
@@ -17,7 +18,8 @@
     mono = false,
     placeholder = '',
     rows,
-    grow = false
+    grow = false,
+    labelAction
   }: {
     label: string;
     id: string;
@@ -32,6 +34,8 @@
     placeholder?: string;
     rows?: number;
     grow?: boolean;
+    /** A control at the right of the label row, such as an icon button. */
+    labelAction?: Snippet;
   } = $props();
 
   const font = $derived(mono ? 'font-mono text-[13px]' : '');
@@ -39,7 +43,14 @@
 </script>
 
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
-  <label for={id} class={labelClass}>{label}</label>
+  {#if labelAction}
+    <div class="flex items-center justify-between gap-2">
+      <label for={id} class={labelClass}>{label}</label>
+      {@render labelAction()}
+    </div>
+  {:else}
+    <label for={id} class={labelClass}>{label}</label>
+  {/if}
   {#if type === 'textarea'}
     <textarea
       {id}

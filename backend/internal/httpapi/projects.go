@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -398,14 +399,17 @@ func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 	s.writeIntake(w, r, projectID)
 }
 
-// projectRequirementRefine returns the implement model's proposal for a draft
-// (RFC-086). It saves nothing; the member applies it to the form and saves.
+// projectRequirementRefine streams the implement model's new text for one
+// field of a draft as server-sent events (RFC-087). Bad input and a missing
+// route are JSON errors before the stream. It saves nothing; the member
+// applies the text to the form and saves.
 func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
+		Field         string   `json:"field"`
 		RequirementID string   `json:"requirementId"`
 		Statement     string   `json:"statement"`
 		Acceptance    []string `json:"acceptance"`
@@ -416,18 +420,39 @@ func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
-	out, err := app.RefineRequirement(r.Context(), s.Data, s.DB, projectID, user.ID, app.RefineInput{
-		RequirementID: body.RequirementID, Statement: body.Statement, Acceptance: body.Acceptance, Instructions: body.Instructions,
-	}, s.RefineProvider)
+	flusher, _ := w.(http.Flusher)
+	streaming := false
+	emit := func(kind string, payload any) {
+		if !streaming {
+			streaming = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(200)
+		}
+		data, _ := json.Marshal(payload)
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", kind, data)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	err := app.RefineField(r.Context(), s.Data, s.DB, projectID, user.ID, app.RefineInput{
+		Field: body.Field, RequirementID: body.RequirementID, Statement: body.Statement, Acceptance: body.Acceptance, Instructions: body.Instructions,
+	}, s.RefineProvider, emit)
+	if err == nil || r.Context().Err() != nil {
+		return
+	}
 	var invalid *intake.Invalid
+	refineFailed := errors.Is(err, app.ErrRefineProposal) || errors.Is(err, app.ErrRefineProvider)
 	switch {
-	case err == nil:
-		writeJSON(w, 200, out)
+	case streaming && refineFailed:
+		emit("error", map[string]string{"code": "provider_error", "message": err.Error()})
+	case streaming:
+		emit("error", map[string]string{"code": "internal", "message": "refine"})
 	case errors.As(err, &invalid):
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
 	case errors.Is(err, app.ErrRefineRoute):
 		writeErr(w, 409, "router_config", err.Error())
-	case errors.Is(err, app.ErrRefineProposal), errors.Is(err, app.ErrRefineProvider):
+	case refineFailed:
 		writeErr(w, 502, "provider_error", err.Error())
 	default:
 		writeErr(w, 500, "internal", "refine")

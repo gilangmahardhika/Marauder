@@ -83,6 +83,12 @@ type Provider interface {
 	Complete(context.Context, Request) (Response, error)
 }
 
+// Streamer is a provider that can hand back reply text as it arrives. onText
+// gets each piece in order; the Response is the whole reply.
+type Streamer interface {
+	Stream(ctx context.Context, req Request, onText func(string)) (Response, error)
+}
+
 // DefaultMaxTokens caps one reply when the request names no limit.
 const DefaultMaxTokens = 8192
 

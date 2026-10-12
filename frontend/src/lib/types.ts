@@ -40,7 +40,7 @@ export type Card = {
   reviewedSha: string | null;
   reviewIndependent: boolean | null;
   /** `failed` means the AI review gave no verdict and the pull request checks decided. */
-  reviewVerdict: 'recommend_approve' | 'request_changes' | 'failed' | null;
+  reviewVerdict: "recommend_approve" | "request_changes" | "failed" | null;
   /** Every requirement of the card has Self review on, so its owner may approve. */
   selfReview: boolean;
   /** `manual` when any requirement of the card is manual (RFC-072). */
@@ -125,11 +125,15 @@ export type TraceAttempt = {
 };
 
 /** `live` is true while the card is queued or working, so more events may come. */
-export type TraceResponse = { attempts: TraceAttempt[]; events: TraceEvent[]; live?: boolean };
+export type TraceResponse = {
+  attempts: TraceAttempt[];
+  events: TraceEvent[];
+  live?: boolean;
+};
 
 export type Requirement = {
   id: string;
-  sourceKind: 'prd' | 'rfc' | 'draft' | 'manual';
+  sourceKind: "prd" | "rfc" | "draft" | "manual";
   sourcePath: string;
   heading: string;
   statement: string;
@@ -146,7 +150,7 @@ export type Requirement = {
   aiReviewMode: AIReviewMode;
 };
 
-export type AIReviewMode = 'continue' | 'manual';
+export type AIReviewMode = "continue" | "manual";
 
 export type Reviewer = {
   id: string;
@@ -160,15 +164,27 @@ export type RequirementDraft = {
   acceptance: string[];
 };
 
-/** The implement model's proposal for a draft (RFC-086). It is never saved by the server. */
-export type RequirementRefinement = {
-  statement: string;
-  acceptance: string[];
-  notes: string;
-  modelId: string;
+/** The field a refine rewrites (RFC-087). */
+export type RefineField = "statement" | "acceptance";
+
+export type RefineRequest = RequirementDraft & {
+  field: RefineField;
+  instructions: string;
 };
 
-export type RefineRequest = RequirementDraft & { instructions: string };
+/** One server-sent event of a streamed refine. done.text is the whole new text; for acceptance it is the lines joined by newlines. */
+export type RefineEvent =
+  | { kind: "start"; modelId: string }
+  | { kind: "delta"; text: string }
+  | { kind: "done"; text: string; acceptance?: string[]; modelId: string }
+  | { kind: "error"; code: string; message: string };
+
+/** Streams one refine. It resolves when the stream ends and rejects with ApiError for an error before the stream, or when signal aborts. */
+export type RefineStream = (
+  body: RefineRequest,
+  onEvent: (event: RefineEvent) => void,
+  signal: AbortSignal,
+) => Promise<void>;
 
 export type Decision = {
   id: string;
@@ -244,7 +260,7 @@ export type CompanyAccess = {
   ok: boolean;
   message?: string;
   login?: string;
-  tokenKind?: 'classic' | 'fine-grained' | 'other';
+  tokenKind?: "classic" | "fine-grained" | "other";
   scopes?: string[];
   repoCount?: number;
   privateCount?: number;
@@ -306,7 +322,7 @@ export type RouterSettings = {
   reviewIndependentPossible: boolean;
 };
 
-export type DiffLine = { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string };
+export type DiffLine = { kind: "add" | "del" | "ctx" | "meta"; text: string };
 
 export type DiffFile = {
   path: string;
@@ -347,11 +363,12 @@ export type DeploySettings = {
   soloApproval: boolean;
 };
 
-export type RuleCategory = 'naming' | 'database' | 'style' | 'framework' | 'security' | 'testing';
+export type RuleCategory =
+  "naming" | "database" | "style" | "framework" | "security" | "testing";
 
 export type ConventionRule = {
   id: string;
-  scope: 'global' | 'stack';
+  scope: "global" | "stack";
   stackId: string;
   category: RuleCategory;
   title: string;
@@ -407,16 +424,19 @@ export type RuleInput = {
   body: string;
   disabled: boolean;
 };
-export type StackInput = Pick<Stack, 'name' | 'detect' | 'disabled'>;
-export type SkillInput = Pick<Skill, 'slug' | 'title' | 'useWhen' | 'body' | 'disabled'>;
+export type StackInput = Pick<Stack, "name" | "detect" | "disabled">;
+export type SkillInput = Pick<
+  Skill,
+  "slug" | "title" | "useWhen" | "body" | "disabled"
+>;
 
 export type ProjectConventions = {
-  stacks: { id: string; name: string; source: 'detected' | 'manual' }[];
+  stacks: { id: string; name: string; source: "detected" | "manual" }[];
   skillIds: string[];
   rules: {
     id: string;
     title: string;
-    scope: 'global' | 'stack';
+    scope: "global" | "stack";
     stackName: string;
     category: RuleCategory;
     version: number;

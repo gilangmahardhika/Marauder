@@ -311,6 +311,16 @@ The `anthropic` protocol uses `anthropic-sdk-go`. The `openai` protocol uses `op
 
 The clients live in `internal/providers/openai` and `internal/providers/anthropic`. Neither SDK retries or reads the environment. `Tool` has `Name`, `Description`, and `Parameters`, a JSON schema object. `internal/providers/llm` builds the client for a model from the family that lists it, and refuses a remote family without a key. `app.RoutedProvider` applies `router.Call` around those clients and wraps the final failure in `app.ErrProvider` (RFC-063).
 
+Both clients, the fake, and the routed provider also implement `providers.Streamer` (RFC-087):
+
+```go
+type Streamer interface {
+    Stream(ctx context.Context, req Request, onText func(string)) (Response, error)
+}
+```
+
+`onText` gets each piece of reply text in order, and the `Response` is the whole reply with the same usage mapping as `Complete`. The anthropic client uses `Messages.NewStreaming` with the same params as `Complete`, calls `onText` for each `text_delta`, and rebuilds the message with `Message.Accumulate`. The openai client uses `Chat.Completions.NewStreaming` with `stream_options.include_usage`, calls `onText` for each content delta of choice 0, rebuilds the reply with `ChatCompletionAccumulator`, and reads usage, cached tokens included, from the final chunk. The routed stream keeps a `sent` flag: until the first text reaches the caller, the rate-limit wait, the retry, and the fallback behave as in `Complete`. After it, any error is wrapped in `router.ErrNoRetry`, which `router.Call` returns at once, because the caller has already shown part of the reply. A client without `Stream` is called through `Complete` and its text sent as one piece.
+
 A fake implements `Provider` and replays a script file (0005). The REQ-043 fixture uses the fake. Live keys are not required for that suite.
 
 ## Git and GitHub
@@ -381,7 +391,11 @@ Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks card
 
 ## Requirement refinement
 
-`app.RefineRequirement` (RFC-086) checks the draft with `intake.Validate`, the save rules without saving, and loads the settings. With no model on `router.routes.implement` it returns `ErrRefineRoute`. It sends one request through `RoutedProvider` with that route's model and fallback, `TaskClass` `refine_requirement`, `MaxTokens` 4,096, a 2-minute timeout, `contextpack.RefineSystem`, and `contextpack.RefineUser`, which puts the requirement id, the statement, the acceptance lines, and the member's guidance between the untrusted markers with marker lines stripped. The only tool is `propose_refinement(statement, acceptance, notes)`. One call to it is the proposal; it goes through `intake.Validate` again, `notes` is cut at 2,000 characters, and model keys are redacted from all three. Any other reply returns `ErrRefineProposal`, and a provider error returns `ErrRefineProvider` with the keys redacted. The function appends a `requirement_refined` event and writes nothing else. `httpapi.Server.RefineProvider` replaces the routed provider in tests.
+`app.RefineField(ctx, data, db, projectID, actorID, in, provider, emit)` (RFC-086, RFC-087) refines one field, `in.Field` `statement` or `acceptance`. It checks the field name, checks the draft with `intake.Validate`, the save rules without saving, and loads the settings. With no model on `router.routes.implement` it returns `ErrRefineRoute`. These errors return before any `emit`. It then streams one request through the routed provider with that route's model and fallback, `TaskClass` `refine_requirement`, `MaxTokens` 4,096, a 2-minute timeout, no tools, and `contextpack.RefineStatementSystem` or `contextpack.RefineAcceptanceSystem`. Both ask for the new text only, with no preamble or code fence. `contextpack.RefineUser(field, ...)` puts the requirement id, the statement, the acceptance lines, and the member's guidance between the untrusted markers with marker lines stripped, and heads the field being refined "(refine this)" and the other "(context only)".
+
+`emit("start", {modelId})` comes once, before the first text, with the model the routed provider is calling. Each piece of text passes through a redact buffer before `emit("delta", {text})`: it holds back the last `len(longest key) - 1` bytes, moves the cut back to the start of any key that crosses it, and never cuts inside a UTF-8 character, so a key split across pieces is replaced by `[redacted]` whole. When the reply ends, the buffer is flushed and the whole text, redacted, passes the save rules for its field: the statement through `intake.Validate`, or the non-blank lines as acceptance through `intake.Validate`, which drops list markers. A failure returns `ErrRefineProposal`; otherwise `emit("done", RefineDone{Text, Acceptance, ModelID})`. A provider error returns `ErrRefineProvider` with the keys redacted, and a canceled request context returns the cancel without an event. After a reply, the function appends a `requirement_refined` event with `field` and writes nothing else. `httpapi.Server.RefineProvider` replaces the routed provider in tests.
+
+The handler writes the `200` and the `text/event-stream` headers on the first `emit`, then one `event:`/`data:` block per call, flushed through `http.Flusher`. No middleware wraps the writer and the server sets no write timeout, so each event leaves at once. An error before the first `emit` maps to JSON as in the table below; one after it is written as an `error` event. A closed connection cancels the request context, which stops the provider stream.
 
 ## HTTP
 

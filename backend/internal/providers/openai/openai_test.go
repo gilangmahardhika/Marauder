@@ -242,3 +242,45 @@ func TestOpenAICachedTokens(t *testing.T) {
 		t.Fatalf("usage = in %d cached %d out %d, want 400, 600, 5", resp.InputTokens, resp.CachedInputTokens, resp.OutputTokens)
 	}
 }
+
+func TestOpenAIStream(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "text/event-stream")
+		chunks := []string{
+			`{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello "},"finish_reason":null}]}`,
+			`{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"there"},"finish_reason":null}]}`,
+			`{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`,
+			`{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":20,"completion_tokens":4,"total_tokens":24,"prompt_tokens_details":{"cached_tokens":6}}}`,
+		}
+		for _, chunk := range chunks {
+			_, _ = io.WriteString(w, "data: "+chunk+"\n\n")
+			w.(http.Flusher).Flush()
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	var deltas []string
+	resp, err := openai.New(srv.URL, key).Stream(context.Background(), providers.Request{Model: "gpt-test", User: "hi"}, func(text string) {
+		deltas = append(deltas, text)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, _ := got["stream_options"].(map[string]any)
+	if got["stream"] != true || options["include_usage"] != true {
+		t.Fatalf("body = %v", got)
+	}
+	if strings.Join(deltas, "|") != "Hello |there" {
+		t.Fatalf("deltas = %q", deltas)
+	}
+	if resp.Text != "Hello there" || resp.StopReason != "stop" {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if resp.InputTokens != 14 || resp.CachedInputTokens != 6 || resp.OutputTokens != 4 {
+		t.Fatalf("usage = %+v", resp)
+	}
+}
