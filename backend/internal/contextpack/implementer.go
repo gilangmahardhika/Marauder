@@ -106,11 +106,13 @@ func LinkedBlock(link Linked) string {
 	fmt.Fprintf(&b, "LINKED %s (%s) at %s\n", link.Name, link.ProjectID, shaOrNone(link.SHA))
 	b.WriteString("requirements:\n")
 	for _, req := range link.Requirements {
-		b.WriteString(req + "\n")
+		b.WriteString(req)
+		b.WriteString("\n")
 	}
 	b.WriteString("decisions:\n")
 	for _, dec := range link.Decisions {
-		b.WriteString(dec + "\n")
+		b.WriteString(dec)
+		b.WriteString("\n")
 	}
 	for _, file := range link.Files {
 		fmt.Fprintf(&b, "file %s:\n%s\n", file.Path, file.Text)
