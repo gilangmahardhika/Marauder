@@ -32,6 +32,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0025-retry-and-review-mode.md](rfc/0025-retry-and-review-mode.md) | Decisions `RFC-071` and `RFC-072`. A failed attempt queues the next one while attempts remain, and a requirement's AI review mode lets a person decide after a `request_changes` verdict |
 | [rfc/0026-attempt-instructions.md](rfc/0026-attempt-instructions.md) | Decision `RFC-073`. A person writes instructions for a card that every later attempt reads next to the newest failure note, until replaced |
 | [rfc/0027-live-trace.md](rfc/0027-live-trace.md) | Decision `RFC-074`. The Trace page refreshes while a card works, and model and tool calls record the reply text and arguments, redacted and capped |
+| [rfc/0028-reviewer-reply-limit.md](rfc/0028-reviewer-reply-limit.md) | Decision `RFC-075`. Reviewer requests may reply with 32,768 tokens, a reply cut at the limit is asked again once, and the failure names the cause |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

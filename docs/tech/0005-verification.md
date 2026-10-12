@@ -137,6 +137,9 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestTraceLive` | `live` is false for a `human_review` card with no open attempt, true with an open attempt (with `maxTurns`), false once it ends, true while a run is queued, and true for an `in_progress` card |
 | `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
 | `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
+| `TestReviewMaxTokens` | Every reviewer request carries `MaxTokens` 32,768 (RFC-075) |
+| `TestReviewRetriesCutReply` | One `max_tokens` reply, then `read_diff` and `recommend_approve`, reaches `human_review` on the route's model, with three reviewer `model_call` events, the first stopped at `max_tokens` |
+| `TestReviewCutTwiceFails` | Cut replies on the model and the fallback store `failed`, one `job_error` naming the token limit, and one "AI review: Not done" comment with the token-limit reason |
 | `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |
 | `TestReviewNoteRedacted` | A `request_changes` body that holds the company token is stored as a `review` note with `[redacted]` in its place |
 | `TestReviewWithoutVerdictWaitsForChecks` | No verdict and pending checks stay in `agent_review`. Green checks on refresh: `human_review` |

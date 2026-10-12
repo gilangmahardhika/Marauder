@@ -13,6 +13,7 @@ type Prompt struct {
 	TaskClass string
 	System    string
 	User      string
+	MaxTokens int
 }
 
 type turn struct {
@@ -20,6 +21,7 @@ type turn struct {
 	tool  string
 	args  map[string]any
 	error string
+	stop  string
 }
 
 type Fake struct {
@@ -57,7 +59,7 @@ func (f *Fake) Prompts() []Prompt {
 func (f *Fake) Complete(_ context.Context, req providers.Request) (providers.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.prompts = append(f.prompts, Prompt{TaskClass: req.TaskClass, System: req.System, User: req.User})
+	f.prompts = append(f.prompts, Prompt{TaskClass: req.TaskClass, System: req.System, User: req.User, MaxTokens: req.MaxTokens})
 	queue := f.queues[req.TaskClass]
 	if len(queue) == 0 {
 		return providers.Response{StopReason: "stop"}, nil
@@ -66,6 +68,9 @@ func (f *Fake) Complete(_ context.Context, req providers.Request) (providers.Res
 	f.queues[req.TaskClass] = queue[1:]
 	if next.error != "" {
 		return providers.Response{}, fmt.Errorf("%s", next.error)
+	}
+	if next.stop != "" {
+		return providers.Response{StopReason: next.stop}, nil
 	}
 	if next.tool == "" {
 		return providers.Response{Text: next.text, StopReason: "stop"}, nil
@@ -78,11 +83,16 @@ func (f *Fake) Complete(_ context.Context, req providers.Request) (providers.Res
 }
 
 // turnFrom reads one scripted turn. A tool turn's "say" is the reply text the
-// model writes beside the call; every other key is a tool argument.
+// model writes beside the call; every other key is a tool argument. A "stop"
+// turn returns only that stop reason, such as a reply cut at max_tokens.
 func turnFrom(fields map[string]any) turn {
 	var t turn
 	if errText, ok := fields["error"].(string); ok && errText != "" {
 		t.error = errText
+		return t
+	}
+	if stop, ok := fields["stop"].(string); ok && stop != "" {
+		t.stop = stop
 		return t
 	}
 	if name, ok := fields["tool"].(string); ok && name != "" {

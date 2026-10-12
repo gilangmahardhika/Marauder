@@ -593,3 +593,15 @@ Packages: `internal/trace`, `internal/loop`, `internal/board`, `internal/app`, `
 - The Trace page polls every 3 seconds while `live`, merges events by id, shows a Live badge and a Now running strip, and follows the newest row while Follow latest is on. It announces only when an attempt ends.
 
 Done when: `TestTraceClip`, `TestModelCallText`, `TestToolCallArgs`, `TestTraceSince`, `TestTraceLive`, `TestReviewerPackHasNoAuthorText`, `TestTraceOrderAndAttempts`, `TestJobErrorCapped`, and the `trace`, `pager`, `TraceBlock`, and Trace page Vitest cases.
+
+## Sprint 40: The reviewer's reply limit
+
+Goal: A reviewer that thinks at length before it answers still gets to give a verdict, and a review that fails because its reply was cut says so (RFC-075, under REQ-072).
+
+Packages: `internal/providers`, `internal/providers/fake`, `internal/loop`, `internal/app`.
+
+- Reviewer requests set `MaxTokens` to 32,768. Other task classes keep 8,192.
+- A reviewer reply with no tool call that stopped at `max_tokens` or `length` is asked again once on the same model. A second one is `ErrReviewCut`, an `ErrReviewParse`, so the fallback and RFC-069 apply.
+- That failure's `job_error` and "AI review: Not done" comment name the token limit.
+
+Done when: `TestReviewMaxTokens`, `TestReviewRetriesCutReply`, `TestReviewCutTwiceFails`, and the rest of the review suite.

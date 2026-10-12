@@ -344,6 +344,8 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | `model_call.text` | 4 KiB, head and tail kept (RFC-074) |
 | Each `tool_call.args` string | 1 KiB, head and tail kept (RFC-074) |
 | Trace poll | Every 3 s while `live`; `since` reads 10 s back |
+| Model reply | 8,192 tokens, unless the request sets its own |
+| Reviewer reply | 32,768 tokens; a reply cut at the limit is asked again once (RFC-075) |
 | Check timeout | 10 min |
 | Git and `gh` timeout | 2 min |
 | Health timeout | 5 s |

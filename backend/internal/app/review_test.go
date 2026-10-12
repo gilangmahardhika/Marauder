@@ -10,6 +10,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers/fake"
 	"orchestrator/backend/internal/review"
@@ -256,6 +257,85 @@ func TestReviewParseFallback(t *testing.T) {
 	}
 	if r := latestReviewRow(t, f.db, card.ID); r.model != "fake-fallback" {
 		t.Fatalf("review model = %s, want the fallback", r.model)
+	}
+}
+
+func TestReviewMaxTokens(t *testing.T) {
+	f := newReviewFixture(t)
+	deps, provider := f.deps(t, approveScript)
+	if _, err := app.ReviewCard(context.Background(), f.db, deps, "proj_default", f.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	reviewed := 0
+	for _, prompt := range provider.Prompts() {
+		if prompt.TaskClass != "review" {
+			continue
+		}
+		reviewed++
+		if prompt.MaxTokens != loop.ReviewMaxTokens {
+			t.Fatalf("reviewer request MaxTokens = %d, want %d", prompt.MaxTokens, loop.ReviewMaxTokens)
+		}
+	}
+	if reviewed == 0 {
+		t.Fatal("the reviewer was not called")
+	}
+}
+
+func reviewerStops(t *testing.T, db *sql.DB, cardID string) []string {
+	t.Helper()
+	rows, err := db.Query(`
+		SELECT payload_json::jsonb->>'stopReason' FROM events
+		WHERE card_id = $1 AND kind = 'model_call' AND payload_json::jsonb->>'role' = 'reviewer' ORDER BY ts, seq`, cardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var stops []string
+	for rows.Next() {
+		var stop string
+		if err := rows.Scan(&stop); err != nil {
+			t.Fatal(err)
+		}
+		stops = append(stops, stop)
+	}
+	return stops
+}
+
+func TestReviewRetriesCutReply(t *testing.T) {
+	f := newReviewFixture(t)
+	card := f.review(t, `{"review":[{"stop":"max_tokens"},{"tool":"read_diff"},{"tool":"verdict","verdict":"recommend_approve","body":"Meets REQ-001."}]}`)
+	if card.Status != "human_review" {
+		t.Fatalf("card = %s", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, card.ID); r.verdict != "recommend_approve" || r.model != "fake-model" {
+		t.Fatalf("review = %+v", r)
+	}
+	if stops := reviewerStops(t, f.db, card.ID); len(stops) != 3 || stops[0] != "max_tokens" {
+		t.Fatalf("reviewer stop reasons = %v", stops)
+	}
+}
+
+func TestReviewCutTwiceFails(t *testing.T) {
+	f := newReviewFixture(t)
+	cut := `{"stop":"max_tokens"}`
+	card := f.review(t, `{"review":[`+cut+`,`+cut+`,`+cut+`,`+cut+`]}`)
+	if card.Status != "human_review" {
+		t.Fatalf("card = %s, want the checks to decide", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, card.ID); r.verdict != "failed" {
+		t.Fatalf("review = %+v", r)
+	}
+	var errs int
+	if err := f.db.QueryRow(`
+		SELECT count(*) FROM events WHERE card_id = $1 AND kind = 'job_error' AND payload_json LIKE '%token limit twice%'`, card.ID).Scan(&errs); err != nil {
+		t.Fatal(err)
+	}
+	if errs != 1 {
+		t.Fatalf("token-limit job_error events = %d", errs)
+	}
+	comments := f.calls.body("comment")
+	if len(comments) != 1 || !strings.Contains(comments[0], "The reviewer's reply hit the token limit before a verdict") {
+		t.Fatalf("comments = %q", comments)
 	}
 }
 

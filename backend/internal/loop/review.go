@@ -16,6 +16,14 @@ import (
 // one, or sent an invalid one twice (RFC-065).
 var ErrReviewParse = errors.New("review_parse")
 
+// ReviewMaxTokens is the reply limit of a reviewer request. A model that thinks
+// before it answers can spend a smaller limit without calling verdict (RFC-075).
+const ReviewMaxTokens = 32 << 10
+
+// ErrReviewCut is a no-verdict review whose replies were cut at the token limit
+// twice in a row. It is an ErrReviewParse.
+var ErrReviewCut = fmt.Errorf("%w: the reply hit the %d-token limit before a verdict", ErrReviewParse, ReviewMaxTokens)
+
 const reviewTurns = 8
 
 // ReviewDiffCap is the most diff text a review pack carries.
@@ -94,10 +102,11 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 	result := ReviewResult{PromptHash: hashText(user)}
 	var turns []providers.Turn
 	invalid := 0
+	cut := false
 	for turn := 0; turn < reviewTurns; turn++ {
 		resp, err := in.Provider.Complete(ctx, providers.Request{
 			Model: in.Model, System: system, User: user, Turns: turns,
-			Tools: ReviewerTools(), TaskClass: "review",
+			Tools: ReviewerTools(), TaskClass: "review", MaxTokens: ReviewMaxTokens,
 		})
 		if err != nil {
 			return result, err
@@ -110,7 +119,14 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 			return result, err
 		}
 		if len(resp.ToolCalls) == 0 {
-			return result, ErrReviewParse
+			if !providers.Truncated(resp.StopReason) {
+				return result, ErrReviewParse
+			}
+			if cut {
+				return result, ErrReviewCut
+			}
+			cut = true
+			continue
 		}
 		done := providers.Turn{Text: resp.Text}
 		for i, call := range resp.ToolCalls {

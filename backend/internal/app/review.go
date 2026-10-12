@@ -279,6 +279,9 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		}
 	}
 	switch {
+	case errors.Is(err, loop.ErrReviewCut):
+		_ = jobError(ctx, db, card, attempt.AttemptID, fmt.Sprintf("the reviewer gave no valid verdict: its reply hit the %d-token limit twice", loop.ReviewMaxTokens), redact)
+		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "The reviewer's reply hit the token limit before a verdict", redact)
 	case errors.Is(err, loop.ErrReviewParse):
 		_ = jobError(ctx, db, card, attempt.AttemptID, "the reviewer gave no valid verdict", redact)
 		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "The reviewer gave no valid verdict", redact)

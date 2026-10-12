@@ -55,6 +55,12 @@ type Provider interface {
 // DefaultMaxTokens caps one reply when the request names no limit.
 const DefaultMaxTokens = 8192
 
+// Truncated reports a reply cut at the token limit: max_tokens on the
+// anthropic protocol, length on the openai protocol.
+func Truncated(stopReason string) bool {
+	return stopReason == "max_tokens" || stopReason == "length"
+}
+
 // RateLimited is a 429 reply. Wait is how long the server asked the caller to
 // wait, or zero when it did not say.
 type RateLimited struct {

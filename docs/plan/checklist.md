@@ -631,3 +631,14 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestTraceOrderAndAttempts` and `TestJobErrorCapped` still pass
 - [x] `trace`, `pager`, `TraceBlock`, and Trace page Vitest cases
 - [x] On the live server, the Trace page shows the new fields and does not poll a card that is idle.
+
+## Sprint 40: The reviewer's reply limit
+
+- [x] Reviewer requests set `MaxTokens` to 32,768.
+- [x] A reply cut at the limit with no tool call is asked again once, and a second one is `ErrReviewCut`.
+- [x] The `job_error` and the "AI review: Not done" comment name the token limit.
+- [x] `TestReviewMaxTokens`
+- [x] `TestReviewRetriesCutReply`
+- [x] `TestReviewCutTwiceFails`
+- [x] The rest of the review suite still passes
+- [x] The live server runs the new reviewer limit.
