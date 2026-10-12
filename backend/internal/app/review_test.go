@@ -152,6 +152,21 @@ func TestReviewRequestChanges(t *testing.T) {
 	}
 }
 
+func TestReviewNoteRedacted(t *testing.T) {
+	f := newReviewFixture(t)
+	card := f.review(t, `{"review":[{"tool":"verdict","verdict":"request_changes","body":"Drop the token `+companyToken+` from hello.txt."}]}`)
+	if card.Status != "changes_requested" {
+		t.Fatalf("card = %s", card.Status)
+	}
+	var note string
+	if err := f.db.QueryRow(`SELECT note FROM failure_notes WHERE card_id = $1 AND source = 'review'`, card.ID).Scan(&note); err != nil {
+		t.Fatal(err)
+	}
+	if note != "Drop the token [redacted] from hello.txt." {
+		t.Fatalf("note = %q", note)
+	}
+}
+
 func TestReviewPostsComment(t *testing.T) {
 	f := newReviewFixture(t)
 	card := f.review(t, approveScript)

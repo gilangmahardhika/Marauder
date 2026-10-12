@@ -13,33 +13,51 @@
   let reset = $state(false);
   let shaError = $state('');
   let busy = $state(false);
+  let asking = $state(false);
+  let reason = $state('');
+  let reasonError = $state('');
 
   const actions = $derived(card.actions ?? []);
   const menuItems = $derived([
-    ...(actions.includes('request_changes')
-      ? [{ label: 'Request changes', onclick: () => void run('Request changes', () => requestChanges(card.id)) }]
-      : []),
+    ...(actions.includes('request_changes') ? [{ label: 'Request changes', onclick: () => (asking = true) }] : []),
     ...(actions.includes('reject') ? [{ label: 'Reject', onclick: () => void run('Reject', () => rejectCard(card.id)) }] : [])
   ]);
 
   async function run(action: string, work: () => Promise<Card>) {
     busy = true;
     shaError = '';
+    reasonError = '';
     shell.message = action;
     try {
       card = await work();
       sha = card.headSha ?? sha;
+      return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         card = await getCard(card.id);
         shell.message = 'Card changed. Reloaded.';
-        return;
+        return false;
       }
       if (error instanceof ApiError && error.fields.sha) shaError = error.fields.sha;
+      if (error instanceof ApiError && error.fields.reason) reasonError = error.fields.reason;
       shell.message = error instanceof Error ? error.message : 'API unreachable at http://127.0.0.1:8787';
+      return false;
     } finally {
       busy = false;
     }
+  }
+
+  async function sendChanges() {
+    if (await run('Request changes', () => requestChanges(card.id, reason))) {
+      asking = false;
+      reason = '';
+    }
+  }
+
+  function cancelChanges() {
+    asking = false;
+    reason = '';
+    reasonError = '';
   }
 </script>
 
@@ -83,6 +101,31 @@
         <Menu label="Actions" block={false} items={menuItems} />
       {/if}
     </div>
+  {/if}
+  {#if asking && actions.includes('request_changes')}
+    <form
+      class="flex flex-col items-start gap-3"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void sendChanges();
+      }}
+    >
+      <Field
+        label="What should change?"
+        id="reason"
+        type="textarea"
+        width="full"
+        rows={4}
+        grow
+        hint="Optional. The next attempt gets this note. Markdown works."
+        error={reasonError}
+        bind:value={reason}
+      />
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="primary" type="submit" disabled={busy}>Request changes</Button>
+        <Button variant="ghost" type="button" disabled={busy} onclick={cancelChanges}>Cancel</Button>
+      </div>
+    </form>
   {/if}
   {#if actions.includes('unblock')}
     <form

@@ -155,6 +155,7 @@ frontend/
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
   src/lib/components/CardChanges.svelte
+  src/lib/components/CardNotes.svelte
   src/lib/components/TraceBlock.svelte
   src/lib/components/TraceRow.svelte
   src/lib/components/TraceText.svelte
@@ -181,6 +182,7 @@ frontend/
   src/lib/llm.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/CardChanges.test.ts
+  src/lib/components/CardNotes.test.ts
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
   src/lib/components/IntakeActions.test.ts
@@ -261,7 +263,7 @@ Base URL is `http://127.0.0.1:8787` unless the build is given the cloud API orig
 
 Svelte text `{value}` is the way API strings hit the page. `{@html}` is forbidden. A pull request URL becomes an `<a href>` only when it starts with `https://github.com/` or `http://127.0.0.1`. Any other value is text.
 
-A requirement statement is markdown. `$lib/markdown` parses it into a token tree and `Markdown.svelte` renders that tree as elements with text nodes, never as an HTML string. The subset is paragraphs, ATX headings (rendered from `h3` down), bullet and ordered lists with one nested level, fenced code, blockquotes, rules, inline code, bold, italic, links, autolinks, and hard breaks. Tables, images, raw HTML, and setext headings stay literal text. A link becomes `<a target="_blank" rel="noreferrer noopener">` only under the same URL rule, `https://github.com/`, or `http://127.0.0.1` with an optional numeric port followed by `/`, `?`, `#`, or the end; any other link, including `http://127.0.0.1:1@host`, reads as `label (url)`. Each acceptance line is inline markdown: `Markdown` with `inline` renders inline code, bold, italic, links, and autolinks, and `AcceptanceList` shows the lines as a checklist. `plainText` gives the one-line excerpt for clamped cells.
+A requirement statement is markdown, and so is a card note with source `review` or `approver`. `$lib/markdown` parses it into a token tree and `Markdown.svelte` renders that tree as elements with text nodes, never as an HTML string. The subset is paragraphs, ATX headings (rendered from `h3` down), bullet and ordered lists with one nested level, fenced code, blockquotes, rules, inline code, bold, italic, links, autolinks, and hard breaks. Tables, images, raw HTML, and setext headings stay literal text. A link becomes `<a target="_blank" rel="noreferrer noopener">` only under the same URL rule, `https://github.com/`, or `http://127.0.0.1` with an optional numeric port followed by `/`, `?`, `#`, or the end; any other link, including `http://127.0.0.1:1@host`, reads as `label (url)`. Each acceptance line is inline markdown: `Markdown` with `inline` renders inline code, bold, italic, links, and autolinks, and `AcceptanceList` shows the lines as a checklist. `plainText` gives the one-line excerpt for clamped cells.
 
 Buttons that submit a form use `type="submit"`. Buttons that do not submit use `type="button"`. Every input has a `<label for>`.
 
@@ -324,7 +326,11 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-The header shows the title and a badge with `statusLabel`, with the raw status in `title`. Under Next step, the page has six panels in this order:
+The header shows the title and a badge with `statusLabel`, with the raw status in `title`.
+
+Above Next step, `CardNotes` shows a Notes panel when `notes` is not empty, with the hint "Newest first. The next attempt gets the newest note." Each note shows its source as a badge (AI review, Approver, Local check, CI checks, Dev check, or No commit, and the raw source when unknown), its local time, and "attempt N" when `attemptN` is above 0. A `review` or `approver` note renders with `Markdown` and headings from `h4`. Any other note is check output and renders with `TraceText`. The newest note is open. The rest wait behind "Show N earlier notes".
+
+Under Next step, the page has six panels in this order:
 
 - People: the owner and each reviewer with avatar, display name, email, and "GitHub @login" or "No verified GitHub login", labelled Owner or Reviewer. With no reviewers, a line says reviewers come from the card's requirements and links "Edit reviewers" to `/intake/{first requirement id}`.
 - Intake: each of `requirements` with its id, heading, the statement as a `plainText` excerpt clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
@@ -338,7 +344,7 @@ Render a control only when its name is in `actions`:
 | Name | Control |
 | --- | --- |
 | `approve` | Form. SHA input defaulted from `headSha`. Button "Approve SHA". |
-| `request_changes` | Button "Request changes" |
+| `request_changes` | Menu item "Request changes" opens a form. Textarea "What should change?", 4 rows, growing, hint "Optional. The next attempt gets this note. Markdown works." Buttons "Request changes" and "Cancel". The body is `{ reason }` |
 | `reject` | Button "Reject" |
 | `deploy` | Button "Deploy approved SHA". |
 | `unblock` | Form. Checkbox "Reset attempt counter", unchecked by default. Button "Unblock". Text above the button from `unblockTo` |
@@ -355,7 +361,7 @@ These controls live in `CardActions.svelte`, which takes the card object as its 
 
 `{#if actions.includes('approve')}` is the pattern. Do not also check `status` in the template. The API list is the source.
 
-After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` under the SHA input, or `error.message` in the live region. On `409`, reload the card and set the live message to "Card changed. Reloaded."
+After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` under the SHA input, `fields.reason` under the reason, or `error.message` in the live region. A successful Request changes closes and clears the reason form. On `409`, reload the card and set the live message to "Card changed. Reloaded."
 
 A link "Trace" goes to `/cards/{id}/trace`.
 
@@ -581,6 +587,8 @@ npm run build
 | `CardActions` with `actions: []` | No Approve, Request changes, Reject, or Unblock control is rendered |
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
+| `CardActions` Request changes | The menu item opens the reason form. A `422` shows `fields.reason` under it. A later submit POSTs `{ reason }` and closes the form |
+| `CardNotes` | No notes render nothing. The newest review note renders its bold and code as elements, with "AI review" and "· attempt 2". Earlier notes wait behind "Show 1 earlier note", and a local check note stays plain text in a `pre`. An approver note has no attempt number |
 | `CardChanges` | Lists files with counts and "binary". A file button opens its lines, with the deleted line on red and the added line on green, and the compare link points at `compareUrl`. A cut diff shows the warning. A missing commit shows "Commit {short} is not in the project clone yet." |
 | `IntakeActions` | Ingest and Add requirement render, and no accept button. `toLines` drops blanks, markers, and non-item lines when a list exists, and keeps every line without one. `fromLines` loads saved checks as a `- ` list that saves back unchanged, and a list item added later keeps them |
 | `markdown` | `<script>` stays text. `javascript:`, `data:`, relative, and non-GitHub links read as `label (url)`, and a GitHub link parses. An unclosed fence runs to the end. Nested emphasis parses; `**open`, `snake_case_name`, and `2 * 3 * 4` stay text, and so do `#123` and `####### x`. Ordered lists keep `start`, one nested level holds deeper items, and a marker switch starts a new list. Rules, hard breaks, CRLF, and NUL are handled. `plainText` drops markers. 20k `*` or `[` parse within a second. `listItems` keeps only the items of a pasted definition of done, joins wrapped items, keeps nested items, skips fenced code, does not join a label or heading onto an item, and is null without a list || `Markdown` | No `script` or `img` element renders. A GitHub link has `target="_blank"` and `rel="noreferrer noopener"`, and a `javascript:` link has no `<a>`. `# x` is an `h3`. A `pre` keeps its text. `a **b** c` reads "a b c" |

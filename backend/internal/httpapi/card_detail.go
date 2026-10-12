@@ -25,8 +25,18 @@ type cardRule struct {
 	Category string `json:"category"`
 }
 
+type cardNote struct {
+	Source    string `json:"source"`
+	Note      string `json:"note"`
+	CreatedAt string `json:"createdAt"`
+	AttemptN  int    `json:"attemptN"`
+}
+
+const cardNoteLimit = 10
+
 // cardDetail is the single-card body: the board fields plus the card's
-// requirements and the rules its packs carry. The board list leaves these out.
+// requirements, the rules its packs carry, and its newest failure notes. The
+// board list leaves these out.
 func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 	body := s.cardBody(r, card)
 	reqs, err := cardRequirements(r.Context(), s.DB, card.ProjectID, card.RequirementIDs)
@@ -43,6 +53,13 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 		}
 	}
 	body["rules"] = rules
+	notes := []cardNote{}
+	if items, err := board.CardNotes(r.Context(), s.DB, card.ProjectID, card.ID, cardNoteLimit); err == nil {
+		for _, n := range items {
+			notes = append(notes, cardNote{Source: n.Source, Note: n.Note, CreatedAt: n.CreatedAt, AttemptN: n.AttemptN})
+		}
+	}
+	body["notes"] = notes
 	return body
 }
 

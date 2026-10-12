@@ -304,7 +304,7 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		_ = jobError(ctx, db, card, attempt.AttemptID, "review comment: "+err.Error(), redact)
 	}
 	if result.Verdict == "request_changes" {
-		note := result.Body
+		note := trace.Redact(result.Body, redact)
 		if note == "" {
 			note = "the reviewer requested changes"
 		}

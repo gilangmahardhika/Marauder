@@ -17,6 +17,7 @@ export type Card = {
   skills: SkillRef[];
   requirements?: CardRequirement[];
   rules?: CardRule[];
+  notes?: CardNote[];
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -71,6 +72,14 @@ export type CardRule = {
   title: string;
   label: string;
   category: string;
+};
+
+/** On the single-card response only, newest first. `attemptN` is 0 when no attempt wrote the note. */
+export type CardNote = {
+  source: string;
+  note: string;
+  createdAt: string;
+  attemptN: number;
 };
 
 export type Board = {

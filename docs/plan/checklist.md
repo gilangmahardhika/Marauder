@@ -566,3 +566,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] On the live server, `/intake/new` previews markdown acceptance lines as a checklist.
 - [x] A pasted document with a list saves only its list items, Preview counts the lines left out, and the edit page loads checks as a `- ` list.
 - [x] On the live server, a pasted definition of done previews only its list items.
+
+## Sprint 36: Card notes and a reason for Request changes
+
+- [x] The single-card JSON returns the newest 10 failure notes of its project, newest first, and the board list does not.
+- [x] The review note is redacted before it is stored.
+- [x] Request changes takes an optional reason, stored as the approver note in the same transaction, capped at 4000 characters.
+- [x] The card page shows a Notes panel above Next step, with review and approver notes as markdown.
+- [x] Request changes opens a reason form.
+- [x] `TestCardDetailNotes`
+- [x] `TestRequestChangesReason`
+- [x] `TestReviewNoteRedacted`
+- [x] `CardNotes` and `CardActions` Vitest cases
+- [x] On the live server, `card_a91765e0d872` shows the reviewer's note.

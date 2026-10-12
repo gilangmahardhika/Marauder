@@ -697,11 +697,21 @@ A project object is:
       "accepted": true
     }
   ],
-  "rules": [{ "id": "rule_naming", "title": "Naming", "label": "global", "category": "naming" }]
+  "rules": [{ "id": "rule_naming", "title": "Naming", "label": "global", "category": "naming" }],
+  "notes": [
+    {
+      "source": "review",
+      "note": "The frontend job does not run the lint scripts.",
+      "createdAt": "2026-10-12T05:00:00Z",
+      "attemptN": 2
+    }
+  ]
 }
 ```
 
 `requirements` lists the rows of `requirementIds` in the card's project, in the card's order. An id with no row in that project is left out. `rules` lists the rules the card's packs carry, as `conventions.ForCard` reads them (RFC-055): global rules first, then each stack's rules. `label` is `global` or the stack name. The rule body is not returned.
+
+`notes` lists the card's newest 10 `failure_notes` rows in the card's project, newest first, so the first note is the one the next attempt reads. `source` is the stored source. `attemptN` is the `n` of the attempt that wrote the note, or `0` when the note has no attempt in that project, such as an approver's note. The board list does not return `notes`.
 
 ## Board and intake
 
@@ -896,7 +906,7 @@ The approver is the session user. The role must be Lead Developer, QA Lead, or P
 
 After an approval that inserted a new row, the server posts with the company token a comment on the card's pull request (`POST repos/{owner}/{repo}/issues/{n}/comments`) and a commit status on the approved SHA (`POST repos/{owner}/{repo}/statuses/{sha}`) with `state: success`, `context: orchestrator/approval`, and `description: Approved by @<login> in the orchestrator`. The posts take at most 30 seconds and do not change the response: a failed post writes a `job_error` event whose message starts with `approval comment:` or `approval status:`, and the card stays `approved` (RFC-068).
 
-`POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`. When the card was `approved`, either one posts `orchestrator/approval` with `state: failure` and `description: Approval withdrawn` on the approved SHA (RFC-068).
+`POST /api/projects/{projectId}/cards/{id}/request-changes` takes an optional body `{ "reason": "..." }`. `POST /api/projects/{projectId}/cards/{id}/reject` has an empty body. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and, in the same transaction, writes a failure note with source `approver`. The note is the reason with CRLF turned into LF and outer whitespace trimmed, or `changes requested` when the reason is blank. A reason over 4000 characters is `422` with `fields.reason` `Keep the reason to 4000 characters or fewer.`, and the card does not move. Reject sets `blockedReason` to `rejected`. When the card was `approved`, either one posts `orchestrator/approval` with `state: failure` and `description: Approval withdrawn` on the approved SHA (RFC-068).
 
 `POST /api/projects/{projectId}/cards/{id}/deploy` has an empty body. It is allowed when `deploy` is in `actions`. The card moves from `approved` toward `deploying_dev` through `machine.Transition`, and a `runs` row with trigger `deploy` wakes that project's worker.
 

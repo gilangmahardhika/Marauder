@@ -273,8 +273,11 @@ export function approveCard(id: string, sha: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/approve`, { method: 'POST', body: JSON.stringify({ sha }) });
 }
 
-export function requestChanges(id: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/request-changes`, { method: 'POST', body: '{}' });
+export function requestChanges(id: string, reason = '') {
+  return request<Card>(`${projectPrefix()}/cards/${id}/request-changes`, {
+    method: 'POST',
+    body: JSON.stringify({ reason })
+  });
 }
 
 export function rejectCard(id: string) {

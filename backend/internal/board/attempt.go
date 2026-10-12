@@ -260,6 +260,39 @@ func CardAttempts(ctx context.Context, db *sql.DB, projectID, cardID string) ([]
 	return attempts, rows.Err()
 }
 
+// Note is one failure note on a card. AttemptN is 0 when the note belongs to
+// no attempt, such as an approver's request for changes.
+type Note struct {
+	Source    string
+	Note      string
+	CreatedAt string
+	AttemptN  int
+}
+
+// CardNotes lists the card's failure notes in the project, newest first.
+func CardNotes(ctx context.Context, db *sql.DB, projectID, cardID string, limit int) ([]Note, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT f.source, f.note, f.created_at, COALESCE(a.n, 0)
+		FROM failure_notes f
+		LEFT JOIN attempts a ON a.id = f.attempt_id AND a.project_id = f.project_id
+		WHERE f.card_id = $1 AND f.project_id = $2
+		ORDER BY f.created_at DESC, a.n DESC NULLS LAST, f.id DESC
+		LIMIT $3`, cardID, projectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	notes := []Note{}
+	for rows.Next() {
+		var n Note
+		if err := rows.Scan(&n.Source, &n.Note, &n.CreatedAt, &n.AttemptN); err != nil {
+			return nil, err
+		}
+		notes = append(notes, n)
+	}
+	return notes, rows.Err()
+}
+
 // SetCIRequired records whether the pull request head had checks when the
 // review finished.
 func SetCIRequired(ctx context.Context, q DBTX, attemptID string, required bool) error {

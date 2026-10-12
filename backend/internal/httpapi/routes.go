@@ -118,7 +118,11 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		}
 		writeJSON(w, 200, s.cardDetail(r, result.Card))
 	case "request-changes":
-		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r, card))
+		var body struct {
+			Reason string `json:"reason"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		next, err := app.RequestChanges(r.Context(), s.DB, id, body.Reason, s.gate(r, card))
 		if err != nil {
 			writeAppErr(w, err)
 			return

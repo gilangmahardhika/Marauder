@@ -536,3 +536,17 @@ Packages: `internal/intake`, `internal/app`, frontend `$lib/markdown`, `$lib/req
 - The pull request body puts each id in bold on its own line, then the statement, and closes a code fence the statement left open.
 
 Done when: `TestStatementLimitAndLineEndings`, `TestAcceptanceLineMarkers`, `TestPRBodyMarkdownStatement`, and the `markdown`, `Markdown`, `RequirementForm`, `IntakeActions`, and `intake` Vitest cases.
+
+## Sprint 36: Card notes and a reason for Request changes
+
+Goal: A card in `changes_requested` shows what to change. The AI reviewer's and the approver's notes read on the card page, and Request changes takes an optional reason that the next attempt reads. It adds no decision; it refines the card JSON and the request-changes body in tech/0002 and the card page in tech/0004.
+
+Packages: `internal/board`, `internal/app`, `internal/httpapi`, `internal/cli`, frontend `CardNotes`, `CardActions`, and the card page.
+
+- `board.CardNotes` lists a card's newest 10 failure notes in its project, newest first, with the attempt number. The single-card JSON adds `notes`. The board list does not.
+- `app.ReviewCard` redacts the review body with the job's secrets before it stores the `review` note.
+- `POST .../request-changes` takes an optional `reason`. `app.RequestChanges` stores it trimmed, with LF line ends, as the `approver` note in the transition's transaction, or `changes requested` when blank. Over 4000 characters is `422` with `fields.reason`. The CLI sends no reason.
+- The card page shows a Notes panel above Next step. Review and approver notes render as markdown, check output as plain text, and earlier notes wait behind a button.
+- Request changes opens a form with an optional "What should change?" box.
+
+Done when: `TestCardDetailNotes`, `TestRequestChangesReason`, `TestReviewNoteRedacted`, and the `CardNotes` and `CardActions` Vitest cases.

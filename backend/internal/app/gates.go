@@ -4,11 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/machine"
+	"orchestrator/backend/internal/settings"
 )
 
 var (
@@ -101,7 +104,12 @@ func ApproveFresh(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateC
 	return Approval{Card: next, Fresh: true, Independent: independent}, nil
 }
 
-func RequestChanges(ctx context.Context, db *sql.DB, cardID string, cfg GateConfig) (board.Card, error) {
+const maxReason = 4000
+
+// RequestChanges sends the card back with the approver's reason as its newest
+// failure note, which the next attempt reads. A blank reason stores
+// "changes requested".
+func RequestChanges(ctx context.Context, db *sql.DB, cardID, reason string, cfg GateConfig) (board.Card, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
 		return board.Card{}, err
@@ -109,11 +117,32 @@ func RequestChanges(ctx context.Context, db *sql.DB, cardID string, cfg GateConf
 	if !canApprove(cfg) {
 		return card, ErrApprover
 	}
-	next, err := transition(ctx, db, card, "changes_requested", machine.Evidence{Approver: cfg.Operator})
+	note := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(reason, "\r\n", "\n"), "\r", "\n"))
+	if utf8.RuneCountInString(note) > maxReason {
+		msg := fmt.Sprintf("Keep the reason to %d characters or fewer.", maxReason)
+		return card, &settings.Invalid{Fields: map[string]string{"reason": msg}}
+	}
+	if note == "" {
+		note = "changes requested"
+	}
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return card, err
 	}
-	_ = board.InsertFailureNote(ctx, db, cardID, "approver", "approver", "changes requested")
+	defer tx.Rollback()
+	next, err := machine.Transition(ctx, tx, card, "changes_requested", machine.Evidence{Approver: cfg.Operator}, nil)
+	if err != nil {
+		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
+			_ = tx.Commit()
+		}
+		return card, err
+	}
+	if err := board.InsertFailureNote(ctx, tx, cardID, "approver", "approver", note); err != nil {
+		return card, err
+	}
+	if err := tx.Commit(); err != nil {
+		return card, err
+	}
 	return next, nil
 }
 

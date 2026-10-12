@@ -111,6 +111,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestApprovalPostsCommentAndStatus` | An approval posts one comment on the pull request and one `success` status with context `orchestrator/approval` on the SHA, with the company token in `GH_TOKEN` and not in argv. A repeat approval of the same SHA posts nothing (RFC-068) |
 | `TestApprovalAnnounceFailureKeepsApproved` | When `gh` fails, the approval is still `200` and `approved`, with one `job_error` for the comment and one for the status |
 | `TestRequestChangesWithdrawsApprovalStatus` | Request changes on an approved card posts `failure` on the approved SHA |
+| `TestRequestChangesReason` | A 4001-character reason is `422` with `fields.reason`, and the card stays `human_review` with no note. A reason is stored trimmed with LF line ends as the newest `approver` note with `attemptN` 0. An empty body stores `changes requested` |
 | `TestReviewIgnoresApprovalStatus` | A pending `orchestrator/approval` status on the head still moves the card to `human_review`, with `ci_required = false` |
 | `TestCardDiff` | On a real repository the diff lists each file with counts and hunks, redacts a planted model key, cuts a file past 1,500 lines, and returns not found for another project |
 | `TestTraceOrderAndAttempts` | Three events appended in the same second, with ids that sort the other way, come back in insert order. `attemptId` is left out when empty. `attempts` lists the attempt's `n`, model, tokens, outcome, commit, and end, with `reviewIndependent` null. The card under another project is `404` |
@@ -118,6 +119,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
 | `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
 | `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |
+| `TestReviewNoteRedacted` | A `request_changes` body that holds the company token is stored as a `review` note with `[redacted]` in its place |
 | `TestReviewWithoutVerdictWaitsForChecks` | No verdict and pending checks stay in `agent_review`. Green checks on refresh: `human_review` |
 | `TestNoChecksWaitsToRegister` | No checks right after `pr_open` keeps `agent_review` with `ci_required` unset, through a refresh. After `NoChecksWait`: `human_review` with `ci_required = false` |
 | `TestChecksInsideWaitDecide` | Green checks inside the wait move the card to `human_review` |
@@ -127,6 +129,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |
 | `TestCardReviewers` | The board and the card route list the requirement reviewers sorted by email, without the owner, with `githubLogin` `""` when unverified. A card in another project naming the same requirement id has `"reviewers": []` |
 | `TestCardDetail` | The single card returns `requirements` from its own project only, `rules` labelled `global` and by stack, and `skills[].useWhen`. The board list has no `requirements` or `rules`. Unblock returns the same detail fields |
+| `TestCardDetailNotes` | The single card returns `notes` newest first with source, text, and `attemptN`, `0` for an approver note. A note stored under another project is left out. The board list has no `notes` |
 | `TestCardPeopleNames` | The card route returns `owner.name` and `reviewers[].name`. A reviewer without a name has `"name": ""` (RFC-058) |
 | `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer, an unverified reviewer, or the creator is `422` |
 | `TestConventionCatalogAdminOnly` | Every signed-in user reads `/api/conventions`. A Lead Developer who is not an admin gets `403` on create, update, and delete. An admin save appends `config_changed` with section `conventions` (RFC-055) |

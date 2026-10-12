@@ -3,6 +3,7 @@
   import { ApiError, getCard, getCardDiff, unreachable } from '$lib/api';
   import CardActions from '$lib/components/CardActions.svelte';
   import CardChanges from '$lib/components/CardChanges.svelte';
+  import CardNotes from '$lib/components/CardNotes.svelte';
   import { categoryLabel } from '$lib/conventions';
   import { plainText } from '$lib/markdown';
   import { displayName } from '$lib/people';
@@ -133,6 +134,7 @@
           connection. Then unblock the card.
         </Notice>
       {/if}
+      <CardNotes notes={card.notes ?? []} />
       {#if hasControls}
         <Panel title="Next step">
           <CardActions bind:card />

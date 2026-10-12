@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"strings"
 	"sync"
@@ -141,6 +142,59 @@ func TestRequestChangesWithdrawsApprovalStatus(t *testing.T) {
 	last := posts[len(posts)-1]
 	if len(posts) != 3 || last.path != "repos/acme/widget/statuses/"+headSHA || !strings.Contains(last.input, `"state":"failure"`) {
 		t.Fatalf("posts = %+v", posts)
+	}
+}
+
+func TestRequestChangesReason(t *testing.T) {
+	srv, _, card, token := approvalServer(t)
+	path := "/api/projects/proj_default/cards/" + card.ID
+	type detail struct {
+		Status string `json:"status"`
+		Notes  []struct {
+			Source   string `json:"source"`
+			Note     string `json:"note"`
+			AttemptN int    `json:"attemptN"`
+		} `json:"notes"`
+	}
+	decode := func(body []byte) detail {
+		t.Helper()
+		var got detail
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	long := postJSON(t, srv, path+"/request-changes", token, map[string]string{"reason": strings.Repeat("é", 4001)})
+	if long.Code != 422 || !strings.Contains(long.Body.String(), `"reason":"Keep the reason to 4000 characters or fewer."`) {
+		t.Fatalf("long reason = %d %s", long.Code, long.Body.String())
+	}
+	if got := decode(getAuth(t, srv, path, token).Body.Bytes()); got.Status != "human_review" || len(got.Notes) != 0 {
+		t.Fatalf("after long reason = %+v", got)
+	}
+
+	rec := postJSON(t, srv, path+"/request-changes", token, map[string]string{"reason": "  Use the **lint** scripts.\r\n\r\n- Keep `.nvmrc`.\r\n "})
+	if rec.Code != 200 {
+		t.Fatalf("request changes = %d %s", rec.Code, rec.Body.String())
+	}
+	got := decode(rec.Body.Bytes())
+	if got.Status != "changes_requested" || len(got.Notes) != 1 || got.Notes[0].Source != "approver" ||
+		got.Notes[0].Note != "Use the **lint** scripts.\n\n- Keep `.nvmrc`." || got.Notes[0].AttemptN != 0 {
+		t.Fatalf("request changes = %+v", got)
+	}
+
+	if _, err := srv.DB.Exec(`UPDATE failure_notes SET created_at = '2026-01-01T00:00:00Z' WHERE card_id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.DB.Exec(`UPDATE cards SET status = 'human_review' WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	rec = postJSON(t, srv, path+"/request-changes", token, map[string]string{})
+	if rec.Code != 200 {
+		t.Fatalf("request changes without reason = %d %s", rec.Code, rec.Body.String())
+	}
+	if got := decode(rec.Body.Bytes()); len(got.Notes) != 2 || got.Notes[0].Note != "changes requested" {
+		t.Fatalf("request changes without reason = %+v", got)
 	}
 }
 

@@ -74,7 +74,7 @@ func TestRequestChangesFromApproved(t *testing.T) {
 	if _, err := app.Approve(context.Background(), db, card.ID, shaA, gateCfg()); err != nil {
 		t.Fatal(err)
 	}
-	next, err := app.RequestChanges(context.Background(), db, card.ID, gateCfg())
+	next, err := app.RequestChanges(context.Background(), db, card.ID, "", gateCfg())
 	if err != nil {
 		t.Fatal(err)
 	}

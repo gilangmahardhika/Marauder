@@ -141,7 +141,7 @@ func Execute(opts Options) int {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				_, err := app.RequestChanges(ctx, db, args[0], app.GateConfig{Operator: "ada", BotLogin: "bot", Approvers: []string{"ada"}})
+				_, err := app.RequestChanges(ctx, db, args[0], "", app.GateConfig{Operator: "ada", BotLogin: "bot", Approvers: []string{"ada"}})
 				return err
 			})
 		},
