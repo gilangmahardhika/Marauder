@@ -607,6 +607,8 @@ A wrong password is `401`. Five wrong passwords for that email pause further att
 
 A wrong current password is `401`. A short new password is `422` on `newPassword`.
 
+`GET /api/me/usage?from=&to=` is `GET /api/usage` for the caller's own calls: calls on cards they own and refines they ran, in any project (RFC-090). Any signed-in user may call it. Every row has the caller's `userId`.
+
 `GET /api/me/github` and `PUT /api/me/github` are the caller's GitHub settings.
 
 ```json
@@ -646,11 +648,13 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 }
 ```
 
-Each row totals one day's `model_call` and `requirement_refined` events for one project, model, task, and user, across every project. `task` is `refine_requirement` for a refine, else the payload's `taskClass`, else `review` for role `reviewer`, else the attempt's `task_class`, else `implement`. `userId` is the card owner, or the refine's `actor_id`, and empty for a card with no owner. `familyId` and `protocol` come from the family in the service `config.yaml` that lists the model now, and are empty when none does. No reply text, prompt, or secret is returned.
+Each row totals one day's `model_call` and `requirement_refined` events for one project, model, task, and user, across every project. A call on a card counts in the card's project, and a call with no card in the event's project (RFC-090). `task` is `refine_requirement` for a refine, else the payload's `taskClass`, else `review` for role `reviewer`, else the attempt's `task_class`, else `implement`. `userId` is the card owner, or the refine's `actor_id`, and empty for a card with no owner. `familyId` and `protocol` come from the family in the service `config.yaml` that lists the model now, and are empty when none does. No reply text, prompt, or secret is returned.
 
 `GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
 
 Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of that tribe (RFC-057). Anyone else is `403`. A missing tribe is `404`.
+
+`GET /api/tribes/{id}/usage?from=&to=` is `GET /api/usage` for the projects whose tribe is `{id}` (RFC-090). It follows the rule above: an admin or a tribe admin of that tribe, else `403`, and a missing tribe is `404`, both before the dates.
 
 `GET /api/tribes/{id}/members` lists members. `tribeAdmin` is the per-tribe flag. `admin` is the company flag.
 
@@ -1463,7 +1467,7 @@ The CLI calls the same `internal/app` functions, not the HTTP API. It prints the
 | `orchestrator request-changes --project ID CARD` | `POST /api/projects/{id}/cards/{card}/request-changes` |
 | `orchestrator reject --project ID CARD` | `POST /api/projects/{id}/cards/{card}/reject` |
 | `orchestrator unblock --project ID CARD [--reset-attempts]` | `POST /api/projects/{id}/cards/{card}/unblock` |
-| `orchestrator usage [--from DAY] [--to DAY] [--by llm\|model\|project\|user\|task]` | `GET /api/usage`, totalled by one dimension and sorted by total tokens. The operator runs it, so it has no admin check (RFC-089) |
+| `orchestrator usage [--from DAY] [--to DAY] [--by llm\|model\|project\|user\|task] [--tribe ID] [--user ID]` | `GET /api/usage`, or with `--tribe` the tribe route and with `--user` that user's calls, totalled by one dimension and sorted by total tokens. The operator runs it, so it has no access check (RFC-089, RFC-090) |
 | `orchestrator serve` | Starts the API and one worker per project |
 
 Break-glass CLI commands that can read the service data directory attribute the actor from `--as EMAIL` when the command is a human gate. HTTP gates use the session user. The fixture may omit `--as` and use the fixture user.

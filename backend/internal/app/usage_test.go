@@ -112,7 +112,7 @@ func usageBoard(t *testing.T) (*sql.DB, string) {
 
 func readUsage(t *testing.T, db *sql.DB, data string) app.UsageReport {
 	t.Helper()
-	report, err := app.ReadUsage(context.Background(), db, data, "2026-10-01", "2026-10-03", usageNow)
+	report, err := app.ReadUsage(context.Background(), db, data, app.UsageScope{}, "2026-10-01", "2026-10-03", usageNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestUsageAggregates(t *testing.T) {
 	if _, err := app.GroupUsage(report.Rows, "cost"); err == nil {
 		t.Fatal("grouped by an unknown dimension")
 	}
-	if _, err := app.ReadUsage(context.Background(), db, data, "2026-10-03", "2026-10-01", usageNow); err == nil {
+	if _, err := app.ReadUsage(context.Background(), db, data, app.UsageScope{}, "2026-10-03", "2026-10-01", usageNow); err == nil {
 		t.Fatal("read a range that ends before it starts")
 	}
 }
@@ -249,5 +249,86 @@ func TestModelCallTaskClass(t *testing.T) {
 	}
 	if seen["implementer"] != "implement" || seen["reviewer"] != "review" {
 		t.Fatalf("taskClass by role = %v", seen)
+	}
+}
+
+// splitTribes moves Gadget into its own tribe, so the board has two tribes.
+func splitTribes(t *testing.T, db *sql.DB) {
+	t.Helper()
+	for _, stmt := range []string{
+		`INSERT INTO tribes (id, name, created_at) VALUES ('tribe_gadget', 'Gadget tribe', '2026-10-01T00:00:00Z')`,
+		`UPDATE projects SET tribe_id = 'tribe_gadget' WHERE id = 'proj_gadget'`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func appendUsage(t *testing.T, db *sql.DB, ev trace.Event) {
+	t.Helper()
+	if _, err := trace.Append(context.Background(), db, ev, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func scopedUsage(t *testing.T, db *sql.DB, data string, scope app.UsageScope) app.UsageReport {
+	t.Helper()
+	report, err := app.ReadUsage(context.Background(), db, data, scope, "2026-10-01", "2026-10-03", usageNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report
+}
+
+func TestUsageTribeScope(t *testing.T) {
+	db, data := usageBoard(t)
+	splitTribes(t, db)
+	var benCard string
+	if err := db.QueryRow(`SELECT id FROM cards WHERE title = 'Ben card'`).Scan(&benCard); err != nil {
+		t.Fatal(err)
+	}
+	appendUsage(t, db, trace.Event{TS: "2026-10-02T12:00:00Z", CardID: benCard, ProjectID: "proj_default", Kind: "model_call",
+		Payload: map[string]any{"role": "implementer", "modelId": "gpt-b", "inputTokens": 9, "outputTokens": 1}})
+
+	gadget := groupTotals(t, scopedUsage(t, db, data, app.UsageScope{TribeID: "tribe_gadget"}).Rows, "project")
+	if len(gadget) != 1 || gadget["Gadget"].Calls != 3 || gadget["Gadget"].InputTokens != 79 {
+		t.Fatalf("gadget tribe by project = %+v, want Gadget with the stale card event", gadget)
+	}
+	home := groupTotals(t, scopedUsage(t, db, data, app.UsageScope{TribeID: "tribe_default"}).Rows, "project")
+	if len(home) != 1 || home["Default"].Calls != 4 {
+		t.Fatalf("default tribe by project = %+v", home)
+	}
+	all := groupTotals(t, scopedUsage(t, db, data, app.UsageScope{}).Rows, "project")
+	if all["Gadget"].Calls != 3 || all["Default"].Calls != 4 {
+		t.Fatalf("company by project = %+v, want the card's project for every card call", all)
+	}
+	if rows := scopedUsage(t, db, data, app.UsageScope{TribeID: "tribe_missing"}).Rows; len(rows) != 0 {
+		t.Fatalf("unknown tribe rows = %+v", rows)
+	}
+}
+
+func TestUsageSelfScope(t *testing.T) {
+	db, data := usageBoard(t)
+	splitTribes(t, db)
+	appendUsage(t, db, trace.Event{TS: "2026-10-03T09:00:00Z", ActorID: "usr_ben", ProjectID: "proj_default", Kind: "requirement_refined",
+		Payload: map[string]any{"requirementId": "new", "modelId": "claude-a", "inputTokens": 5, "outputTokens": 1}})
+
+	report := scopedUsage(t, db, data, app.UsageScope{UserID: "usr_ben"})
+	for _, r := range report.Rows {
+		if r.UserID != "usr_ben" {
+			t.Fatalf("Ben's usage has a row for %q: %+v", r.UserID, r)
+		}
+	}
+	projects := groupTotals(t, report.Rows, "project")
+	if len(projects) != 2 || projects["Gadget"].Calls != 2 || projects["Default"].Calls != 1 {
+		t.Fatalf("Ben by project = %+v, want both tribes", projects)
+	}
+	tasks := groupTotals(t, report.Rows, "task")
+	if tasks["refine_requirement"].Calls != 2 || tasks["implement"].Calls != 1 {
+		t.Fatalf("Ben by task = %+v", tasks)
+	}
+	if rows := scopedUsage(t, db, data, app.UsageScope{UserID: "usr_nobody"}).Rows; len(rows) != 0 {
+		t.Fatalf("unknown user rows = %+v", rows)
 	}
 }

@@ -18,6 +18,9 @@ const (
 	UsageMaxDays = 366
 )
 
+// UsageScope narrows a usage read to a tribe's projects or one user's calls.
+type UsageScope = board.UsageScope
+
 // UsageRangeError is a from or to the usage read refuses; Field names it.
 type UsageRangeError struct {
 	Field   string
@@ -85,18 +88,32 @@ func UsageWindow(from, to string, now time.Time) (time.Time, time.Time, error) {
 	return start, end, nil
 }
 
-// Usage is ReadUsage for an admin; anyone else gets ErrForbidden before the
-// range is checked (RFC-089).
+// Usage is ReadUsage of every project for an admin; anyone else gets
+// ErrForbidden before the range is checked (RFC-089).
 func Usage(ctx context.Context, db *sql.DB, data string, actor User, from, to string, now time.Time) (UsageReport, error) {
 	if !actor.Admin {
 		return UsageReport{}, ErrForbidden
 	}
-	return ReadUsage(ctx, db, data, from, to, now)
+	return ReadUsage(ctx, db, data, board.UsageScope{}, from, to, now)
 }
 
-// ReadUsage totals the stored model calls of every project in the range and
+// TribeUsage is ReadUsage of one tribe's projects for an admin or a tribe
+// admin of it. The tribe is checked before the range (RFC-090).
+func TribeUsage(ctx context.Context, db *sql.DB, data string, actor User, tribeID, from, to string, now time.Time) (UsageReport, error) {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
+		return UsageReport{}, err
+	}
+	return ReadUsage(ctx, db, data, board.UsageScope{TribeID: tribeID}, from, to, now)
+}
+
+// MyUsage is ReadUsage of the actor's own calls in any project (RFC-090).
+func MyUsage(ctx context.Context, db *sql.DB, data string, actor User, from, to string, now time.Time) (UsageReport, error) {
+	return ReadUsage(ctx, db, data, board.UsageScope{UserID: actor.ID}, from, to, now)
+}
+
+// ReadUsage totals the stored model calls within scope in the range and
 // names each model's family from the service config.yaml.
-func ReadUsage(ctx context.Context, db *sql.DB, data, from, to string, now time.Time) (UsageReport, error) {
+func ReadUsage(ctx context.Context, db *sql.DB, data string, scope board.UsageScope, from, to string, now time.Time) (UsageReport, error) {
 	start, end, err := UsageWindow(from, to, now)
 	if err != nil {
 		return UsageReport{}, err
@@ -113,7 +130,7 @@ func ReadUsage(ctx context.Context, db *sql.DB, data, from, to string, now time.
 			}
 		}
 	}
-	rows, err := board.UsageRows(ctx, db, start.Format(time.DateOnly), end.AddDate(0, 0, 1).Format(time.DateOnly))
+	rows, err := board.UsageRows(ctx, db, start.Format(time.DateOnly), end.AddDate(0, 0, 1).Format(time.DateOnly), scope)
 	if err != nil {
 		return UsageReport{}, err
 	}

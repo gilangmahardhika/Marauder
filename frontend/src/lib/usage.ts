@@ -25,6 +25,11 @@ export const rangeOptions: Option<(typeof rangeValues)[number]>[] = [
   { value: '90', label: '90 days' }
 ];
 
+/** The Group by and filter choices for the dimensions a page allows, in the usual order. */
+export function dimensionOptionsFor(allowed: readonly Dimension[]) {
+  return dimensionOptions.filter((option) => allowed.includes(option.value));
+}
+
 const allLabels: Record<Dimension, string> = {
   llm: 'All LLMs',
   model: 'All models',

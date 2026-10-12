@@ -22,15 +22,23 @@ type UsageRow struct {
 	CachedInputTokens int64
 }
 
+// UsageScope narrows UsageRows to the projects of one tribe, to the calls of
+// one user, or both. Empty fields narrow nothing (RFC-090).
+type UsageScope struct {
+	TribeID string
+	UserID  string
+}
+
 // UsageRows totals the model_call and requirement_refined events with ts in
-// [from, to), across every project. The task type is the event's taskClass,
-// else refine_requirement for a refine, review for a reviewer call, and the
-// attempt's task class otherwise. A call on a card counts against the card's
-// owner, and a refine against its actor.
-func UsageRows(ctx context.Context, db *sql.DB, from, to string) ([]UsageRow, error) {
+// [from, to) within scope. The task type is the event's taskClass, else
+// refine_requirement for a refine, review for a reviewer call, and the
+// attempt's task class otherwise. A call on a card counts in the card's
+// project and against the card's owner; a refine counts in the event's
+// project and against its actor.
+func UsageRows(ctx context.Context, db *sql.DB, from, to string, scope UsageScope) ([]UsageRow, error) {
 	rows, err := db.QueryContext(ctx, `
 		WITH calls AS (
-			SELECT substr(e.ts, 1, 10) AS day, e.project_id, e.payload_json::jsonb AS p,
+			SELECT substr(e.ts, 1, 10) AS day, COALESCE(c.project_id, e.project_id) AS project_id, e.payload_json::jsonb AS p,
 				CASE
 					WHEN e.kind = 'requirement_refined' THEN 'refine_requirement'
 					WHEN COALESCE(e.payload_json::jsonb->>'taskClass', '') <> '' THEN e.payload_json::jsonb->>'taskClass'
@@ -52,8 +60,9 @@ func UsageRows(ctx context.Context, db *sql.DB, from, to string) ([]UsageRow, er
 		FROM calls
 		LEFT JOIN projects pr ON pr.id = calls.project_id
 		LEFT JOIN users u ON u.id = calls.user_id
+		WHERE ($3 = '' OR pr.tribe_id = $3) AND ($4 = '' OR calls.user_id = $4)
 		GROUP BY calls.day, calls.project_id, pr.name, calls.p->>'modelId', calls.task, calls.user_id, u.name, u.email
-		ORDER BY calls.day, calls.project_id, calls.p->>'modelId', calls.task, calls.user_id`, from, to)
+		ORDER BY calls.day, calls.project_id, calls.p->>'modelId', calls.task, calls.user_id`, from, to, scope.TribeID, scope.UserID)
 	if err != nil {
 		return nil, err
 	}

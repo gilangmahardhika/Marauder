@@ -127,6 +127,9 @@
   title={savedName || email || 'Account'}
   description="Your sign-in and your own GitHub identity. Project bot and deploy tokens live in project settings."
 >
+  {#snippet actions()}
+    <Button href="/account/usage">Token usage</Button>
+  {/snippet}
   {#snippet meta()}
     {#if role}<Badge>{roleLabel(role)}</Badge>{/if}
     {#if admin}<Badge tone="green">Admin</Badge>{/if}

@@ -862,3 +862,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestUsageCLI`
 - [x] `usage` lib, Token usage page, and nav Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 54: Token usage for a tribe and for each member
+
+- [x] `board.UsageScope` for a tribe or a user, and a card's call counted in the card's project.
+- [x] `app.TribeUsage` and `app.MyUsage`, `GET /api/tribes/{id}/usage`, `GET /api/me/usage`, and `orchestrator usage --tribe --user`.
+- [x] `UsageDashboard` on `/admin/usage`, `/tribes/{id}/usage`, and `/account/usage`, with the links.
+- [x] `TestUsageTribeScope`
+- [x] `TestUsageSelfScope`
+- [x] `TestTribeUsageAccess`
+- [x] `TestMyUsage`
+- [x] `TestUsageCLIScope`
+- [x] `usage` lib, tribe and account usage page, admin usage page, and menu Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

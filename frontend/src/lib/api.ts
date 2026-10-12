@@ -291,6 +291,16 @@ export function getUsage(from: string, to: string) {
   return request<UsageResponse>(`/api/usage?${query}`);
 }
 
+export function getTribeUsage(id: string, from: string, to: string) {
+  const query = new URLSearchParams({ from, to });
+  return request<UsageResponse>(`/api/tribes/${encodeURIComponent(id)}/usage?${query}`);
+}
+
+export function getMyUsage(from: string, to: string) {
+  const query = new URLSearchParams({ from, to });
+  return request<UsageResponse>(`/api/me/usage?${query}`);
+}
+
 export function createUser(body: {
   name: string;
   email: string;

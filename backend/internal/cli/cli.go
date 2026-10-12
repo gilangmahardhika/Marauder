@@ -221,13 +221,14 @@ func Execute(opts Options) int {
 			})
 		},
 	})
-	var usageFrom, usageTo, usageBy string
+	var usageFrom, usageTo, usageBy, usageTribe, usageUser string
 	usage := &cobra.Command{
 		Use:   "usage",
 		Short: "token usage across projects, grouped one way",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				report, err := app.ReadUsage(ctx, db, paths.Data, usageFrom, usageTo, time.Now())
+				scope := app.UsageScope{TribeID: usageTribe, UserID: usageUser}
+				report, err := app.ReadUsage(ctx, db, paths.Data, scope, usageFrom, usageTo, time.Now())
 				if err != nil {
 					return err
 				}
@@ -252,6 +253,8 @@ func Execute(opts Options) int {
 	usage.Flags().StringVar(&usageFrom, "from", "", "first day, YYYY-MM-DD (default: 30 days ending today)")
 	usage.Flags().StringVar(&usageTo, "to", "", "last day, YYYY-MM-DD (default: today)")
 	usage.Flags().StringVar(&usageBy, "by", "model", "llm, model, project, user, or task")
+	usage.Flags().StringVar(&usageTribe, "tribe", "", "only the projects of this tribe id")
+	usage.Flags().StringVar(&usageUser, "user", "", "only the calls of this user id")
 	root.AddCommand(usage)
 	root.SetOut(opts.Stderr)
 	root.SetErr(opts.Stderr)

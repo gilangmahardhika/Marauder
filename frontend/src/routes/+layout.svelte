@@ -168,6 +168,7 @@
           placement="up"
           items={[
             { label: 'Account', href: '/account' },
+            { label: 'My token usage', href: '/account/usage' },
             { label: 'Sign out', onclick: () => void signOut() }
           ]}
         />
@@ -208,6 +209,7 @@
               {/each}
             {/each}
             <a href="/account" class="flex h-11 items-center rounded-control px-3 text-sm hover:bg-surface" onclick={() => (mobile = false)}>Account</a>
+            <a href="/account/usage" class="flex h-11 items-center rounded-control px-3 text-sm hover:bg-surface" onclick={() => (mobile = false)}>My token usage</a>
             <button type="button" class="flex h-11 items-center rounded-control px-3 text-left text-sm hover:bg-surface" onclick={() => void signOut()}>Sign out</button>
           </nav>
         </div>

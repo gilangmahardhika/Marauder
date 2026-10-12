@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
 import { readable } from 'svelte/store';
 import { afterEach, expect, test, vi } from 'vitest';
@@ -45,4 +45,13 @@ test('Token usage is the first admin item and only admins see it', async () => {
   await waitFor(() => expect(screen.getAllByRole('link', { name: 'Board' }).length).toBeGreaterThan(0));
   expect(screen.queryByRole('link', { name: 'Token usage' })).toBeNull();
   expect(document.querySelector('a[href="/admin/usage"]')).toBeNull();
+});
+
+test('the user menu links to My token usage for any member', async () => {
+  api.getProjects.mockResolvedValue({ projects: [] });
+  api.getMe.mockResolvedValue(me(false));
+  render(Layout, { children });
+  await waitFor(() => expect(screen.getByRole('button', { name: /Ana/ })).toBeTruthy());
+  await fireEvent.click(screen.getByRole('button', { name: /Ana/ }));
+  expect(screen.getByRole('link', { name: 'My token usage' }).getAttribute('href')).toBe('/account/usage');
 });

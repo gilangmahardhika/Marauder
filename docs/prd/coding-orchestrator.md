@@ -127,6 +127,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-082 | The implementer runs allowlisted commands on a copy, and infrastructure failures keep the attempt |
 | REQ-083 | A member can refine a requirement with AI and compare it before applying |
 | REQ-084 | An admin sees token usage across projects |
+| REQ-085 | A tribe admin sees their tribe's token usage, and a member sees their own |
 
 ## Requirements
 
@@ -1169,6 +1170,18 @@ An admin opens one Token usage page for the whole company. It counts the tokens 
 - Filtering by LLM, model, project, user, or task type changes every total on the page.
 - The groups sort by name, calls, input, output, cached, or total, in either direction.
 - The page never shows a model's reply text or a secret.
+
+### REQ-085 A tribe admin sees their tribe's token usage, and a member sees their own
+
+A tribe admin opens the Token usage page for their tribe and sees the calls of that tribe's projects only. Every member opens My token usage and sees the calls of the cards they own and the refines they ran. Both pages filter, group, and sort as the admin page does (RFC-090).
+
+#### Acceptance
+
+- A tribe's page opens for a company admin and for that tribe's admins. Other users get no usage for the tribe.
+- A tribe's page counts only calls in that tribe's projects.
+- My token usage counts only the member's own calls, and never shows another user.
+- A call on a card counts in the card's project.
+- Neither page shows a model's reply text or a secret.
 
 ## Non-goals
 

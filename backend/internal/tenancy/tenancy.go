@@ -86,7 +86,9 @@ func TribeAdminOf(ctx context.Context, db *sql.DB, userID string) ([]string, err
 
 // manageTribe returns ErrForbidden unless the actor may run the tribe, and
 // ErrNotFound when the tribe does not exist.
-func manageTribe(ctx context.Context, db *sql.DB, actor identity.User, tribeID string) error {
+// ManageTribe returns identity.ErrForbidden unless actor may manage tribeID,
+// then identity.ErrNotFound when the tribe does not exist (RFC-057).
+func ManageTribe(ctx context.Context, db *sql.DB, actor identity.User, tribeID string) error {
 	ok, err := CanManageTribe(ctx, db, actor, tribeID)
 	if err != nil {
 		return err
@@ -151,7 +153,7 @@ func ListTribes(ctx context.Context, db *sql.DB, actor identity.User) ([]Tribe, 
 }
 
 func ListMembers(ctx context.Context, db *sql.DB, actor identity.User, tribeID string) ([]Member, error) {
-	if err := manageTribe(ctx, db, actor, tribeID); err != nil {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `
@@ -176,7 +178,7 @@ func ListMembers(ctx context.Context, db *sql.DB, actor identity.User, tribeID s
 }
 
 func AddMember(ctx context.Context, db *sql.DB, actor identity.User, tribeID, userID string) error {
-	if err := manageTribe(ctx, db, actor, tribeID); err != nil {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
 		return err
 	}
 	var n int
@@ -193,7 +195,7 @@ func AddMember(ctx context.Context, db *sql.DB, actor identity.User, tribeID, us
 }
 
 func RemoveMember(ctx context.Context, db *sql.DB, actor identity.User, tribeID, userID string) error {
-	if err := manageTribe(ctx, db, actor, tribeID); err != nil {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
 		return err
 	}
 	if !actor.Admin && userID == actor.ID {
@@ -216,7 +218,7 @@ func RemoveMember(ctx context.Context, db *sql.DB, actor identity.User, tribeID,
 // SetTribeAdmin sets or clears the tribe admin flag on one member. A tribe
 // admin cannot clear their own flag; a company admin can.
 func SetTribeAdmin(ctx context.Context, db *sql.DB, actor identity.User, tribeID, userID string, on bool) error {
-	if err := manageTribe(ctx, db, actor, tribeID); err != nil {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
 		return err
 	}
 	if !actor.Admin && userID == actor.ID && !on {
@@ -239,7 +241,7 @@ func SetTribeAdmin(ctx context.Context, db *sql.DB, actor identity.User, tribeID
 
 // Candidates lists enabled users who are not members of the tribe.
 func Candidates(ctx context.Context, db *sql.DB, actor identity.User, tribeID string) ([]Candidate, error) {
-	if err := manageTribe(ctx, db, actor, tribeID); err != nil {
+	if err := ManageTribe(ctx, db, actor, tribeID); err != nil {
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `

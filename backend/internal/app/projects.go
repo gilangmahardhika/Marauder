@@ -49,6 +49,12 @@ func TribeAdminOf(ctx context.Context, db *sql.DB, userID string) ([]string, err
 	return tenancy.TribeAdminOf(ctx, db, userID)
 }
 
+// ManageTribe returns ErrForbidden unless actor is an admin or a tribe admin
+// of tribeID, then ErrNotFound for a missing tribe.
+func ManageTribe(ctx context.Context, db *sql.DB, actor User, tribeID string) error {
+	return tenancy.ManageTribe(ctx, db, actor, tribeID)
+}
+
 type RepoCheck = tenancy.RepoCheck
 
 // GitHubRepoCheck confirms a repository and branch with the company token.

@@ -446,3 +446,74 @@ func TestUsageCLI(t *testing.T) {
 		t.Fatalf("--by cost exit = %d stderr %q", code, stderr)
 	}
 }
+
+func TestUsageCLIScope(t *testing.T) {
+	repo, data, databaseURL := cliDirs(t)
+	db, err := board.Open(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, stmt := range []string{
+		`INSERT INTO users (id, name, email, password_hash, role, created_at) VALUES ('usr_ana', 'Ana', 'ana@example.com', 'x', 'developer', '2026-10-01T00:00:00Z')`,
+		`INSERT INTO tribes (id, name, created_at) VALUES ('tribe_gadget', 'Gadget tribe', '2026-10-01T00:00:00Z')`,
+		`INSERT INTO projects (id, tribe_id, name, repo_path, created_at) VALUES ('proj_gadget', 'tribe_gadget', 'Gadget', '/tmp/gadget', '2026-10-01T00:00:00Z')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		project, owner string
+		input          int
+	}{{"proj_gadget", "usr_ana", 100}, {"proj_default", "", 30}} {
+		card, err := board.InsertCard(ctx, db, board.Card{Status: "human_review", Title: "card", ProjectID: c.project, OwnerID: c.owner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := trace.Append(ctx, db, trace.Event{TS: "2026-10-02T10:00:00Z", CardID: card.ID, ProjectID: c.project, Kind: "model_call",
+			Payload: map[string]any{"role": "implementer", "taskClass": "implement", "modelId": "model-a", "inputTokens": c.input}}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage := func(flags ...string) string {
+		var stdout, stderr bytes.Buffer
+		args := append([]string{"usage", "--from", "2026-10-01", "--to", "2026-10-03", "--by", "project", "--repo", repo, "--data", data}, flags...)
+		code := cli.Execute(cli.Options{
+			Args: args, Stdout: &stdout, Stderr: &stderr,
+			Getenv: func(key string) string {
+				if key == "ORCHESTRATOR_DATABASE_URL" {
+					return databaseURL
+				}
+				return ""
+			},
+		})
+		if code != 0 {
+			t.Fatalf("%v exit = %d stderr %q", flags, code, stderr.String())
+		}
+		return stdout.String()
+	}
+	rows := func(out string) []string {
+		var got []string
+		for _, line := range strings.Split(strings.TrimSpace(out), "\n")[1:] {
+			got = append(got, strings.Join(strings.Fields(line), " "))
+		}
+		return got
+	}
+	if got := rows(usage()); len(got) != 3 || got[1] != "Gadget 1 100 0 0 100" || got[2] != "Default 1 30 0 0 30" {
+		t.Fatalf("company = %q", got)
+	}
+	if got := rows(usage("--tribe", "tribe_gadget")); len(got) != 2 || got[1] != "Gadget 1 100 0 0 100" {
+		t.Fatalf("--tribe = %q", got)
+	}
+	if got := rows(usage("--user", "usr_ana")); len(got) != 2 || got[1] != "Gadget 1 100 0 0 100" {
+		t.Fatalf("--user = %q", got)
+	}
+	if out := usage("--tribe", "tribe_default", "--user", "usr_ana"); !strings.Contains(out, "no model calls in this range") {
+		t.Fatalf("--tribe and --user = %q", out)
+	}
+}

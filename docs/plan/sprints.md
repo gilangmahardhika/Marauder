@@ -775,3 +775,15 @@ Packages: `migrations`, `internal/loop`, `internal/board`, `internal/app`, `inte
 - `/admin/usage` with the range, five filters, Group by, a sortable table, the totals, and a bar per day.
 
 Done when: `TestUsageAggregates`, `TestUsageTaskClass`, `TestUsageUser`, `TestUsageFamily`, `TestUsageAdminOnly`, `TestUsageRange`, `TestModelCallTaskClass`, `TestUsageCLI`, the `usage` lib, Token usage page, and nav Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 54: Token usage for a tribe and for each member
+
+Goal: A tribe admin sees the token usage of their tribe's projects, and every member sees their own (RFC-090, REQ-085).
+
+Packages: `internal/board`, `internal/tenancy`, `internal/app`, `internal/httpapi`, `internal/cli`, frontend `api.ts`, `usage.ts`, the `UsageDashboard` component, the tribe and account usage pages, and the layout menu.
+
+- `board.UsageScope` narrows `board.UsageRows` to a tribe's projects or to one user, and a call on a card counts in the card's project.
+- `app.TribeUsage` checks the tribe like the other tribe routes, and `app.MyUsage` reads the caller's own calls. `GET /api/tribes/{id}/usage`, `GET /api/me/usage`, and `orchestrator usage --tribe --user` share them.
+- `UsageDashboard` serves `/admin/usage`, `/tribes/{id}/usage`, and `/account/usage`, with links from the tribe page, the account page, and the user menu.
+
+Done when: `TestUsageTribeScope`, `TestUsageSelfScope`, `TestTribeUsageAccess`, `TestMyUsage`, `TestUsageCLIScope`, the `usage` lib, tribe and account usage page, admin usage page, and menu Vitest cases, `npm run check`, the fixture, and the rest of the suite.

@@ -90,6 +90,8 @@ frontend/
   src/routes/cards/[id]/trace/+page.svelte
   src/routes/account/+page.svelte
   src/routes/admin/usage/+page.svelte
+  src/routes/tribes/[id]/usage/+page.svelte
+  src/routes/account/usage/+page.svelte
   src/routes/admin/users/+page.svelte
   src/routes/admin/users/new/+page.svelte
   src/routes/admin/users/[id]/+page.svelte
@@ -233,6 +235,7 @@ frontend/
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
 | `/account` | Name, password, and the caller's GitHub settings |
+| `/account/usage` | My token usage (RFC-090) |
 | `/admin/usage` | Token usage across every project (RFC-089) |
 | `/admin/users` | Admin user list |
 | `/admin/users/new` | Create a user |
@@ -251,6 +254,7 @@ frontend/
 | `/tribes` | Tribes |
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
+| `/tribes/[id]/usage` | Token usage of the tribe's projects (RFC-090) |
 | `/projects` | Projects for the caller's tribes |
 | `/projects/new` | Create a project |
 | `/settings/repository` | Project repository, base branch, and Sync |
@@ -260,7 +264,7 @@ frontend/
 
 `+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
+The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -499,6 +503,12 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 An empty range shows "No model calls in this range"; filters that keep nothing show "No calls match" with Clear filters. A `403` sets the live message from `error.message`.
 
+The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with props `title`, `description`, `load(from, to)`, `dimensions` (all five by default), and an optional `actions` snippet. A dimension not listed is left out of the filters and Group by, and its URL parameters are ignored; `?by=` falls back to model. The data is read again when `load` or the range changes. Three routes use it:
+
+- `/admin/usage` with `getUsage`.
+- `/tribes/[id]/usage` with `getTribeUsage(id, ...)`, titled "Token usage: {tribe}" from `getTribes()`, with all five dimensions and a "Back to tribe" link. The tribe page links to it with a "Token usage" button.
+- `/account/usage`, "My token usage", with `getMyUsage` and the dimensions LLM, model, project, and task, and an "Account" link. The account page links to it with a "Token usage" button, and the user menu and the mobile menu with "My token usage".
+
 ### Company GitHub
 
 `src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows "Signed in as LOGIN. Sees N repositories in ORG (M private)." on success or `message` on `ok: false` in the Bot account panel footer, next to Save. A non-empty `hint` shows in a `warning` `Notice` in the Bot account panel. The saved bot login shows as read-only text.
@@ -676,6 +686,10 @@ npm run build
 | `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
 | `usage` lib | Groups by LLM, model, project, user, and task, with "Unknown family" and "No owner". Filters use `-` for a missing value. Options count the rows the other filters keep and keep a chosen value with none. Groups sort by any column either way, ties by name. Daily totals fill every day of the range. The summary's cache share is cached over all input read. `rangeWindow` ends today in UTC |
 | Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and the Model choices, and picking one sets `model`. `?by=user` regroups and Group by sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
+| `usage` dimension choices | `dimensionOptionsFor` keeps the allowed dimensions in the usual order |
+| Tribe usage page | It reads `getTribeUsage` with the route's tribe id and 30 days, titles the page and the shell "Token usage: Gadget tribe", links back to the tribe, and offers the User filter |
+| Account usage page | It reads `getMyUsage`, has no User filter, and Group by offers LLM, Model, Project, and Task. `?by=user&user=...` is ignored: models group and every row counts |
+| User menu | Opening the menu shows "My token usage" linking to `/account/usage` for a member who is not an admin |
 | Nav admin items | Token usage is the first Admin link for an admin and is absent for a member who is not one |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |

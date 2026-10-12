@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { UsageRow } from './types';
 import {
   dailyTotals,
+  dimensionOptionsFor,
   filterUsage,
   groupUsage,
   none,
@@ -99,6 +100,16 @@ describe('usage', () => {
       cacheShare: 100 / 497
     });
     expect(usageSummary([]).cacheShare).toBe(0);
+  });
+
+  test('dimension choices keep the allowed dimensions in the usual order', () => {
+    expect(dimensionOptionsFor(['task', 'llm', 'model', 'project']).map((option) => option.value)).toEqual([
+      'llm',
+      'model',
+      'project',
+      'task'
+    ]);
+    expect(dimensionOptionsFor(['llm', 'model', 'project', 'user', 'task'])).toHaveLength(5);
   });
 
   test('a range window ends today in UTC', () => {

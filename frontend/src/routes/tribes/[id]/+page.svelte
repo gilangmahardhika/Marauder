@@ -140,6 +140,7 @@
   description={`${members.length} ${members.length === 1 ? 'member' : 'members'}`}
 >
   {#snippet actions()}
+    <Button href={`/tribes/${$page.params.id}/usage`}>Token usage</Button>
     <Button href="/tribes">All tribes</Button>
   {/snippet}
   <div class="flex flex-col gap-6">

@@ -111,6 +111,10 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestModelCallTaskClass` | After an implement job and a review, every implementer `model_call` carries `taskClass` `implement` and every reviewer one `review` |
 | `TestUsageAdminOnly` | `/api/usage` without a bearer is `401`, for a Lead Developer who is not an admin is `403` even with a bad range, and for an admin is `200` with the call's model, task, and tokens and without its reply text |
 | `TestUsageRange` | No dates read the 30 days ending today with `rows: []`. `from` after `to`, 367 days, and a bad `from` are `422` on `from`; a bad `to` is `422` on `to`. 366 days is `200` |
+| `TestUsageTribeScope` | With Gadget in its own tribe, the Gadget tribe reads only Gadget, including a Gadget card's event stored with `proj_default`; the default tribe reads only Default; the company view puts every card call in its card's project; an unknown tribe reads nothing (RFC-090) |
+| `TestUsageSelfScope` | Ben's scope has only his rows: his card's call and two refines, in projects of both tribes. Ana's calls and the card with no owner are left out; an unknown user reads nothing |
+| `TestTribeUsageAccess` | `/api/tribes/{id}/usage` without a bearer is `401`; a plain member of the tribe and a tribe admin of another tribe are `403`; an admin on a missing tribe is `404`; the tribe admin with a bad range is `422`; the tribe admin and an admin get only the tribe's project and no reply text |
+| `TestMyUsage` | `/api/me/usage` without a bearer is `401`. A member who is not an admin gets their owned card call and their refine, in two projects, every row theirs, with no other user's email and no reply text. A bad `to` is `422`. An admin with no calls of their own gets no rows |
 | `TestRefineFieldStreams` | A statement refine replies `text/event-stream` with `start` naming the model, at least two deltas that join to the text, then `done` with the text and no acceptance. One request with task class `refine_requirement`, 4,096 max tokens, and no tools. An accepted manual row is unchanged, and one `requirement_refined` event has the id, `field`, model, and tokens, and no text (RFC-086, RFC-087) |
 | `TestRefineFieldAcceptanceLines` | An acceptance refine drops list markers and blank lines in `done` and uses `RefineAcceptanceSystem`. 51 lines or no lines end with an `error` event and no `done` |
 | `TestRefineFieldRedactsSplitKey` | A model key split across two deltas never reaches the stream, whole or in part, and the text reads `[redacted]`. A provider error before text is `502` JSON and one after text is an `error` event, neither with the key |
@@ -320,6 +324,7 @@ After step 9, the runner runs the tool loop with the fake provider on two more c
 | `orchestrator run-next` when idle | Exit `0`, stdout contains `no card is ready` |
 | `orchestrator unblock card_x --reset-attempts` on a `turn_cap` card | Exit `0`, card `ready`, `attemptsUsed` 0 |
 | `orchestrator serve --data <repo>/.orchestrator` | Exit `1` before listen |
+| `orchestrator usage --by project` with `--tribe tribe_gadget`, `--user usr_ana`, and both with the other tribe (`TestUsageCLIScope`) | Exit `0`. The company lists Gadget and Default; `--tribe` and `--user` list only Gadget; the other tribe with that user prints `no model calls in this range` |
 | `orchestrator usage --from 2026-10-01 --to 2026-10-03 --by task` (`TestUsageCLI`) | Exit `0`, a heading with the range, then `implement 1 100 20 0 120` and `review 1 30 5 0 35`. `--by cost` exits non-zero naming `--by` |
 
 ## Frontend checks
