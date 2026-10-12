@@ -158,6 +158,31 @@ test('run opens a box prefilled with the instructions and sends only changed tex
   expect(bodies).toEqual([{}, { instructions: 'Use the lint script and keep tsc.' }, { instructions: 'Keep tsc.' }]);
 });
 
+test('retry AI review shows only when listed and posts to retry-review', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  const first = render(CardActions, { card: card({ status: 'agent_review', group: 'review', actions: [] }) });
+  expect(screen.queryByRole('button', { name: 'Retry AI review' })).toBeNull();
+  first.unmount();
+
+  const calls: { url: string; method: string }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, method: String(init.method) });
+      return new Response(JSON.stringify(card({ status: 'pr_open', group: 'review', actions: [] })), { status: 200 });
+    })
+  );
+  render(CardActions, {
+    card: card({ status: 'agent_review', group: 'review', reviewVerdict: 'failed', actions: ['retry_review'] })
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Retry AI review' }));
+  await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Retry AI review' })).toBeNull());
+  expect(calls).toEqual([
+    { url: 'http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/retry-review', method: 'POST' }
+  ]);
+});
+
 test('blocked card with null unblockTo has no unblock button', () => {
   render(CardActions, {
     card: card({ status: 'blocked', group: 'stopped', actions: [], unblockTo: null, blockedReason: 'source_changed' })

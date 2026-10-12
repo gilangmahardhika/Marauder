@@ -168,6 +168,16 @@ func TestReviewManualReachesHumanReview(t *testing.T) {
 			t.Fatalf("red checks queued %d retry rows", n)
 		}
 	})
+	t.Run("red checks out of attempts", func(t *testing.T) {
+		f := manualReviewFixture(t)
+		if _, err := f.db.Exec(`UPDATE cards SET attempts_used = max_attempts WHERE id = $1`, f.card.ID); err != nil {
+			t.Fatal(err)
+		}
+		f.calls.setPR(prJSON(f.sha, `[{"name":"ci","status":"COMPLETED","conclusion":"FAILURE"}]`))
+		if card := f.review(t, requestChangesScript); card.Status != "blocked" || card.BlockedReason != "attempt_cap" {
+			t.Fatalf("card = %s %q, want blocked attempt_cap", card.Status, card.BlockedReason)
+		}
+	})
 }
 
 func TestRefreshSendsBackWhenNoLongerManual(t *testing.T) {

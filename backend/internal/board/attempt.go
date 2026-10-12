@@ -246,6 +246,16 @@ func RecordReview(ctx context.Context, q DBTX, attemptID, model, promptHash stri
 	return err
 }
 
+// ClearReview removes the review of an attempt, so the next review job
+// records a fresh one (RFC-076).
+func ClearReview(ctx context.Context, q DBTX, attemptID string) error {
+	_, err := q.ExecContext(ctx, `
+		UPDATE attempts SET review_model_id = NULL, review_prompt_hash = NULL, review_independent = NULL,
+			review_verdict = NULL, reviewed_sha = NULL
+		WHERE id = $1`, attemptID)
+	return err
+}
+
 // AttemptSummary is what the trace shows for one attempt. Empty strings are
 // values the attempt does not have yet.
 type AttemptSummary struct {

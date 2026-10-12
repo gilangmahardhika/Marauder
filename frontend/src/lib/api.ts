@@ -289,6 +289,10 @@ export function deployCard(id: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/deploy`, { method: 'POST', body: '{}' });
 }
 
+export function retryReview(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/retry-review`, { method: 'POST', body: '{}' });
+}
+
 export function approveCard(id: string, sha: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/approve`, { method: 'POST', body: JSON.stringify({ sha }) });
 }

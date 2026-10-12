@@ -194,6 +194,7 @@ Card status changes only through the harness transition function. The legal edge
 | `agent_review` | `changes_requested` | Review body stored. Verdict `request_changes`, or a required CI check failed. |
 | `agent_review` | `human_review` | Review body stored. Verdict `recommend_approve`, or the review gave no verdict (REQ-072). Required CI green, or none required. |
 | `agent_review` | `blocked` | The company GitHub account is not set up, so the checks cannot be read. |
+| `agent_review` | `pr_open` | The latest AI review is `failed`, and a person asked to retry it. Review cleared. Attempts unchanged (REQ-072). |
 | `changes_requested` | `in_progress` | New attempt id. Same branch. Approval cleared. Attempts remain. |
 | `changes_requested` | `blocked` | Attempt cap reached. Reason `attempt_cap`. |
 | `human_review` | `changes_requested` | Approver requested changes. Approval cleared. |
@@ -1015,7 +1016,7 @@ A new approval posts a comment on the card's pull request and a `success` commit
 
 ### REQ-072 The pull request checks decide when the AI review gives no verdict
 
-A card whose pull request checks are green, or which has no checks, reaches `human_review` even when the AI review gives no verdict. That covers no routable review model, an unparseable verdict after the fallback model, a provider failure, and a review job that stopped. The attempt stores the review as `failed`, the pull request gets an "AI review: Not done" comment, and the card page shows that the AI review failed. A failed check still moves the card to `changes_requested`, and a `request_changes` verdict still sends it back. An empty check list counts as no checks only 2 minutes after the card entered `pr_open`, because GitHub needs time to register the runs (RFC-069).
+A card whose pull request checks are green, or which has no checks, reaches `human_review` even when the AI review gives no verdict. That covers no routable review model, an unparseable verdict after the fallback model, a provider failure, and a review job that stopped. The attempt stores the review as `failed`, the pull request gets an "AI review: Not done" comment, and the card page shows that the AI review failed. A failed check still moves the card to `changes_requested`, and a `request_changes` verdict still sends it back. An empty check list counts as no checks only 2 minutes after the card entered `pr_open`, because GitHub needs time to register the runs (RFC-069). While the card waits in `agent_review` with a `failed` review, a person who may run cards may retry the AI review, which sends the card back to `pr_open` for a new review job without using an attempt (RFC-076).
 
 #### Acceptance
 
@@ -1023,6 +1024,7 @@ A card whose pull request checks are green, or which has no checks, reaches `hum
 - A review with no verdict and a red check moves the card to `changes_requested` with a `ci` note.
 - Right after `pr_open`, an empty check list keeps the card in `agent_review`. After 2 minutes it reaches `human_review`.
 - A card left in `agent_review` without a verdict by a stopped review reaches `human_review` on a refresh once no job holds its lock.
+- Retry AI review on an `agent_review` card with a `failed` review moves it to `pr_open`, and the next review job records a new verdict. `attempts_used` does not change.
 
 ### REQ-073 Self review on a requirement
 
@@ -1036,7 +1038,7 @@ A Lead Developer or an admin may turn Self review on for one requirement, when a
 
 ### REQ-074 A failed attempt retries, and a requirement chooses what an AI request for changes does
 
-After a person runs a card, an attempt that makes no commit or fails its local check queues the next attempt while attempts remain, so nobody presses Run again. A card out of attempts is blocked with `attempt_cap` and is not offered Run (RFC-071).
+After a person runs a card, an attempt that makes no commit or fails its local check queues the next attempt while attempts remain, so nobody presses Run again. A card out of attempts is blocked with `attempt_cap` and is not offered Run (RFC-071). A red pull request check also queues the next attempt, except on a Manual card, which waits for Run, and any card sent back to `changes_requested` with no attempts left is blocked with `attempt_cap` (RFC-077).
 
 A Lead Developer or an admin sets each requirement's AI review mode: Continue, the default, or Manual. Nobody else may choose Manual. When the AI review asks for changes on a card whose requirements are all Continue, the card goes back with the review note and the next attempt is queued. When any requirement is Manual, the card waits for its pull request checks and reaches Human review with the review note shown, so an approver may approve the head as it is or ask for changes (RFC-072).
 
@@ -1046,6 +1048,8 @@ A Lead Developer or an admin sets each requirement's AI review mode: Continue, t
 - An AI request for changes on a Continue card reaches `changes_requested` with the next attempt queued.
 - An AI request for changes on a Manual card with green checks reaches `human_review`, and the card's notes hold the review body.
 - A Developer who asks for Manual gets `403`. A Lead Developer's change shows on the requirement and on its card.
+- A red check with attempts left reaches `changes_requested` with the next attempt queued. Out of attempts, the card is blocked with `attempt_cap`.
+- Request changes on a card out of attempts blocks it with `attempt_cap`, and a `changes_requested` card out of attempts is blocked on the worker's next refresh.
 
 ### REQ-075 A person writes instructions that later attempts of a card read
 

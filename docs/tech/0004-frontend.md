@@ -351,6 +351,7 @@ Render a control only when its name is in `actions`:
 | Name | Control |
 | --- | --- |
 | `run` | Button "Run" with "Queues this card for the worker. You can add instructions first." It opens a form: textarea "Instructions for the next attempt", 4 rows, growing, prefilled with `instructions`, hint "Optional. Every later attempt reads these with the newest note, until you change them. Markdown works." Buttons "Run" and "Cancel". The POST body is `{ instructions }` only when the trimmed text differs from `instructions`, else `{}` (RFC-073). The board's Run stays one click |
+| `retry_review` | Button "Retry AI review" with "The AI review gave no verdict. The worker runs it again on this commit." It POSTs `/api/projects/{id}/cards/{card}/retry-review` with `{}` (RFC-076) |
 | `approve` | Form. SHA input defaulted from `headSha`. Button "Approve SHA". |
 | `request_changes` | Menu item "Request changes" opens a form. Textarea "What should change?", 4 rows, growing, hint "Optional. The next attempt gets this note. Markdown works." Buttons "Request changes" and "Cancel". The body is `{ reason }` |
 | `reject` | Button "Reject" |
@@ -601,6 +602,7 @@ npm run build
 | --- | --- |
 | `CardActions` with `actions: []` | No Approve, Request changes, Reject, or Unblock control is rendered |
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
+| `CardActions` with `retry_review` | "Retry AI review" renders only when listed, and a click POSTs `retry-review` |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
 | `CardActions` Request changes | The menu item opens the reason form. A `422` shows `fields.reason` under it. A later submit POSTs `{ reason }` and closes the form |
 | `CardNotes` | No notes render nothing. The newest review note renders its bold and code as elements, with "AI review" and "· attempt 2". Earlier notes wait behind "Show 1 earlier note", and a local check note stays plain text in a `pre`. An approver note has no attempt number. An instructions note reads "Instructions" and renders markdown, and a blank one reads "Instructions cleared". Current instructions and the newest other note are both open, and older notes wait behind the button |

@@ -1,5 +1,15 @@
 <script lang="ts">
-  import { ApiError, approveCard, deployCard, getCard, rejectCard, requestChanges, runCard, unblockCard } from '$lib/api';
+  import {
+    ApiError,
+    approveCard,
+    deployCard,
+    getCard,
+    rejectCard,
+    requestChanges,
+    retryReview,
+    runCard,
+    unblockCard
+  } from '$lib/api';
   import { shell } from '$lib/shell.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
@@ -111,6 +121,19 @@
     </div>
   {:else if card.queued}
     <p class="text-sm text-muted">Queued. The card starts when the worker picks it up.</p>
+  {/if}
+  {#if actions.includes('retry_review')}
+    <div class="flex flex-wrap items-center gap-3">
+      <Button
+        variant="primary"
+        type="button"
+        disabled={busy}
+        onclick={() => void run('Retry AI review', () => retryReview(card.id))}
+      >
+        Retry AI review
+      </Button>
+      <p class="text-sm text-muted">The AI review gave no verdict. The worker runs it again on this commit.</p>
+    </div>
   {/if}
   {#if actions.includes('approve')}
     <form

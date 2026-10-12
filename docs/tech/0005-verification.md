@@ -124,6 +124,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestApprovalPostsCommentAndStatus` | An approval posts one comment on the pull request and one `success` status with context `orchestrator/approval` on the SHA, with the company token in `GH_TOKEN` and not in argv. A repeat approval of the same SHA posts nothing (RFC-068) |
 | `TestApprovalAnnounceFailureKeepsApproved` | When `gh` fails, the approval is still `200` and `approved`, with one `job_error` for the comment and one for the status |
 | `TestRequestChangesWithdrawsApprovalStatus` | Request changes on an approved card posts `failure` on the approved SHA |
+| `TestRequestChangesAtCapBlocks` | Request changes on a card out of attempts is `blocked` with `attempt_cap` and keeps the approver note (RFC-077) |
+| `TestCIRedQueuesRetry` | A red check with attempts left reaches `changes_requested` with one `ci` note and one open `retry` row |
+| `TestReviewManualReachesHumanReview` red checks | A `manual` card with a red check reaches `changes_requested` with no `retry` row, and out of attempts it is `blocked` with `attempt_cap` |
+| `TestCIRedAtCapBlocks` | A red check on refresh for a card out of attempts is `blocked` with `attempt_cap` and has no `retry` row |
+| `TestRefreshCapsChangesRequested` | Refresh blocks a `changes_requested` card out of attempts with `attempt_cap` and leaves one with attempts left |
+| `TestAdvancerRefreshesChangesRequested` | A worker tick starts one refresh for a `changes_requested` card |
 | `TestRequestChangesReason` | A 4001-character reason is `422` with `fields.reason`, and the card stays `human_review` with no note. A reason is stored trimmed with LF line ends as the newest `approver` note with `attemptN` 0. An empty body stores `changes requested` |
 | `TestReviewIgnoresApprovalStatus` | A pending `orchestrator/approval` status on the head still moves the card to `human_review`, with `ci_required = false` |
 | `TestCardDiff` | On a real repository the diff lists each file with counts and hunks, redacts a planted model key, cuts a file past 1,500 lines, and returns not found for another project |
@@ -145,6 +151,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestReviewWithoutVerdictWaitsForChecks` | No verdict and pending checks stay in `agent_review`. Green checks on refresh: `human_review` |
 | `TestNoChecksWaitsToRegister` | No checks right after `pr_open` keeps `agent_review` with `ci_required` unset, through a refresh. After `NoChecksWait`: `human_review` with `ci_required = false` |
 | `TestChecksInsideWaitDecide` | Green checks inside the wait move the card to `human_review` |
+| `TestAgentReviewToPROpen` | `agent_review -> pr_open` needs the attempt and the actor, and writes no gate (RFC-076) |
+| `TestRetryReviewQueuesReview` | A `failed` review moves the card to `pr_open`, clears the review, keeps one `local_checks` gate, records the actor, and the next review job records its verdict with `attempts_used` unchanged |
+| `TestRetryReviewNeedsFailedVerdict` | `pr_open`, a `recommend_approve` verdict, and another project are refused, and the card stays |
+| `TestRetryReviewLocked` | A held card lock is `ErrLocked` and keeps the `failed` review |
+| `TestRetryReviewAction` | A Developer sees `retry_review`, `GET` is `405`, `POST` returns `pr_open` without the action, and a second `POST` is `409` |
+| `TestRetryReviewRole` | A Product Owner does not see `retry_review`, and `POST` is `403` |
 | `TestRefreshFinishesStoppedReview` | An `agent_review` card with no verdict stays while another holder has the lock. Once the lock is free, refresh records `failed` and reaches `human_review` |
 | `TestIngestRecordsCreator` | A web ingest stores the caller as `created_by` on new parsed rows. A second ingest by another user keeps the first. A CLI ingest stores null |
 | `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |

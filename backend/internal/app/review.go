@@ -341,17 +341,33 @@ func sendBack(ctx context.Context, db *sql.DB, card board.Card, attemptID string
 		}
 		return card, err
 	}
-	if next.AttemptsUsed >= next.MaxAttempts {
-		if next, err = machine.Transition(ctx, tx, next, "blocked", machine.Evidence{Reason: "attempt_cap"}, redact); err != nil {
-			return card, err
-		}
-	} else if _, err := insertCardRun(ctx, tx, next.ProjectID, next.ID, "retry"); err != nil {
+	if next, err = queueOrCap(ctx, tx, next, redact); err != nil {
 		return card, err
 	}
 	if err := tx.Commit(); err != nil {
 		return card, err
 	}
 	return next, nil
+}
+
+// queueOrCap runs in the transaction that moved card to changes_requested by
+// a job: it queues the next attempt, or blocks the card with attempt_cap when
+// none remain (RFC-071, RFC-077).
+func queueOrCap(ctx context.Context, tx *sql.Tx, card board.Card, redact []string) (board.Card, error) {
+	if card.AttemptsUsed >= card.MaxAttempts {
+		return machine.Transition(ctx, tx, card, "blocked", machine.Evidence{Reason: "attempt_cap"}, redact)
+	}
+	_, err := insertCardRun(ctx, tx, card.ProjectID, card.ID, "retry")
+	return card, err
+}
+
+// capOnly is queueOrCap for a card a person runs again: it blocks the card
+// with attempt_cap when no attempts remain and queues nothing (RFC-072, RFC-077).
+func capOnly(ctx context.Context, tx *sql.Tx, card board.Card, redact []string) (board.Card, error) {
+	if card.AttemptsUsed >= card.MaxAttempts {
+		return machine.Transition(ctx, tx, card, "blocked", machine.Evidence{Reason: "attempt_cap"}, redact)
+	}
+	return card, nil
 }
 
 // reviewFailed records a review that gave no verdict, says so on the pull
@@ -396,7 +412,16 @@ func settleChecks(ctx context.Context, db *sql.DB, deps JobDeps, card board.Card
 	if err := board.SetCIRequired(ctx, db, attemptID, len(checks) > 0); err != nil {
 		return card, err
 	}
-	return review.ApplyCI(ctx, db, card, attemptID, checks, redact)
+	mode, err := CardAIReviewMode(ctx, db, card)
+	if err != nil {
+		return card, err
+	}
+	return review.ApplyCIThen(ctx, db, card, attemptID, checks, redact, func(ctx context.Context, tx *sql.Tx, next board.Card) (board.Card, error) {
+		if mode == ReviewManual {
+			return capOnly(ctx, tx, next, redact)
+		}
+		return queueOrCap(ctx, tx, next, redact)
+	})
 }
 
 // ReviewFailedComment is the pull request comment the bot posts when the AI
@@ -451,13 +476,20 @@ func writeReviewPack(ctx context.Context, dir, attemptID string, in loop.ReviewI
 // asked for changes on a manual card (RFC-072). A request for changes on a
 // card that is no longer manual sends it back.
 // A review that stopped without recording anything, and no longer holds the
-// card lock, is recorded as failed first (RFC-069).
+// card lock, is recorded as failed first (RFC-069). A changes_requested card
+// with no attempts left is blocked with attempt_cap (RFC-077).
 func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
 		return card, err
 	}
-	if card.ProjectID != projectID || card.PRURL == "" {
+	if card.ProjectID != projectID {
+		return card, nil
+	}
+	if card.Status == "changes_requested" {
+		return AtCap(ctx, db, card.ID)
+	}
+	if card.PRURL == "" {
 		return card, nil
 	}
 	var attempt board.Review
@@ -524,6 +556,60 @@ func finishSendBack(ctx context.Context, db *sql.DB, card board.Card, attemptID 
 		return card, err
 	}
 	return sendBack(ctx, db, card, attemptID, nil)
+}
+
+// ErrReviewNotFailed means the card is not in agent_review with a failed AI
+// review, so there is no review to retry.
+var ErrReviewNotFailed = errors.New("the AI review of this card did not fail")
+
+// RetryReview sends an agent_review card whose AI review gave no verdict back
+// to pr_open, clearing that review, so the worker runs the review job again on
+// the same attempt (RFC-076). It does not change attempts_used.
+func RetryReview(ctx context.Context, db *sql.DB, projectID, cardID, actorID string) (board.Card, error) {
+	card, err := board.GetCard(ctx, db, cardID)
+	if err != nil {
+		return card, err
+	}
+	if card.ProjectID != projectID {
+		return card, board.ErrNotFound
+	}
+	holder, err := board.NewID("lok_")
+	if err != nil {
+		return card, err
+	}
+	if err := board.AcquireLock(ctx, db, card.ID, holder); err != nil {
+		return card, err
+	}
+	defer board.ReleaseLock(context.WithoutCancel(ctx), db, card.ID, holder)
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil {
+		return card, err
+	}
+	attempt, err := board.LatestReview(ctx, db, card.ID)
+	if err != nil {
+		return card, err
+	}
+	if card.Status != "agent_review" || attempt.AttemptID == "" || attempt.Verdict != review.VerdictFailed {
+		return card, ErrReviewNotFailed
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return card, err
+	}
+	defer tx.Rollback()
+	next, err := machine.Transition(ctx, tx, card, "pr_open", machine.Evidence{AttemptID: attempt.AttemptID, ActorID: actorID, Reason: "retry AI review"}, nil)
+	if err != nil {
+		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
+			_ = tx.Commit()
+		}
+		return card, err
+	}
+	if err := board.ClearReview(ctx, tx, attempt.AttemptID); err != nil {
+		return card, err
+	}
+	if err := tx.Commit(); err != nil {
+		return card, err
+	}
+	return next, nil
 }
 
 // finishStoppedReview records the review of an agent_review card as failed

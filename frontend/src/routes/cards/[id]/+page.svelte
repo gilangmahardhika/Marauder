@@ -23,7 +23,7 @@
   let card = $state<Card | null>(null);
   let missing = $state(false);
 
-  const controls = ['run', 'approve', 'deploy', 'request_changes', 'reject', 'unblock'];
+  const controls = ['run', 'retry_review', 'approve', 'deploy', 'request_changes', 'reject', 'unblock'];
   const hasControls = $derived(
     card !== null &&
       ((card.actions ?? []).some((action) => controls.includes(action)) ||

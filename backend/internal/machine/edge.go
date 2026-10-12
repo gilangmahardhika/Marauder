@@ -12,6 +12,7 @@ var edges = map[[2]string]struct{}{
 	{"agent_review", "changes_requested"}: {},
 	{"agent_review", "human_review"}:      {},
 	{"agent_review", "blocked"}:           {},
+	{"agent_review", "pr_open"}:           {},
 	{"changes_requested", "in_progress"}:  {},
 	{"changes_requested", "blocked"}:      {},
 	{"human_review", "changes_requested"}: {},

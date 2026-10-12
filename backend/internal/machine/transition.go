@@ -157,6 +157,13 @@ func missingEvidence(from, to string, ev Evidence) string {
 		if ev.PRURL == "" {
 			return "prUrl"
 		}
+	case "agent_review->pr_open":
+		if ev.AttemptID == "" {
+			return "attemptId"
+		}
+		if ev.ActorID == "" {
+			return "actorId"
+		}
 	case "self_check->in_progress":
 		if ev.ExitCode == nil || *ev.ExitCode == 0 {
 			return "exitCode"
@@ -187,7 +194,9 @@ func shaProblem(sha string) bool {
 func gateName(from, to string) string {
 	switch to {
 	case "pr_open":
-		return "local_checks"
+		if from == "self_check" {
+			return "local_checks"
+		}
 	case "human_review":
 		if from == "agent_review" {
 			return "agent_review"

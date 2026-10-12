@@ -642,3 +642,32 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReviewCutTwiceFails`
 - [x] The rest of the review suite still passes
 - [x] The live server runs the new reviewer limit.
+
+## Sprint 41: Retry an AI review that gave no verdict
+
+- [x] Edge `agent_review -> pr_open` with the attempt and the actor, and no `local_checks` gate.
+- [x] `app.RetryReview` moves a card with a `failed` review to `pr_open` and clears the review, without counting an attempt.
+- [x] `retry_review` in the card actions for the run roles, the `retry-review` route, and the CLI command.
+- [x] "Retry AI review" on the card page.
+- [x] `TestEdgesMatchPRD`
+- [x] `TestAgentReviewToPROpen`
+- [x] `TestRetryReviewQueuesReview`
+- [x] `TestRetryReviewNeedsFailedVerdict`
+- [x] `TestRetryReviewLocked`
+- [x] `TestRetryReviewAction`
+- [x] `TestRetryReviewRole`
+- [x] `CardActions` retry test
+- [x] The live server runs the Sprint 41 build.
+
+## Sprint 42: Red checks retry, and the attempt cap on every send-back
+
+- [x] A red check queues a `retry` run, or blocks with `attempt_cap` when no attempts remain.
+- [x] Request changes on a card out of attempts blocks it with `attempt_cap`.
+- [x] The worker blocks a `changes_requested` card out of attempts on refresh.
+- [x] `TestCIRedQueuesRetry`
+- [x] `TestCIRedAtCapBlocks`
+- [x] `TestRefreshCapsChangesRequested`
+- [x] `TestRequestChangesAtCapBlocks`
+- [x] `TestAdvancerRefreshesChangesRequested`
+- [x] The rest of the review, gate, and worker suites still pass
+- [x] The live server blocks the stuck card with `attempt_cap`, and Unblock is offered.

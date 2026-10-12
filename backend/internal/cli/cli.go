@@ -156,6 +156,20 @@ func Execute(opts Options) int {
 			})
 		},
 	})
+	root.AddCommand(&cobra.Command{
+		Use:  "retry-review CARD",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				cfg, err := intake.LoadConfig(paths.Data)
+				if err != nil {
+					return err
+				}
+				_, err = app.RetryReview(ctx, db, projectOr(project), args[0], cfg.Operator)
+				return err
+			})
+		},
+	})
 	var reset bool
 	unblock := &cobra.Command{
 		Use:  "unblock CARD",

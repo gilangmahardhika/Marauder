@@ -15,9 +15,10 @@ const (
 
 // Advancer moves cards that have a pull request (RFC-065). Each tick it starts
 // a review job for every pr_open card, and refreshes the pull request head and
-// checks of cards in agent_review, human_review, and approved at most once
-// every 30 seconds per card (0003 pass steps 1, 2, 6, and 7). It runs on every
-// tick, with or without an open run request.
+// checks of cards in agent_review, human_review, and approved, and the attempt
+// cap of changes_requested cards (RFC-077), at most once every 30 seconds per
+// card (0003 pass steps 1, 2, 6, and 7). It runs on every tick, with or without
+// an open run request.
 type Advancer struct {
 	reviews   *Slots
 	refreshes *Slots
@@ -45,7 +46,7 @@ func (a *Advancer) Tick(ctx context.Context, db *sql.DB, projectID string, jobs 
 	}
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, status FROM cards
-		WHERE project_id = $1 AND status IN ('pr_open', 'agent_review', 'human_review', 'approved')
+		WHERE project_id = $1 AND status IN ('pr_open', 'agent_review', 'human_review', 'approved', 'changes_requested')
 		ORDER BY updated_at, id`, projectID)
 	if err != nil {
 		return err

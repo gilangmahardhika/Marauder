@@ -57,14 +57,15 @@ A successful body never includes `error`.
 | `in_progress` | `running` | `run` when the card has no open attempt, its dependencies are `done`, and it has no open run request (RFC-063) |
 | `self_check` | `running` | `[]` |
 | `changes_requested` | `review` | `run` under the same rule as `in_progress` (RFC-063) |
-| `pr_open`, `agent_review` | `review` | `[]` |
+| `pr_open` | `review` | `[]` |
+| `agent_review` | `review` | `retry_review` when the latest AI review is `failed` (RFC-076), else `[]` |
 | `human_review` | `review` | `approve`, `request_changes`, `reject` |
 | `approved` | `shipping` | `request_changes`, `reject`, `deploy` |
 | `deploying_dev`, `verifying` | `shipping` | `[]` |
 | `done` | `finished` | `[]` |
 | `blocked` | `stopped` | `unblock`, unless release is refused |
 
-`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` remains for a Lead Developer, Senior Developer, Developer, or QA member.
+`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
 
 After the table, every card that is not `done` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
 
@@ -934,6 +935,8 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 ```
 
 `POST /api/projects/{projectId}/cards/{id}/run` takes an optional body `{ "instructions": "..." }`. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, that has used all its attempts (RFC-071), or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts. When the body has `instructions`, the call saves them as the instructions route does, in the same transaction as the `runs` row, so a refused run saves nothing (RFC-073). A body that is not JSON, or an `instructions` that is not a string, is `422` on `body`.
+
+`POST /api/projects/{projectId}/cards/{id}/retry-review` takes no body and returns the card object (RFC-076). The roles that may run a card may call it. Anyone else is `403`, and another method is `405`. It takes the card lock, and when the card is in `agent_review` with a `failed` latest review it moves the card to `pr_open` and clears that attempt's `review_model_id`, `review_prompt_hash`, `review_independent`, `review_verdict`, and `reviewed_sha` in one transaction. The worker then runs the review job again. Any other status or verdict, or a held lock, is `409` `conflict`. `attemptsUsed` does not change.
 
 `PUT /api/projects/{projectId}/cards/{id}/instructions` sets the text every later attempt of the card reads, and returns the card object (RFC-073). The roles that may run a card may call it. Anyone else is `403`.
 

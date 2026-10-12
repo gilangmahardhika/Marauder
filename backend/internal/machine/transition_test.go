@@ -25,6 +25,7 @@ func TestEdgesMatchPRD(t *testing.T) {
 		{"agent_review", "changes_requested"}: {},
 		{"agent_review", "human_review"}:      {},
 		{"agent_review", "blocked"}:           {},
+		{"agent_review", "pr_open"}:           {},
 		{"changes_requested", "in_progress"}:  {},
 		{"changes_requested", "blocked"}:      {},
 		{"human_review", "changes_requested"}: {},
@@ -158,6 +159,26 @@ func TestLeavingBlockedClearsReason(t *testing.T) {
 	}
 	if ready.Status != "ready" || ready.BlockedReason != "" {
 		t.Fatalf("after unblock = %s %q, want ready with no reason", ready.Status, ready.BlockedReason)
+	}
+}
+
+func TestAgentReviewToPROpen(t *testing.T) {
+	db := boardtest.Open(t)
+	card := insertCard(t, db, "agent_review")
+	for _, ev := range []machine.Evidence{{ActorID: "usr_ada"}, {AttemptID: "att_1"}} {
+		if _, err := apply(t, db, card, "pr_open", ev); !errors.Is(err, machine.ErrEvidence) {
+			t.Fatalf("evidence %+v: err = %v, want ErrEvidence", ev, err)
+		}
+	}
+	next, err := apply(t, db, card, "pr_open", machine.Evidence{AttemptID: "att_1", ActorID: "usr_ada", Reason: "retry AI review"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Status != "pr_open" {
+		t.Fatalf("status = %s, want pr_open", next.Status)
+	}
+	if n := countGates(t, db, card.ID); n != 0 {
+		t.Fatalf("gates = %d, want 0: a retried review is not a new local check", n)
 	}
 }
 

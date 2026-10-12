@@ -239,6 +239,19 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.cardDetail(r, next))
 		return
 	}
+	if action == "retry-review" {
+		if r.Method != http.MethodPost {
+			writeErr(w, 405, "method_not_allowed", "method not allowed")
+			return
+		}
+		next, err := app.RetryReview(r.Context(), s.DB, projectID, id, user.ID)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+		return
+	}
 	if action == "instructions" {
 		if r.Method != http.MethodPut {
 			writeErr(w, 405, "method_not_allowed", "method not allowed")

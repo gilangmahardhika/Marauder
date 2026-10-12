@@ -605,3 +605,28 @@ Packages: `internal/providers`, `internal/providers/fake`, `internal/loop`, `int
 - That failure's `job_error` and "AI review: Not done" comment name the token limit.
 
 Done when: `TestReviewMaxTokens`, `TestReviewRetriesCutReply`, `TestReviewCutTwiceFails`, and the rest of the review suite.
+
+## Sprint 41: Retry an AI review that gave no verdict
+
+Goal: A card waiting in `agent_review` after an AI review that gave no verdict can have the review run again, from the card page or the CLI (RFC-076, under REQ-072).
+
+Packages: `internal/machine`, `internal/board`, `internal/app`, `internal/httpapi`, `internal/cli`, frontend `CardActions`.
+
+- New edge `agent_review -> pr_open` with the attempt and the actor as evidence and no `local_checks` gate.
+- `app.RetryReview` takes the card lock, requires a `failed` latest review, moves the card to `pr_open`, and clears the review. The worker runs the review job again. `attempts_used` does not change.
+- The card JSON lists `retry_review` for the run roles. `POST .../retry-review` and `orchestrator retry-review CARD` call `app.RetryReview`.
+- The card page shows "Retry AI review".
+
+Done when: `TestEdgesMatchPRD`, `TestAgentReviewToPROpen`, `TestRetryReviewQueuesReview`, `TestRetryReviewNeedsFailedVerdict`, `TestRetryReviewLocked`, `TestRetryReviewAction`, `TestRetryReviewRole`, and the `CardActions` retry test.
+
+## Sprint 42: Red checks retry, and the attempt cap on every send-back
+
+Goal: No card waits in `changes_requested` with no attempts left and no action. A red check queues the next attempt like an AI request for changes (RFC-077, under REQ-074).
+
+Packages: `internal/review`, `internal/app`, `internal/worker`.
+
+- `review.ApplyCIThen` runs a hook in the transaction of the red-check move. `app.settleChecks` passes `queueOrCap`, which `sendBack` also uses: a `retry` run, or `blocked` with `attempt_cap`. A `manual` card gets `capOnly`: no run, but the cap still blocks.
+- `app.RequestChanges` blocks a card out of attempts with `attempt_cap` in the same transaction.
+- The Advancer refreshes `changes_requested` cards, and `RefreshCard` calls `AtCap` for them, which releases cards already stuck.
+
+Done when: `TestCIRedQueuesRetry`, `TestCIRedAtCapBlocks`, `TestRefreshCapsChangesRequested`, `TestRequestChangesAtCapBlocks`, `TestAdvancerRefreshesChangesRequested`, and the rest of the review, gate, and worker suites.

@@ -58,7 +58,9 @@ func TestAdvancerSchedulesReviewAndRefresh(t *testing.T) {
 		return rec.take()
 	}
 	start := time.Now()
-	want := []string{"refresh:" + ids["agent_review"], "refresh:" + ids["human_review"], "review:" + ids["pr_open"]}
+	refreshes := []string{"refresh:" + ids["agent_review"], "refresh:" + ids["human_review"]}
+	slices.Sort(refreshes)
+	want := append(slices.Clone(refreshes), "review:"+ids["pr_open"])
 	slices.Sort(want)
 	if got := tick(start); !slices.Equal(got, want) {
 		t.Fatalf("first tick = %v, want %v", got, want)
@@ -66,12 +68,28 @@ func TestAdvancerSchedulesReviewAndRefresh(t *testing.T) {
 	if got := tick(start.Add(2 * time.Second)); len(got) != 0 {
 		t.Fatalf("tick 2 s later = %v, want nothing", got)
 	}
-	refreshes := []string{"refresh:" + ids["agent_review"], "refresh:" + ids["human_review"]}
-	slices.Sort(refreshes)
 	if got := tick(start.Add(31 * time.Second)); !slices.Equal(got, refreshes) {
 		t.Fatalf("tick 31 s later = %v, want only refreshes %v", got, refreshes)
 	}
 	if got := tick(start.Add(61 * time.Second)); !slices.Contains(got, "review:"+ids["pr_open"]) {
 		t.Fatalf("tick 61 s later = %v, want the review retried", got)
+	}
+}
+
+func TestAdvancerRefreshesChangesRequested(t *testing.T) {
+	db := boardtest.Open(t)
+	ctx := context.Background()
+	card, err := board.InsertCard(ctx, db, board.Card{Title: "sent back", Status: "changes_requested"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &recordedJobs{}
+	adv := worker.NewAdvancer()
+	if err := adv.Tick(ctx, db, testProject, worker.Jobs{Review: rec.record("review"), Refresh: rec.record("refresh")}, time.Now(), t.Logf); err != nil {
+		t.Fatal(err)
+	}
+	adv.Wait()
+	if got := rec.take(); !slices.Equal(got, []string{"refresh:" + card.ID}) {
+		t.Fatalf("tick = %v, want one refresh of the changes_requested card", got)
 	}
 }

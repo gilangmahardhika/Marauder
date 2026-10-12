@@ -518,6 +518,9 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 			if review.Independent.Valid && review.Verdict != reviewpkg.VerdictFailed {
 				reviewIndependent = review.Independent.Bool
 			}
+			if card.Status == "agent_review" && review.Verdict == reviewpkg.VerdictFailed && actionAllowed(role, "retry-review") {
+				actions = append(actions, "retry_review")
+			}
 		}
 	}
 	return map[string]any{
@@ -688,7 +691,8 @@ func writeAppErr(w http.ResponseWriter, err error) {
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock):
 		writeErr(w, 422, "validation", err.Error())
-	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone):
+	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone),
+		errors.Is(err, app.ErrReviewNotFailed):
 		writeErr(w, 409, "conflict", err.Error())
 	case errors.Is(err, app.ErrOwnerApprove):
 		writeErr(w, 403, "forbidden", err.Error())

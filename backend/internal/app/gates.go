@@ -108,7 +108,8 @@ const maxReason = 4000
 
 // RequestChanges sends the card back with the approver's reason as its newest
 // failure note, which the next attempt reads. A blank reason stores
-// "changes requested".
+// "changes requested". A card with no attempts left is blocked with
+// attempt_cap in the same transaction (RFC-077).
 func RequestChanges(ctx context.Context, db *sql.DB, cardID, reason string, cfg GateConfig) (board.Card, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
@@ -138,6 +139,9 @@ func RequestChanges(ctx context.Context, db *sql.DB, cardID, reason string, cfg 
 		return card, err
 	}
 	if err := board.InsertFailureNote(ctx, tx, cardID, "approver", "approver", note); err != nil {
+		return card, err
+	}
+	if next, err = capOnly(ctx, tx, next, nil); err != nil {
 		return card, err
 	}
 	if err := tx.Commit(); err != nil {
