@@ -506,3 +506,17 @@ Packages: `internal/app`, `internal/review`, `internal/board`, `internal/httpapi
 - The card JSON adds `reviewVerdict`. The card page shows "AI review: Failed, no verdict", and the Trace review block shows the same badge.
 
 Done when: `TestReviewWithoutVerdictUsesChecks`, `TestReviewWithoutVerdictRedChecks`, `TestReviewWithoutVerdictWaitsForChecks`, `TestNoChecksWaitsToRegister`, `TestChecksInsideWaitDecide`, `TestRefreshFinishesStoppedReview`, `TestCardShowsLatestReview`, and the `TraceBlock` Vitest case for a failed review.
+
+## Sprint 34: Self review on a requirement
+
+Goal: A Lead Developer or an admin can mark one requirement as Self review, so the owner of its card approves alone, without turning Solo approval on for the whole project (RFC-070, REQ-073).
+
+Packages: `internal/intake`, `internal/app`, `internal/httpapi`, `migrations`, frontend New requirement page, Reviewers panel, and card page.
+
+- Migration `00018` adds `requirements.self_review`, default `false`.
+- `intake.Add` stores `selfReview`. `intake.SetSelfReview` and the route `PUT /api/projects/{projectId}/requirements/{id}/self-review` change it. Both need `intake.CanSetSelfReview`: a Lead Developer or an admin.
+- The intake JSON adds `selfReview` and `canSetSelfReview` to each requirement.
+- `app.CardSelfReview` is true when every requirement of the card is flagged. The approval gate and the owner's `actions` treat such a card as Solo approval. The card JSON adds `selfReview`.
+- The New requirement page and the Reviewers panel show the Self review checkbox to a Lead Developer or an admin. The card page shows Self review in Details.
+
+Done when: `TestSelfReviewNeedsLead`, `TestSelfReviewOwnerApproves`, `TestCardSelfReview`, and the `ReviewersPanel` Vitest cases.

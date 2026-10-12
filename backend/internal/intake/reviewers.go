@@ -26,6 +26,32 @@ func CanEditReviewers(actorID, role, createdBy string) bool {
 	return role == "lead_developer" || (createdBy != "" && createdBy == actorID)
 }
 
+// ErrSelfReviewForbidden refuses a Self review change by anyone but a Lead
+// Developer or an admin (RFC-070).
+var ErrSelfReviewForbidden = errors.New("only a Lead Developer or an admin can turn Self review on or off")
+
+// CanSetSelfReview reports whether a user may set a requirement's Self review
+// switch (RFC-070).
+func CanSetSelfReview(role string, admin bool) bool {
+	return admin || role == "lead_developer"
+}
+
+// SetSelfReview turns Self review on or off for one requirement on projectID.
+// The caller checks CanSetSelfReview.
+func SetSelfReview(ctx context.Context, db *sql.DB, projectID, id string, on bool) error {
+	res, err := db.ExecContext(ctx, `
+		UPDATE requirements SET self_review = $3 WHERE project_id = $1 AND id = $2`, projectID, id, on)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetReviewers replaces the reviewers of one requirement on projectID. Each
 // reviewer must be an enabled member of the project's tribe with a verified
 // GitHub login, and not the row's creator, who owns the pull request.

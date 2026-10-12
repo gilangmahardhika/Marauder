@@ -32,6 +32,7 @@ function card(partial: Partial<Card>): Card {
     reviewedSha: null,
     reviewIndependent: null,
     reviewVerdict: null,
+    selfReview: false,
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

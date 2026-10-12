@@ -373,6 +373,40 @@ func githubUser(t *testing.T, db *sql.DB, email, login string, id int64, token s
 	return user
 }
 
+func TestCardSelfReview(t *testing.T) {
+	db := boardtest.Open(t)
+	ctx := context.Background()
+	ada := githubUser(t, db, "ada@example.com", "", 0, "")
+	for _, id := range []string{"REQ-001", "REQ-002", "REQ-003"} {
+		acceptedReq(t, db, id, ada.ID)
+	}
+	if _, err := db.Exec(`UPDATE requirements SET self_review = true WHERE id IN ('REQ-001', 'REQ-002')`); err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		ids  []string
+		want bool
+	}{
+		"all flagged":     {[]string{"REQ-001", "REQ-002"}, true},
+		"mixed":           {[]string{"REQ-001", "REQ-003"}, false},
+		"none flagged":    {[]string{"REQ-003"}, false},
+		"no requirements": {nil, false},
+		"unknown id":      {[]string{"REQ-001", "REQ-404"}, false},
+	} {
+		card, err := board.InsertCard(ctx, db, board.Card{Status: "human_review", RequirementIDs: tc.ids})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := app.CardSelfReview(ctx, db, card)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if got != tc.want {
+			t.Fatalf("%s: self review = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
 func acceptedReq(t *testing.T, db *sql.DB, id, createdBy string) {
 	t.Helper()
 	if _, err := db.Exec(`

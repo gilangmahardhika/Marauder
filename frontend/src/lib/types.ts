@@ -38,6 +38,8 @@ export type Card = {
   reviewIndependent: boolean | null;
   /** `failed` means the AI review gave no verdict and the pull request checks decided. */
   reviewVerdict: 'recommend_approve' | 'request_changes' | 'failed' | null;
+  /** Every requirement of the card has Self review on, so its owner may approve. */
+  selfReview: boolean;
   approvedSha: string | null;
   deployedSha: string | null;
   environment: string;
@@ -119,6 +121,9 @@ export type Requirement = {
   linkedCards: string[];
   reviewers: Reviewer[];
   canEditReviewers: boolean;
+  /** The owner of this requirement's cards may approve them alone (RFC-070). */
+  selfReview: boolean;
+  canSetSelfReview: boolean;
 };
 
 export type Reviewer = {

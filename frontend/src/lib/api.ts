@@ -225,7 +225,7 @@ export function acceptRequirements(requirementIds: string[]) {
   return request<Intake>(`${projectPrefix()}/accept`, { method: 'POST', body: JSON.stringify({ requirementIds }) });
 }
 
-export function addRequirement(body: RequirementDraft & { id: string }) {
+export function addRequirement(body: RequirementDraft & { id: string; selfReview?: boolean }) {
   return request<Intake>(`${projectPrefix()}/requirements`, { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -240,6 +240,13 @@ export function setReviewers(id: string, userIds: string[]) {
   return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/reviewers`, {
     method: 'PUT',
     body: JSON.stringify({ userIds })
+  });
+}
+
+export function setSelfReview(id: string, selfReview: boolean) {
+  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/self-review`, {
+    method: 'PUT',
+    body: JSON.stringify({ selfReview })
   });
 }
 

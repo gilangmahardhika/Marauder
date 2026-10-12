@@ -14,6 +14,11 @@ export function fromLines(lines: string[]): string {
   return lines.join('\n');
 }
 
+/** Only a Lead Developer or an admin may turn Self review on or off (RFC-070). */
+export function canSetSelfReview(role: string, admin: boolean): boolean {
+  return admin || role === 'lead_developer';
+}
+
 /** Reviewer picker options. The creator opens the pull request, so they are left out. */
 export function reviewerChoices(
   options: Reviewer[],

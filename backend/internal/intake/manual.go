@@ -40,15 +40,17 @@ func (v *Invalid) Error() string {
 	return "validation"
 }
 
-// Draft is the text of a manual requirement.
+// Draft is the text of a manual requirement. SelfReview is read by Add only;
+// the caller checks CanSetSelfReview (RFC-070).
 type Draft struct {
 	Statement  string
 	Acceptance []string
+	SelfReview bool
 }
 
 func (d Draft) clean() (Draft, error) {
 	fields := map[string]string{}
-	out := Draft{Statement: strings.TrimSpace(d.Statement), Acceptance: []string{}}
+	out := Draft{Statement: strings.TrimSpace(d.Statement), Acceptance: []string{}, SelfReview: d.SelfReview}
 	switch {
 	case out.Statement == "":
 		fields["statement"] = "Enter a statement."
@@ -120,10 +122,10 @@ func Add(ctx context.Context, db *sql.DB, projectID, userID, id string, draft Dr
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO requirements (
 			id, source_kind, source_path, heading, statement,
-			acceptance_json, non_goals_json, content_hash, project_id, created_by
-		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6)
+			acceptance_json, non_goals_json, content_hash, project_id, created_by, self_review
+		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6, $7)
 		ON CONFLICT (project_id, id) DO NOTHING`,
-		id, clean.Statement, string(encoded), hashParts(clean.Statement, clean.Acceptance), projectID, userID,
+		id, clean.Statement, string(encoded), hashParts(clean.Statement, clean.Acceptance), projectID, userID, clean.SelfReview,
 	)
 	if err != nil {
 		return "", err

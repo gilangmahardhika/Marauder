@@ -103,7 +103,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeErr(w, 400, "validation", "body")
 			return
 		}
-		gate := s.gate(r, card.ProjectID)
+		gate := s.gate(r, card)
 		result, err := app.ApproveFresh(r.Context(), s.DB, id, body.SHA, gate)
 		if err != nil {
 			if errors.Is(err, app.ErrSHA) {
@@ -118,7 +118,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		}
 		writeJSON(w, 200, s.cardDetail(r, result.Card))
 	case "request-changes":
-		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r, card.ProjectID))
+		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r, card))
 		if err != nil {
 			writeAppErr(w, err)
 			return
@@ -126,7 +126,7 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		s.withdraw(r, card)
 		writeJSON(w, 200, s.cardDetail(r, next))
 	case "reject":
-		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r, card.ProjectID))
+		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r, card))
 		if err != nil {
 			writeAppErr(w, err)
 			return
@@ -379,7 +379,7 @@ func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {
 	return settings.Load(s.Data)
 }
 
-func (s *Server) gate(r *http.Request, projectID string) app.GateConfig {
+func (s *Server) gate(r *http.Request, card board.Card) app.GateConfig {
 	user, _ := app.CurrentUser(r.Context())
 	acct, _ := app.LoadCompany(r.Context(), s.DB)
 	return app.GateConfig{
@@ -387,8 +387,20 @@ func (s *Server) gate(r *http.Request, projectID string) app.GateConfig {
 		BotLogin:  acct.BotLogin,
 		Approvers: []string{user.GitHubLogin},
 		ActorID:   user.ID,
-		Solo:      s.soloApproval(projectID),
+		Solo:      s.soloFor(r.Context(), card),
 	}
+}
+
+// soloFor reports whether the card's owner and the bot login may pass the
+// approval gate: the project has Solo approval on (RFC-067), or every
+// requirement of the card has Self review on (RFC-070). A read error keeps
+// the default, off.
+func (s *Server) soloFor(ctx context.Context, card board.Card) bool {
+	if s.soloApproval(card.ProjectID) {
+		return true
+	}
+	self, err := app.CardSelfReview(ctx, s.DB, card)
+	return err == nil && self
 }
 
 func (s *Server) jobDeps() app.JobDeps {
@@ -431,7 +443,11 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		role, userID = user.Role, user.ID
 	}
 	group, actions, unblock := Actions(card.Status, card.BlockedReason, open, role)
-	if card.OwnerID != "" && card.OwnerID == userID && !s.soloApproval(card.ProjectID) {
+	selfReview, err := app.CardSelfReview(r.Context(), s.DB, card)
+	if err != nil {
+		selfReview = false
+	}
+	if card.OwnerID != "" && card.OwnerID == userID && !selfReview && !s.soloApproval(card.ProjectID) {
 		actions = withoutAction(actions, "approve")
 	}
 	queued, waitingOn, err := app.CardRunState(r.Context(), s.DB, card)
@@ -474,8 +490,8 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"attemptsUsed": card.AttemptsUsed, "maxAttempts": card.MaxAttempts,
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
 		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
-		"reviewVerdict": reviewVerdict,
-		"approvedSha":   nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
+		"reviewVerdict": reviewVerdict, "selfReview": selfReview,
+		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,
 	}
@@ -503,7 +519,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
-			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, '')
+			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, ''), q.self_review
 		FROM requirements q LEFT JOIN users u ON u.id = q.created_by
 		WHERE q.project_id = $1 ORDER BY q.id`, projectID)
 	if err != nil {
@@ -511,11 +527,12 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	}
 	defer rows.Close()
 	reqs := []any{}
+	canSetSelfReview := intake.CanSetSelfReview(user.Role, user.Admin)
 	for rows.Next() {
 		var id, kind, path, heading, statement, acceptance, creatorID string
-		var accepted bool
+		var accepted, selfReview bool
 		var createdBy sql.NullString
-		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID); err != nil {
+		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID, &selfReview); err != nil {
 			return nil, err
 		}
 		var lines []string
@@ -533,6 +550,8 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 			"createdBy": nullString(createdBy.String), "linkedCards": nonNil(linked[id]),
 			"reviewers":        named,
 			"canEditReviewers": intake.CanEditReviewers(user.ID, user.Role, creatorID),
+			"selfReview":       selfReview,
+			"canSetSelfReview": canSetSelfReview,
 		})
 	}
 	decisions := []any{}

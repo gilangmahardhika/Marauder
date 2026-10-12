@@ -15,6 +15,8 @@ function req(id: string, partial: Partial<Requirement> = {}): Requirement {
     linkedCards: [],
     reviewers: [],
     canEditReviewers: false,
+    selfReview: false,
+    canSetSelfReview: false,
     ...partial
   };
 }

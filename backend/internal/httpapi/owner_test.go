@@ -223,6 +223,117 @@ func TestSoloOwnerApproves(t *testing.T) {
 	}
 }
 
+func TestSelfReviewNeedsLead(t *testing.T) {
+	srv := accountServer(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	dev := seedUser(t, srv, "ada@example.com", "password-long-1", "developer", false)
+	lead := seedUser(t, srv, "lead@example.com", "password-long-2", "lead_developer", false)
+	for _, user := range []app.User{admin, dev, lead} {
+		if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", user.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := "/api/projects/proj_default/requirements"
+	draft := func(id string, self bool) map[string]any {
+		return map[string]any{"id": id, "statement": "Export the report", "acceptance": []string{"A CSV downloads"}, "selfReview": self}
+	}
+	stored := func(id string) bool {
+		t.Helper()
+		var on bool
+		if err := srv.DB.QueryRow(`SELECT self_review FROM requirements WHERE project_id = 'proj_default' AND id = $1`, id).Scan(&on); err != nil {
+			t.Fatal(err)
+		}
+		return on
+	}
+
+	ada := loginToken(t, srv, "ada@example.com", "password-long-1")
+	if rec := postJSON(t, srv, add, ada, draft("REQ-001", true)); rec.Code != 403 {
+		t.Fatalf("developer with self review = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, add, ada, draft("REQ-001", false)); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"canSetSelfReview":false`) {
+		t.Fatalf("developer add = %d %s", rec.Code, rec.Body.String())
+	}
+	self := add + "/REQ-001/self-review"
+	if rec := putJSON(t, srv, self, ada, map[string]any{"selfReview": true}); rec.Code != 403 || stored("REQ-001") {
+		t.Fatalf("creator toggle = %d %s", rec.Code, rec.Body.String())
+	}
+
+	leadToken := loginToken(t, srv, "lead@example.com", "password-long-2")
+	if rec := postJSON(t, srv, add, leadToken, draft("REQ-002", true)); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"canSetSelfReview":true`) {
+		t.Fatalf("lead add = %d %s", rec.Code, rec.Body.String())
+	}
+	if !stored("REQ-002") {
+		t.Fatal("lead's Self review was not stored")
+	}
+
+	adminToken := loginToken(t, srv, "admin@example.com", "password-long-0")
+	if rec := putJSON(t, srv, self, adminToken, map[string]any{"selfReview": true}); rec.Code != 200 || !stored("REQ-001") {
+		t.Fatalf("admin on = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putJSON(t, srv, self, adminToken, map[string]any{"selfReview": false}); rec.Code != 200 || stored("REQ-001") {
+		t.Fatalf("admin off = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putJSON(t, srv, add+"/REQ-404/self-review", adminToken, map[string]any{"selfReview": true}); rec.Code != 404 {
+		t.Fatalf("unknown requirement = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSelfReviewOwnerApproves(t *testing.T) {
+	srv := accountServer(t)
+	srv.Data = dataRoot(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	owner := seedUser(t, srv, "lead@example.com", "password-long-1", "lead_developer", false)
+	if err := identity.SaveGitHub(ctx, srv.DB, owner.ID, "github.com", "lead", nil, false, srv.TokenKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	for id, self := range map[string]bool{"REQ-001": true, "REQ-002": false} {
+		if _, err := srv.DB.Exec(`
+			INSERT INTO requirements (
+				id, source_kind, source_path, heading, statement, acceptance_json, non_goals_json,
+				content_hash, project_id, created_by, self_review
+			) VALUES ($1, 'prd', 'docs/prd/a.md', $1, 'statement', '[]', '[]', $1, 'proj_default', $2, $3)`,
+			id, owner.ID, self); err != nil {
+			t.Fatal(err)
+		}
+	}
+	card := reviewCard(t, srv, "proj_default")
+	if _, err := srv.DB.Exec(`UPDATE cards SET owner_id = $2, requirement_ids_json = '["REQ-001","REQ-002"]' WHERE id = $1`, card.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/projects/proj_default/cards/" + card.ID
+	ownerToken := loginToken(t, srv, "lead@example.com", "password-long-1")
+	if view := getAuth(t, srv, path, ownerToken); strings.Contains(view.Body.String(), `"approve"`) || !strings.Contains(view.Body.String(), `"selfReview":false`) {
+		t.Fatalf("owner view with one unflagged requirement = %s", view.Body.String())
+	}
+	if denied := postJSON(t, srv, path+"/approve", ownerToken, map[string]string{"sha": headSHA}); denied.Code != 403 {
+		t.Fatalf("approve with one unflagged requirement = %d %s", denied.Code, denied.Body.String())
+	}
+
+	if _, err := srv.DB.Exec(`UPDATE cards SET requirement_ids_json = '["REQ-001"]' WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	if view := getAuth(t, srv, path, ownerToken); !strings.Contains(view.Body.String(), `"approve"`) || !strings.Contains(view.Body.String(), `"selfReview":true`) {
+		t.Fatalf("owner view with self review = %s", view.Body.String())
+	}
+	approved := postJSON(t, srv, path+"/approve", ownerToken, map[string]string{"sha": headSHA})
+	if approved.Code != 200 || !strings.Contains(approved.Body.String(), `"status":"approved"`) {
+		t.Fatalf("self review approve = %d %s", approved.Code, approved.Body.String())
+	}
+	var approver string
+	var independent bool
+	if err := srv.DB.QueryRow(`SELECT approver, independent FROM approvals WHERE card_id = $1`, card.ID).Scan(&approver, &independent); err != nil {
+		t.Fatal(err)
+	}
+	if approver != "lead" || independent {
+		t.Fatalf("approval = %q independent=%v", approver, independent)
+	}
+}
+
 func TestCardReviewers(t *testing.T) {
 	srv := accountServer(t)
 	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)

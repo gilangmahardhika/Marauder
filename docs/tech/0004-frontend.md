@@ -180,6 +180,7 @@ frontend/
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
   src/lib/components/IntakeActions.test.ts
+  src/lib/components/ReviewersPanel.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
   src/lib/ui/MultiSearchSelect.test.ts
@@ -321,7 +322,7 @@ The header shows the title and a badge with `statusLabel`, with the raw status i
 - Intake: each of `requirements` with its id, heading, the statement clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
 - Rules: `rules` grouped by `label`, Global first, each with its title and category badge. The footer links to `/settings/conventions`.
 - Skills: each skill's title and `useWhen`, clamped to two lines.
-- Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
+- Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, "Approval: Self review: the owner approves alone" when `selfReview` is true (RFC-070), approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 - Changes (`CardChanges`, RFC-068): loads `GET /api/projects/{id}/cards/{card}/diff` once per card id and `headSha`. The header shows the file count and the total added and deleted lines. Each file is a button with `aria-expanded` that shows its path, `+a -d` or "binary", and opens its hunks. Added lines have a green background and a `+`, deleted lines a red background and a `-`, as text nodes in a monospace block that scrolls sideways. After 50 files, Show more reveals the rest. A cut diff shows "The diff is large, so it is cut", a missing commit shows "Commit {short} is not in the project clone yet.", and a card with no commit says there is nothing to show. The footer links "View these changes on GitHub" to `compareUrl` when it is set. A load error shows in the panel and does not hide the rest of the page.
 
 Render a control only when its name is in `actions`:
@@ -371,6 +372,8 @@ Acceptance needs `canAccept` (RFC-053). When it is false, there are no checkboxe
 `/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
 
 Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by name with the login and email as the detail line. The search placeholder is "Search by name, login, or email". On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
+
+Self review (RFC-070) is a `Checkbox` under the reviewer picker. On `/intake/new` it shows only when `canSetSelfReview(shell.role, shell.admin)` from `$lib/requirements` is true, with the hint "You review and approve this requirement's cards yourself. The approval is recorded as not independent.", and the POST sends `selfReview`. In the Reviewers panel on `/intake/[id]` it shows when the row's `canSetSelfReview` is true. "Save reviewers" then PUTs `reviewers` when the picks changed and `self-review` with `{ selfReview }` when the box changed. A caller who cannot change it sees "Self review: on. The card owner approves alone." when the flag is on, and nothing when it is off.
 
 While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Accepting 3 requirements".
 
@@ -572,6 +575,7 @@ npm run build
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
 | `CardChanges` | Lists files with counts and "binary". A file button opens its lines, with the deleted line on red and the added line on green, and the compare link points at `compareUrl`. A cut diff shows the warning. A missing commit shows "Commit {short} is not in the project clone yet." |
 | `IntakeActions` | Ingest and Add requirement render, and no accept button |
+| `ReviewersPanel` | `canSetSelfReview` is true for a Lead Developer or an admin only. A row with `canSetSelfReview` shows a checked Self review box and Save reviewers. Otherwise a flagged row shows the read-only "Self review: on" line, and an unflagged row says nothing about Self review (RFC-070) |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
 | `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |

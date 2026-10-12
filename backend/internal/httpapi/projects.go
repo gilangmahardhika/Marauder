@@ -321,9 +321,11 @@ type requirementBody struct {
 	ID         string   `json:"id"`
 	Statement  string   `json:"statement"`
 	Acceptance []string `json:"acceptance"`
+	SelfReview bool     `json:"selfReview"`
 }
 
-// projectRequirements adds a manual requirement. Any member may call it (RFC-053).
+// projectRequirements adds a manual requirement. Any member may call it
+// (RFC-053); only a Lead Developer or an admin may turn Self review on (RFC-070).
 func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
@@ -335,7 +337,12 @@ func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
-	if _, err := intake.Add(r.Context(), s.DB, projectID, user.ID, body.ID, intake.Draft{Statement: body.Statement, Acceptance: body.Acceptance}); err != nil {
+	if body.SelfReview && !intake.CanSetSelfReview(user.Role, user.Admin) {
+		writeIntakeErr(w, intake.ErrSelfReviewForbidden)
+		return
+	}
+	draft := intake.Draft{Statement: body.Statement, Acceptance: body.Acceptance, SelfReview: body.SelfReview}
+	if _, err := intake.Add(r.Context(), s.DB, projectID, user.ID, body.ID, draft); err != nil {
 		writeIntakeErr(w, err)
 		return
 	}
@@ -388,12 +395,37 @@ func (s *Server) projectReviewers(w http.ResponseWriter, r *http.Request) {
 	s.writeIntake(w, r, projectID)
 }
 
+// projectSelfReview turns Self review on or off for one requirement (RFC-070).
+func (s *Server) projectSelfReview(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		SelfReview bool `json:"selfReview"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	user, _ := app.CurrentUser(r.Context())
+	if !intake.CanSetSelfReview(user.Role, user.Admin) {
+		writeIntakeErr(w, intake.ErrSelfReviewForbidden)
+		return
+	}
+	if err := intake.SetSelfReview(r.Context(), s.DB, projectID, r.PathValue("id"), body.SelfReview); err != nil {
+		writeIntakeErr(w, err)
+		return
+	}
+	s.writeIntake(w, r, projectID)
+}
+
 func writeIntakeErr(w http.ResponseWriter, err error) {
 	var invalid *intake.Invalid
 	switch {
 	case errors.As(err, &invalid):
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
-	case errors.Is(err, intake.ErrForbidden):
+	case errors.Is(err, intake.ErrForbidden), errors.Is(err, intake.ErrSelfReviewForbidden):
 		writeErr(w, 403, "forbidden", err.Error())
 	case errors.Is(err, intake.ErrNotFound):
 		writeErr(w, 404, "not_found", err.Error())

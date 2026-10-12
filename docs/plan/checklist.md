@@ -534,3 +534,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestCardShowsLatestReview` with `reviewVerdict`
 - [x] `TraceBlock` Vitest case for a failed review
 - [x] Migration `00017` applies on the live board at startup.
+
+## Sprint 34: Self review on a requirement
+
+- [x] Migration `00018` adds `requirements.self_review`.
+- [x] Only a Lead Developer or an admin may set Self review, on add or with the self-review route.
+- [x] The intake JSON has `selfReview` and `canSetSelfReview`, and the card JSON has `selfReview`.
+- [x] A card whose requirements all have Self review lets its owner and the bot login approve, stored as not independent.
+- [x] The New requirement page, the Reviewers panel, and the card page show Self review.
+- [x] `TestSelfReviewNeedsLead`
+- [x] `TestSelfReviewOwnerApproves`
+- [x] `TestCardSelfReview`
+- [x] `ReviewersPanel` Vitest cases
+- [x] Migration `00018` applies on the live board at startup.

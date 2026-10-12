@@ -185,6 +185,20 @@ func CardReviewers(ctx context.Context, db *sql.DB, card board.Card, host, botLo
 	return out, nil
 }
 
+// CardSelfReview reports whether every requirement the card lists, in the
+// card's project, has Self review on (RFC-070). A card that lists none, or
+// lists a requirement that is missing, is not self-reviewed.
+func CardSelfReview(ctx context.Context, db *sql.DB, card board.Card) (bool, error) {
+	var on sql.NullBool
+	err := db.QueryRowContext(ctx, `
+		SELECT bool_and(COALESCE(q.self_review, false))
+		FROM cards c
+		CROSS JOIN LATERAL jsonb_array_elements_text(c.requirement_ids_json::jsonb) AS req(id)
+		LEFT JOIN requirements q ON q.project_id = c.project_id AND q.id = req.id
+		WHERE c.id = $1 AND c.project_id = $2`, card.ID, card.ProjectID).Scan(&on)
+	return on.Valid && on.Bool, err
+}
+
 // CardReviewerUsers lists the reviewers named on each card's requirements in
 // projectID, keyed by card id, without the card owner, disabled users, and
 // users who left the project's tribe. cardID "" lists every card in the

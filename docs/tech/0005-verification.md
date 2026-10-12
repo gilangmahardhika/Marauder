@@ -102,6 +102,9 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestBotApprover` | An approval by a user whose GitHub login is the company bot login returns `422` |
 | `TestOwnerCannotApprove` | The card owner's `actions` has no `approve`, and an approval POST by the owner is `403` with no approval row (RFC-054) |
 | `TestSoloOwnerApproves` | With Solo approval off the owner is `403`. After `soloApproval: true` is saved, the owner, whose login is the bot login, sees `approve` and approves, with `independent = false` (RFC-067) |
+| `TestSelfReviewNeedsLead` | A Developer's add with `selfReview: true` is `403`. The creator, as a Developer, is `403` on the self-review route. A Lead Developer's add stores the flag, and an admin turns it on and off. An unknown id is `404` (RFC-070) |
+| `TestSelfReviewOwnerApproves` | With Solo approval off, a card that lists a flagged and an unflagged requirement gives the owner no `approve`, and the owner's POST is `403`. With only the flagged requirement the owner sees `approve`, approves to `approved`, and the row has `independent = false` |
+| `TestCardSelfReview` | `app.CardSelfReview` is true only when every listed requirement is flagged. Mixed, none flagged, no requirements, or a missing id is false |
 | `TestApprovalPostsCommentAndStatus` | An approval posts one comment on the pull request and one `success` status with context `orchestrator/approval` on the SHA, with the company token in `GH_TOKEN` and not in argv. A repeat approval of the same SHA posts nothing (RFC-068) |
 | `TestApprovalAnnounceFailureKeepsApproved` | When `gh` fails, the approval is still `200` and `approved`, with one `job_error` for the comment and one for the status |
 | `TestRequestChangesWithdrawsApprovalStatus` | Request changes on an approved card posts `failure` on the approved SHA |

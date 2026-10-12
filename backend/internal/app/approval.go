@@ -34,7 +34,7 @@ func statusAPI(url, sha string) (string, error) {
 func ApprovalComment(approver, sha string, independent bool) string {
 	text := fmt.Sprintf("**Approved in the orchestrator** by @%s at `%s`.", approver, shortSHA(sha))
 	if !independent {
-		text += " This approval is not independent (solo approval): the approver also owns the card or is the bot account."
+		text += " This approval is not independent (solo approval or self review): the approver also owns the card or is the bot account."
 	}
 	return text + " Merging stays a separate step on GitHub.\n"
 }

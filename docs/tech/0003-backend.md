@@ -222,16 +222,17 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 
 | Function | From | Checks | Result |
 | --- | --- | --- | --- |
-| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). With the project's `approval.solo` on, the bot and owner checks are skipped and the approval stores `independent = false` (RFC-067). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy. A new row posts the approval to GitHub (RFC-068) |
+| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). With the project's `approval.solo` on, or when `CardSelfReview` is true because every requirement of the card has Self review on, the bot and owner checks are skipped and the approval stores `independent = false` (RFC-067, RFC-070). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy. A new row posts the approval to GitHub (RFC-068) |
 | `RequestChanges(actor, card)` | `human_review`, `approved` | Member, role may request changes | `changes_requested`, approval cleared, note with source `approver`, `runs` row. From `approved`, the approval status turns `failure` |
 | `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected`. From `approved`, the approval status turns `failure` |
 | `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
 | `Unblock(actor, card, reset)` | `blocked` | Member, role may unblock, `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
 | `Accept(actor, project, ids)` | intake | Member, role is Lead Developer, Senior Developer, QA Lead, or Product Owner (RFC-053) | `accepted_by` is the user id, `runs` row |
-| `AddRequirement(actor, project, id, statement, acceptance)` | intake | Member. A blank id takes the next free `REQ-` number under the project's `intake_state` row lock | `source_kind = 'manual'`, `created_by` is the user id, not accepted |
+| `AddRequirement(actor, project, id, statement, acceptance, selfReview)` | intake | Member. A blank id takes the next free `REQ-` number under the project's `intake_state` row lock. `selfReview` needs `CanSetSelfReview` (RFC-070) | `source_kind = 'manual'`, `created_by` is the user id, not accepted |
 | `UpdateRequirement(actor, project, id, statement, acceptance)` | intake | Member, row is manual | A changed hash clears `accepted_at` and `accepted_by` |
 | `DeleteRequirement(actor, project, id)` | intake | Member, row is manual, no card in the project lists the id | Row removed |
 | `SetReviewers(actor, project, id, userIds)` | intake | Member, actor is the row's creator or a Lead Developer. Each reviewer is a tribe member with a verified login and is not the creator (RFC-054) | `requirement_reviewers` replaced for that row |
+| `SetSelfReview(actor, project, id, on)` | intake | Member, `CanSetSelfReview`: the actor is a Lead Developer or an admin (RFC-070) | `requirements.self_review` set for that row |
 | `Ingest(actor, project)` | intake | Member | New parsed rows store `created_by` as the actor. The CLI passes no actor |
 
 HTTP passes the session user. The break-glass CLI passes `--as`. A missing permission returns `app.ErrActionNotListed` when the name is not in `actions`, and `403` when the route is not a card action. A non-member is `404`.

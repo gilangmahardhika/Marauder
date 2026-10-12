@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { ApiError, setReviewers, unreachable } from '$lib/api';
+  import { ApiError, setReviewers, setSelfReview, unreachable } from '$lib/api';
   import { reviewerChoices } from '$lib/requirements';
   import type { Intake, Requirement, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
+  import Checkbox from '$lib/ui/Checkbox.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Panel from '$lib/ui/Panel.svelte';
 
@@ -19,15 +20,19 @@
   } = $props();
 
   let values = $state<string[]>([]);
+  let self = $state(false);
   let error = $state('');
   let busy = $state(false);
 
   const choices = $derived(reviewerChoices(options, requirement.createdBy, requirement.reviewers));
   const saved = $derived(requirement.reviewers.map((reviewer) => reviewer.id));
-  const dirty = $derived(values.length !== saved.length || values.some((value, index) => value !== saved[index]));
+  const reviewersDirty = $derived(values.length !== saved.length || values.some((value, index) => value !== saved[index]));
+  const selfDirty = $derived(self !== requirement.selfReview);
+  const editable = $derived(requirement.canEditReviewers || requirement.canSetSelfReview);
 
   $effect(() => {
     values = requirement.reviewers.map((reviewer) => reviewer.id);
+    self = requirement.selfReview;
   });
 
   async function save() {
@@ -35,7 +40,10 @@
     error = '';
     onmessage('Saving reviewers');
     try {
-      onsaved(await setReviewers(requirement.id, values));
+      let intake: Intake | null = null;
+      if (requirement.canEditReviewers && reviewersDirty) intake = await setReviewers(requirement.id, values);
+      if (requirement.canSetSelfReview && selfDirty) intake = await setSelfReview(requirement.id, self);
+      if (intake) onsaved(intake);
       onmessage('Reviewers saved');
     } catch (failure) {
       error = failure instanceof ApiError ? (failure.fields.userIds ?? failure.message) : unreachable();
@@ -47,7 +55,9 @@
 </script>
 
 {#snippet saveBar()}
-  <Button variant="primary" type="button" disabled={busy || !dirty} onclick={() => void save()}>Save reviewers</Button>
+  <Button variant="primary" type="button" disabled={busy || !(reviewersDirty || selfDirty)} onclick={() => void save()}>
+    Save reviewers
+  </Button>
 {/snippet}
 
 <Panel
@@ -55,7 +65,7 @@
   hint={requirement.canEditReviewers
     ? 'GitHub asks these people to review each pull request for this requirement. The list shows tribe members with a verified GitHub login.'
     : 'Only the person who brought this requirement in, or a Lead Developer, can change its reviewers.'}
-  footer={requirement.canEditReviewers ? saveBar : undefined}
+  footer={editable ? saveBar : undefined}
 >
   {#if requirement.canEditReviewers}
     <MultiSearchSelect
@@ -72,5 +82,15 @@
     <MultiSearchSelect label="Reviewers" id="requirement-reviewers" options={choices} values={saved} disabled />
   {:else}
     <p class="text-sm text-muted">No reviewers named.</p>
+  {/if}
+  {#if requirement.canSetSelfReview}
+    <Checkbox
+      id="requirement-self-review"
+      label="Self review"
+      hint="The owner of this requirement's cards reviews and approves them alone. The approval is recorded as not independent."
+      bind:checked={self}
+    />
+  {:else if requirement.selfReview}
+    <p class="mt-3 text-sm text-ink">Self review: on. The card owner approves alone.</p>
   {/if}
 </Panel>

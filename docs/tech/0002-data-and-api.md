@@ -426,6 +426,8 @@ CREATE TABLE project_links (
 
 `approvals.approver` stores the user's GitHub login. `requirements.accepted_by` stores the user id.
 
+`00018` adds `requirements.self_review BOOLEAN NOT NULL DEFAULT false` (RFC-070). Only the self-review route and a manual add write it. Ingest leaves it alone.
+
 `00008` widens the `requirements.source_kind` check to `('prd', 'rfc', 'draft', 'manual')` and adds `requirements.created_by TEXT`, the user id that added a manual row (RFC-053). It is null for parsed and drafted rows. A manual row has `source_path = ''` and `heading` equal to its id.
 
 `00009` is the card owner (RFC-054):
@@ -669,6 +671,7 @@ A project object is:
   "reviewedSha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c",
   "reviewIndependent": true,
   "reviewVerdict": "recommend_approve",
+  "selfReview": false,
   "approvedSha": null,
   "deployedSha": null,
   "environment": "dev",
@@ -678,7 +681,7 @@ A project object is:
 }
 ```
 
-`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
+`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 
@@ -812,6 +815,8 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
       "accepted": false,
       "createdBy": null,
       "canEditReviewers": true,
+      "selfReview": false,
+      "canSetSelfReview": true,
       "reviewers": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
       "linkedCards": []
     }
@@ -831,7 +836,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 
 `POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
-`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
+`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070). `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
 
 `PUT /api/projects/{projectId}/requirements/{id}/reviewers` replaces the reviewers of one requirement, parsed or manual, and returns the intake shape.
 
@@ -841,11 +846,21 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 
 Allowed for the row's creator or a Lead Developer member. Anyone else is `403`, and a non-member is `404`. An unknown id is `404`. A user id that is not a tribe member with a verified login, or is the row's creator, is `422` on `userIds`. At most 15 reviewers.
 
+`PUT /api/projects/{projectId}/requirements/{id}/self-review` turns Self review on or off for one requirement, parsed or manual, and returns the intake shape (RFC-070).
+
+```json
+{ "selfReview": true }
+```
+
+Allowed for a Lead Developer or an admin who is a member. Anyone else is `403`, including the row's creator, and a non-member is `404`. An unknown id is `404`.
+
 `POST /api/projects/{projectId}/requirements` adds a manual requirement. Any member may call it.
 
 ```json
-{ "id": "", "statement": "Export the board as CSV.", "acceptance": ["The file has one row per card."] }
+{ "id": "", "statement": "Export the board as CSV.", "acceptance": ["The file has one row per card."], "selfReview": false }
 ```
+
+`selfReview` is optional and defaults to `false`. `true` from a caller who is not a Lead Developer or an admin is `403` and adds nothing (RFC-070).
 
 `id` is optional. A non-empty id must match `^REQ-[0-9]+$`. A blank id gets one above the highest `REQ-` number in the project, at least three digits. The number is chosen while holding the project's `intake_state` row, so two adds do not take the same id. `statement` is required, at most 4000 characters. `acceptance` is a list of non-empty lines, at most 50. The row is not accepted. The response is the intake shape. A bad field is `422` with `fields` keyed `id`, `statement`, or `acceptance`. An id that already exists in that project is `409`.
 
@@ -877,7 +892,7 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 { "sha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c" }
 ```
 
-The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, rejects the card owner (`403`, RFC-054), and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy. When the card's project has `approval.solo` on, the owner and the bot login are not rejected, and their approval row stores `independent = false` (RFC-067).
+The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, rejects the card owner (`403`, RFC-054), and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy. When the card's project has `approval.solo` on, or every requirement of the card has Self review on, the owner and the bot login are not rejected, and their approval row stores `independent = false` (RFC-067, RFC-070).
 
 After an approval that inserted a new row, the server posts with the company token a comment on the card's pull request (`POST repos/{owner}/{repo}/issues/{n}/comments`) and a commit status on the approved SHA (`POST repos/{owner}/{repo}/statuses/{sha}`) with `state: success`, `context: orchestrator/approval`, and `description: Approved by @<login> in the orchestrator`. The posts take at most 30 seconds and do not change the response: a failed post writes a `job_error` event whose message starts with `approval comment:` or `approval status:`, and the card stays `approved` (RFC-068).
 

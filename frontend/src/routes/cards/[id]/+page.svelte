@@ -236,6 +236,7 @@
           {#if card.localCheck}{@render item('Local check', card.localCheck, true)}{/if}
           {#if card.devCheck}{@render item('Dev check', card.devCheck, true)}{/if}
           {#if card.headSha}{@render item('Head SHA', card.headSha, true)}{/if}
+          {#if card.selfReview}{@render item('Approval', 'Self review: the owner approves alone')}{/if}
           {#if card.reviewVerdict}{@render item('AI review', verdictLabel(card.reviewVerdict), false, card.reviewVerdict === 'failed')}{/if}
           {#if card.reviewedSha}{@render item('Reviewed SHA', card.reviewedSha, true)}{/if}
           {#if card.reviewIndependent !== null}{@render item('Review independent', card.reviewIndependent ? 'yes' : 'no')}{/if}
