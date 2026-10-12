@@ -2,7 +2,10 @@
   import type { Snippet } from 'svelte';
   import AcceptanceList from '$lib/components/AcceptanceList.svelte';
   import Markdown from '$lib/components/Markdown.svelte';
-  import { acceptanceChecks } from '$lib/requirements';
+  import RefineCompare from '$lib/components/RefineCompare.svelte';
+  import { acceptanceChecks, fromLines, toLines } from '$lib/requirements';
+  import type { RefineRequest, RequirementDraft, RequirementRefinement } from '$lib/types';
+  import Button from '$lib/ui/Button.svelte';
   import { labelClass } from '$lib/ui/control';
   import Field from '$lib/ui/Field.svelte';
   import Segmented from '$lib/ui/Segmented.svelte';
@@ -12,17 +15,57 @@
     statement = $bindable(''),
     acceptance = $bindable(''),
     idLocked = false,
-    fields = {}
+    fields = {},
+    refine
   }: {
     id?: string;
     statement?: string;
     acceptance?: string;
     idLocked?: boolean;
     fields?: Record<string, string>;
+    /** Asks the implement model for a proposal (RFC-086). Without it the form has no refine button. */
+    refine?: (body: RefineRequest) => Promise<RequirementRefinement>;
   } = $props();
 
   let view = $state('write');
   const checks = $derived(acceptanceChecks(acceptance));
+
+  let instructions = $state('');
+  let refining = $state(false);
+  let refineError = $state('');
+  let proposal = $state<{ before: RequirementDraft; sent: { statement: string; acceptance: string }; after: RequirementRefinement } | null>(
+    null
+  );
+  const stale = $derived(proposal !== null && (proposal.sent.statement !== statement || proposal.sent.acceptance !== acceptance));
+
+  async function askRefine() {
+    if (!refine) return;
+    refineError = '';
+    if (statement.trim() === '') {
+      refineError = 'Write a statement first, then refine it.';
+      return;
+    }
+    const sent = { statement, acceptance };
+    const before = { statement: statement.trim(), acceptance: toLines(acceptance) };
+    refining = true;
+    proposal = null;
+    try {
+      const after = await refine({ ...before, instructions: instructions.trim() });
+      proposal = { before, sent, after };
+    } catch (error) {
+      refineError = error instanceof Error && error.message ? error.message : 'The refine request failed.';
+    } finally {
+      refining = false;
+    }
+  }
+
+  function applyProposal() {
+    if (!proposal) return;
+    statement = proposal.after.statement;
+    acceptance = fromLines(proposal.after.acceptance);
+    proposal = null;
+    view = 'write';
+  }
 
   const views = [
     { value: 'write', label: 'Write' },
@@ -73,6 +116,39 @@
     {/if}
   </div>
 </div>
+{#if refine}
+  <div class="flex flex-col gap-3 border-t border-line pt-4">
+    <div class="flex flex-wrap items-end gap-3">
+      <div class="min-w-0 flex-1">
+        <Field
+          label="What to improve (optional)"
+          id="requirement-refine-instructions"
+          width="full"
+          placeholder="For example: make each acceptance line testable"
+          hint="Refine with AI sends the statement and acceptance to the implement model and shows its proposal next to your text."
+          error={fields.instructions}
+          bind:value={instructions}
+        />
+      </div>
+      <Button disabled={refining} onclick={() => void askRefine()}>{refining ? 'Refining…' : 'Refine with AI'}</Button>
+    </div>
+    {#if refining}
+      <p class="text-sm text-muted" role="status">Refining with the implement model. This can take up to a minute.</p>
+    {/if}
+    {#if refineError}
+      <p class="error text-sm" role="alert">{refineError}</p>
+    {/if}
+    {#if proposal}
+      <RefineCompare
+        before={proposal.before}
+        after={proposal.after}
+        {stale}
+        onapply={applyProposal}
+        ondiscard={() => (proposal = null)}
+      />
+    {/if}
+  </div>
+{/if}
 
 {#snippet statementPreview()}
   <Markdown text={statement} />

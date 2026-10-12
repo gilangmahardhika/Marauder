@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, deleteRequirement, getIntake, unreachable, updateRequirement } from '$lib/api';
+  import { ApiError, deleteRequirement, getIntake, refineRequirement, unreachable, updateRequirement } from '$lib/api';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
   import { fromLines, toLines } from '$lib/requirements';
@@ -115,8 +115,15 @@
     {/snippet}
     <div class="flex flex-col gap-6">
       <form onsubmit={save}>
-        <Panel title="Requirement" hint="Changing the text clears acceptance.">
-          <RequirementForm id={requirementId} idLocked bind:statement bind:acceptance {fields} />
+        <Panel title="Requirement" hint="Changing the text, by hand or with Refine with AI, clears acceptance when you save.">
+          <RequirementForm
+            id={requirementId}
+            idLocked
+            bind:statement
+            bind:acceptance
+            {fields}
+            refine={(body) => refineRequirement({ ...body, requirementId })}
+          />
           {#snippet footer()}
             <Button variant="primary" type="submit" disabled={busy}>Save</Button>
           {/snippet}

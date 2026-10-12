@@ -379,6 +379,10 @@ What runs today (RFC-066): `gh pr edit` and `gh pr comment` ask GraphQL for fiel
 
 Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks cards past `backlog` (except `done`) with `source_changed`.
 
+## Requirement refinement
+
+`app.RefineRequirement` (RFC-086) checks the draft with `intake.Validate`, the save rules without saving, and loads the settings. With no model on `router.routes.implement` it returns `ErrRefineRoute`. It sends one request through `RoutedProvider` with that route's model and fallback, `TaskClass` `refine_requirement`, `MaxTokens` 4,096, a 2-minute timeout, `contextpack.RefineSystem`, and `contextpack.RefineUser`, which puts the requirement id, the statement, the acceptance lines, and the member's guidance between the untrusted markers with marker lines stripped. The only tool is `propose_refinement(statement, acceptance, notes)`. One call to it is the proposal; it goes through `intake.Validate` again, `notes` is cut at 2,000 characters, and model keys are redacted from all three. Any other reply returns `ErrRefineProposal`, and a provider error returns `ErrRefineProvider` with the keys redacted. The function appends a `requirement_refined` event and writes nothing else. `httpapi.Server.RefineProvider` replaces the routed provider in tests.
+
 ## HTTP
 
 `internal/httpapi` maps sentinel errors:
@@ -393,6 +397,8 @@ Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks card
 | `httpapi.errHost`, `httpapi.errOrigin` | 403 `forbidden` |
 | `httpapi.errBody` | 413 `too_large` |
 | `httpapi.errPaused` | 429 `rate_limited` |
+| `app.ErrRefineRoute` | 409 `router_config` |
+| `app.ErrRefineProposal`, `app.ErrRefineProvider` | 502 `provider_error` |
 
 Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, project membership when the path has a project id, handler. The bearer lookup loads the user and rejects an expired or disabled session. CORS sends `Access-Control-Allow-Origin` with the exact configured origin, allows `Authorization` and `Content-Type`, and allows `GET`, `POST`, `PUT`, `DELETE`, and `OPTIONS`. A request with an `Origin` that does not match is `403`. Do not log passwords, bearer tokens, `tokenKey`, or GitHub tokens.
 

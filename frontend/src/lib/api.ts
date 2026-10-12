@@ -18,7 +18,9 @@ import type {
   ProjectLinks,
   ProjectRecord,
   Repository,
+  RefineRequest,
   RequirementDraft,
+  RequirementRefinement,
   RouterSettings,
   RuleInput,
   SessionUser,
@@ -237,6 +239,14 @@ export function addRequirement(
 export function updateRequirement(id: string, body: RequirementDraft) {
   return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}`, {
     method: 'PUT',
+    body: JSON.stringify(body)
+  });
+}
+
+/** Asks the implement model to refine a draft. requirementId is empty for a new requirement. Nothing is saved. */
+export function refineRequirement(body: RefineRequest & { requirementId: string }) {
+  return request<RequirementRefinement>(`${projectPrefix()}/requirements/refine`, {
+    method: 'POST',
     body: JSON.stringify(body)
   });
 }

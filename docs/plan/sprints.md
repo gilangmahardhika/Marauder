@@ -725,3 +725,14 @@ Packages: `internal/sandbox`, `internal/settings`, `internal/loop`, `internal/ap
 - An "Allowed commands" field on the project checks page.
 
 Done when: `TestRunCommandParse`, `TestRunCommandRefusesShell`, `TestRunCommandFlags`, `TestRunCommandOnCopy`, `TestRunCommandDisabled`, `TestRunCommandBudget`, `TestRunCommandCannotPassGate`, `TestRunCommandRedactsOutput`, `TestRunCommandExportAssertion`, `TestSaveDeployCommandExecutables`, the project settings Vitest case, `npm run check`, and the rest of the suite.
+
+## Sprint 50: Refine a requirement with AI
+
+Goal: A member refines a manual requirement with the implement model, compares the proposal, and applies it to the form (RFC-086, under REQ-083).
+
+Packages: `internal/intake`, `internal/contextpack`, `internal/app`, `internal/httpapi`, frontend intake pages.
+
+- `POST /api/projects/{projectId}/requirements/refine` with the `propose_refinement` tool, the save checks on the proposal, and a `requirement_refined` event without text.
+- A "Refine with AI" button, a before and after comparison, and Apply and Discard on the new and edit pages.
+
+Done when: `TestRefineRequirementProposal`, `TestRefineDoesNotSave`, `TestRefineNoImplementRoute`, `TestRefineInvalidProposal`, `TestRefineRequiresMember`, `TestRefinePromptMarkers`, `TestRefineRedactsKeys`, the `textdiff`, `RefineCompare`, `RequirementForm`, and edit page Vitest cases, `npm run check`, and the rest of the suite.

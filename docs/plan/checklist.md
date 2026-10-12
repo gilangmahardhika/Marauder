@@ -792,3 +792,17 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestSaveDeployCommandExecutables`
 - [x] Project settings Vitest
 - [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
+
+## Sprint 50: Refine a requirement with AI
+
+- [x] Refine route, `propose_refinement` tool, proposal checks, `requirement_refined` event.
+- [x] Refine button, comparison, Apply and Discard on the new and edit pages.
+- [x] `TestRefineRequirementProposal`
+- [x] `TestRefineDoesNotSave`
+- [x] `TestRefineNoImplementRoute`
+- [x] `TestRefineInvalidProposal`
+- [x] `TestRefineRequiresMember`
+- [x] `TestRefinePromptMarkers`
+- [x] `TestRefineRedactsKeys`
+- [x] `textdiff`, `RefineCompare`, `RequirementForm`, and edit page Vitest
+- [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes

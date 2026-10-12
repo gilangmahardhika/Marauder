@@ -125,6 +125,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-080 | The implementer pack maps the repository and carries its agent notes |
 | REQ-081 | Repeated prompt text is cached |
 | REQ-082 | The implementer runs allowlisted commands on a copy, and infrastructure failures keep the attempt |
+| REQ-083 | A member can refine a requirement with AI and compare it before applying |
 
 ## Requirements
 
@@ -1139,6 +1140,18 @@ A project may list commands the implementer may run. `run_command` runs one argv
 - A file a command writes is not in the worktree afterwards.
 - A gating check whose engine exits 125 blocks with `sandbox_config` and leaves `attemptsUsed`.
 - An attempt that makes no commit on a branch already ahead of the base branch goes to the gating check.
+
+### REQ-083 A member can refine a requirement with AI and compare it before applying
+
+On the new-requirement form and the edit page of a manual requirement, a member can ask the model of the `implement` route to refine the statement and acceptance lines, optionally saying what to improve. The page shows the proposal against the current text, and the member applies it to the form or discards it (RFC-086).
+
+#### Acceptance
+
+- A refinement never changes a saved requirement on its own.
+- The page shows the statement and acceptance changes and the model's notes before Apply.
+- Apply puts the proposal in the form, and nothing is saved until the member presses Save.
+- Saving a refined requirement clears its acceptance.
+- With no model on the `implement` route, the page says so and nothing is sent.
 
 ## Non-goals
 

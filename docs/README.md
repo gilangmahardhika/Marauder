@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-082`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-083`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -38,6 +38,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0031-terminal-trace.md](rfc/0031-terminal-trace.md) | Decision `RFC-078`. The Trace page has a Terminal view that prints every stored event with its full text, follows new output, and polls every second while live |
 | [rfc/0032-thinking-and-effort.md](rfc/0032-thinking-and-effort.md) | Decision `RFC-079`. Each model sets thinking and effort, every request to it sends them, and its reasoning goes back between tool turns |
 | [rfc/0033-agent-loop.md](rfc/0033-agent-loop.md) | Decisions `RFC-080` to `RFC-085`. Ranged reads and exact replacements, a stable per-model history, a loop that finishes, a path map and `AGENTS.md` in the pack, a todo list, prompt caching, a sandboxed `run_command`, and fair attempt accounting |
+| [rfc/0034-refine-requirement.md](rfc/0034-refine-requirement.md) | Decision `RFC-086`. A member asks the implement model to refine a manual requirement, compares the proposal with the current text, and applies it to the form before saving |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

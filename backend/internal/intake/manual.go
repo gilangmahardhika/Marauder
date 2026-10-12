@@ -90,6 +90,12 @@ func (d Draft) clean() (Draft, error) {
 	return out, nil
 }
 
+// Validate cleans d's statement and acceptance with the rules a save uses and
+// returns *Invalid when they fail. It saves nothing.
+func Validate(d Draft) (Draft, error) {
+	return Draft{Statement: d.Statement, Acceptance: d.Acceptance}.clean()
+}
+
 // acceptanceLine keeps one line and drops one leading list or checkbox marker,
 // since the pull request body writes each line as "- [ ] " (RFC-066).
 func acceptanceLine(line string) string {

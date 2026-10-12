@@ -398,6 +398,42 @@ func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 	s.writeIntake(w, r, projectID)
 }
 
+// projectRequirementRefine returns the implement model's proposal for a draft
+// (RFC-086). It saves nothing; the member applies it to the form and saves.
+func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		RequirementID string   `json:"requirementId"`
+		Statement     string   `json:"statement"`
+		Acceptance    []string `json:"acceptance"`
+		Instructions  string   `json:"instructions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	user, _ := app.CurrentUser(r.Context())
+	out, err := app.RefineRequirement(r.Context(), s.Data, s.DB, projectID, user.ID, app.RefineInput{
+		RequirementID: body.RequirementID, Statement: body.Statement, Acceptance: body.Acceptance, Instructions: body.Instructions,
+	}, s.RefineProvider)
+	var invalid *intake.Invalid
+	switch {
+	case err == nil:
+		writeJSON(w, 200, out)
+	case errors.As(err, &invalid):
+		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
+	case errors.Is(err, app.ErrRefineRoute):
+		writeErr(w, 409, "router_config", err.Error())
+	case errors.Is(err, app.ErrRefineProposal), errors.Is(err, app.ErrRefineProvider):
+		writeErr(w, 502, "provider_error", err.Error())
+	default:
+		writeErr(w, 500, "internal", "refine")
+	}
+}
+
 // projectRequirement edits or deletes one manual requirement.
 func (s *Server) projectRequirement(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)

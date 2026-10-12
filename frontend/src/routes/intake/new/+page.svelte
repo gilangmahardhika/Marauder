@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, addRequirement, getIntake, setReviewers, unreachable } from '$lib/api';
+  import { ApiError, addRequirement, getIntake, refineRequirement, setReviewers, unreachable } from '$lib/api';
   import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import { canSetSelfReview, reviewerChoices, toLines } from '$lib/requirements';
@@ -85,7 +85,13 @@
 >
   <form onsubmit={submit}>
     <Panel title="Requirement">
-      <RequirementForm bind:id bind:statement bind:acceptance {fields} />
+      <RequirementForm
+        bind:id
+        bind:statement
+        bind:acceptance
+        {fields}
+        refine={(body) => refineRequirement({ ...body, requirementId: id.trim() })}
+      />
       <MultiSearchSelect
         label="Reviewers"
         id="requirement-reviewers"

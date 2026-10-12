@@ -8,6 +8,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/providers"
 )
 
 type Server struct {
@@ -19,6 +20,9 @@ type Server struct {
 	AllowOrigin string
 	AllowHosts  map[string]bool
 	Cloud       bool
+	// RefineProvider replaces the routed implement model for requirement
+	// refinement in tests; nil in production.
+	RefineProvider providers.Provider
 }
 
 func New() *Server {
@@ -51,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/projects/{projectId}/ingest", s.projectIngest)
 	mux.HandleFunc("POST /api/projects/{projectId}/accept", s.projectAccept)
 	mux.HandleFunc("POST /api/projects/{projectId}/requirements", s.projectRequirements)
+	mux.HandleFunc("POST /api/projects/{projectId}/requirements/refine", s.projectRequirementRefine)
 	mux.HandleFunc("PUT /api/projects/{projectId}/requirements/{id}", s.projectRequirement)
 	mux.HandleFunc("DELETE /api/projects/{projectId}/requirements/{id}", s.projectRequirement)
 	mux.HandleFunc("PUT /api/projects/{projectId}/requirements/{id}/reviewers", s.projectReviewers)

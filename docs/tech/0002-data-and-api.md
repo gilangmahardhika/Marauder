@@ -339,6 +339,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
+| `requirement_refined` | `requirementId` (`new` on the new-requirement form), `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens`. No requirement or proposal text. The row has the project and the actor, and no card (RFC-086) |
 | `assertion_failed` | `name`, `detail` |
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
@@ -922,6 +923,14 @@ Allowed for a Lead Developer or an admin who is a member. Anyone else is `403`, 
 `id` is optional. A non-empty id must match `^REQ-[0-9]+$`. A blank id gets one above the highest `REQ-` number in the project, at least three digits. The number is chosen while holding the project's `intake_state` row, so two adds do not take the same id. `statement` is required, at most 10000 characters. It is markdown text and is stored as written, with CR and CRLF line endings turned into LF. Over the limit, `fields.statement` is "Keep the statement to 10000 characters or fewer." `acceptance` is a list of non-empty lines, at most 50, each at most 1000 characters ("Keep each acceptance line to 1000 characters or fewer."). Each line is inline markdown. A line break inside a line becomes a space, and one leading list or checkbox marker (`- `, `* `, `+ `, `1. `, `1) `, optionally followed by `[ ]` or `[x]`) is dropped, because the pull request writes each line as `- [ ] `. Each element is one check; the client decides how its text is split into checks. The row is not accepted. The response is the intake shape. A bad field is `422` with `fields` keyed `id`, `statement`, or `acceptance`. An id that already exists in that project is `409`.
 
 `PUT /api/projects/{projectId}/requirements/{id}` takes `{ "statement": "...", "acceptance": [] }` with the same rules. It changes only a manual row. A changed statement or acceptance list clears `accepted_at` and `accepted_by` (REQ-004). A row parsed from the repository or drafted by the planner is `409`. An unknown id is `404`.
+
+`POST /api/projects/{projectId}/requirements/refine` takes `{ "requirementId": "", "statement": "...", "acceptance": [], "instructions": "" }` and returns the implement model's proposal without saving it (RFC-086):
+
+```json
+{ "statement": "...", "acceptance": ["..."], "notes": "What changed and why", "modelId": "claude-sonnet" }
+```
+
+Any member who can see the project may call it. `statement` and `acceptance` follow the save rules and `instructions` is at most 1,000 characters, otherwise `422` with field errors. No model on the `implement` route is `409 router_config`. A provider failure, a timeout, or a reply that is not one valid `propose_refinement` call is `502 provider_error`. The proposal passes the save rules, so its acceptance lines have no list markers, and `notes` is at most 2,000 characters.
 
 `DELETE /api/projects/{projectId}/requirements/{id}` removes a manual row and returns the intake shape. A row that is not manual, or a manual row that a card in that project lists in `requirementIds`, is `409`. An unknown id is `404`.
 

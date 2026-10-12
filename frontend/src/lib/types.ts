@@ -160,6 +160,16 @@ export type RequirementDraft = {
   acceptance: string[];
 };
 
+/** The implement model's proposal for a draft (RFC-086). It is never saved by the server. */
+export type RequirementRefinement = {
+  statement: string;
+  acceptance: string[];
+  notes: string;
+  modelId: string;
+};
+
+export type RefineRequest = RequirementDraft & { instructions: string };
+
 export type Decision = {
   id: string;
   sourcePath: string;
