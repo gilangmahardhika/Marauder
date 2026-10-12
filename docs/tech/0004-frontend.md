@@ -194,6 +194,7 @@ frontend/
   src/lib/components/TerminalView.test.ts
   src/lib/pager.svelte.test.ts
   src/routes/cards/[id]/trace/page.test.ts
+  src/routes/settings/deploy/page.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/ReviewersPanel.test.ts
   src/lib/components/Markdown.test.ts
@@ -429,7 +430,7 @@ The toolbar searches the kind and its label, attempt id, the row's label and det
 The toolbar's View switch (`Segmented`) picks Structured, the timeline above, or Terminal, kept in `?view=terminal` (RFC-078). The filters apply to both. The terminal view (`TerminalView`) is one `bg-ink` monospaced box with `role="log"`, `aria-label="Terminal output, oldest first"`, and `tabindex="0"`, at most 75% of the viewport high. `terminal.terminalLines` turns each event into a local clock time, a head line, and its text:
 
 - A model call: `model  role  modelId  1.5k in / 20 out  stop tool_use`, then the reply. Sky.
-- A tool call: `$ read_file  src/x.ts`, then the whole stored `summary`. A commit's head is its first line; `edit_file` adds "(N lines)"; `comment_pr` and `verdict` add the body; the two context tools list their items. A refused call adds `(refused)`. Failed and refused calls and a check not starting with `exit 0` are red, a passing check green.
+- A tool call: `$ read_file  src/x.ts`, then the whole stored `summary`. A commit's head is its first line; `edit_file` adds "(N lines)"; `move_file` shows `from -> to`, a ranged read adds "from line N", and `run_command` shows its argv and is coloured like a check; `comment_pr` and `verdict` add the body; the two context tools list their items. A refused call adds `(refused)`. Failed and refused calls and a check not starting with `exit 0` are red, a passing check green.
 - A status change: `transition  from -> to  evidence`, amber, or red into `blocked`. A job error: `! job_error` and the whole message, red.
 - Any other kind: its name and `trace.describe` detail and text. An unknown kind shows its payload as JSON.
 - `--- attempt N  taskClass  modelId  ---`, muted, where another attempt's events begin.
@@ -482,7 +483,7 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 `src/routes/admin/llm/+page.svelte` lists the company families from GET `/api/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/admin/llm/new`. A toolbar searches and filters the families (see Search and filters).
 
-`src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key. Under each model id are its Thinking select (Provider default, On, Off, and Adaptive on anthropic only), a Budget number field shown for On on anthropic, and an Effort select whose values follow the protocol, with Provider default first (RFC-079). They save in the family's `modelOptions`.
+`src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key. Under each model id are its Thinking select (Provider default, On, Off, and Adaptive on anthropic only), a Budget number field shown for On on anthropic, an Effort select whose values follow the protocol, with Provider default first (RFC-079), and a History budget (KiB) number field on either protocol, empty for the 16 KiB default (RFC-081). They save in the family's `modelOptions`.
 
 `src/routes/admin/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/admin/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
 
@@ -530,7 +531,7 @@ Fields, in three fieldsets:
 | Fieldset | Fields |
 | --- | --- |
 | Dev server | Dev URL, dev hosts (one per line), deploy command, rollback command, health URL, deploy token |
-| Checks | Local check, dev check, allowed executables (one per line), sandbox engine select (`podman`, `docker`), sandbox image |
+| Checks | Local check, dev check, allowed executables (one per line), allowed commands (one per line, `commandExecutables`, RFC-084), sandbox engine select (`podman`, `docker`), sandbox image |
 | Board | Implementation cap (number, default 2), PRD path, RFC path, Solo approval (checkbox, default off, RFC-067) |
 
 Static help text:
@@ -540,6 +541,7 @@ Static help text:
 | Deploy and rollback command | Absolute path to a script outside the target repo and the data directory. Not group or world writable. |
 | Dev hosts | Health URL and dev URL hosts must be listed here. |
 | Sandbox image | Pin by digest, for example `name@sha256:...`. |
+| Allowed commands | Programs the implementer may run with run_command, one bare name per line, such as go or npx. Each runs in the sandbox on a throwaway copy with no network, and never counts as a check. Shells and programs that run another program, such as bash, env, or xargs, are refused. Leave empty to turn run_command off. |
 | Fieldset legend for dev server | Empty values can be saved. Deploy stops with deploy_config until they are set. |
 
 ## Styles
@@ -648,6 +650,8 @@ npm run build
 | Trace page terminal view | With `?view=terminal` the log renders, the Kind filter applies, and Terminal is pressed. A live card polls every second in the terminal view and every 3 seconds in the structured view |
 | `llm` model options | `toDraft`, `fromDraft`, and `keepKey` keep `modelOptions`. `fromDraft` drops a model's empty settings, the settings of a removed model, and a budget unless thinking is `enabled` on anthropic (RFC-079) |
 | `FamilyForm` model options | Adaptive is offered on anthropic only, the budget field shows only for On on anthropic, and the effort list follows the protocol |
+| Deploy settings allowed commands | Allowed commands load one per line, save as `commandExecutables` with blank lines dropped, and a refused name shows its field error |
+| `FamilyForm` history budget | Every model row has a History budget field on either protocol. `toDraft` and `fromDraft` round-trip `historyBudgetKiB` and drop an empty one |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | `api` AI review mode | `addRequirement` sends `aiReviewMode` in the POST body, as the New requirement page does, and `setAIReviewMode` PUTs `{ aiReviewMode }` to `requirements/{id}/ai-review-mode` in the selected project (RFC-072) |

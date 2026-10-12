@@ -97,6 +97,20 @@ group('describe', () => {
     expect(tool('commit', { message: 'Fix login\n\nUses the session.' }, 'committed')).toMatchObject({ detail: 'Fix login', text: 'Fix login\n\nUses the session.' });
     expect(tool('comment_pr', { body: 'Looks fine.' }, 'commented')).toMatchObject({ detail: 'Looks fine.', text: 'Looks fine.' });
     expect(tool('verdict', { body: 'Meets REQ-001.' }, 'recommend_approve')).toMatchObject({ detail: 'Recommend approve', text: 'Meets REQ-001.' });
+    expect(tool('read_file', { path: 'src/x.ts', offset: 10, limit: 3 }, '10|a\n11|b\n12|c\nlines 10-12 of 2500\nmore: read from line 13')).toMatchObject({
+      detail: 'src/x.ts from line 10 · lines 10-12 of 2,500'
+    });
+    expect(tool('replace_in_file', { path: 'src/a.ts', oldBytes: 10, newBytes: 12 }, 'replaced 2 occurrences in src/a.ts')).toMatchObject({
+      label: 'Replace in file',
+      detail: 'src/a.ts · 2 occurrences',
+      text: ''
+    });
+    expect(tool('move_file', { from: 'a.ts', to: 'b/a.ts' }, 'moved a.ts to b/a.ts')).toMatchObject({ label: 'Move file', detail: 'a.ts -> b/a.ts' });
+    expect(tool('delete_file', { path: 'old.ts' }, 'deleted old.ts')).toMatchObject({ label: 'Delete file', detail: 'old.ts' });
+    expect(tool('search_files', { text: 'login', glob: '*.ts', path: 'src' }, 'src/a.ts:1: login')).toMatchObject({ detail: '"login" in src *.ts · 1 match' });
+    expect(tool('list_files', { path: '.', glob: '**/*.go' }, 'a.go')).toMatchObject({ detail: '. **/*.go · 1 path' });
+    expect(tool('run_command', { argv: ['go', 'test', './...'] }, 'exit 1\nFAIL')).toMatchObject({ label: 'Run command', detail: 'exit 1 · go test ./...', tone: 'red' });
+    expect(words('tool_call', { name: 'read_file', ok: false, summary: 'error: open x: no such file', args: { path: 'x' } })).toMatchObject({ tone: 'red' });
     expect(words('model_call', { role: 'implementer', modelId: 'm', text: '\nI will read the login page first.\nThen edit it.' })).toMatchObject({
       detail: 'I will read the login page first.',
       text: 'I will read the login page first.\nThen edit it.'

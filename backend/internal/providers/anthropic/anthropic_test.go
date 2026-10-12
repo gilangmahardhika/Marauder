@@ -3,6 +3,7 @@ package anthropic_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -98,6 +99,36 @@ func TestAnthropicSendsTurns(t *testing.T) {
 	}
 	if !strings.Contains(string(result), `"role":"user"`) || !strings.Contains(string(result), `"tool_use_id":"toolu_1"`) || !strings.Contains(string(result), "hello") {
 		t.Fatalf("result = %s", result)
+	}
+}
+
+func TestToolErrorsFlagged(t *testing.T) {
+	var got map[string]any
+	var path, apiKey string
+	srv := messageServer(t, &got, &path, &apiKey)
+
+	_, err := anthropic.New(srv.URL, key).Complete(context.Background(), providers.Request{
+		Model: "claude-test", User: "card",
+		Turns: []providers.Turn{{
+			Calls: []providers.ToolCall{
+				{ID: "toolu_1", Name: "read_file", Args: map[string]any{"path": "a.txt"}},
+				{ID: "toolu_2", Name: "read_file", Args: map[string]any{"path": "b.txt"}},
+			},
+			Results: []string{"1|hello", providers.ErrorPrefix + "open b.txt: no such file"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages, _ := got["messages"].([]any)
+	blocks, _ := messages[2].(map[string]any)["content"].([]any)
+	if len(blocks) != 2 {
+		t.Fatalf("blocks = %v", blocks)
+	}
+	first, _ := blocks[0].(map[string]any)
+	second, _ := blocks[1].(map[string]any)
+	if first["is_error"] == true || second["is_error"] != true {
+		t.Fatalf("is_error = %v, %v", first["is_error"], second["is_error"])
 	}
 }
 
@@ -248,5 +279,91 @@ func TestAnthropicBaseURL(t *testing.T) {
 		if path != "/anthropic/v1/messages" {
 			t.Fatalf("base %q: path = %q", base, path)
 		}
+	}
+}
+
+// cacheMarks names the blocks of a request body that carry cache_control.
+func cacheMarks(t *testing.T, got map[string]any) []string {
+	t.Helper()
+	var marks []string
+	mark := func(where string, block any) {
+		if m, ok := block.(map[string]any); ok && m["cache_control"] != nil {
+			if cc, _ := json.Marshal(m["cache_control"]); string(cc) != `{"type":"ephemeral"}` {
+				t.Fatalf("%s cache_control = %s", where, cc)
+			}
+			marks = append(marks, where)
+		}
+	}
+	for i, block := range got["system"].([]any) {
+		mark(fmt.Sprintf("system %d", i), block)
+	}
+	if tools, ok := got["tools"].([]any); ok {
+		for i, tool := range tools {
+			mark(fmt.Sprintf("tool %d", i), tool)
+		}
+	}
+	for m, message := range got["messages"].([]any) {
+		content, _ := message.(map[string]any)["content"].([]any)
+		for b, block := range content {
+			kind, _ := block.(map[string]any)["type"].(string)
+			mark(fmt.Sprintf("message %d %s %d", m, kind, b), block)
+		}
+	}
+	return marks
+}
+
+func TestAnthropicCacheBreakpoints(t *testing.T) {
+	var got map[string]any
+	var path, apiKey string
+	srv := messageServer(t, &got, &path, &apiKey)
+	client := anthropic.New(srv.URL, key)
+	tools := []providers.Tool{{Name: "read_file"}, {Name: "commit"}}
+
+	if _, err := client.Complete(context.Background(), providers.Request{Model: "claude-test", System: "be brief", User: "card", Tools: tools}); err != nil {
+		t.Fatal(err)
+	}
+	if marks := strings.Join(cacheMarks(t, got), ", "); marks != "system 0, tool 1, message 0 text 0" {
+		t.Fatalf("first request marks = %s", marks)
+	}
+
+	got = nil
+	turn := func(id string, note string) providers.Turn {
+		return providers.Turn{
+			Calls:   []providers.ToolCall{{ID: id + "a", Name: "read_file", Args: map[string]any{"path": "a"}}, {ID: id + "b", Name: "read_file", Args: map[string]any{"path": "b"}}},
+			Results: []string{"1|a", "1|b"},
+			Note:    note,
+		}
+	}
+	if _, err := client.Complete(context.Background(), providers.Request{
+		Model: "claude-test", System: "be brief", User: "card", Tools: tools,
+		Turns: []providers.Turn{turn("t1", "keep going"), turn("t2", "Your todo list:\n[pending] commit")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if marks := strings.Join(cacheMarks(t, got), ", "); marks != "system 0, tool 1, message 4 tool_result 1" {
+		t.Fatalf("marks = %s, want system, last tool, and the newest turn's last result", marks)
+	}
+	messages := got["messages"].([]any)
+	last, _ := messages[4].(map[string]any)["content"].([]any)
+	note, _ := last[len(last)-1].(map[string]any)
+	if note["type"] != "text" || note["text"] != "Your todo list:\n[pending] commit" {
+		t.Fatalf("the note is not after the breakpoint: %v", last)
+	}
+}
+
+func TestAnthropicCacheUsage(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],
+			"stop_reason":"end_turn","stop_sequence":null,
+			"usage":{"input_tokens":7,"output_tokens":3,"cache_creation_input_tokens":100,"cache_read_input_tokens":500}}`)
+	}))
+	t.Cleanup(srv.Close)
+	resp, err := anthropic.New(srv.URL, key).Complete(context.Background(), providers.Request{Model: "claude-test", User: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.InputTokens != 107 || resp.CachedInputTokens != 500 || resp.OutputTokens != 3 {
+		t.Fatalf("usage = in %d cached %d out %d, want 107, 500, 3", resp.InputTokens, resp.CachedInputTokens, resp.OutputTokens)
 	}
 }

@@ -120,6 +120,11 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-075 | A person writes instructions that later attempts of a card read |
 | REQ-076 | A person follows an attempt live on the Trace page |
 | REQ-077 | An admin sets thinking and effort per model |
+| REQ-078 | The implementer changes files without destroying them |
+| REQ-079 | An implementer attempt keeps its history and finishes |
+| REQ-080 | The implementer pack maps the repository and carries its agent notes |
+| REQ-081 | Repeated prompt text is cached |
+| REQ-082 | The implementer runs allowlisted commands on a copy, and infrastructure failures keep the attempt |
 
 ## Requirements
 
@@ -357,7 +362,7 @@ The log tail included in a pack is capped. The default cap is the last 200 lines
 | Profile | Tools | Absent |
 | --- | --- | --- |
 | Planner | Read docs, propose requirements, create cards | Shell, git push, deploy, transition |
-| Implementer | Read file, edit file, run the card's local check, commit inside the worktree | Push to the default branch, merge, deploy, review comment, transition |
+| Implementer | List, search, and read files, replace text in a file, write, delete, and move a file, keep a todo list, run the card's local check, run an allowlisted command on a throwaway copy, commit inside the worktree | Push to the default branch, merge, deploy, review comment, transition |
 | Reviewer | Read diff, comment on the pull request, verdict `recommend_approve` or `request_changes` | Edit, commit, merge, deploy, human approve |
 | Triage | Read the log, write a failure note | Edit, commit, deploy |
 | Deployer | Deploy the dev SHA, health check, rollback | Every model tool. The deployer is harness code. |
@@ -369,12 +374,12 @@ The log tail included in a pack is capped. The default cap is the last 200 lines
 
 ### REQ-018 Check commands come from settings and run on a copy
 
-`localCheck` and `devCheck` are copied from settings when the card is created and are visible on the card before the inner loop starts. No model tool can set or change them. The runner executes the command in the sandbox on a copy of the files, never on the worktree itself. The first word must be on the allowed-executables list, and shell syntax is refused. A shell string invented during a model turn is not executed.
+`localCheck` and `devCheck` are copied from settings when the card is created and are visible on the card before the inner loop starts. No model tool can set or change them. The runner executes the command in the sandbox on a copy of the files, never on the worktree itself. The first word must be on the allowed-executables list, and shell syntax is refused. A shell string invented during a model turn is not executed. The implementer's `run_command` runs an argv, never a shell string, whose first element is on the project's allowed-commands list, in the same sandbox on a throwaway copy, and its exit code is never check evidence (REQ-082).
 
 #### Acceptance
 
 - The command that runs is the command stored on the card.
-- A model turn that emits a different shell command does not execute that command.
+- A model turn that emits a different shell command does not execute that command as the check. A `run_command` call with a shell, a wrapper, or a name off the allowed-commands list runs nothing.
 - An executable outside the allowlist fails the check with a harness error and does not run.
 - A `create_card` call that includes a command leaves the card's checks equal to settings.
 - A check cannot write the worktree's `.git` file.
@@ -1084,6 +1089,57 @@ On an LLM family's page, an admin sets each model's thinking (provider default, 
 - `adaptive` on an openai family, a budget outside 1,024 to 32,768, or an effort the protocol does not take is `422` on `modelOptions`.
 - With thinking on, a tool turn after a reply that thought succeeds on the same model, and the trace holds the reply text only.
 
+### REQ-078 The implementer changes files without destroying them
+
+The implementer reads a file by line range, replaces exact text in it, writes, deletes, and moves files, and searches by text or pattern. A write that would empty a file or copy a history placeholder into it is refused. A tool error is marked as an error, and every tool result is redacted before the model sees it (RFC-080).
+
+#### Acceptance
+
+- `replace_in_file` with text that occurs twice, or not at all, changes nothing and returns an error.
+- `edit_file` with the history placeholder, or with empty text over a non-empty file, changes nothing.
+- A read with an offset and a limit returns those lines numbered, with the total line count.
+- A configured secret in a file the model reads reaches the model as `[redacted]`.
+
+### REQ-079 An implementer attempt keeps its history and finishes
+
+Each model sets how much earlier tool output an attempt sends back. Output leaves the history oldest first and does not come back. A reply without a tool call before any commit is nudged to continue at most twice. When the last local check passed on the same files, the harness commits them. The default is 40 model turns per attempt, and the turn and token caps block the card (RFC-081).
+
+#### Acceptance
+
+- An attempt whose last local check exited 0 and that ends without calling `commit` ends with a commit on that tree.
+- An attempt that changes a file after its last passing check is not committed by the harness.
+- A fixture that uses every turn without a commit blocks with `turn_cap`, and one over the card's token cap blocks with `token_cap`, each with a `budget_stop` event.
+
+### REQ-080 The implementer pack maps the repository and carries its agent notes
+
+The implementer pack holds a path map of the repository, the repository's `AGENTS.md` and `CLAUDE.md` as data inside the markers, each requirement's heading and acceptance lines, and the decisions that name the card's requirements. The implementer keeps a todo list that every request carries. Read-only tool calls in one reply run at the same time (RFC-082).
+
+#### Acceptance
+
+- The pack fixture contains the path map and `AGENTS.md` between the markers, and the trace records the file's hash.
+- An `AGENTS.md` over 16 KiB is cut.
+- A todo list written on one turn appears in every later request of the attempt.
+
+### REQ-081 Repeated prompt text is cached
+
+Requests on the anthropic protocol mark the system prompt, the tools, and the earlier turns as cacheable. Cached input tokens are recorded per attempt and count at a tenth toward the card's token cap (RFC-083).
+
+#### Acceptance
+
+- An anthropic request body has three cache breakpoints.
+- Cached input tokens reported by either protocol are stored on the attempt.
+
+### REQ-082 The implementer runs allowlisted commands on a copy, and infrastructure failures keep the attempt
+
+A project may list commands the implementer may run. `run_command` runs one argv from that list in the sandbox on a throwaway copy of the worktree, with no network, and returns its exit code and output tail. A stopped sandbox engine, a provider outage, or a failed publish blocks the card without using up an attempt. A branch that already holds the change goes to the gating check (RFC-084, RFC-085).
+
+#### Acceptance
+
+- With no allowed commands, `run_command` runs nothing.
+- A file a command writes is not in the worktree afterwards.
+- A gating check whose engine exits 125 blocks with `sandbox_config` and leaves `attemptsUsed`.
+- An attempt that makes no commit on a branch already ahead of the base branch goes to the gating check.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1102,8 +1158,8 @@ Project settings live in that project's `config.yaml` and secrets (REQ-045). A L
 | Setting | v1 default |
 | --- | --- |
 | Attempts per card | 3 |
-| Model turns per attempt | 12 |
-| Tokens per card | 200000 |
+| Model turns per attempt | 40 |
+| Tokens per card | 2000000 |
 | Wall minutes per attempt | 30 |
 | Parallel implementation cap | 2 |
 | PRD and RFC paths | `docs/prd`, `docs/rfc` |
@@ -1199,3 +1255,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 29. Instructions for the next attempt (REQ-075).
 30. A live, verbose trace (REQ-076).
 31. Thinking and effort per model (REQ-077).
+32. The Claude Code-style agent loop (REQ-078 to REQ-082).

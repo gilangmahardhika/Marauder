@@ -34,6 +34,8 @@ type ProjectConfig struct {
 		Local            string   `yaml:"local"`
 		Dev              string   `yaml:"dev"`
 		AllowExecutables []string `yaml:"allowExecutables"`
+		// CommandExecutables are the names run_command may start (RFC-084).
+		CommandExecutables []string `yaml:"commandExecutables"`
 	} `yaml:"checks"`
 	Sandbox struct {
 		Engine string `yaml:"engine"`
@@ -58,21 +60,22 @@ type ProjectSecrets struct {
 
 // Deploy is the flat shape of the project deploy route.
 type Deploy struct {
-	Environment       string   `json:"environment"`
-	DevURL            string   `json:"devUrl"`
-	DevHosts          []string `json:"devHosts"`
-	DevCommand        string   `json:"devCommand"`
-	RollbackCommand   string   `json:"rollbackCommand"`
-	HealthURL         string   `json:"healthUrl"`
-	LocalCheck        string   `json:"localCheck"`
-	DevCheck          string   `json:"devCheck"`
-	AllowExecutables  []string `json:"allowExecutables"`
-	SandboxEngine     string   `json:"sandboxEngine"`
-	SandboxImage      string   `json:"sandboxImage"`
-	ImplementationCap int      `json:"implementationCap"`
-	PRDPath           string   `json:"prdPath"`
-	RFCPath           string   `json:"rfcPath"`
-	SoloApproval      bool     `json:"soloApproval"`
+	Environment        string   `json:"environment"`
+	DevURL             string   `json:"devUrl"`
+	DevHosts           []string `json:"devHosts"`
+	DevCommand         string   `json:"devCommand"`
+	RollbackCommand    string   `json:"rollbackCommand"`
+	HealthURL          string   `json:"healthUrl"`
+	LocalCheck         string   `json:"localCheck"`
+	DevCheck           string   `json:"devCheck"`
+	AllowExecutables   []string `json:"allowExecutables"`
+	CommandExecutables []string `json:"commandExecutables"`
+	SandboxEngine      string   `json:"sandboxEngine"`
+	SandboxImage       string   `json:"sandboxImage"`
+	ImplementationCap  int      `json:"implementationCap"`
+	PRDPath            string   `json:"prdPath"`
+	RFCPath            string   `json:"rfcPath"`
+	SoloApproval       bool     `json:"soloApproval"`
 }
 
 // ProjectPaths are the directories a deploy command must stay out of.
@@ -109,21 +112,22 @@ func LoadProject(data, projectID string) (ProjectConfig, ProjectSecrets, error) 
 // DeployView flattens the project sections and fills the defaults.
 func DeployView(cfg ProjectConfig) Deploy {
 	d := Deploy{
-		Environment:       cfg.Deploy.Environment,
-		DevURL:            cfg.Deploy.DevURL,
-		DevHosts:          cfg.Deploy.DevHosts,
-		DevCommand:        cfg.Deploy.DevCommand,
-		RollbackCommand:   cfg.Deploy.RollbackCommand,
-		HealthURL:         cfg.Deploy.HealthURL,
-		LocalCheck:        cfg.Checks.Local,
-		DevCheck:          cfg.Checks.Dev,
-		AllowExecutables:  cfg.Checks.AllowExecutables,
-		SandboxEngine:     cfg.Sandbox.Engine,
-		SandboxImage:      cfg.Sandbox.Image,
-		ImplementationCap: cfg.Scheduler.ImplementationCap,
-		PRDPath:           cfg.Paths.PRD,
-		RFCPath:           cfg.Paths.RFC,
-		SoloApproval:      cfg.Approval.Solo,
+		Environment:        cfg.Deploy.Environment,
+		DevURL:             cfg.Deploy.DevURL,
+		DevHosts:           cfg.Deploy.DevHosts,
+		DevCommand:         cfg.Deploy.DevCommand,
+		RollbackCommand:    cfg.Deploy.RollbackCommand,
+		HealthURL:          cfg.Deploy.HealthURL,
+		LocalCheck:         cfg.Checks.Local,
+		DevCheck:           cfg.Checks.Dev,
+		AllowExecutables:   cfg.Checks.AllowExecutables,
+		CommandExecutables: cfg.Checks.CommandExecutables,
+		SandboxEngine:      cfg.Sandbox.Engine,
+		SandboxImage:       cfg.Sandbox.Image,
+		ImplementationCap:  cfg.Scheduler.ImplementationCap,
+		PRDPath:            cfg.Paths.PRD,
+		RFCPath:            cfg.Paths.RFC,
+		SoloApproval:       cfg.Approval.Solo,
 	}
 	if d.Environment == "" {
 		d.Environment = "dev"
@@ -133,6 +137,9 @@ func DeployView(cfg ProjectConfig) Deploy {
 	}
 	if d.AllowExecutables == nil {
 		d.AllowExecutables = []string{}
+	}
+	if d.CommandExecutables == nil {
+		d.CommandExecutables = []string{}
 	}
 	if d.SandboxEngine == "" {
 		d.SandboxEngine = "podman"
@@ -176,6 +183,7 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	next.Checks.Local = d.LocalCheck
 	next.Checks.Dev = d.DevCheck
 	next.Checks.AllowExecutables = d.AllowExecutables
+	next.Checks.CommandExecutables = d.CommandExecutables
 	next.Sandbox.Engine = d.SandboxEngine
 	next.Sandbox.Image = d.SandboxImage
 	next.Scheduler.ImplementationCap = d.ImplementationCap
@@ -195,7 +203,7 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 		return current, nil, err
 	}
 	changed := []string{"environment", "devUrl", "devHosts", "devCommand", "rollbackCommand", "healthUrl",
-		"localCheck", "devCheck", "allowExecutables", "sandboxEngine", "sandboxImage",
+		"localCheck", "devCheck", "allowExecutables", "commandExecutables", "sandboxEngine", "sandboxImage",
 		"implementationCap", "prdPath", "rfcPath", "soloApproval"}
 	if clear || token != nil {
 		if clear {
@@ -247,6 +255,16 @@ func validateDeploy(d Deploy, paths ProjectPaths) map[string]string {
 	for _, name := range d.AllowExecutables {
 		if !execPattern.MatchString(name) {
 			fields["allowExecutables"] = "each executable is a bare name"
+			break
+		}
+	}
+	for _, name := range d.CommandExecutables {
+		if !execPattern.MatchString(name) {
+			fields["commandExecutables"] = "each command is a bare name"
+			break
+		}
+		if sandbox.Wrapper(name) {
+			fields["commandExecutables"] = name + " is a shell or runs another program, so it cannot be an allowed command"
 			break
 		}
 	}

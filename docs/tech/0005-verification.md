@@ -137,7 +137,50 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestJobErrorCapped` | A 1.5 MiB message with NUL bytes and invalid UTF-8 is stored under 10 KiB as valid UTF-8 without NUL, with its head, its tail (redacted), and the cut marker |
 | `TestTraceClip` | `trace.Clip` drops NUL, redacts a secret holding `&`, keeps valid UTF-8 and the head and tail around the cut marker, and redacts a secret that spans the cut (RFC-074) |
 | `TestModelCallText` | A model reply beside a tool call is stored as `model_call.text`, with the `databaseUrl` from `JobDeps.Secrets` redacted, cut under 4 KiB with its head and tail, as valid UTF-8. A reply with no text stores no `text` |
-| `TestToolCallArgs` | Each tool row stores its `args`: `path` for list, read, and edit, `text` for search, `command` for the local check, and the commit `message` redacted. `edit_file` stores `bytes` and `lines`, and no event holds the file text |
+| `TestToolCallArgs` | Each tool row stores its `args`: `path` for list, read, and edit, with `glob`, `depth`, `offset`, and `limit` when set, `text` for search, byte counts for `replace_in_file`, `from` and `to` for `move_file`, `command` for the local check, and the commit `message` redacted. `edit_file` stores `bytes` and `lines`, and no event holds the file text |
+| `TestReadFileRange` | `read_file` with an offset and a limit returns numbered lines, the range and the total, and the next line to read. An offset past the end is an error (RFC-080) |
+| `TestReplaceInFileUnique` | Text that occurs twice is refused and leaves the file. A unique match and `replaceAll` replace, keep the file mode, and leave no temporary file |
+| `TestReplaceInFileNotFound` | No match, an empty `old`, `old` equal to `new`, and a placeholder in `new` are refused, and the file is unchanged |
+| `TestEditRefusesPlaceholder` | `edit_file` refuses both history placeholders and empty text over a non-empty file. An empty new file is written |
+| `TestHistoryDropsEditText` | The history sends an earlier `edit_file` call with `bytes` and `lines` and no `text` |
+| `TestSearchRegexGlobContext` | `search_files` matches RE2 with a glob, ignores case, adds context lines, and skips `node_modules` |
+| `TestListGlobDepth` | `list_files` filters by a `**` glob and a file-name glob, stops at a depth, and skips `vendor`, `dist`, and `node_modules` below the start |
+| `TestDeleteMoveSafePath` | `move_file` refuses an existing target, `..`, and `.git`. `delete_file` refuses a symlink and a path outside the worktree |
+| `TestToolErrorsFlagged` | A failed tool, a tool outside the profile, and bad JSON arguments return `error: `. The `anthropic` client sends that result with `is_error: true` |
+| `TestToolResultsRedacted` | A secret in a file reaches the model's next request as `[redacted]` in read and search results |
+| `TestHistoryBudgetPerModel` | A model's `historyBudgetKiB` sets how much earlier tool output is sent. Zero means 16 KiB, and a value outside 4 to 512 does not save (RFC-081) |
+| `TestHistoryStableEviction` | Results are replaced by a placeholder oldest first until the history fits three quarters of the budget, and a replaced result stays replaced on later turns |
+| `TestCheckOutputKeepsTail` | A cut `run_local_check` result keeps its last lines |
+| `TestRereadUnchanged` | A second read of an unchanged file returns `unchanged since turn 1`. A read after an edit returns the new text |
+| `TestTextReplyNudged` | A reply without a tool call gets a note asking for one and the attempt goes on. Three such replies end with `no_commit` after two nudges |
+| `TestTruncatedReplyNudged` | A reply cut at `max_tokens` gets a note saying it was cut at the token limit |
+| `TestAutoCommitAfterPassingCheck` | A loop that ends after a passing check commits that tree with the card title, the `Committed-By` trailer, the card trailer, and a `tool_call` with `auto: true` |
+| `TestNoAutoCommitOnDirtyTree` | An edit after the passing check, or a failing check, ends with `no_commit` and no harness commit |
+| `TestBadToolJSONReturnedToModel` | Arguments that are not valid JSON return `error: the arguments were not valid JSON (...)` and the attempt goes on |
+| `TestTurnCapStops` | Every turn spent without a commit blocks with `turn_cap`, adds one to `attempts_used`, ends the attempt with `budget`, and appends one `budget_stop` with the turns used |
+| `TestTokenCapStops` | A card over `maxTokensPerCard` stops before the next model call and blocks with `token_cap` and one `budget_stop` |
+| `TestInfraErrorKeepsAttempt` | A gating engine exit 125 writes a `job_error` and blocks with `sandbox_config` with `attempts_used` 0. After unblock the passed commit is gated and published without a model call, and counted once |
+| `TestProviderErrorKeepsAttempt` | A provider that always fails blocks with `provider_error` with `attempts_used` 0 |
+| `TestPackPathMap` | The path map lists files to 4 levels, shows a deeper directory as `dir/ (N files)`, skips `node_modules`, `.git` (a directory or a worktree's file), and `.orchestrator`, drops its depth to fit 12 KiB, and is cut with `truncated: true` when even one level does not fit. `list_files` does not list a worktree's `.git` file (RFC-082) |
+| `TestPackRepoMemory` | `AGENTS.md` and `CLAUDE.md` from the root and from the directory the card title names go inside the markers, with marker lines stripped; a directory the card does not name is not read; a 22 KiB `CLAUDE.md` is cut under 16 KiB; `repo_context` records each file's path, whole size, and sha256 |
+| `TestPackAcceptanceLines` | A requirement goes in as its heading, statement, and acceptance lines. A decision naming `REQ-001` goes in as `RFC-x: statement`; one naming `REQ-0010` and an unrelated one do not |
+| `TestTodoWriteEchoed` | After `todo_write`, every later request carries the list in the newest turn's note only, the tool returns `todo list: 2 items, 0 done`, and the attempt still commits |
+| `TestTodoWriteCap` | 30 items save. 31 items, text over 200 bytes, empty text, an unknown status, or a non-array are errors, and an error leaves the list as it was |
+| `TestReadOnlyCallsConcurrent` | Three read-only calls of one reply all start before any finishes, and results keep the reply's order. A write between two reads runs after the first and before the second |
+| `TestAnthropicCacheBreakpoints` | The first request marks the system block, the last tool, and the pack. A request with turns marks the system block, the last tool, and the newest turn's last tool result only, and the newest turn's note comes after that block (RFC-083) |
+| `TestAnthropicCacheUsage` | `cache_creation_input_tokens` is added to `InputTokens` and `cache_read_input_tokens` is `CachedInputTokens` |
+| `TestOpenAICachedTokens` | `prompt_tokens_details.cached_tokens` is `CachedInputTokens` and is subtracted from `InputTokens` |
+| `TestCacheUsageRecorded` | Each call's input, output, and cached tokens add up on the attempt, `CardTokens` counts the cached ones at a tenth, and `model_call` records `cachedInputTokens` |
+| `TestTokenCapCountsCachedAtTenth` | With a 100-token cap and calls of 10 input, 10 output, and 500 cached, the card stops after two calls with `token_cap` |
+| `TestHistoryPrefixStable` | Over 40 requests, earlier turns are byte-identical between requests except where a chunk of two or more old results becomes the placeholder; the todo list is only on the newest turn |
+| `TestRunCommandParse` | `ParseArgv` takes 1 to 64 strings of at most 4 KiB, refuses NUL, a path or spaced `argv[0]`, and a name off the list; a non-array `argv` is a tool error (RFC-084) |
+| `TestRunCommandFlags` | The container argv has `--network=none`, the pinned image, `--read-only`, `--cap-drop=ALL`, the non-root user, a 5-minute timeout, 1 MiB of output, and mounts a fresh directory under `<data>/exports` |
+| `TestRunCommandOnCopy` | The command sees the worktree's files on a fresh copy per call; its writes do not reach the worktree and the copy is deleted |
+| `TestRunCommandDisabled` | With no allowed commands the reply is `error: run_command is not enabled for this project` and nothing runs |
+| `TestRunCommandBudget` | The 31st call in an attempt is a tool error and runs nothing |
+| `TestRunCommandCannotPassGate` | An exit 0 records no passing tree and runs only the command, never the card's check; fixture mode replies `error: run_command needs the container sandbox` |
+| `TestSaveDeployCommandExecutables` | A path, a spaced name, a shell, or a wrapper in `commandExecutables` is a field error; a valid list saves, is listed as changed, and an unset list reads as `[]` |
+| `TestNoChangeGoesToGate` | An attempt with no new commit on a clean branch already ahead of base sends that HEAD to the gate and reaches `pr_open` with the earlier commit |
 | `TestReviewerPackHasNoAuthorText` | The implementer's stored reply text is in its `model_call` event and in no reviewer prompt |
 | `TestTraceSince` | `since` returns events from 10 seconds before it, including two in the same second in insert order, each with a rising `seq`. Without `since`, all events. `since=yesterday` is `422` on `since`. The card under another project is `404` |
 | `TestTraceLive` | `live` is false for a `human_review` card with no open attempt, true with an open attempt (with `maxTurns`), false once it ends, true while a run is queued, and true for an `in_progress` card |
@@ -243,7 +286,7 @@ Step 6 uses the stub. The runner does not need a real dev server. After this com
 
 The fixture config uses two families and two model ids so step 4 can require `review_independent` true. The fake provider serves both ids. No network.
 
-After step 9, the runner runs `git status --porcelain` in the fixture repo and requires empty output (REQ-045).
+After step 9, the runner runs the tool loop with the fake provider on two more cards: one that spends every turn without a commit must end blocked with `turn_cap`, and one over a 100-token card cap must end blocked with `token_cap`, each with one `budget_stop` event (RFC-081). Then it runs `git status --porcelain` in the fixture repo and requires empty output (REQ-045).
 
 ## CLI checks
 

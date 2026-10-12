@@ -33,8 +33,8 @@
     return options;
   }
   let maxAttempts = $state(3);
-  let maxTurns = $state(12);
-  let maxTokens = $state(200000);
+  let maxTurns = $state(40);
+  let maxTokens = $state(2000000);
   let maxMinutes = $state(30);
   let independent = $state(false);
   let message = $state('Loading router');
@@ -48,8 +48,8 @@
       .then(([router, llm]) => {
         routes = router.routes;
         maxAttempts = router.budgets.maxAttempts || 3;
-        maxTurns = router.budgets.maxModelTurnsPerAttempt || 12;
-        maxTokens = router.budgets.maxTokensPerCard || 200000;
+        maxTurns = router.budgets.maxModelTurnsPerAttempt || 40;
+        maxTokens = router.budgets.maxTokensPerCard || 2000000;
         maxMinutes = router.budgets.maxWallMinutesPerAttempt || 30;
         independent = router.reviewIndependentPossible;
         families = llm.families;

@@ -91,7 +91,7 @@ func safePath(root, requested string) (string, error)
 6. `read_doc` uses the configured PRD and RFC directories as its only roots.
 7. `read_linked_file` uses the export of one linked project's base SHA as its only root (RFC-051). The model names the linked project by id, and an id that is not a link of the card's project is an error. Shared paths saved on a link pass steps 1, 2, and 5 when they are saved, and the full check when they are read.
 
-`edit_file` refuses a target that exists and is not a regular file, and refuses writes over 1 MiB. `read_file` returns at most 256 KiB and records `truncated: true` when it cuts. The data directory is outside the repo, so it is outside every root.
+`edit_file` and `replace_in_file` refuse a target that exists and is not a regular file, refuse writes over 1 MiB, refuse a history placeholder, and write through a temporary file and a rename. `edit_file` refuses empty text over a non-empty file. `delete_file` and `move_file` take regular files only, and `move_file` does not overwrite. `read_file` opens files up to 8 MiB and returns at most 256 KiB per call, with the next line to read. Every tool result is redacted with the job's secrets before it goes back to the model (RFC-080). The data directory is outside the repo, so it is outside every root.
 
 ## Checks
 
@@ -111,12 +111,15 @@ A check string is split on runs of ASCII spaces. Refuse the string when it conta
 
 The first word must be in `checks.allowExecutables`. It is a bare name resolved inside the image, not a host path. The result is the argv passed after the image in the container command. An empty string means no check: health-only for `devCheck`, and `sandbox_config` for `localCheck` on a non-manual card.
 
+The implementer's `run_command` (RFC-084) takes an argv array, never a string, so there is no parse step and no shell syntax to refuse. `argv[0]` must be a bare name in `checks.commandExecutables`. That list refuses shells and programs that run another program (`sh`, `bash`, `zsh`, `dash`, `ksh`, `fish`, `csh`, `tcsh`, `pwsh`, `env`, `xargs`, `busybox`, `timeout`, `nice`, `sudo`, `doas`, `su`, `nohup`, `exec`, `eval`, `command`) on save, and the tool refuses them again at run time. The argv runs in the same container as the check, on a throwaway copy, and its exit is never check evidence.
+
 ### Exports
 
 The sandbox never mounts the worktree (RFC-037).
 
 | Check | Export |
 | --- | --- |
+| `run_command` tool | A fresh copy of the working tree per call, made like the `run_local_check` copy in a new directory under `<data>/exports`, deleted after the call (RFC-084) |
 | `run_local_check` tool | Copy of the working tree. Skip `.git`. Copy regular files and directories only. Do not follow symlinks; recreate them as symlinks only when the target stays inside the tree, otherwise skip them |
 | Gating local check | `git archive --output=<export>.tar <commit_sha>`, read by an in-process tar reader that refuses absolute names, `..`, and links outside the export. The `.tar` file is deleted after the read (RFC-065) |
 | Dev check | Same as gating, for `deployed_sha` |
@@ -370,7 +373,10 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestPathEscape` | `../x`, an absolute path, `.git/config`, and a symlink out of the worktree all error |
 | `TestCreateCardIgnoresCommand` | A `command` field on `create_card` leaves `local_check` equal to settings |
 | `TestCheckParse` | `go test ./...` parses. `go test; id` and `$(id)` are refused. `bash -c x` is refused by the allowlist |
-| `TestNoShell` | `execChild` refuses an argv whose basename is `sh` or `bash` |
+| `TestNoShell` | `execChild` refuses an argv whose basename is `sh` or `bash`. `run_command` never reaches `execChild` with a shell: `argv[0]` must be on `commandExecutables`, which refuses shells and wrappers on save and at run time, and the child is the container engine with the argv after the image (RFC-084) |
+| `TestRunCommandRefusesShell` | A shell or wrapper (`sh`, `bash`, `zsh`, `dash`, `ksh`, `fish`, `csh`, `tcsh`, `pwsh`, `env`, `xargs`, `busybox`, `timeout`, `nice`, `sudo`, `doas`, `su`, `nohup`, `exec`, `eval`, `command`, in any case) is refused at run time even when the config lists it, and nothing runs |
+| `TestRunCommandRedactsOutput` | The reply is the last 200 lines of output with secrets redacted |
+| `TestRunCommandExportAssertion` | `CheckExport` refuses the exports root, a path outside it, the worktree, a symlink to the worktree, and a directory inside or around the worktree, and `run_command` runs nothing when it fails |
 | `TestSHAArg` | `dev;id` is refused before exec. A 40 hex SHA is accepted |
 | `TestDeployCommandPath` | A command inside the repo, inside the data directory, or group writable is refused at save and at deploy |
 | `TestSandboxFlags` | The local check argv has `--network=none`, `--cap-drop=ALL`, the digest, and an export mount, and has no socket or worktree path |
@@ -454,7 +460,7 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestOwnerGitHubBlocks` | A card whose owner has no verified token moves to `blocked` with `owner_github`, and no push or `gh` call runs |
 | `TestGitHubLoginVerified` | The account token test stores the login `gh api user` reports. A new token clears it. A second user cannot verify the same login |
 | `TestBaseRefUnchanged` | Local `refs/heads/main` is unchanged after a job, and a forced change blocks with `base_moved` |
-| `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped, and the system hash matches |
+| `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped (including from the path map and a repository `AGENTS.md`), both of those sit inside the markers, the system hash matches the rewritten `ImplementerSystem` (RFC-082), and the system names `todo_write` and `replace_in_file` and neither deploy nor verdict |
 | `TestPackInstructions` | With no instructions there is no block, and a forged heading in the failure note is dropped. With instructions the block appears once after the note and inside the markers, a planted heading or marker line inside it is dropped, a planted secret is redacted, and the system string names the block (RFC-073) |
 | `TestPackConventions` | Rule and skill blocks sit between the markers before the requirements, a block over 16 KiB ends with `truncated: true`, blocks past 64 KiB become `omitted` notes, and a planted secret is `[redacted]` (RFC-055) |
 | `TestConventionsCannotAddTool` | A rule whose body asks for a `deploy` tool leaves the implementer tool list unchanged, and a scripted `deploy` call is rejected |

@@ -18,15 +18,25 @@ type ToolCall struct {
 	ID   string
 	Name string
 	Args map[string]any
+	// BadArgs is the parse error of arguments that were not valid JSON. Args
+	// is then empty, and the call goes back to the model as a tool error.
+	BadArgs string
 }
 
+// ErrorPrefix starts a tool result that reports an error. The anthropic
+// client sends such a result with is_error.
+const ErrorPrefix = "error: "
+
 // Turn is one earlier model reply and the result of each of its tool calls,
-// in the same order. Clients send turns as assistant and tool messages.
+// in the same order. Clients send turns as assistant and tool messages. Note
+// is harness text sent after the results as a user message: a continue nudge,
+// the todo list, or the turns left.
 type Turn struct {
 	Text      string
 	Calls     []ToolCall
 	Results   []string
 	Reasoning []Reasoning
+	Note      string
 }
 
 // Reasoning is one piece of a reply's hidden reasoning, kept in memory so the
@@ -58,13 +68,15 @@ type Request struct {
 
 type Response struct {
 	// Model is the model that answered, which may be the route's fallback.
-	Model        string
-	Text         string
-	ToolCalls    []ToolCall
-	InputTokens  int
-	OutputTokens int
-	StopReason   string
-	Reasoning    []Reasoning
+	Model     string
+	Text      string
+	ToolCalls []ToolCall
+	// InputTokens excludes cached reads, which are CachedInputTokens.
+	InputTokens       int
+	OutputTokens      int
+	CachedInputTokens int
+	StopReason        string
+	Reasoning         []Reasoning
 }
 
 type Provider interface {

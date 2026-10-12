@@ -159,3 +159,33 @@ func writeProjectSecrets(t *testing.T, data, token string) {
 		t.Fatal(err)
 	}
 }
+
+func TestSaveDeployCommandExecutables(t *testing.T) {
+	dir := t.TempDir()
+	paths := settings.ProjectPaths{Data: dir}
+	for _, names := range [][]string{{"go", "bash"}, {"env"}, {"xargs"}, {"Busybox"}, {"timeout"}, {"/usr/bin/go"}, {"go test"}} {
+		_, _, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{CommandExecutables: names}, nil, false)
+		var invalid *settings.Invalid
+		if !errors.As(err, &invalid) || invalid.Fields["commandExecutables"] == "" {
+			t.Fatalf("%v saved: %v", names, err)
+		}
+	}
+	_, changed, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{CommandExecutables: []string{"go", "gofmt", "npx"}}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(changed, ","), "commandExecutables") {
+		t.Fatalf("changed = %v", changed)
+	}
+	cfg, _, err := settings.LoadProject(dir, "proj_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	view := settings.DeployView(cfg)
+	if strings.Join(view.CommandExecutables, ",") != "go,gofmt,npx" {
+		t.Fatalf("view = %v", view.CommandExecutables)
+	}
+	if empty := settings.DeployView(settings.ProjectConfig{}); empty.CommandExecutables == nil {
+		t.Fatal("an unset list must encode as [], not null")
+	}
+}

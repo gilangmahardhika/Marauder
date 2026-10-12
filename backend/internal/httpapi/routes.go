@@ -382,10 +382,10 @@ func (s *Server) routerSettings(w http.ResponseWriter, r *http.Request) {
 		budgets.MaxAttempts = 3
 	}
 	if budgets.MaxModelTurnsPerAttempt == 0 {
-		budgets.MaxModelTurnsPerAttempt = 12
+		budgets.MaxModelTurnsPerAttempt = settings.DefaultTurns
 	}
 	if budgets.MaxTokensPerCard == 0 {
-		budgets.MaxTokensPerCard = 200000
+		budgets.MaxTokensPerCard = settings.DefaultTokensPerCard
 	}
 	if budgets.MaxWallMinutesPerAttempt == 0 {
 		budgets.MaxWallMinutesPerAttempt = 30

@@ -225,3 +225,20 @@ func mustJSON(t *testing.T, v any) string {
 	}
 	return string(body)
 }
+
+func TestOpenAICachedTokens(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"c","object":"chat.completion","created":1,"model":"m",
+			"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"ok"}}],
+			"usage":{"prompt_tokens":1000,"completion_tokens":5,"total_tokens":1005,"prompt_tokens_details":{"cached_tokens":600}}}`)
+	}))
+	defer srv.Close()
+	resp, err := openai.New(srv.URL, key).Complete(context.Background(), providers.Request{Model: "m", User: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.InputTokens != 400 || resp.CachedInputTokens != 600 || resp.OutputTokens != 5 {
+		t.Fatalf("usage = in %d cached %d out %d, want 400, 600, 5", resp.InputTokens, resp.CachedInputTokens, resp.OutputTokens)
+	}
+}

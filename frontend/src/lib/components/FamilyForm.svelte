@@ -45,7 +45,7 @@
   </Select>
 </div>
 <Field label="Base URL" id="family-url" width="lg" mono placeholder="https://" error={fields.baseUrl} bind:value={family.baseUrl} />
-<FieldGroup label="Models" hint="One model id per row, with the thinking and effort every request to it sends.">
+<FieldGroup label="Models" hint="One model id per row, with the thinking and effort every request to it sends. The history budget is how much earlier tool output an implement attempt sends back, from 4 to 512 KiB.">
   {#if family.models.length > 0}
     <div class="max-w-field-lg overflow-hidden rounded-control border border-line bg-surface">
       {#each family.models as model, index}
@@ -78,6 +78,15 @@
                   <option value={choice.value}>{choice.label}</option>
                 {/each}
               </Select>
+              <Field
+                label="History budget (KiB)"
+                id={`model-${index}-history`}
+                type="number"
+                width="full"
+                mono
+                placeholder="16"
+                bind:value={family.options[index].historyBudgetKiB}
+              />
             </div>
           {/if}
         </div>

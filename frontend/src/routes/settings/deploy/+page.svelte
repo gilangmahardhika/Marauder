@@ -20,6 +20,7 @@
   let localCheck = $state('');
   let devCheck = $state('');
   let allow = $state('');
+  let commands = $state('');
   let sandboxEngine = $state('podman');
   let sandboxImage = $state('');
   let implementationCap = $state(2);
@@ -50,6 +51,7 @@
         localCheck = body.localCheck;
         devCheck = body.devCheck;
         allow = body.allowExecutables.join('\n');
+        commands = body.commandExecutables.join('\n');
         sandboxEngine = body.sandboxEngine;
         sandboxImage = body.sandboxImage;
         implementationCap = body.implementationCap || 2;
@@ -80,6 +82,7 @@
         localCheck,
         devCheck,
         allowExecutables: lines(allow),
+        commandExecutables: lines(commands),
         sandboxEngine,
         sandboxImage,
         implementationCap,
@@ -136,7 +139,17 @@
           <Field label="Local check" id="local" width="full" mono bind:value={localCheck} />
           <Field label="Dev check" id="dev-check" width="full" mono bind:value={devCheck} />
         </div>
-        <Field label="Allowed executables" id="allow" type="textarea" width="lg" mono hint="One executable per line." bind:value={allow} />
+        <Field label="Allowed executables" id="allow" type="textarea" width="lg" mono error={fields.allowExecutables} hint="One executable per line." bind:value={allow} />
+        <Field
+          label="Allowed commands"
+          id="commands"
+          type="textarea"
+          width="lg"
+          mono
+          error={fields.commandExecutables}
+          hint="Programs the implementer may run with run_command, one bare name per line, such as go or npx. Each runs in the sandbox on a throwaway copy with no network, and never counts as a check. Shells and programs that run another program, such as bash, env, or xargs, are refused. Leave empty to turn run_command off."
+          bind:value={commands}
+        />
         <Select label="Sandbox engine" id="engine" width="sm" bind:value={sandboxEngine}>
           <option value="podman">Podman</option>
           <option value="docker">Docker</option>

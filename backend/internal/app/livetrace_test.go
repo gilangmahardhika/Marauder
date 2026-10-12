@@ -85,10 +85,16 @@ func TestModelCallText(t *testing.T) {
 func TestToolCallArgs(t *testing.T) {
 	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
 	script := `{"implement":[
-		{"tool":"list_files","path":"."},
-		{"tool":"search_files","text":"hello"},
-		{"tool":"read_file","path":"hello.txt"},
-		{"tool":"edit_file","path":"hello.txt","text":"FILE-BODY one\nFILE-BODY two\n"},
+		{"calls":[
+			{"tool":"list_files","path":".","glob":"*.txt","depth":1},
+			{"tool":"search_files","text":"hello","glob":"*.txt","context":1,"ignoreCase":true},
+			{"tool":"read_file","path":"hello.txt","offset":1,"limit":5}]},
+		{"calls":[
+			{"tool":"edit_file","path":"hello.txt","text":"FILE-BODY one\nFILE-BODY two\n"},
+			{"tool":"replace_in_file","path":"hello.txt","old":"FILE-BODY two","new":"FILE-BODY 2"},
+			{"tool":"edit_file","path":"extra.txt","text":"x\n"},
+			{"tool":"move_file","from":"extra.txt","to":"moved.txt"},
+			{"tool":"delete_file","path":"moved.txt"}]},
 		{"tool":"run_local_check"},
 		{"tool":"commit","message":"Say job\n\nUses ` + databaseURL + `"}]}`
 	if card, _ := f.runSecret(t, script); card.Status != "pr_open" {
@@ -100,15 +106,18 @@ func TestToolCallArgs(t *testing.T) {
 		if raw, err := json.Marshal(call); err != nil || strings.Contains(string(raw), "FILE-BODY") {
 			t.Fatalf("tool_call stored file text: %s", raw)
 		}
-		if got, ok := call["args"].(map[string]any); ok {
+		if got, ok := call["args"].(map[string]any); ok && args[name] == nil {
 			args[name] = got
 		}
 	}
 	want := map[string]map[string]any{
-		"list_files":      {"path": "."},
-		"search_files":    {"text": "hello"},
-		"read_file":       {"path": "hello.txt"},
+		"list_files":      {"path": ".", "glob": "*.txt", "depth": float64(1)},
+		"search_files":    {"text": "hello", "glob": "*.txt", "context": float64(1), "ignoreCase": true},
+		"read_file":       {"path": "hello.txt", "offset": float64(1), "limit": float64(5)},
 		"edit_file":       {"path": "hello.txt", "bytes": float64(28), "lines": float64(2)},
+		"replace_in_file": {"path": "hello.txt", "oldBytes": float64(13), "newBytes": float64(11)},
+		"move_file":       {"from": "extra.txt", "to": "moved.txt"},
+		"delete_file":     {"path": "moved.txt"},
 		"run_local_check": {"command": "true"},
 		"commit":          {"message": "Say job\n\nUses [redacted]"},
 	}

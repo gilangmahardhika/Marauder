@@ -20,6 +20,7 @@ import (
 	"orchestrator/backend/internal/deploy"
 	"orchestrator/backend/internal/envfile"
 	"orchestrator/backend/internal/intake"
+	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/providers/fake"
@@ -143,6 +144,9 @@ func run() error {
 		return err
 	}
 	if err := step9(ctx, db, repo, data, stub); err != nil {
+		return err
+	}
+	if err := budgetCaps(ctx, db, g); err != nil {
 		return err
 	}
 	out, err := exec.Command(gitBin, "-C", repo, "status", "--porcelain").Output()
@@ -536,6 +540,65 @@ func step9(ctx context.Context, db *sql.DB, repo, data, stub string) error {
 	}
 	if err := deploy.ValidCommand(stub, repo, data, os.Getuid()); err != nil {
 		return fmt.Errorf("step 9: stub: %w", err)
+	}
+	return nil
+}
+
+// budgetCaps runs the tool loop until each cap stops it (RFC-081): every turn
+// spent without a commit ends in turn_cap, and a card over its token cap ends
+// in token_cap. Each blocks the card with a budget_stop event.
+func budgetCaps(ctx context.Context, db *sql.DB, g runtime.Git) error {
+	listing := strings.Repeat(`{"tool":"list_files","path":"."},`, 3)
+	for _, c := range []struct {
+		cap, script string
+		maxTokens   int
+	}{
+		{"turn_cap", `{"implement":[` + listing + `{"tool":"commit","message":"late"}]}`, 0},
+		{"token_cap", `{"implement":[` + listing + `{"tool":"list_files"}]}`, 100},
+	} {
+		card, err := board.InsertCard(ctx, db, board.Card{Title: c.cap, Status: "backlog", LocalCheck: "check.sh"})
+		if err != nil {
+			return err
+		}
+		for _, to := range []string{"ready", "in_progress"} {
+			if card, err = walk(ctx, db, card, to, machine.Evidence{}); err != nil {
+				return fmt.Errorf("budget caps: %w", err)
+			}
+		}
+		provider, err := fake.Load([]byte(c.script))
+		if err != nil {
+			return err
+		}
+		provider.Usage = providers.Response{InputTokens: 80, OutputTokens: 30}
+		result, err := app.RunImplementer(ctx, loop.Input{
+			DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement",
+			MaxTurns: 3, MaxTokensPerCard: c.maxTokens, Provider: provider, Allow: []string{"true", "false"},
+		})
+		removeWorktree(g, card.ID)
+		if err != nil {
+			return fmt.Errorf("budget caps: %w", err)
+		}
+		if result.Outcome != "budget" || result.Reason != c.cap {
+			return fmt.Errorf("budget caps: %s ended %q %q", c.cap, result.Outcome, result.Reason)
+		}
+		if card, err = board.GetCard(ctx, db, card.ID); err != nil {
+			return err
+		}
+		if card, err = app.BlockCard(ctx, db, card, result.Reason, nil); err != nil {
+			return fmt.Errorf("budget caps: %w", err)
+		}
+		if card.Status != "blocked" || card.BlockedReason != c.cap {
+			return fmt.Errorf("budget caps: %s card is %s %s", c.cap, card.Status, card.BlockedReason)
+		}
+		var stops int
+		if err := db.QueryRowContext(ctx, `
+			SELECT count(*) FROM events WHERE card_id = $1 AND kind = 'budget_stop' AND payload_json LIKE '%"cap":"' || $2 || '"%'`,
+			card.ID, c.cap).Scan(&stops); err != nil {
+			return err
+		}
+		if stops != 1 {
+			return fmt.Errorf("budget caps: %s budget_stop events = %d", c.cap, stops)
+		}
 	}
 	return nil
 }

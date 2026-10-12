@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -117,6 +118,40 @@ func TestToolNotInProfile(t *testing.T) {
 	cleanupWorktree(t, repo, data, card.ID)
 }
 
+func TestToolResultsRedacted(t *testing.T) {
+	db := boardtest.Open(t)
+	repo := openFixture(t)
+	data := dataDir(t)
+	card := insertReady(t, db, "true")
+	const secret = "sk-live-0123456789abcdef"
+	provider, err := fake.Load([]byte(`{"implement":[
+		{"tool":"edit_file","path":"notes.txt","text":"key=` + secret + `\n"},
+		{"tool":"read_file","path":"notes.txt"},
+		{"tool":"search_files","text":"key="}
+	]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = app.RunImplementer(context.Background(), loop.Input{
+		DB: db, Git: runtime.Git{Bin: lookGit(t), Repo: repo, Data: data, Author: runtime.LoginAuthor("bot", 0)},
+		CardID: card.ID, Model: "fake-model", TaskClass: "implement", MaxTurns: 4,
+		Provider: provider, Allow: []string{"true"}, Secrets: []string{secret},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompts := provider.Prompts()
+	if len(prompts) < 4 {
+		t.Fatalf("prompts = %d", len(prompts))
+	}
+	turns := prompts[3].Turns
+	read, search := turns[1].Results[0], turns[2].Results[0]
+	if strings.Contains(read+search, secret) || !strings.Contains(read, "[redacted]") || !strings.Contains(search, "[redacted]") {
+		t.Fatalf("results = %q, %q", read, search)
+	}
+	cleanupWorktree(t, repo, data, card.ID)
+}
+
 func TestCreateCardIgnoresCommand(t *testing.T) {
 	db := boardtest.Open(t)
 	if _, err := db.Exec(`
@@ -203,8 +238,27 @@ func countNotes(t *testing.T, db *sql.DB, cardID, source string) int {
 	return n
 }
 
+var (
+	fixtureMu   sync.Mutex
+	fixtureHeld bool
+)
+
+// openFixture locks the shared fixture repository until the test ends. A
+// second open in the same test would wait on its own lock forever.
 func openFixture(t *testing.T) string {
 	t.Helper()
+	fixtureMu.Lock()
+	held := fixtureHeld
+	fixtureHeld = true
+	fixtureMu.Unlock()
+	if held {
+		t.Fatal("openFixture: the fixture repository is already open in this test; it stays locked until cleanup")
+	}
+	t.Cleanup(func() {
+		fixtureMu.Lock()
+		fixtureHeld = false
+		fixtureMu.Unlock()
+	})
 	repo := filepath.Join(moduleRoot(t), "testdata", "fixture-repo")
 	lock, err := os.OpenFile(repo+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

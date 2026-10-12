@@ -38,6 +38,15 @@ func ExecuteCheck(ctx context.Context, opts ExecuteOpts, run func(context.Contex
 	if err != nil {
 		return execx.Result{}, false, err
 	}
+	return ExecuteArgv(ctx, argv, opts, run)
+}
+
+// ExecuteArgv runs an argv that already passed ParseCheck or ParseArgv the way
+// ExecuteCheck does. It ignores opts.Command and opts.Allow.
+func ExecuteArgv(ctx context.Context, argv []string, opts ExecuteOpts, run func(context.Context, execx.Child) (execx.Result, error)) (execx.Result, bool, error) {
+	if len(argv) == 0 {
+		return execx.Result{}, false, ErrEmpty
+	}
 	if opts.Fixture {
 		bin, err := ResolveFixture(argv[0])
 		if err != nil {

@@ -703,3 +703,92 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `llm` model options Vitest
 - [x] `FamilyForm` model options Vitest
 - [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
+
+## Sprint 45: Tools that do not destroy files
+
+- [x] The fake provider returns several tool calls per turn and records turns.
+- [x] Ranged, numbered `read_file` and `read_linked_file`.
+- [x] `replace_in_file`, `delete_file`, `move_file`, and a safe, atomic `edit_file`.
+- [x] `search_files` regex, path, glob, ignoreCase, context. `list_files` glob and depth.
+- [x] Tool errors flagged, results redacted, `edit_file` text dropped from history.
+- [x] Trace and Terminal labels for the new tools.
+- [x] `TestReadFileRange`
+- [x] `TestReplaceInFileUnique`
+- [x] `TestReplaceInFileNotFound`
+- [x] `TestEditRefusesPlaceholder`
+- [x] `TestHistoryDropsEditText`
+- [x] `TestSearchRegexGlobContext`
+- [x] `TestListGlobDepth`
+- [x] `TestDeleteMoveSafePath`
+- [x] `TestToolErrorsFlagged`
+- [x] `TestToolResultsRedacted`
+- [x] `TestImplementerTools`, `TestToolCallArgs`, `TestHistoryKeepsNewestResults` updated
+- [x] Trace and terminal Vitest cases
+
+## Sprint 46: A loop that finishes
+
+- [x] `historyBudgetKiB` in `modelOptions` and `FamilyForm`.
+- [x] Stable eviction, re-read dedupe, check output tail.
+- [x] Continue nudge, turns-left note in `Turn.Note`, 40-turn default, 200-turn limit.
+- [x] Auto-commit after a passing check on the same tree.
+- [x] `turn_cap` and `token_cap` with `budget_stop`, in the fixture.
+- [x] Infrastructure failures leave `attempts_used`, bad tool JSON returned, `no_change` to the gate.
+- [x] `TestHistoryBudgetPerModel`
+- [x] `TestHistoryStableEviction`
+- [x] `TestRereadUnchanged`
+- [x] `TestCheckOutputKeepsTail`
+- [x] `TestTextReplyNudged`
+- [x] `TestTruncatedReplyNudged`
+- [x] `TestAutoCommitAfterPassingCheck`
+- [x] `TestNoAutoCommitOnDirtyTree`
+- [x] `TestTurnCapStops`
+- [x] `TestTokenCapStops`
+- [x] `TestInfraErrorKeepsAttempt`
+- [x] `TestProviderErrorKeepsAttempt`
+- [x] `TestBadToolJSONReturnedToModel`
+- [x] `TestNoChangeGoesToGate`
+- [x] `FamilyForm` history budget Vitest
+
+## Sprint 47: Pack, prompt, and todo list
+
+- [x] Path map and `AGENTS.md`/`CLAUDE.md` inside the markers, with `repo_context`.
+- [x] Requirement headings, acceptance lines, and decisions.
+- [x] New `ImplementerSystem`.
+- [x] `todo_write` echoed every request.
+- [x] Concurrent read-only calls.
+- [x] `TestPackPathMap`
+- [x] `TestPackRepoMemory`
+- [x] `TestPackAcceptanceLines`
+- [x] `TestPromptMarkers`
+- [x] `TestTodoWriteEchoed`
+- [x] `TestTodoWriteCap`
+- [x] `TestReadOnlyCallsConcurrent`
+
+## Sprint 48: Prompt caching
+
+- [x] Anthropic cache breakpoints.
+- [x] `CachedInputTokens` from both clients, `attempts.tokens_cached`.
+- [x] Token cap counts cached reads at a tenth.
+- [x] `TestAnthropicCacheBreakpoints`
+- [x] `TestCacheUsageRecorded`
+- [x] `TestTokenCapCountsCachedAtTenth`
+- [x] `TestHistoryPrefixStable`
+
+## Sprint 49: Sandboxed run_command
+
+- [x] `checks.commandExecutables` with shells and wrappers refused.
+- [x] `sandbox.ExecuteArgv`, throwaway copy with the export assertion, 30-call budget.
+- [x] Refused in fixture mode, never check evidence.
+- [x] "Allowed commands" settings field.
+- [x] `TestRunCommandParse`
+- [x] `TestRunCommandRefusesShell`
+- [x] `TestRunCommandFlags`
+- [x] `TestRunCommandOnCopy`
+- [x] `TestRunCommandDisabled`
+- [x] `TestRunCommandBudget`
+- [x] `TestRunCommandCannotPassGate`
+- [x] `TestRunCommandRedactsOutput`
+- [x] `TestRunCommandExportAssertion`
+- [x] `TestSaveDeployCommandExecutables`
+- [x] Project settings Vitest
+- [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes

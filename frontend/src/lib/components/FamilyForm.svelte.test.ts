@@ -49,6 +49,15 @@ test('the budget shows only for On on anthropic', async () => {
   expect(screen.queryByLabelText('Budget')).toBeNull();
 });
 
+test('every model row has a history budget on either protocol', async () => {
+  const draft = family('openai');
+  render(FamilyForm, { family: draft });
+  const group = screen.getByRole('group', { name: 'Settings for model-a' });
+  const history = within(group).getByLabelText('History budget (KiB)');
+  await fireEvent.input(history, { target: { value: '64' } });
+  expect(draft.options[0].historyBudgetKiB).toBe(64);
+});
+
 test('Add model adds a settings row, and removing a model removes its settings', async () => {
   render(FamilyForm, { family: family('anthropic') });
   await fireEvent.click(screen.getByRole('button', { name: 'Add model' }));

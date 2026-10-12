@@ -44,7 +44,10 @@ type jobExec struct {
 	failArchive int
 	failPush    int
 	failComment int
-	prView      string
+	// gateExit, when set, is the exit of the next gating check, as if the
+	// sandbox engine had failed before the check ran.
+	gateExit int
+	prView   string
 	// bodies holds each pull request body or comment gh sent: create, edit, comment.
 	bodies map[string][]string
 	titles []string
@@ -107,6 +110,15 @@ func (e *jobExec) run(ctx context.Context, child execx.Child) (execx.Result, err
 		defer e.mu.Unlock()
 		e.faked = append(e.faked, argv)
 		return execx.Result{Out: []byte(e.prView)}, nil
+	}
+	if strings.HasSuffix(child.Dir, "-gate") {
+		e.mu.Lock()
+		exit := e.gateExit
+		e.gateExit = 0
+		e.mu.Unlock()
+		if exit != 0 {
+			return execx.Result{Exit: exit, Out: []byte("Error: unable to connect to Podman socket")}, nil
+		}
 	}
 	if slices.Contains(argv, "archive") {
 		e.mu.Lock()
@@ -310,8 +322,8 @@ func TestImplementRepublishesPassedCommit(t *testing.T) {
 	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
 	f.calls.failPush = 1
 	card := f.run(t, commitScript)
-	if card.Status != "blocked" || card.BlockedReason != "publish_failed" || card.AttemptsUsed != 1 {
-		t.Fatalf("first run = %s %s used %d", card.Status, card.BlockedReason, card.AttemptsUsed)
+	if card.Status != "blocked" || card.BlockedReason != "publish_failed" || card.AttemptsUsed != 0 {
+		t.Fatalf("first run = %s %s used %d, want a failed publish to keep the attempt", card.Status, card.BlockedReason, card.AttemptsUsed)
 	}
 	ctx := context.Background()
 	if _, err := app.Unblock(ctx, f.db, card.ID, false); err != nil {

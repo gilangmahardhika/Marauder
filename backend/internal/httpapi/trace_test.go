@@ -23,7 +23,7 @@ func TestTraceOrderAndAttempts(t *testing.T) {
 	if err := board.InsertAttempt(ctx, srv.DB, attempt); err != nil {
 		t.Fatal(err)
 	}
-	if err := board.AddAttemptTokens(ctx, srv.DB, attempt.ID, 1200, 80); err != nil {
+	if err := board.AddAttemptTokens(ctx, srv.DB, attempt.ID, 1200, 80, 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := board.FinishAttempt(ctx, srv.DB, attempt.ID, "checks_passed", headSHA); err != nil {

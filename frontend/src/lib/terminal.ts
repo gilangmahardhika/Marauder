@@ -46,7 +46,7 @@ function toolEntry(event: TraceEvent, p: Record<string, unknown>): TerminalEntry
   const args = record(p.args);
   const summary = str(p.summary);
   const failed = p.ok === false || p.rejected === true;
-  const check = name === 'run_local_check';
+  const check = name === 'run_local_check' || name === 'run_command';
   let body = summary;
   if (name === 'edit_file') body = summary + (args.lines === undefined ? '' : ` (${num(args.lines)} lines)`);
   else if (name === 'comment_pr' || name === 'verdict') body = [summary, str(args.body)].filter(Boolean).join('\n');

@@ -68,12 +68,15 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 	}
 	params.MaxTokens = int64(maxTokens)
 	if req.System != "" {
-		params.System = []sdk.TextBlockParam{{Text: req.System}}
+		params.System = []sdk.TextBlockParam{{Text: req.System, CacheControl: sdk.NewCacheControlEphemeralParam()}}
 	}
-	for _, tool := range req.Tools {
+	for i, tool := range req.Tools {
 		param := sdk.ToolParam{Name: tool.Name, InputSchema: inputSchema(tool.Parameters)}
 		if tool.Description != "" {
 			param.Description = sdk.String(tool.Description)
+		}
+		if i == len(req.Tools)-1 {
+			param.CacheControl = sdk.NewCacheControlEphemeralParam()
 		}
 		params.Tools = append(params.Tools, sdk.ToolUnionParam{OfTool: &param})
 	}
@@ -82,9 +85,10 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		return providers.Response{}, c.wrap(err)
 	}
 	out := providers.Response{
-		InputTokens:  int(msg.Usage.InputTokens),
-		OutputTokens: int(msg.Usage.OutputTokens),
-		StopReason:   string(msg.StopReason),
+		InputTokens:       int(msg.Usage.InputTokens + msg.Usage.CacheCreationInputTokens),
+		CachedInputTokens: int(msg.Usage.CacheReadInputTokens),
+		OutputTokens:      int(msg.Usage.OutputTokens),
+		StopReason:        string(msg.StopReason),
 	}
 	for _, block := range msg.Content {
 		switch block.Type {
@@ -95,13 +99,13 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		case "text":
 			out.Text += block.Text
 		case "tool_use":
-			args := map[string]any{}
+			call := providers.ToolCall{ID: block.ID, Name: block.Name, Args: map[string]any{}}
 			if len(block.Input) > 0 {
-				if err := json.Unmarshal(block.Input, &args); err != nil {
-					args = map[string]any{}
+				if err := json.Unmarshal(block.Input, &call.Args); err != nil {
+					call.Args, call.BadArgs = map[string]any{}, err.Error()
 				}
 			}
-			out.ToolCalls = append(out.ToolCalls, providers.ToolCall{ID: block.ID, Name: block.Name, Args: args})
+			out.ToolCalls = append(out.ToolCalls, call)
 		}
 	}
 	return out, nil
@@ -115,9 +119,17 @@ func requestTimeout(maxTokens int) time.Duration {
 	return max(10*time.Minute, time.Duration(float64(time.Hour)*float64(maxTokens)/128000))
 }
 
+// messages builds the conversation with one cache breakpoint on the last
+// block of the newest turn's results, or on the pack before the first turn
+// (RFC-083). The newest turn's Note comes after that block, so the todo list
+// and the turns-left note do not move the cached prefix.
 func messages(req providers.Request) []sdk.MessageParam {
-	out := []sdk.MessageParam{sdk.NewUserMessage(sdk.NewTextBlock(req.User))}
-	for _, turn := range req.Turns {
+	pack := sdk.NewTextBlock(req.User)
+	if len(req.Turns) == 0 {
+		pack.OfText.CacheControl = sdk.NewCacheControlEphemeralParam()
+	}
+	out := []sdk.MessageParam{sdk.NewUserMessage(pack)}
+	for t, turn := range req.Turns {
 		var said []sdk.ContentBlockParamUnion
 		// With thinking on, the API refuses a tool turn whose signed thinking
 		// blocks do not come back first.
@@ -131,6 +143,8 @@ func messages(req providers.Request) []sdk.MessageParam {
 		}
 		if turn.Text != "" {
 			said = append(said, sdk.NewTextBlock(turn.Text))
+		} else if len(turn.Calls) == 0 {
+			said = append(said, sdk.NewTextBlock(noReply))
 		}
 		var results []sdk.ContentBlockParamUnion
 		for i, call := range turn.Calls {
@@ -143,10 +157,16 @@ func messages(req providers.Request) []sdk.MessageParam {
 			if i < len(turn.Results) {
 				result = turn.Results[i]
 			}
-			results = append(results, sdk.NewToolResultBlock(call.ID, result, false))
+			results = append(results, sdk.NewToolResultBlock(call.ID, result, strings.HasPrefix(result, providers.ErrorPrefix)))
 		}
 		if len(said) > 0 {
 			out = append(out, sdk.NewAssistantMessage(said...))
+		}
+		if t == len(req.Turns)-1 && len(results) > 0 {
+			results[len(results)-1].OfToolResult.CacheControl = sdk.NewCacheControlEphemeralParam()
+		}
+		if turn.Note != "" {
+			results = append(results, sdk.NewTextBlock(turn.Note))
 		}
 		if len(results) > 0 {
 			out = append(out, sdk.NewUserMessage(results...))
@@ -154,6 +174,10 @@ func messages(req providers.Request) []sdk.MessageParam {
 	}
 	return out
 }
+
+// noReply stands in for a reply with no text and no tool call, because an
+// assistant message may not be empty.
+const noReply = "(no reply)"
 
 func (c *Client) wrap(err error) error {
 	var apiErr *sdk.Error

@@ -37,17 +37,37 @@ type Model struct {
 }
 
 // ModelOptions are the thinking and effort settings sent with every request to
-// one model (RFC-079). Empty values send nothing.
+// one model (RFC-079). Empty values send nothing. HistoryBudgetKiB is how much
+// earlier tool output an implement attempt on this model sends back (RFC-081).
 type ModelOptions struct {
-	Thinking       string `yaml:"thinking,omitempty" json:"thinking,omitempty"`
-	ThinkingBudget int    `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
-	Effort         string `yaml:"effort,omitempty" json:"effort,omitempty"`
+	Thinking         string `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	ThinkingBudget   int    `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
+	Effort           string `yaml:"effort,omitempty" json:"effort,omitempty"`
+	HistoryBudgetKiB int    `yaml:"historyBudgetKiB,omitempty" json:"historyBudgetKiB,omitempty"`
 }
 
 const (
 	MinThinkingBudget = 1024
 	MaxThinkingBudget = 32768
+	MinHistoryKiB     = 4
+	MaxHistoryKiB     = 512
+	// DefaultHistoryKiB is the history budget of a model that sets none.
+	DefaultHistoryKiB = 16
+
+	// DefaultTurns and DefaultTokensPerCard apply when the router budgets
+	// leave them zero (RFC-081). MaxTurns is the most an admin may save.
+	DefaultTurns         = 40
+	MaxTurns             = 200
+	DefaultTokensPerCard = 2000000
 )
+
+// HistoryBytes is the model's history budget in bytes.
+func (o ModelOptions) HistoryBytes() int {
+	if o.HistoryBudgetKiB <= 0 {
+		return DefaultHistoryKiB << 10
+	}
+	return o.HistoryBudgetKiB << 10
+}
 
 var efforts = map[string][]string{
 	"anthropic": {"low", "medium", "high", "xhigh", "max"},
@@ -112,6 +132,9 @@ func checkOptions(protocol string, opts ModelOptions) (ModelOptions, error) {
 		if !ok {
 			return bad("effort " + opts.Effort + " is not taken by the " + protocol + " protocol")
 		}
+	}
+	if opts.HistoryBudgetKiB != 0 && (opts.HistoryBudgetKiB < MinHistoryKiB || opts.HistoryBudgetKiB > MaxHistoryKiB) {
+		return bad("the history budget must be from 4 to 512 KiB")
 	}
 	return opts, nil
 }
@@ -187,6 +210,12 @@ func SaveRouter(data string, cfg Config) (Config, error) {
 				return current, ErrValidation
 			}
 		}
+	}
+	if turns := cfg.Router.Budgets.MaxModelTurnsPerAttempt; turns < 0 || turns > MaxTurns {
+		return current, &Invalid{Fields: map[string]string{"maxModelTurnsPerAttempt": "model turns must be from 1 to 200"}}
+	}
+	if cfg.Router.Budgets.MaxTokensPerCard < 0 {
+		return current, &Invalid{Fields: map[string]string{"maxTokensPerCard": "tokens per card cannot be negative"}}
 	}
 	current.Router = cfg.Router
 	if err := write(data, current, secrets); err != nil {

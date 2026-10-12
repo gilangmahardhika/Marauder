@@ -73,11 +73,13 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		return providers.Response{}, errors.New("openai: response has no choices")
 	}
 	choice := completion.Choices[0]
+	cached := int(completion.Usage.PromptTokensDetails.CachedTokens)
 	out := providers.Response{
-		Text:         choice.Message.Content,
-		InputTokens:  int(completion.Usage.PromptTokens),
-		OutputTokens: int(completion.Usage.CompletionTokens),
-		StopReason:   choice.FinishReason,
+		Text:              choice.Message.Content,
+		InputTokens:       int(completion.Usage.PromptTokens) - cached,
+		CachedInputTokens: cached,
+		OutputTokens:      int(completion.Usage.CompletionTokens),
+		StopReason:        choice.FinishReason,
 	}
 	if field, ok := choice.Message.JSON.ExtraFields["reasoning_content"]; ok {
 		var text string
@@ -89,10 +91,12 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		if call.Function.Name == "" {
 			continue
 		}
+		args, bad := decodeArgs(call.Function.Arguments)
 		out.ToolCalls = append(out.ToolCalls, providers.ToolCall{
-			ID:   call.ID,
-			Name: call.Function.Name,
-			Args: decodeArgs(call.Function.Arguments),
+			ID:      call.ID,
+			Name:    call.Function.Name,
+			Args:    args,
+			BadArgs: bad,
 		})
 	}
 	return out, nil
@@ -104,6 +108,8 @@ func messages(req providers.Request) []sdk.ChatCompletionMessageParamUnion {
 		assistant := sdk.ChatCompletionAssistantMessageParam{}
 		if turn.Text != "" {
 			assistant.Content.OfString = sdk.String(turn.Text)
+		} else if len(turn.Calls) == 0 {
+			assistant.Content.OfString = sdk.String("(no reply)")
 		}
 		var reasoning string
 		for _, r := range providers.Replay(turn, req.Model) {
@@ -128,6 +134,9 @@ func messages(req providers.Request) []sdk.ChatCompletionMessageParamUnion {
 				result = turn.Results[i]
 			}
 			out = append(out, sdk.ToolMessage(result, call.ID))
+		}
+		if turn.Note != "" {
+			out = append(out, sdk.UserMessage(turn.Note))
 		}
 	}
 	return out
@@ -155,13 +164,15 @@ func schema(params map[string]any) map[string]any {
 	return params
 }
 
-func decodeArgs(raw string) map[string]any {
-	args := map[string]any{}
+// decodeArgs parses a call's arguments. bad is the parse error of arguments
+// that are not a JSON object.
+func decodeArgs(raw string) (args map[string]any, bad string) {
+	args = map[string]any{}
 	if strings.TrimSpace(raw) == "" {
-		return args
+		return args, ""
 	}
 	if err := json.Unmarshal([]byte(raw), &args); err != nil {
-		return map[string]any{}
+		return map[string]any{}, err.Error()
 	}
-	return args
+	return args, ""
 }

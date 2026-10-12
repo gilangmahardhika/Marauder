@@ -24,7 +24,13 @@
     read_linked_file: 'eye',
     read_diff: 'eye',
     edit_file: 'skill',
+    replace_in_file: 'skill',
+    delete_file: 'skill',
+    move_file: 'skill',
+    todo_write: 'check',
+    repo_context: 'rules',
     run_local_check: 'terminal',
+    run_command: 'terminal',
     commit: 'git',
     comment_pr: 'link',
     verdict: 'check'

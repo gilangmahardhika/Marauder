@@ -137,8 +137,8 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 			switch call.Name {
 			case "read_diff":
 				summary = in.Diff
-				if len(summary) > resultCap {
-					summary = summary[:resultCap] + "\ntruncated: true"
+				if len(summary) > minResultCap {
+					summary = summary[:minResultCap] + "\ntruncated: true"
 				}
 			case "comment_pr":
 				body := trace.Redact(strArg(call.Args, "body"), in.Secrets)

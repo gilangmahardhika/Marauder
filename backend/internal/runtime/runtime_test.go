@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -261,8 +262,27 @@ func TestCheckExit(t *testing.T) {
 	}
 }
 
+var (
+	fixtureMu   sync.Mutex
+	fixtureHeld bool
+)
+
+// openFixture locks the shared fixture repository until the test ends. A
+// second open in the same test would wait on its own lock forever.
 func openFixture(t *testing.T) string {
 	t.Helper()
+	fixtureMu.Lock()
+	held := fixtureHeld
+	fixtureHeld = true
+	fixtureMu.Unlock()
+	if held {
+		t.Fatal("openFixture: the fixture repository is already open in this test; it stays locked until cleanup")
+	}
+	t.Cleanup(func() {
+		fixtureMu.Lock()
+		fixtureHeld = false
+		fixtureMu.Unlock()
+	})
 	repo := filepath.Join(moduleRoot(t), "testdata", "fixture-repo")
 	lock, err := os.OpenFile(repo+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {

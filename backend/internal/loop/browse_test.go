@@ -33,18 +33,21 @@ func TestHistoryKeepsNewestResults(t *testing.T) {
 	if got[1].Results[0] != "wrote b.txt" || !strings.HasSuffix(got[2].Results[0], "truncated: true") {
 		t.Fatalf("newest results = %q, %.40q", got[1].Results[0], got[2].Results[0])
 	}
-	if got[1].Calls[0].Args["text"] != written || got[1].Calls[0].Args["path"] != "b.txt" {
+	if _, ok := got[1].Calls[0].Args["text"]; ok || got[1].Calls[0].Args["path"] != "b.txt" || got[1].Calls[0].Args["bytes"] != len(big) {
 		t.Fatalf("edit args = %v", got[1].Calls[0].Args)
 	}
 	if s.turns[1].Calls[0].Args["text"] != big {
 		t.Fatal("history changed the stored turn")
 	}
-	if warned := warnTurnsLeft(s.history(), 5); strings.Contains(warned[2].Results[0], "turns left") {
+	if warned := withNote(s.history(), 9, 40); warned[2].Note != "" {
 		t.Fatal("warned with turns to spare")
 	}
-	warned := warnTurnsLeft(s.history(), 2)
-	if !strings.Contains(warned[2].Results[0], "2 model turns left") || strings.Contains(s.turns[2].Results[0], "turns left") {
-		t.Fatalf("warning = %.60q, stored turn changed: %t", warned[2].Results[0][len(warned[2].Results[0])-80:], strings.Contains(s.turns[2].Results[0], "turns left"))
+	if warned := withNote(s.history(), 3, 12); !strings.Contains(warned[2].Note, "3 model turns left") {
+		t.Fatalf("no warning at 3 of 12: %q", warned[2].Note)
+	}
+	warned := withNote(s.history(), 8, 40)
+	if !strings.Contains(warned[2].Note, "8 model turns left") || s.turns[2].Note != "" || strings.Contains(warned[2].Results[0], "turns left") {
+		t.Fatalf("warning = %q, stored note %q", warned[2].Note, s.turns[2].Note)
 	}
 	size := 0
 	for _, turn := range got {
@@ -52,7 +55,7 @@ func TestHistoryKeepsNewestResults(t *testing.T) {
 			size += len(r)
 		}
 	}
-	if size > historyCap {
+	if size > defaultHistory {
 		t.Fatalf("results are %d bytes", size)
 	}
 }
@@ -78,22 +81,22 @@ func TestListAndSearchFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list, err := listFiles(root, "")
+	list, err := listFiles(root, "", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(list, "resources/js/Pages/Auth/Login.tsx") || strings.Contains(list, ".git") || strings.Contains(list, "secret.txt") {
 		t.Fatalf("list = %s", list)
 	}
-	sub, err := listFiles(root, "resources")
+	sub, err := listFiles(root, "resources", "", 0)
 	if err != nil || strings.Contains(sub, "app/Login.php") {
 		t.Fatalf("sub list = %s, %v", sub, err)
 	}
-	if _, err := listFiles(root, "../"); err == nil {
+	if _, err := listFiles(root, "../", "", 0); err == nil {
 		t.Fatal("list outside the worktree")
 	}
 
-	found, err := searchFiles(root, "Username atau Email")
+	found, err := searchFiles(root, searchOpts{Text: "Username atau Email"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +106,7 @@ func TestListAndSearchFiles(t *testing.T) {
 	if strings.Contains(found, ".git") || strings.Contains(found, "secret.txt") {
 		t.Fatalf("search left the worktree: %s", found)
 	}
-	if none, _ := searchFiles(root, "not here"); none != "no matches" {
+	if none, _ := searchFiles(root, searchOpts{Text: "not here"}); none != "no matches for not here" {
 		t.Fatalf("search = %s", none)
 	}
 }

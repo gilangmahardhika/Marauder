@@ -657,3 +657,71 @@ Packages: `internal/settings`, `internal/providers`, `internal/providers/anthrop
 - `FamilyForm` has Thinking, Budget, and Effort under each model id.
 
 Done when: `TestNoModelOptionsSendsNothing`, `TestSaveLLMModelOptions`, `TestLLMSettingsModelOptions`, `TestAnthropicThinking`, `TestAnthropicReplaysThinking`, `TestOpenAIEffortAndThinking`, `TestOpenAIReplaysReasoningContent`, `TestRoutedProviderModelOptions`, the `llm` and `FamilyForm` model options Vitest cases, `npm run check`, and the rest of the backend suite.
+
+## Sprint 45: Tools that do not destroy files
+
+Goal: The implementer reads ranges, replaces exact text, and cannot empty a file or write a history placeholder into it (RFC-080, under REQ-078).
+
+Packages: `internal/loop`, `internal/providers`, `internal/providers/fake`, `internal/providers/anthropic`, frontend `lib/trace.ts`, `lib/terminal.ts`, `TraceRow`.
+
+- The fake provider returns several tool calls in one turn and records the turns it receives.
+- `read_file` and `read_linked_file` take `offset` and `limit` and number their lines.
+- New `replace_in_file`, `delete_file`, and `move_file`. `edit_file` writes through a rename and refuses placeholders and empty text over a non-empty file.
+- `search_files` takes `regex`, `path`, `glob`, `ignoreCase`, and `context`. `list_files` takes `glob` and `depth` and skips `node_modules`, `vendor`, and `dist`.
+- Tool errors start with `error: ` and go to Anthropic with `is_error`. Results are redacted. The history drops `edit_file` text.
+- The Trace and Terminal views label the new tools.
+
+Done when: `TestReadFileRange`, `TestReplaceInFileUnique`, `TestReplaceInFileNotFound`, `TestEditRefusesPlaceholder`, `TestHistoryDropsEditText`, `TestSearchRegexGlobContext`, `TestListGlobDepth`, `TestDeleteMoveSafePath`, `TestToolErrorsFlagged`, `TestToolResultsRedacted`, the updated `TestImplementerTools`, `TestToolCallArgs`, and `TestHistoryKeepsNewestResults`, the trace and terminal Vitest cases, and the rest of the suite.
+
+## Sprint 46: A loop that finishes
+
+Goal: An attempt keeps what it read, does not stop early, commits a tree that passed, stops at its caps, and keeps its attempt on an infrastructure failure (RFC-081, RFC-085, under REQ-079 and REQ-082).
+
+Packages: `internal/settings`, `internal/loop`, `internal/providers`, both clients, `internal/app`, `internal/httpapi`, `migrations`, `cmd/fixture`, frontend `lib/llm.ts`, `FamilyForm`.
+
+- `historyBudgetKiB` in `modelOptions`, a stable history that evicts in chunks, re-read dedupe, and check output that keeps its tail.
+- `Turn.Note`, the continue nudge, the turns-left note at `max(3, cap/5)`, and the 40-turn default with a 200-turn limit.
+- Auto-commit on a tree whose last check exited 0.
+- `turn_cap` and `token_cap` with `budget_stop`, in the loop and in the fixture.
+- Engine exits 125 and 127, provider errors, and publish errors leave `attempts_used`. Bad tool JSON goes back to the model. Outcome `no_change` goes to the gate.
+
+Done when: `TestHistoryBudgetPerModel`, `TestHistoryStableEviction`, `TestRereadUnchanged`, `TestCheckOutputKeepsTail`, `TestTextReplyNudged`, `TestTruncatedReplyNudged`, `TestAutoCommitAfterPassingCheck`, `TestNoAutoCommitOnDirtyTree`, `TestTurnCapStops`, `TestTokenCapStops`, `TestInfraErrorKeepsAttempt`, `TestProviderErrorKeepsAttempt`, `TestBadToolJSONReturnedToModel`, `TestNoChangeGoesToGate`, the `FamilyForm` history budget Vitest case, the fixture, and the rest of the suite.
+
+## Sprint 47: Pack, prompt, and todo list
+
+Goal: The implementer starts with a map of the repository and its agent notes, keeps a plan, and reads in parallel (RFC-082, under REQ-080).
+
+Packages: `internal/contextpack`, `internal/loop`.
+
+- A path map up to 12 KiB, and `AGENTS.md` and `CLAUDE.md` up to 16 KiB each and 32 KiB in total, inside the markers, with a `repo_context` event.
+- Requirements with heading and acceptance lines, and the decisions that name them.
+- A new `ImplementerSystem`.
+- `todo_write`, echoed in every request's last note.
+- Concurrent read-only calls.
+
+Done when: `TestPackPathMap`, `TestPackRepoMemory`, `TestPackAcceptanceLines`, `TestPromptMarkers`, `TestTodoWriteEchoed`, `TestTodoWriteCap`, `TestReadOnlyCallsConcurrent`, and the rest of the suite.
+
+## Sprint 48: Prompt caching
+
+Goal: Anthropic requests reuse their prefix, and cached tokens are recorded and weighed fairly (RFC-083, under REQ-081).
+
+Packages: `internal/providers`, both clients, `internal/board`, `internal/loop`, `migrations`.
+
+- Cache breakpoints on the system block, the last tool, and the newest turn's last result.
+- `Response.CachedInputTokens` from both clients, `attempts.tokens_cached`, and `cachedInputTokens` on `model_call`.
+- The token cap counts cached reads at a tenth.
+
+Done when: `TestAnthropicCacheBreakpoints`, `TestCacheUsageRecorded`, `TestTokenCapCountsCachedAtTenth`, `TestHistoryPrefixStable`, and the rest of the suite.
+
+## Sprint 49: Sandboxed run_command
+
+Goal: The implementer runs an allowlisted argv in the sandbox on a throwaway copy (RFC-084, under REQ-082, amending REQ-017 and REQ-018).
+
+Packages: `internal/sandbox`, `internal/settings`, `internal/loop`, `internal/app`, `internal/httpapi`, frontend project checks settings.
+
+- `checks.commandExecutables`, refusing shells and wrappers.
+- `sandbox.ExecuteArgv` shared with `ExecuteCheck`, a fresh copy per call under `<data>/exports` with the export assertion, no network, 5 minutes, 1 MiB, and 30 calls per attempt.
+- Refused in fixture mode, and never check evidence.
+- An "Allowed commands" field on the project checks page.
+
+Done when: `TestRunCommandParse`, `TestRunCommandRefusesShell`, `TestRunCommandFlags`, `TestRunCommandOnCopy`, `TestRunCommandDisabled`, `TestRunCommandBudget`, `TestRunCommandCannotPassGate`, `TestRunCommandRedactsOutput`, `TestRunCommandExportAssertion`, `TestSaveDeployCommandExecutables`, the project settings Vitest case, `npm run check`, and the rest of the suite.

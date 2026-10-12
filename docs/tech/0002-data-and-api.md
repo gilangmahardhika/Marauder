@@ -177,6 +177,7 @@ CREATE TABLE attempts (
   max_turns INTEGER,
   input_tokens INTEGER NOT NULL DEFAULT 0,
   output_tokens INTEGER NOT NULL DEFAULT 0,
+  tokens_cached INTEGER NOT NULL DEFAULT 0,
   base_sha TEXT,
   commit_sha TEXT,
   review_model_id TEXT,
@@ -188,7 +189,7 @@ CREATE TABLE attempts (
   started_at TEXT NOT NULL,
   ended_at TEXT,
   outcome TEXT CHECK (outcome IN (
-    'checks_passed', 'checks_failed', 'no_commit', 'budget', 'error', 'cancelled')),
+    'checks_passed', 'checks_failed', 'no_commit', 'no_change', 'budget', 'error', 'cancelled')),
   UNIQUE (card_id, n)
 );
 
@@ -331,7 +332,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | Kind | Payload fields |
 | --- | --- |
 | `route` | `taskClass`, `modelId`, `fallback`, `familyFlag`, `reason` |
-| `model_call` | `role`, `modelId`, `inputTokens`, `outputTokens`, `stopReason`, and `text`, the model's reply text, when it wrote any (RFC-074). The prompt is not stored; `attempts.prompt_hash` and `review_prompt_hash` keep its hash |
+| `model_call` | `role`, `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens` (input read from the provider's prompt cache, not part of `inputTokens`, RFC-083), `stopReason`, and `text`, the model's reply text, when it wrote any (RFC-074). The prompt is not stored; `attempts.prompt_hash` and `review_prompt_hash` keep its hash |
 | `tool_call` | `name`, `ok`, `rejected`, `summary`, and `args` for the tools below (RFC-074) |
 | `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
@@ -344,16 +345,22 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 
-A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
+A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one.
 
 `tool_call.args` holds what a person needs to follow the step (RFC-074):
 
 | Tool | `args` |
 | --- | --- |
-| `list_files`, `read_file` | `path` |
-| `read_linked_file` | `project`, `path` |
-| `search_files` | `text` |
+| `list_files` | `path`, and `glob` and `depth` when set |
+| `read_file` | `path`, and `offset` and `limit` when set |
+| `read_linked_file` | `project`, `path`, and `offset` and `limit` when set |
+| `search_files` | `text`, and `path`, `glob`, `context`, `regex`, and `ignoreCase` when set |
+| `replace_in_file` | `path`, `oldBytes`, `newBytes`, and `replaceAll` when set. Never the text |
 | `edit_file` | `path`, `bytes`, `lines`. Never the file text |
+| `delete_file` | `path` |
+| `move_file` | `from`, `to` |
+| `todo_write` | `items`, the count of items. Never the item text |
+| `run_command` | `argv`, each element clipped |
 | `run_local_check` | `command`, the card's `local_check` |
 | `commit` | `message`, as the model wrote it |
 | `comment_pr`, `verdict` | `body` |
@@ -801,7 +808,7 @@ Events are oldest first by `ts`, then by insert order (`seq`), so events in the 
 
 `since` is an optional RFC3339 time. With it, the route returns only events with `ts` at or after 10 seconds before `since`, so an event that committed late or in the same second is read again; the client merges events by `id`. A value that is not RFC3339 is `422` with `fields.since`. `attempts` is always the full list. `live` is true while the card is queued (an open `runs` row), is in `in_progress`, `self_check`, `agent_review`, `deploying_dev`, or `verifying`, or has an attempt with no `endedAt`. The Trace page polls while `live` is true. `maxTurns` is the attempt's turn budget, `0` when it has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
 
-`attempts` lists the card's attempts in the project by `n`. A value the attempt does not have yet is `""`, and `reviewIndependent` is `null` until a review ran. `outcome` is `""` while the attempt runs, then one of `checks_passed`, `checks_failed`, `no_commit`, `budget`, `error`, or `cancelled`. Tokens are the implementer's calls only; the reviewer's calls are in `model_call` events with `role: reviewer`, under the same `attemptId`.
+`attempts` lists the card's attempts in the project by `n`. A value the attempt does not have yet is `""`, and `reviewIndependent` is `null` until a review ran. `outcome` is `""` while the attempt runs, then one of `checks_passed`, `checks_failed`, `no_commit`, `no_change`, `budget`, `error`, or `cancelled`. `no_change` is an attempt that made no commit while its clean HEAD is already ahead of the base branch; that HEAD goes to the gating check (RFC-085). `budget` is an attempt stopped by `turn_cap` or `token_cap` (RFC-081). Tokens are the implementer's calls only; the reviewer's calls are in `model_call` events with `role: reviewer`, under the same `attemptId`.
 
 `GET /api/projects/{projectId}/cards/{id}/diff` (RFC-068)
 
@@ -1111,10 +1118,11 @@ LLM APIs and the router are one company setting (RFC-052). Every signed-in user 
 | `baseUrl` | `https`, or `http` on `127.0.0.1`, `localhost`, or `::1` for a local server |
 | `models` | Non-empty strings, unique across all families, so a model id names one family |
 | `apiKey` | Optional for a loopback `baseUrl`, required for the family to be usable otherwise |
-| `modelOptions` | Optional. Keys are ids in this family's `models`. Each value has optional `thinking`, `thinkingBudget`, and `effort` (RFC-079). `GET` lists only models with a setting, and `{}` when none has one |
+| `modelOptions` | Optional. Keys are ids in this family's `models`. Each value has optional `thinking`, `thinkingBudget`, `effort` (RFC-079), and `historyBudgetKiB` (RFC-081). `GET` lists only models with a setting, and `{}` when none has one |
 | `modelOptions.*.thinking` | `""`, `enabled`, `disabled`, or `adaptive`. `adaptive` only on the `anthropic` protocol |
 | `modelOptions.*.thinkingBudget` | `0`, or 1024 to 32768 when `thinking` is `enabled` on the `anthropic` protocol. Saved as `0` otherwise. `0` with `enabled` means 8192 |
 | `modelOptions.*.effort` | `""`. On `anthropic`: `low`, `medium`, `high`, `xhigh`, `max`. On `openai`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `modelOptions.*.historyBudgetKiB` | `0`, or 4 to 512, on either protocol. How much earlier tool output an implement attempt on this model sends back. `0` means 16 |
 
 A bad `modelOptions` key or value is `422` with field `modelOptions`.
 
@@ -1135,8 +1143,8 @@ Removing a family whose models are used by the router is `422` on `families`.
   },
   "budgets": {
     "maxAttempts": 3,
-    "maxModelTurnsPerAttempt": 12,
-    "maxTokensPerCard": 200000,
+    "maxModelTurnsPerAttempt": 40,
+    "maxTokensPerCard": 2000000,
     "maxWallMinutesPerAttempt": 30
   },
   "reviewIndependentPossible": false
@@ -1145,7 +1153,7 @@ Removing a family whose models are used by the router is `422` on `families`.
 
 `reviewIndependentPossible` is true when two or more families each have at least one model and are usable.
 
-`PUT /api/settings/router` is admin only. It sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10.
+`PUT /api/settings/router` is admin only. It sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10. `maxModelTurnsPerAttempt` is at most 200, and `0` means 40. `maxTokensPerCard` cannot be negative, and `0` means 2,000,000. A saved value is kept (RFC-081). A bad turn or token budget is `422` with that field.
 
 The coding rules, stacks, and integration skills are one company catalog (RFC-055, RFC-056). Every signed-in user may GET it. Only an admin may create, update, or delete an item. Anyone else gets `403`. A successful write appends `config_changed` with section `conventions` and the changed field names.
 
@@ -1246,6 +1254,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
   "localCheck": "",
   "devCheck": "",
   "allowExecutables": [],
+  "commandExecutables": [],
   "sandboxEngine": "podman",
   "sandboxImage": "",
   "implementationCap": 2,
@@ -1265,6 +1274,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `devCommand`, `rollbackCommand` | Absolute path to a regular file, outside the target repo and the data directory, owned by the current user, executable, not group or world writable (RFC-038) |
 | `localCheck`, `devCheck` | Parses under the check rule in 0006. First word in `allowExecutables` |
 | `allowExecutables` | Bare names, `^[A-Za-z0-9._+-]+$` |
+| `commandExecutables` | Bare names, `^[A-Za-z0-9._+-]+$`, and none of the shells and wrappers in 0006 (RFC-084). Empty turns `run_command` off |
 | `sandboxEngine` | `podman` or `docker` |
 | `sandboxImage` | Contains `@sha256:` followed by 64 hex chars |
 | `implementationCap` | Integer from 1 to 8 |
@@ -1324,8 +1334,8 @@ router:
     triage: { model: "", fallback: "" }
   budgets:
     maxAttempts: 3
-    maxModelTurnsPerAttempt: 12
-    maxTokensPerCard: 200000
+    maxModelTurnsPerAttempt: 40
+    maxTokensPerCard: 2000000
     maxWallMinutesPerAttempt: 30
 ```
 
@@ -1343,6 +1353,7 @@ checks:
   local: ""
   dev: ""
   allowExecutables: []
+  commandExecutables: []
 sandbox:
   engine: podman
   image: ""

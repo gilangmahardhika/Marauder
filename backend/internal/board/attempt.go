@@ -174,11 +174,25 @@ func SetAttemptOutcome(ctx context.Context, q DBTX, id, outcome string) error {
 }
 
 // AddAttemptTokens adds one model call's token counts to the attempt.
-func AddAttemptTokens(ctx context.Context, q DBTX, id string, input, output int) error {
+// AddAttemptTokens adds one model call's tokens. cached is the input read from
+// the provider's prompt cache, which input does not include (RFC-083).
+func AddAttemptTokens(ctx context.Context, q DBTX, id string, input, output, cached int) error {
 	_, err := q.ExecContext(ctx, `
-		UPDATE attempts SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3 WHERE id = $1`,
-		id, input, output)
+		UPDATE attempts SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3,
+			tokens_cached = tokens_cached + $4
+		WHERE id = $1`,
+		id, input, output, cached)
 	return err
+}
+
+// CardTokens is the tokens the card's attempts used, as the token cap counts
+// them: input and output in full, and cached input at a tenth (RFC-081, RFC-083).
+func CardTokens(ctx context.Context, q DBTX, cardID string) (int, error) {
+	var n int
+	err := q.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(input_tokens + output_tokens), 0) + COALESCE(SUM(tokens_cached), 0) / 10
+		FROM attempts WHERE card_id = $1`, cardID).Scan(&n)
+	return n, err
 }
 
 // UnpublishedCommit returns the card's latest attempt when it ended with a

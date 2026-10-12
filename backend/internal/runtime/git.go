@@ -94,6 +94,53 @@ func (g Git) DiscardChanges(ctx context.Context, wt Worktree) error {
 	return err
 }
 
+// TreeHash is the tree the worktree's files would commit as, read through a
+// temporary index so the worktree's own index does not change.
+func (g Git) TreeHash(ctx context.Context, wt Worktree) (string, error) {
+	dir := filepath.Join(g.Data, "exports")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	file, err := os.CreateTemp(dir, "index-*")
+	if err != nil {
+		return "", err
+	}
+	index := file.Name()
+	file.Close()
+	os.Remove(index)
+	defer os.Remove(index)
+	env := append(gitEnv(g.Bin, g.Data), "GIT_INDEX_FILE="+index)
+	if _, err := g.runEnv(ctx, env, gitTimeout, g.worktreeArgv(wt, "read-tree", "HEAD")...); err != nil {
+		return "", err
+	}
+	if _, err := g.runEnv(ctx, env, gitTimeout, g.worktreeArgv(wt, "add", "-A")...); err != nil {
+		return "", err
+	}
+	res, err := g.runEnv(ctx, env, gitTimeout, g.worktreeArgv(wt, "write-tree")...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(res.Out)), nil
+}
+
+// Clean reports whether the worktree has no uncommitted change.
+func (g Git) Clean(ctx context.Context, wt Worktree) (bool, error) {
+	res, err := g.run(ctx, g.worktreeArgv(wt, "status", "--porcelain", "--untracked-files=all")...)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(res.Out)) == "", nil
+}
+
+// Ahead counts the commits on the worktree's HEAD that base does not have.
+func (g Git) Ahead(ctx context.Context, wt Worktree, base string) (int, error) {
+	res, err := g.run(ctx, g.worktreeArgv(wt, "rev-list", "--count", "--end-of-options", base+"..HEAD")...)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(res.Out)))
+}
+
 func (g Git) Status(ctx context.Context, repo string) error {
 	_, err := g.run(ctx, append(g.prefix(), "-C", repo, "status", "--porcelain")...)
 	return err

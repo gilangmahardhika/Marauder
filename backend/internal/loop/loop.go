@@ -7,10 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/contextpack"
@@ -18,12 +16,10 @@ import (
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/runtime"
-	"orchestrator/backend/internal/sandbox"
 	"orchestrator/backend/internal/trace"
 )
 
 const readCap = 256 << 10
-const writeCap = 1 << 20
 
 var ErrRequirement = errors.New("unknown or unaccepted requirement")
 
@@ -37,39 +33,99 @@ func ImplementerTools() []providers.Tool {
 	return []providers.Tool{
 		{
 			Name:        "list_files",
-			Description: "List the files under a directory of the card worktree, up to 500 paths.",
-			Parameters:  object(map[string]any{"path": str("Repository-relative directory. Empty or . for the root")}),
+			Description: "List the files under a directory of the card worktree, up to 500 paths. Skips .git, node_modules, vendor, and dist below the start.",
+			Parameters: object(map[string]any{
+				"path":  str("Repository-relative directory. Empty or . for the root"),
+				"glob":  str("Only paths matching this glob, such as **/*.go or *.ts. A glob without / matches the file name"),
+				"depth": integer("How many directories deep to list below path. 0 lists everything"),
+			}),
 		},
 		{
 			Name:        "search_files",
-			Description: "Find lines that contain the exact text in the card worktree. Returns path:line: text, up to 100 matches.",
-			Parameters:  object(map[string]any{"text": str("Exact text to find, case sensitive")}, "text"),
+			Description: "Find lines in the card worktree that contain the text, or match it as an RE2 regular expression when regex is true. Returns path:line: text, and path-line- text for context lines, up to 100 matches.",
+			Parameters: object(map[string]any{
+				"text":       str("Text to find. Exact and case sensitive unless regex or ignoreCase is set"),
+				"regex":      boolean("Treat text as an RE2 regular expression"),
+				"path":       str("Repository-relative directory or file to search. Empty for the root"),
+				"glob":       str("Only files whose path matches this glob, such as *.go"),
+				"ignoreCase": boolean("Match without regard to case"),
+				"context":    integer("Lines of context before and after each match, up to 5"),
+			}, "text"),
 		},
 		{
 			Name:        "read_file",
-			Description: "Read a file from the card worktree. Paths are relative to the repository root.",
-			Parameters:  object(map[string]any{"path": str("Repository-relative path")}, "path"),
+			Description: "Read a file from the card worktree as numbered lines N|text. Reads up to 2000 lines from offset; the result says the total and where to read next.",
+			Parameters: object(map[string]any{
+				"path":   str("Repository-relative path"),
+				"offset": integer("First line to read, from 1"),
+				"limit":  integer("Number of lines to read, up to 2000"),
+			}, "path"),
 		},
 		{
 			Name:        "read_linked_file",
-			Description: "Read a file from a linked project by its project id. Linked projects are read only.",
+			Description: "Read a file from a linked project by its project id, as numbered lines like read_file. Linked projects are read only.",
 			Parameters: object(map[string]any{
 				"project": str("Linked project id"),
 				"path":    str("Path relative to the linked repository root"),
+				"offset":  integer("First line to read, from 1"),
+				"limit":   integer("Number of lines to read, up to 2000"),
 			}, "project", "path"),
 		},
 		{
+			Name:        "replace_in_file",
+			Description: "Replace exact text in a file of the card worktree. old must occur exactly once unless replaceAll is true. Copy old from read_file output without the N| prefixes, with its indentation. Prefer this to edit_file for any change to an existing file.",
+			Parameters: object(map[string]any{
+				"path":       str("Repository-relative path"),
+				"old":        str("The exact text to replace"),
+				"new":        str("The text to put in its place"),
+				"replaceAll": boolean("Replace every occurrence"),
+			}, "path", "old", "new"),
+		},
+		{
 			Name:        "edit_file",
-			Description: "Replace the whole content of a file in the card worktree, creating it when missing.",
+			Description: "Write the whole content of a file in the card worktree, creating it when missing. Use it for new files; change an existing file with replace_in_file.",
 			Parameters: object(map[string]any{
 				"path": str("Repository-relative path"),
 				"text": str("The complete new file content"),
 			}, "path", "text"),
 		},
 		{
+			Name:        "delete_file",
+			Description: "Delete one file from the card worktree.",
+			Parameters:  object(map[string]any{"path": str("Repository-relative path")}, "path"),
+		},
+		{
+			Name:        "move_file",
+			Description: "Move or rename one file in the card worktree. The destination must not exist.",
+			Parameters: object(map[string]any{
+				"from": str("Repository-relative path of the file"),
+				"to":   str("Repository-relative path to move it to"),
+			}, "from", "to"),
+		},
+		{
+			Name:        "todo_write",
+			Description: "Replace your todo list for this attempt. Up to 30 items, each with text of up to 200 bytes and a status. The list is shown to you again after every turn. It changes no file.",
+			Parameters: object(map[string]any{
+				"items": array(object(map[string]any{
+					"text":   str("What to do"),
+					"status": map[string]any{"type": "string", "enum": todoStatuses, "description": "pending, in_progress, or done"},
+				}, "text", "status"), "The whole list, in order"),
+			}, "items"),
+		},
+		{
 			Name:        "run_local_check",
 			Description: "Run the card's local check on a copy of the worktree. Returns the exit code and the last 200 lines.",
 			Parameters:  object(map[string]any{}),
+		},
+		{
+			Name: "run_command",
+			Description: "Run one program from the project's allowed commands on a fresh throwaway copy of the worktree, in the sandbox with no network, " +
+				"such as a single test file, a type checker, or a linter. argv is the program name and its arguments, never a shell string; there is no shell, so pipes, redirects, and globs do not work. " +
+				"Every change the command makes to files is discarded, and its exit code does not count as the local check. Returns the exit code and the last 200 lines. At most 30 calls per attempt.",
+			Parameters: object(map[string]any{
+				"argv": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "maxItems": 64,
+					"description": "Program name, then each argument as its own string, such as [\"go\", \"test\", \"./pkg/...\"]"},
+			}, "argv"),
 		},
 		{
 			Name:        "commit",
@@ -89,6 +145,18 @@ func object(props map[string]any, required ...string) map[string]any {
 
 func str(description string) map[string]any {
 	return map[string]any{"type": "string", "description": description}
+}
+
+func integer(description string) map[string]any {
+	return map[string]any{"type": "integer", "description": description}
+}
+
+func boolean(description string) map[string]any {
+	return map[string]any{"type": "boolean", "description": description}
+}
+
+func array(items map[string]any, description string) map[string]any {
+	return map[string]any{"type": "array", "items": items, "description": description}
 }
 
 type Settings struct {
@@ -112,20 +180,38 @@ type Input struct {
 	Allow      []string
 	Engine     string
 	Image      string
+	// Commands are the names run_command may start; empty disables it (RFC-084).
+	Commands []string
+	// Exec runs sandbox children; nil means execx.Command. Tests set it.
+	Exec func(context.Context, execx.Child) (execx.Result, error)
+	// HistoryBudget is the routed model's history budget in bytes; zero means
+	// 16 KiB (RFC-081). MaxTokensPerCard of zero sets no token cap.
+	HistoryBudget    int
+	MaxTokensPerCard int
 }
 
+// Result is how the attempt ended. Outcome is empty for a new commit,
+// no_commit, no_change for a branch already ahead of its base, or budget with
+// the cap in Reason.
 type Result struct {
 	AttemptID string
 	Outcome   string
+	Reason    string
 	Status    string
 }
+
+// DefaultTurns is the turn cap of an attempt whose input sets none (RFC-081).
+const DefaultTurns = 40
 
 func Run(ctx context.Context, in Input) (Result, error) {
 	if in.TaskClass == "" {
 		in.TaskClass = "implement"
 	}
 	if in.MaxTurns <= 0 {
-		in.MaxTurns = 12
+		in.MaxTurns = DefaultTurns
+	}
+	if in.HistoryBudget <= 0 {
+		in.HistoryBudget = defaultHistory
 	}
 	card, err := board.GetCard(ctx, in.DB, in.CardID)
 	if err != nil {
@@ -164,7 +250,19 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	statements, err := statements(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	requirements, err := requirementBlocks(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	if err != nil {
+		return Result{}, err
+	}
+	decisions, err := decisionLines(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	if err != nil {
+		return Result{}, err
+	}
+	paths, err := pathMap(wt.Path)
+	if err != nil {
+		return Result{}, err
+	}
+	repoFiles, repoRefs, err := repoMemory(wt.Path, append([]string{card.Title}, requirements...))
 	if err != nil {
 		return Result{}, err
 	}
@@ -188,7 +286,10 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		Card: contextpack.Card{
 			ID: card.ID, Title: card.Title, Status: card.Status, LocalCheck: card.LocalCheck,
 		},
-		Requirements: statements,
+		Requirements: requirements,
+		Decisions:    decisions,
+		PathMap:      paths,
+		RepoFiles:    repoFiles,
 		FailureNote:  note,
 		Instructions: instructions,
 		Linked:       linked,
@@ -217,12 +318,25 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	session := &session{
 		in: in, card: card, wt: wt, attemptID: attemptID,
 		system: system, user: user, linkedRoots: linkedRoots,
+		evicted: map[[2]int]bool{}, reads: map[string]readMark{},
 	}
 	if err := session.event(ctx, "tool_call", map[string]any{
 		"name": "conventions_context", "ok": true, "rejected": false,
 		"summary": fmt.Sprintf("%d rules and skills", len(convItems)), "items": convItems,
 	}); err != nil {
 		return Result{}, err
+	}
+	if len(repoRefs) > 0 {
+		lines := make([]string, 0, len(repoRefs))
+		for _, ref := range repoRefs {
+			lines = append(lines, fmt.Sprintf("%s %d bytes sha256 %s", ref["path"], ref["bytes"], ref["sha256"]))
+		}
+		if err := session.event(ctx, "tool_call", map[string]any{
+			"name": "repo_context", "ok": true, "rejected": false,
+			"summary": fmt.Sprintf("%d repository files\n%s", len(repoRefs), strings.Join(lines, "\n")), "files": repoRefs,
+		}); err != nil {
+			return Result{}, err
+		}
 	}
 	if len(linkedRefs) > 0 {
 		if err := session.event(ctx, "tool_call", map[string]any{
@@ -236,9 +350,47 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		_ = board.FinishAttempt(ctx, in.DB, attemptID, "error", "")
 		return Result{}, err
 	}
+	if session.stop == "" {
+		if err := session.autoCommit(ctx); err != nil {
+			_ = board.FinishAttempt(ctx, in.DB, attemptID, "error", "")
+			return Result{}, err
+		}
+	}
 	head, err := in.Git.WorktreeHead(ctx, wt)
 	if err != nil {
 		return Result{}, err
+	}
+	stop := session.stop
+	if stop == "" && head == baseSHA {
+		clean, err := in.Git.Clean(ctx, wt)
+		if err != nil {
+			return Result{}, err
+		}
+		ahead, err := in.Git.Ahead(ctx, wt, base)
+		if err != nil {
+			return Result{}, err
+		}
+		if clean && ahead > 0 {
+			if err := board.FinishAttempt(ctx, in.DB, attemptID, "no_change", head); err != nil {
+				return Result{}, err
+			}
+			return Result{AttemptID: attemptID, Outcome: "no_change", Status: card.Status}, nil
+		}
+		if session.outOfTurns {
+			stop = "turn_cap"
+		}
+	}
+	if stop != "" {
+		if err := session.event(ctx, "budget_stop", map[string]any{"cap": stop, "turns": session.used, "maxTurns": in.MaxTurns}); err != nil {
+			return Result{}, err
+		}
+		if err := board.AddAttemptUsed(ctx, in.DB, card.ID); err != nil {
+			return Result{}, err
+		}
+		if err := board.FinishAttempt(ctx, in.DB, attemptID, "budget", ""); err != nil {
+			return Result{}, err
+		}
+		return Result{AttemptID: attemptID, Outcome: "budget", Reason: stop, Status: card.Status}, nil
 	}
 	if head == baseSHA {
 		if err := board.InsertFailureNote(ctx, in.DB, card.ID, attemptID, "no_commit", "no commit"); err != nil {
@@ -266,223 +418,12 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	return Result{AttemptID: attemptID, Status: fresh.Status}, nil
 }
 
-type session struct {
-	in          Input
-	card        board.Card
-	wt          runtime.Worktree
-	attemptID   string
-	system      string
-	user        string
-	linkedRoots map[string]string
-	turns       []providers.Turn
-}
-
-// Free model tiers refuse a request over about 7000 tokens, so the history
-// carries the newest results first and drops the text of older ones.
-const (
-	resultCap  = 12 << 10
-	historyCap = 16 << 10
-	omitted    = "(older result omitted)"
-	written    = "(omitted: already written to the file)"
-	lastTurns  = 3
-)
-
-// history is the turns so far, sized for one request. The newest result is
-// always sent, cut at resultCap. Older results are sent while their total stays
-// under historyCap, then replaced by omitted. File text in edit_file calls is
-// never sent back, because the result already says the file was written.
-func (s *session) history() []providers.Turn {
-	out := make([]providers.Turn, len(s.turns))
-	used, full, newest := 0, true, true
-	for t := len(s.turns) - 1; t >= 0; t-- {
-		turn := s.turns[t]
-		next := providers.Turn{Text: turn.Text, Results: make([]string, len(turn.Results)), Reasoning: turn.Reasoning}
-		for _, call := range turn.Calls {
-			if call.Name == "edit_file" {
-				args := map[string]any{}
-				for k, v := range call.Args {
-					args[k] = v
-				}
-				args["text"] = written
-				call.Args = args
-			}
-			next.Calls = append(next.Calls, call)
-		}
-		for i := len(turn.Results) - 1; i >= 0; i-- {
-			text := turn.Results[i]
-			if len(text) > resultCap {
-				text = strings.ToValidUTF8(text[:resultCap], "") + "\ntruncated: true"
-			}
-			if !newest && (!full || used+len(text) > historyCap) {
-				full = false
-				text = omitted
-			}
-			newest = false
-			used += len(text)
-			next.Results[i] = text
-		}
-		out[t] = next
-	}
-	return out
-}
-
-// warnTurnsLeft adds a reminder to the newest result when lastTurns or fewer
-// model turns remain. turns must come from history, which copies the results.
-func warnTurnsLeft(turns []providers.Turn, left int) []providers.Turn {
-	if left > lastTurns || len(turns) == 0 {
-		return turns
-	}
-	last := turns[len(turns)-1].Results
-	if n := len(last); n > 0 {
-		last[n-1] += fmt.Sprintf("\n\n%d model turns left in this attempt. If the change is done, call commit now.", left)
-	}
-	return turns
-}
-
-func (s *session) loop(ctx context.Context) error {
-	for turn := 0; turn < s.in.MaxTurns; turn++ {
-		turns := warnTurnsLeft(s.history(), s.in.MaxTurns-turn)
-		resp, err := s.in.Provider.Complete(ctx, providers.Request{
-			Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
-			Tools: ImplementerTools(), TaskClass: s.in.TaskClass,
-		})
-		if err != nil {
-			return err
-		}
-		if err := board.AddAttemptTokens(ctx, s.in.DB, s.attemptID, resp.InputTokens, resp.OutputTokens); err != nil {
-			return err
-		}
-		modelID := resp.Model
-		if modelID == "" {
-			modelID = s.in.Model
-		}
-		if err := s.event(ctx, "model_call", modelCallPayload("implementer", modelID, resp, s.in.Secrets)); err != nil {
-			return err
-		}
-		if len(resp.ToolCalls) == 0 {
-			return nil
-		}
-		done := providers.Turn{Text: resp.Text, Reasoning: resp.Reasoning}
-		for i, call := range resp.ToolCalls {
-			if call.ID == "" {
-				call.ID = fmt.Sprintf("call_%d_%d", turn, i)
-			}
-			summary, rejected, callErr := s.dispatch(ctx, call)
-			payload := map[string]any{
-				"name": call.Name, "ok": callErr == nil && !rejected, "rejected": rejected, "summary": summary,
-			}
-			if args := toolArgs(call, s.card.LocalCheck, s.in.Secrets); len(args) > 0 {
-				payload["args"] = args
-			}
-			if err := s.event(ctx, "tool_call", payload); err != nil {
-				return err
-			}
-			if callErr != nil {
-				return callErr
-			}
-			done.Calls = append(done.Calls, call)
-			done.Results = append(done.Results, summary)
-		}
-		s.turns = append(s.turns, done)
-	}
-	return nil
-}
-
-func (s *session) dispatch(ctx context.Context, call providers.ToolCall) (string, bool, error) {
-	if !allowedTool(call.Name) {
-		return "not in profile", true, nil
-	}
-	switch call.Name {
-	case "list_files":
-		text, err := listFiles(s.wt.Path, strArg(call.Args, "path"))
-		if err != nil {
-			return err.Error(), false, nil
-		}
-		return text, false, nil
-	case "search_files":
-		text, err := searchFiles(s.wt.Path, strArg(call.Args, "text"))
-		if err != nil {
-			return err.Error(), false, nil
-		}
-		return text, false, nil
-	case "read_file":
-		text, truncated, err := readFile(s.wt.Path, strArg(call.Args, "path"))
-		if err != nil {
-			return err.Error(), false, nil
-		}
-		if truncated {
-			return text + "\ntruncated: true", false, nil
-		}
-		return text, false, nil
-	case "read_linked_file":
-		root, ok := s.linkedRoots[strArg(call.Args, "project")]
-		if !ok {
-			return "not a linked project with a clone", false, nil
-		}
-		text, truncated, err := readFile(root, strArg(call.Args, "path"))
-		if err != nil {
-			return err.Error(), false, nil
-		}
-		if truncated {
-			return text + "\ntruncated: true", false, nil
-		}
-		return text, false, nil
-	case "edit_file":
-		if err := editFile(s.wt.Path, strArg(call.Args, "path"), strArg(call.Args, "text")); err != nil {
-			return err.Error(), false, nil
-		}
-		return "wrote " + strArg(call.Args, "path"), false, nil
-	case "run_local_check":
-		exit, tail, err := s.localCheck(ctx)
-		if err != nil {
-			return err.Error(), false, nil
-		}
-		return fmtInt(exit) + "\n" + tail, false, nil
-	case "commit":
-		message := commitMessage(strArg(call.Args, "message"), s.card.ID, s.attemptID, s.in.Model)
-		if err := s.in.Git.Commit(ctx, s.wt, message); err != nil {
-			return err.Error(), false, nil
-		}
-		return "committed", false, nil
-	default:
-		return "not in profile", true, nil
-	}
-}
-
-func (s *session) localCheck(ctx context.Context) (int, string, error) {
-	dest := filepath.Join(s.in.Git.Data, "exports", s.attemptID)
-	if err := os.MkdirAll(dest, 0o700); err != nil {
-		return 0, "", err
-	}
-	defer os.RemoveAll(dest)
-	if err := runtime.CopyWorktree(s.wt.Path, dest); err != nil {
-		return 0, "", err
-	}
-	res, executed, err := sandbox.ExecuteCheck(ctx, sandbox.ExecuteOpts{
-		Command: s.card.LocalCheck,
-		Allow:   s.in.Allow,
-		Fixture: runtime.FixtureMode(s.in.Git.Repo),
-		Engine:  s.in.Engine,
-		Image:   s.in.Image,
-		Dir:     dest,
-		Timeout: 10 * time.Minute,
-		MaxOut:  1 << 20,
-	}, execx.Command)
-	if err != nil {
-		return 0, "", err
-	}
-	if !executed {
-		return 0, "", fmt.Errorf("check was not executed")
-	}
-	return res.Exit, lastLines(string(res.Out), 200), nil
-}
-
 // modelCallPayload is one model_call event. text is the reply the model wrote
 // beside its tool calls, never the prompt.
 func modelCallPayload(role, modelID string, resp providers.Response, secrets []string) map[string]any {
 	payload := map[string]any{
 		"role": role, "modelId": modelID, "stopReason": resp.StopReason,
-		"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens,
+		"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens, "cachedInputTokens": resp.CachedInputTokens,
 	}
 	if text := trace.Clip(resp.Text, secrets, trace.TextCap); strings.TrimSpace(text) != "" {
 		payload["text"] = text
@@ -495,14 +436,53 @@ func modelCallPayload(role, modelID string, resp providers.Response, secrets []s
 func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[string]any {
 	clip := func(s string) string { return trace.Clip(s, secrets, trace.ArgCap) }
 	args := map[string]any{}
+	setInt := func(key string) {
+		if n := intArg(call.Args, key); n != 0 {
+			args[key] = n
+		}
+	}
+	setStr := func(key string) {
+		if v := strArg(call.Args, key); v != "" {
+			args[key] = clip(v)
+		}
+	}
 	switch call.Name {
-	case "list_files", "read_file":
+	case "list_files":
 		args["path"] = clip(strArg(call.Args, "path"))
+		setStr("glob")
+		setInt("depth")
+	case "read_file":
+		args["path"] = clip(strArg(call.Args, "path"))
+		setInt("offset")
+		setInt("limit")
 	case "read_linked_file":
 		args["project"] = clip(strArg(call.Args, "project"))
 		args["path"] = clip(strArg(call.Args, "path"))
+		setInt("offset")
+		setInt("limit")
 	case "search_files":
 		args["text"] = clip(strArg(call.Args, "text"))
+		setStr("path")
+		setStr("glob")
+		setInt("context")
+		if boolArg(call.Args, "regex") {
+			args["regex"] = true
+		}
+		if boolArg(call.Args, "ignoreCase") {
+			args["ignoreCase"] = true
+		}
+	case "replace_in_file":
+		args["path"] = clip(strArg(call.Args, "path"))
+		args["oldBytes"] = len(strArg(call.Args, "old"))
+		args["newBytes"] = len(strArg(call.Args, "new"))
+		if boolArg(call.Args, "replaceAll") {
+			args["replaceAll"] = true
+		}
+	case "delete_file":
+		args["path"] = clip(strArg(call.Args, "path"))
+	case "move_file":
+		args["from"] = clip(strArg(call.Args, "from"))
+		args["to"] = clip(strArg(call.Args, "to"))
 	case "edit_file":
 		text := strArg(call.Args, "text")
 		args["path"] = clip(strArg(call.Args, "path"))
@@ -510,8 +490,19 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 		args["lines"] = countLines(text)
 	case "commit":
 		args["message"] = clip(strArg(call.Args, "message"))
+	case "todo_write":
+		items, _ := call.Args["items"].([]any)
+		args["items"] = len(items)
 	case "run_local_check":
 		args["command"] = clip(localCheck)
+	case "run_command":
+		argv, _ := call.Args["argv"].([]any)
+		var shown []string
+		for _, arg := range argv {
+			text, _ := arg.(string)
+			shown = append(shown, clip(text))
+		}
+		args["argv"] = shown
 	case "comment_pr", "verdict":
 		args["body"] = clip(strArg(call.Args, "body"))
 	}
@@ -545,38 +536,6 @@ func allowedTool(name string) bool {
 	return false
 }
 
-func readFile(root, requested string) (string, bool, error) {
-	full, err := runtime.SafePath(root, requested)
-	if err != nil {
-		return "", false, err
-	}
-	body, err := os.ReadFile(full)
-	if err != nil {
-		return "", false, err
-	}
-	if len(body) > readCap {
-		return string(body[:readCap]), true, nil
-	}
-	return string(body), false, nil
-}
-
-func editFile(root, requested, text string) error {
-	if len(text) > writeCap {
-		return fmt.Errorf("write exceeds 1 MiB")
-	}
-	full, err := runtime.SafePath(root, requested)
-	if err != nil {
-		return err
-	}
-	if info, err := os.Lstat(full); err == nil && !info.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file", requested)
-	}
-	if err := os.MkdirAll(dirOf(full), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(full, []byte(text), 0o644)
-}
-
 func commitMessage(message, cardID, attemptID, modelID string) string {
 	return message + "\n\nOrchestrator-Card: " + cardID + "\nOrchestrator-Attempt: " + attemptID + "\nModel: " + modelID + "\n"
 }
@@ -593,6 +552,32 @@ func strArg(args map[string]any, key string) string {
 	}
 }
 
+// intArg reads a JSON number, or a string of digits, as an int.
+func intArg(args map[string]any, key string) int {
+	switch v := args[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	case string:
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
+func boolArg(args map[string]any, key string) bool {
+	switch v := args[key].(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true"
+	}
+	return false
+}
+
 func lastLines(s string, n int) string {
 	lines := strings.Split(s, "\n")
 	if len(lines) <= n {
@@ -604,10 +589,6 @@ func lastLines(s string, n int) string {
 func hashText(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:])
-}
-
-func dirOf(path string) string {
-	return filepath.Dir(path)
 }
 
 func fmtInt(n int) string {

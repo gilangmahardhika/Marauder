@@ -186,17 +186,30 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(budgets.MaxWallMinutesPerAttempt)*time.Minute)
 			defer cancel()
 		}
+		tokenCap := budgets.MaxTokensPerCard
+		if tokenCap == 0 {
+			tokenCap = settings.DefaultTokensPerCard
+		}
 		result, err := loop.Run(attemptCtx, loop.Input{
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
 			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
 			Provider: provider, Secrets: redact, Allow: projectCfg.Checks.AllowExecutables,
-			Engine: engine, Image: projectCfg.Sandbox.Image,
+			Commands: projectCfg.Checks.CommandExecutables,
+			Engine:   engine, Image: projectCfg.Sandbox.Image,
+			HistoryBudget: llm.Options(cfg, route.Model).HistoryBytes(), MaxTokensPerCard: tokenCap,
 		})
 		if err != nil {
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
 		}
-		if result.Outcome == "no_commit" {
+		switch result.Outcome {
+		case "no_commit":
 			return retryOrCap(ctx, db, card.ID)
+		case "budget":
+			card, err = board.GetCard(ctx, db, card.ID)
+			if err != nil {
+				return card, err
+			}
+			return BlockCard(ctx, db, card, result.Reason, redact)
 		}
 		attempt.ID = result.AttemptID
 		model = route.Model
@@ -224,7 +237,12 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		_ = jobError(ctx, db, card, attempt.ID, err.Error(), redact)
 		return BlockCard(ctx, db, card, reason, redact)
 	}
-	if attempt.Outcome != "checks_passed" {
+	if exit == 125 || exit == 127 {
+		// The engine, not the check, failed: the attempt is kept (RFC-085).
+		_ = jobError(ctx, db, card, attempt.ID, fmt.Sprintf("sandbox engine exited %d before the check ran\n%s", exit, tail), redact)
+		return BlockCard(ctx, db, card, "sandbox_config", redact)
+	}
+	if exit != 0 && attempt.Outcome != "checks_passed" {
 		if err := board.AddAttemptUsed(ctx, db, card.ID); err != nil {
 			return card, err
 		}
@@ -262,7 +280,12 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		_ = jobError(ctx, db, card, attempt.ID, err.Error(), redact)
 		return BlockCard(ctx, db, card, "publish_failed", redact)
 	}
-	return published, nil
+	// A passing attempt counts once its pull request is out, so a failed
+	// publish does not use up an attempt (RFC-085).
+	if err := board.AddAttemptUsed(ctx, db, card.ID); err != nil {
+		return published, err
+	}
+	return board.GetCard(ctx, db, card.ID)
 }
 
 // unpublishedCommit returns the card's latest attempt when its commit has no

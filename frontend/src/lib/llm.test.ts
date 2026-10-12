@@ -70,8 +70,8 @@ describe('LLM model options', () => {
   it('toDraft and fromDraft round-trip the options', () => {
     const draft = toDraft(claude);
     expect(draft.options).toEqual([
-      { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' },
-      { thinking: '', thinkingBudget: '', effort: '' }
+      { thinking: 'enabled', thinkingBudget: 4096, effort: 'high', historyBudgetKiB: '' },
+      { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '' }
     ]);
     expect(fromDraft(draft).modelOptions).toEqual(claude.modelOptions);
   });
@@ -79,7 +79,7 @@ describe('LLM model options', () => {
   it('fromDraft drops empty settings, removed models, and unused budgets', () => {
     const draft = toDraft(claude);
     draft.models[1] = ' claude-c ';
-    draft.options[1] = { thinking: 'adaptive', thinkingBudget: 2048, effort: '' };
+    draft.options[1] = { thinking: 'adaptive', thinkingBudget: 2048, effort: '', historyBudgetKiB: '' };
     expect(fromDraft(draft).modelOptions).toEqual({
       'claude-a': { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' },
       'claude-c': { thinking: 'adaptive' }
@@ -89,15 +89,28 @@ describe('LLM model options', () => {
     draft.options = [draft.options[1]];
     expect(Object.keys(fromDraft(draft).modelOptions)).toEqual(['claude-c']);
 
-    draft.options[0] = { thinking: '', thinkingBudget: '', effort: '' };
+    draft.options[0] = { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '' };
     expect(fromDraft(draft).modelOptions).toEqual({});
   });
 
   it('fromDraft keeps only what the protocol takes', () => {
     const draft = toDraft(claude);
     draft.protocol = 'openai';
-    draft.options[0] = { thinking: 'adaptive', thinkingBudget: 4096, effort: 'max' };
-    draft.options[1] = { thinking: 'enabled', thinkingBudget: 4096, effort: 'minimal' };
+    draft.options[0] = { thinking: 'adaptive', thinkingBudget: 4096, effort: 'max', historyBudgetKiB: '' };
+    draft.options[1] = { thinking: 'enabled', thinkingBudget: 4096, effort: 'minimal', historyBudgetKiB: '' };
     expect(fromDraft(draft).modelOptions).toEqual({ 'claude-b': { thinking: 'enabled', effort: 'minimal' } });
+  });
+
+  it('round-trips the history budget on either protocol', () => {
+    const draft = toDraft({ ...claude, modelOptions: { 'claude-b': { historyBudgetKiB: 64 } } });
+    expect(draft.options[1].historyBudgetKiB).toBe(64);
+    draft.protocol = 'openai';
+    draft.options[0].historyBudgetKiB = '128';
+    expect(fromDraft(draft).modelOptions).toEqual({
+      'claude-a': { historyBudgetKiB: 128 },
+      'claude-b': { historyBudgetKiB: 64 }
+    });
+    draft.options[1].historyBudgetKiB = '';
+    expect(fromDraft(draft).modelOptions).toEqual({ 'claude-a': { historyBudgetKiB: 128 } });
   });
 });

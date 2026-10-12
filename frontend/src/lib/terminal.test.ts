@@ -50,6 +50,18 @@ test('a local check is green on exit 0 and red otherwise', () => {
   expect(fail.body).toBe('exit 1\nFAIL a.test.ts');
 });
 
+test('the new file tools and run_command show their targets', () => {
+  const replace = terminalEntry(event('tool_call', { name: 'replace_in_file', ok: true, summary: 'replaced 1 occurrence in a.ts', args: { path: 'a.ts', oldBytes: 3, newBytes: 4 } }));
+  expect(replace.head).toBe('$ replace_in_file  a.ts');
+  expect(replace.body).toBe('replaced 1 occurrence in a.ts');
+  expect(terminalEntry(event('tool_call', { name: 'move_file', ok: true, summary: 'moved', args: { from: 'a', to: 'b' } })).head).toBe('$ move_file  a -> b');
+  expect(terminalEntry(event('tool_call', { name: 'read_file', ok: true, summary: '', args: { path: 'a.ts', offset: 40 } })).head).toBe('$ read_file  a.ts from line 40');
+  const command = terminalEntry(event('tool_call', { name: 'run_command', ok: true, summary: 'exit 0\nok', args: { argv: ['go', 'vet', './...'] } }));
+  expect(command).toMatchObject({ head: '$ run_command  go vet ./...', tone: 'ok' });
+  const failed = terminalEntry(event('tool_call', { name: 'replace_in_file', ok: false, summary: 'error: old text not found in a.ts', args: { path: 'a.ts' } }));
+  expect(failed.tone).toBe('error');
+});
+
 test('a failed or refused tool uses the error tone', () => {
   expect(terminalEntry(event('tool_call', { name: 'read_file', ok: false, summary: 'no such file', args: { path: 'x' } })).tone).toBe('error');
   const refused = terminalEntry(event('tool_call', { name: 'edit_file', ok: false, rejected: true, summary: 'outside the worktree', args: { path: '../x' } }));

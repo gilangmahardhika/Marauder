@@ -39,8 +39,14 @@ const tools: Record<string, string> = {
   search_files: 'Search files',
   read_file: 'Read file',
   read_linked_file: 'Read linked file',
+  replace_in_file: 'Replace in file',
   edit_file: 'Edit file',
+  delete_file: 'Delete file',
+  move_file: 'Move file',
+  todo_write: 'Todo list',
+  repo_context: 'Repository notes',
   run_local_check: 'Run local check',
+  run_command: 'Run command',
   commit: 'Commit',
   read_diff: 'Read diff',
   comment_pr: 'Comment on pull request',
@@ -52,6 +58,7 @@ const outcomes: Record<string, string> = {
   checks_passed: 'Checks passed',
   checks_failed: 'Checks failed',
   no_commit: 'No commit',
+  no_change: 'No new change',
   budget: 'Out of budget',
   error: 'Error',
   cancelled: 'Cancelled'
@@ -144,18 +151,41 @@ function evidence(text: string) {
 export function target(name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'list_files':
-    case 'read_file':
+      return [str(args.path), str(args.glob)].filter(Boolean).join(' ');
     case 'edit_file':
+    case 'replace_in_file':
+    case 'delete_file':
       return str(args.path);
+    case 'read_file':
+      return str(args.path) + fromLine(args.offset);
     case 'read_linked_file':
-      return [str(args.project), str(args.path)].filter(Boolean).join(': ');
-    case 'search_files':
-      return args.text === undefined ? '' : `"${firstLine(str(args.text), 80)}"`;
+      return [str(args.project), str(args.path)].filter(Boolean).join(': ') + fromLine(args.offset);
+    case 'move_file':
+      return args.from === undefined ? '' : `${str(args.from)} -> ${str(args.to)}`;
+    case 'search_files': {
+      if (args.text === undefined) return '';
+      const where = [str(args.path), str(args.glob)].filter(Boolean).join(' ');
+      return `"${firstLine(str(args.text), 80)}"` + (where ? ` in ${where}` : '');
+    }
     case 'run_local_check':
       return firstLine(str(args.command), 80);
+    case 'run_command':
+      return Array.isArray(args.argv) ? firstLine(args.argv.map(str).join(' '), 80) : '';
     default:
       return '';
   }
+}
+
+function fromLine(offset: unknown) {
+  return num(offset) > 1 ? ` from line ${num(offset)}` : '';
+}
+
+/** "lines A-B of T" from the end of a read result, or a count of its lines. */
+function readSize(summary: string) {
+  const range = /lines (\d+)-(\d+) of (\d+)/.exec(summary);
+  if (range) return `lines ${range[1]}-${range[2]} of ${count(Number(range[3]))}`;
+  if (/lines 0 of 0/.test(summary)) return 'Empty file';
+  return plural(lineCount(summary), 'line', 'lines');
 }
 
 function joined(...parts: string[]) {
@@ -192,11 +222,22 @@ function describeTool(p: Record<string, unknown>): Described {
     }
     case 'read_file':
     case 'read_linked_file':
-      return { label, detail: joined(on, plural(lineCount(summary), 'line', 'lines')), meta: '', tone: 'default', text: summary };
+      return { label, detail: joined(on, readSize(summary)), meta: '', tone: 'default', text: summary };
     case 'edit_file': {
       const size = args.lines === undefined ? '' : plural(num(args.lines), 'line', 'lines');
       return { label, detail: joined(on || summary.replace(/^wrote /, ''), size), meta: '', tone: 'default', text: '' };
     }
+    case 'replace_in_file': {
+      const n = /replaced (\d+) occurrence/.exec(summary);
+      return { label, detail: joined(on, n ? plural(Number(n[1]), 'occurrence', 'occurrences') : ''), meta: '', tone: 'default', text: '' };
+    }
+    case 'delete_file':
+    case 'move_file':
+      return { label, detail: on || firstLine(summary), meta: '', tone: 'default', text: '' };
+    case 'todo_write':
+    case 'repo_context':
+      return { label, detail: firstLine(summary), meta: '', tone: 'default', text: summary };
+    case 'run_command':
     case 'run_local_check': {
       const head = firstLine(summary);
       return { label, detail: joined(head, on), meta: '', tone: /^exit 0\b/.test(head) ? 'green' : 'red', text: summary };

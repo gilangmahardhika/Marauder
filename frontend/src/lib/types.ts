@@ -264,6 +264,7 @@ export type ModelOptions = {
   thinking?: string;
   thinkingBudget?: number;
   effort?: string;
+  historyBudgetKiB?: number;
 };
 
 export type Family = {
@@ -327,6 +328,7 @@ export type DeploySettings = {
   localCheck: string;
   devCheck: string;
   allowExecutables: string[];
+  commandExecutables: string[];
   sandboxEngine: string;
   sandboxImage: string;
   implementationCap: number;
