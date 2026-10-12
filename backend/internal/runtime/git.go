@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -177,6 +178,48 @@ func (g Git) Diff(ctx context.Context, base, head string, max int) (string, bool
 		return strings.ToValidUTF8(string(buf[:max]), ""), true, nil
 	}
 	return string(buf[:n]), false, nil
+}
+
+// CommitMessage returns the full message of a commit.
+func (g Git) CommitMessage(ctx context.Context, sha string) (string, error) {
+	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "log", "-1", "--no-color", "--format=%B", "--end-of-options", sha)...)
+	if err != nil {
+		return "", err
+	}
+	return string(res.Out), nil
+}
+
+// FileChange is one file of a diff with its added and deleted line counts.
+// Binary files have -1 for both.
+type FileChange struct {
+	Path    string
+	Added   int
+	Deleted int
+}
+
+// NumStat lists the files changed from the merge base of base and head to head.
+func (g Git) NumStat(ctx context.Context, base, head string) ([]FileChange, error) {
+	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "diff", "--numstat", "--no-color", "--no-ext-diff", "--no-renames",
+		"--end-of-options", base+"..."+head)...)
+	if err != nil {
+		return nil, err
+	}
+	var out []FileChange
+	for _, line := range strings.Split(strings.TrimRight(string(res.Out), "\n"), "\n") {
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		change := FileChange{Path: parts[2], Added: -1, Deleted: -1}
+		if added, err := strconv.Atoi(parts[0]); err == nil {
+			change.Added = added
+		}
+		if deleted, err := strconv.Atoi(parts[1]); err == nil {
+			change.Deleted = deleted
+		}
+		out = append(out, change)
+	}
+	return out, nil
 }
 
 func (g Git) run(ctx context.Context, argv ...string) (execx.Result, error) {

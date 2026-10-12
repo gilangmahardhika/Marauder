@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 	"orchestrator/backend/internal/providers/fake"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/tenancy"
+	"orchestrator/backend/internal/vcs"
 )
 
 const (
@@ -185,6 +187,40 @@ func TestPushUsesOwnerToken(t *testing.T) {
 	}
 }
 
+func TestPublishEditsExistingPR(t *testing.T) {
+	f := newPublishFixture(t)
+	if _, err := f.db.Exec(`UPDATE cards SET pr_url = $2 WHERE id = $1`, f.card.ID, prURL); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	card, err := app.Publish(context.Background(), f.db, f.card.ID, f.input(rec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Status != "pr_open" || card.PRURL != prURL {
+		t.Fatalf("card = %s %s", card.Status, card.PRURL)
+	}
+	var patched bool
+	for _, call := range rec.all() {
+		if has(call.Argv, "pr") && (has(call.Argv, "edit") || has(call.Argv, "create")) {
+			t.Fatalf("existing pull request edited through gh pr: %v", call.Argv)
+		}
+		if has(call.Argv, "repos/acme/widget/pulls/7") && has(call.Argv, "PATCH") && has(call.Argv, "--input") {
+			patched = true
+		}
+	}
+	if !patched || len(rec.inputs) != 1 {
+		t.Fatalf("patched=%v inputs=%d", patched, len(rec.inputs))
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(rec.inputs[0]), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["title"] != "REQ-001: Export CSV" || !strings.Contains(payload["body"], vcs.BodyStart+"\n## Summary\n\nAdds the export.") {
+		t.Fatalf("payload = %v", payload)
+	}
+}
+
 func TestOwnerGitHubBlocks(t *testing.T) {
 	f := newPublishFixture(t)
 	if _, err := f.db.Exec(`UPDATE user_github SET verified_at = NULL WHERE user_id = $1`, f.owner.ID); err != nil {
@@ -312,9 +348,8 @@ func newPublishFixture(t *testing.T) publishFixture {
 func (f publishFixture) input(rec *recorder) app.PublishInput {
 	return app.PublishInput{
 		Data: f.data, Key: tokenKey,
-		Tools:    app.Tools{Git: "/usr/bin/git", GH: "/usr/bin/gh", Exec: rec.run},
-		Summary:  "Adds the export.",
-		Metadata: "requirements: REQ-001",
+		Tools: app.Tools{Git: "/usr/bin/git", GH: "/usr/bin/gh", Exec: rec.run},
+		Text:  app.PRText{Title: "REQ-001: Export CSV", Body: "## Summary\n\nAdds the export."},
 	}
 }
 
@@ -360,14 +395,21 @@ func creatorOf(t *testing.T, db *sql.DB, id string) string {
 }
 
 type recorder struct {
-	mu    sync.Mutex
-	calls []execx.Child
-	fail  string
+	mu     sync.Mutex
+	calls  []execx.Child
+	inputs []string
+	fail   string
 }
 
 func (r *recorder) run(_ context.Context, child execx.Child) (execx.Result, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, child)
+	for i, arg := range child.Argv {
+		if arg == "--input" && i+1 < len(child.Argv) {
+			text, _ := os.ReadFile(child.Argv[i+1])
+			r.inputs = append(r.inputs, string(text))
+		}
+	}
 	r.mu.Unlock()
 	joined := strings.Join(child.Argv, " ")
 	if r.fail != "" && strings.Contains(joined, r.fail) {

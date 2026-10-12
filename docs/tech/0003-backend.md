@@ -143,7 +143,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 7. Budget hit: end the attempt with outcome `budget`, add one to `attempts_used`, append `budget_stop`, and block with `turn_cap`, `token_cap`, or `wall_cap`.
 8. No new commit since `base_sha`: end with `no_commit`, add one to `attempts_used`, and write a failure note with source `no_commit`. The card stays `in_progress`, and pass step 4 or step 10 picks it up.
 9. New commit: store `commit_sha`, transition `in_progress -> self_check`, and run the gating check on an export of that SHA (0006).
-10. Exit `0`: `app.Publish` pushes the branch and ensures one pull request with the owner's token, rewrites its metadata, and requests the reviewers of the card's requirements. Then end with `checks_passed`, add one to `attempts_used`, transition `self_check -> pr_open`. An owner check that fails here blocks with `owner_github` before the push. A failed reviewer request appends `reviewers_requested` with `ok: false` and does not change the card.
+10. Exit `0`: `app.Publish` pushes the branch and ensures one pull request with the owner's token, rewrites its title and the harness region of its body (RFC-066), and requests the reviewers of the card's requirements. Then end with `checks_passed`, add one to `attempts_used`, transition `self_check -> pr_open`. An owner check that fails here blocks with `owner_github` before the push. A failed reviewer request appends `reviewers_requested` with `ok: false` and does not change the card.
 11. Exit non-zero: store the log, run triage for a failure note, end with `checks_failed`, and add one to `attempts_used`. If attempts remain, transition `self_check -> in_progress`. If none remain, block with `attempt_cap`.
 12. If the local base ref changed during the job, append `assertion_failed` and block with `base_moved`.
 13. Release the card lock.
@@ -185,7 +185,7 @@ The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt
 
 1. Take the card lock. Route `review` with the author model id of the latest attempt. Transition `pr_open -> agent_review`.
 2. Build the reviewer pack from the card's rules and skills, read the same way as the implement job, linked requirements, decisions, the diff from base to head, the gating check output, the pull request body, and human comments. Omit author messages and tool traces. Write the pack JSON to `logs/<attempt-id>-review.json`.
-3. Call the model. Store `review_model_id`, `review_prompt_hash`, `review_independent`, `review_verdict`, and `reviewed_sha` on the reviewed attempt.
+3. Call the model. Store `review_model_id`, `review_prompt_hash`, `review_independent`, `review_verdict`, and `reviewed_sha` on the reviewed attempt. Post one pull request comment with the company token: the verdict, its reason, the model, whether the review is independent, and the reviewed SHA (RFC-066). A failed comment appends `job_error` and does not change the card.
 4. `request_changes`: write a failure note with source `review` from the review body, then `agent_review -> changes_requested`. A breach of a rule or a skill checklist is a `request_changes` that names the rule or skill in the body.
 5. `recommend_approve`: read required checks with `gh pr view --json statusCheckRollup`. No required checks: `human_review` with `ciRequired: false` in the gate. All required pass: `human_review` with `ciRequired: true`. Any required failure: `changes_requested` with a `ci` note. Pending: stay in `agent_review` and let pass step 7 finish it.
 6. Provider failure after retry and fallback: block with `provider_error`.
@@ -331,6 +331,8 @@ model: example-model
 <summary written by the implementer>
 ```
 
+What runs today (RFC-066): the title is the requirement ids, then the card title, or the first line of the commit message when the card title names only the ids. The harness owns the text between `<!-- orchestrator:body:start -->` and `<!-- orchestrator:body:end -->` and rewrites it on each push: Summary (the commit message without trailers), Requirement (each statement and its acceptance lines as a checklist), Changes (files with added and deleted lines, up to 50), Verification (the local check and the short SHA), Review, and the metadata block inside `<details>`. Text a person writes outside those markers is kept. A body with only the metadata markers is replaced. Cards carry no decision ids yet, so the metadata block has no `decisions` line.
+
 `gh` commands, with `GH_TOKEN`, `GH_HOST`, and `GH_CONFIG_DIR` set:
 
 ```text
@@ -343,6 +345,8 @@ gh api -X POST repos/OWNER/REPO/pulls/NUMBER/requested_reviewers -f reviewers[]=
 ```
 
 Push, `pr create`, `pr edit`, and the reviewer request carry the card owner's token. `pr view`, `pr comment`, and the company test carry the company token. If `cards.pr_url` is already set, skip `pr create`. The unique index is the second guard. Text from the model goes through `--body-file`, never through argv.
+
+What runs today (RFC-066): `gh pr edit` and `gh pr comment` ask GraphQL for fields that need the `read:org` scope, so the harness writes through REST instead. The pull request edit is `gh api repos/OWNER/REPO/pulls/NUMBER --method PATCH --input FILE`, after reading the body with `gh api repos/OWNER/REPO/pulls/NUMBER --jq .body`. A comment is `gh api repos/OWNER/REPO/issues/NUMBER/comments --method POST --input FILE`. The file is JSON under the project's `logs/`, deleted after the call, so the title and text never reach argv.
 
 ## Settings
 

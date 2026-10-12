@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,7 +43,54 @@ type jobExec struct {
 	faked       [][]string
 	failArchive int
 	failPush    int
+	failComment int
 	prView      string
+	// bodies holds each pull request body or comment gh sent: create, edit, comment.
+	bodies map[string][]string
+	titles []string
+}
+
+func (e *jobExec) record(argv []string) {
+	add := func(kind, text string) {
+		if e.bodies == nil {
+			e.bodies = map[string][]string{}
+		}
+		e.bodies[kind] = append(e.bodies[kind], text)
+	}
+	for i, arg := range argv {
+		if i+1 >= len(argv) {
+			break
+		}
+		switch arg {
+		case "--title":
+			e.titles = append(e.titles, argv[i+1])
+		case "--body-file":
+			text, _ := os.ReadFile(argv[i+1])
+			add(argv[2], string(text))
+		case "--input":
+			raw, _ := os.ReadFile(argv[i+1])
+			var payload map[string]string
+			_ = json.Unmarshal(raw, &payload)
+			kind := "comment"
+			if slices.Contains(argv, "PATCH") {
+				kind = "edit"
+			}
+			if title, ok := payload["title"]; ok {
+				e.titles = append(e.titles, title)
+			}
+			add(kind, payload["body"])
+		}
+	}
+}
+
+func isCommentCall(argv []string) bool {
+	return slices.ContainsFunc(argv, func(arg string) bool { return strings.HasSuffix(arg, "/comments") })
+}
+
+func (e *jobExec) body(sub string) []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]string(nil), e.bodies[sub]...)
 }
 
 // setPR sets the JSON that `gh pr view --json headRefOid,...` returns.
@@ -74,13 +122,23 @@ func (e *jobExec) run(ctx context.Context, child execx.Child) (execx.Result, err
 	if filepath.Base(argv[0]) == "gh" || slices.Contains(argv, "fetch") || slices.Contains(argv, "push") || slices.Contains(argv, "FETCH_HEAD") {
 		e.mu.Lock()
 		e.faked = append(e.faked, argv)
+		if filepath.Base(argv[0]) == "gh" && len(argv) > 2 {
+			e.record(argv)
+		}
 		fail := slices.Contains(argv, "push") && e.failPush > 0
 		if fail {
 			e.failPush--
 		}
+		failComment := filepath.Base(argv[0]) == "gh" && isCommentCall(argv) && e.failComment > 0
+		if failComment {
+			e.failComment--
+		}
 		e.mu.Unlock()
 		if fail {
 			return execx.Result{Exit: 128, Out: []byte("remote: Write access to repository not granted.")}, nil
+		}
+		if failComment {
+			return execx.Result{Exit: 1, Out: []byte("HTTP 502: bad gateway")}, nil
 		}
 		if slices.Contains(argv, "create") {
 			return execx.Result{Out: []byte(prURL + "\n")}, nil
@@ -161,12 +219,34 @@ const fixtureProject = "checks:\n  allowExecutables: [\"true\", \"false\"]\n"
 
 func TestImplementReachesPROpen(t *testing.T) {
 	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	if _, err := f.db.Exec(`
+		UPDATE requirements SET statement = $1, acceptance_json = '["Hello says job"]'
+		WHERE id = 'REQ-001' AND project_id = 'proj_default'`, "Say job. token "+ownerToken); err != nil {
+		t.Fatal(err)
+	}
 	card := f.run(t, commitScript)
 	if card.Status != "pr_open" || card.PRURL != prURL {
 		t.Fatalf("card = %s %s", card.Status, card.PRURL)
 	}
 	if !f.calls.has("push") || !f.calls.has("create") {
 		t.Fatalf("faked calls = %v", f.calls.faked)
+	}
+	if !slices.Contains(f.calls.titles, "REQ-001: Say job") {
+		t.Fatalf("pr titles = %v", f.calls.titles)
+	}
+	bodies := f.calls.body("create")
+	if len(bodies) != 1 {
+		t.Fatalf("create bodies = %d", len(bodies))
+	}
+	body := bodies[0]
+	for _, want := range []string{"## Summary\n\nJob commit", "**REQ-001**: Say job. token [redacted]", "- [ ] Hello says job",
+		"- `hello.txt` (+", "Local check `true` exited 0", "<details><summary>Orchestrator metadata</summary>", "card: " + card.ID} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, ownerToken) || strings.Contains(body, "Orchestrator-Card:") {
+		t.Fatalf("body leaks a token or trailer:\n%s", body)
 	}
 	var outcome, sha string
 	var used int

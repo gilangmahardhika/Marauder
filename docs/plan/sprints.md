@@ -440,3 +440,17 @@ Packages: `internal/runtime`, `internal/sandbox`, `internal/machine`, `internal/
 - `worker.Advancer` starts reviews and refreshes every tick. The card JSON fills `reviewedSha` and `reviewIndependent`.
 
 Done when: `TestExportLargeArchive`, `TestImplementGatesExistingCommit`, `TestImplementRepublishesPassedCommit`, `TestRunnerPathHasOnlyGitDir`, `TestImplementBlocksWhenEngineDown`, `TestLeavingBlockedClearsReason`, `TestCardRowsKeepCardProject`, `TestLegacyCardRoutesCheckRole`, `TestReviewerTools`, `TestReviewApproveNoCI`, `TestReviewRequestChanges`, `TestReviewPendingCIWaits`, `TestPassFinishesCIWait`, `TestPassFailedCIRequestsChanges`, `TestReviewParseFallback`, `TestReviewWithoutVerdictBlocks`, `TestRefreshStoresHeadSHA`, `TestApprovedHeadMovedReturnsToReview`, `TestAdvancerSchedulesReviewAndRefresh`, `TestCardShowsLatestReview`, `TestCardReachesApproved`.
+
+## Sprint 29: Pull request text
+
+Goal: A pull request reads well to a person: a real title, the requirement and its acceptance lines, the changed files, the check result, and the AI review as a comment (RFC-066).
+
+Packages: `internal/runtime`, `internal/vcs`, `internal/contextpack`, `internal/loop`, `internal/app`.
+
+- `app.PRTitle` and `app.PRBody` build the title and the harness region of the body. `runtime.Git.CommitMessage` and `runtime.Git.NumStat` read the commit and its files.
+- `vcs.MergeBody` rewrites only the region between the body markers and keeps text a person wrote around it.
+- `gh pr create` passes the title. A later push edits the title and body, and comments are posted, through `gh api` REST calls with a JSON input file.
+- The review job posts the verdict as one pull request comment with the company token.
+- The implementer is asked for a 72-character subject and a short body in each commit message.
+
+Done when: `TestPRTitleFromCommit`, `TestPRBodySections`, `TestPRBodyKeepsHumanText`, `TestImplementReachesPROpen`, `TestPublishEditsExistingPR`, `TestReviewPostsComment`, `TestReviewRequestChanges`, `TestReviewCommentFailureKeepsStatus`.

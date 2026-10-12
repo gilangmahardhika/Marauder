@@ -465,3 +465,18 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestCardShowsLatestReview`
 - [x] `TestCardReachesApproved`
 - [x] A real card on `scbd-solid-web` reaches `human_review` with a model review.
+
+## Sprint 29: Pull request text
+
+- [x] The title uses the commit subject when the card title names only requirement ids.
+- [x] `TestPRTitleFromCommit`
+- [x] The body has summary, requirement, acceptance, changes, verification, and metadata sections, and keeps text a person wrote.
+- [x] `TestPRBodySections`
+- [x] `TestPRBodyKeepsHumanText`
+- [x] `TestImplementReachesPROpen`
+- [x] `TestPublishEditsExistingPR`
+- [x] The review verdict is a pull request comment, and a failed comment does not change the card.
+- [x] `TestReviewPostsComment`
+- [x] `TestReviewRequestChanges`
+- [x] `TestReviewCommentFailureKeepsStatus`
+- [x] Pull request #34 on `scbd-solid-web` shows the new title, body, and review comment.

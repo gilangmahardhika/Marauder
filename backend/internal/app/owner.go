@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +32,43 @@ var (
 )
 
 var pullURL = regexp.MustCompile(`^https://[^\s/]+/[^\s/]+/[^\s/]+/pull/([0-9]+)$`)
+
+var pullParts = regexp.MustCompile(`^https://[^\s/]+/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/pull/([0-9]+)$`)
+
+// pullAPI returns the REST paths of a pull request and of its comments.
+// Writes go through REST because gh pr edit asks GraphQL for fields that need
+// the read:org scope.
+func pullAPI(url string) (pull, comments string, err error) {
+	m := pullParts.FindStringSubmatch(url)
+	if m == nil {
+		return "", "", fmt.Errorf("%w: %q is not a pull request url", ghcli.ErrGitHub, url)
+	}
+	repo := "repos/" + m[1] + "/" + m[2]
+	return repo + "/pulls/" + m[3], repo + "/issues/" + m[3] + "/comments", nil
+}
+
+// ghWrite sends payload as JSON to a GitHub REST path. The text goes in a
+// file under dir/logs, never in argv.
+func ghWrite(ctx context.Context, gh ghcli.Runner, host, token, dir, method, path string, payload map[string]string) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Join(dir, "logs"), "gh-input-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.Write(body); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	_, err = gh.Run(ctx, host, token, "api", path, "--method", method, "--input", file.Name())
+	return err
+}
 
 // Owner is the card owner as the API shows it.
 type Owner struct {
@@ -186,9 +224,9 @@ type PublishInput struct {
 	Tools     Tools
 	ExitCode  int
 	AttemptID string
-	Summary   string
-	Metadata  string
-	Secrets   []string
+	// Text is the pull request title and the harness part of its body (RFC-066).
+	Text    PRText
+	Secrets []string
 }
 
 // Publish is the pull request step of the implement job (RFC-054). It pushes
@@ -253,15 +291,26 @@ func Publish(ctx context.Context, db *sql.DB, cardID string, in PublishInput) (b
 }
 
 func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, project tenancy.Project, card board.Card, token string, in PublishInput, dir string) (string, error) {
-	previous := ""
+	title := in.Text.Title
+	if title == "" {
+		title = card.Title
+	}
 	if card.PRURL != "" {
-		out, err := gh.Run(ctx, acct.Host, token, "pr", "view", card.PRURL, "--json", "body", "--jq", ".body")
+		pull, _, err := pullAPI(card.PRURL)
 		if err != nil {
 			return "", err
 		}
-		previous = strings.TrimRight(string(out), "\n")
+		out, err := gh.Run(ctx, acct.Host, token, "api", pull, "--jq", ".body // \"\"")
+		if err != nil {
+			return "", err
+		}
+		body := vcs.MergeBody(strings.TrimRight(string(out), "\n"), in.Text.Body)
+		if err := ghWrite(ctx, gh, acct.Host, token, dir, "PATCH", pull, map[string]string{"title": title, "body": body}); err != nil {
+			return "", err
+		}
+		return card.PRURL, nil
 	}
-	body := vcs.RewriteBody(previous, in.Summary, in.Metadata)
+	body := vcs.MergeBody("", in.Text.Body)
 	file, err := os.CreateTemp(filepath.Join(dir, "logs"), "pr-body-*.md")
 	if err != nil {
 		return "", err
@@ -274,19 +323,13 @@ func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, projec
 	if err := file.Close(); err != nil {
 		return "", err
 	}
-	if card.PRURL != "" {
-		if _, err := gh.Run(ctx, acct.Host, token, "pr", "edit", card.PRURL, "--body-file", file.Name()); err != nil {
-			return "", err
-		}
-		return card.PRURL, nil
-	}
 	base := project.BaseBranch
 	if base == "" {
 		base = "main"
 	}
 	out, err := gh.Run(ctx, acct.Host, token, "pr", "create",
 		"--repo", acct.Org+"/"+project.Repo, "--base", base, "--head", "orch/"+card.ID,
-		"--title", card.Title, "--body-file", file.Name())
+		"--title", title, "--body-file", file.Name())
 	if err != nil {
 		return "", err
 	}

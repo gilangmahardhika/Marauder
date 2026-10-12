@@ -137,12 +137,44 @@ func TestReviewRequestChanges(t *testing.T) {
 	if note != "Say done instead of job." {
 		t.Fatalf("note = %q", note)
 	}
-	if !f.calls.has("comment") {
-		t.Fatalf("comment_pr did not call gh pr comment: %v", f.calls.faked)
+	comments := f.calls.body("comment")
+	if len(comments) != 2 || comments[0] != "hello.txt says job" || !strings.Contains(comments[1], "**AI review: Request changes**") {
+		t.Fatalf("comments = %q, want the comment_pr text then the verdict comment", comments)
 	}
 	ok, err := app.CanStartImplement(context.Background(), f.db, card)
 	if err != nil || !ok {
 		t.Fatalf("changes_requested card cannot run again: %t %v", ok, err)
+	}
+}
+
+func TestReviewPostsComment(t *testing.T) {
+	f := newReviewFixture(t)
+	card := f.review(t, approveScript)
+	comments := f.calls.body("comment")
+	if card.Status != "human_review" || len(comments) != 1 {
+		t.Fatalf("card = %s, comments = %d", card.Status, len(comments))
+	}
+	for _, want := range []string{"**AI review: Recommend approve**", "Meets REQ-001.", "`" + f.sha[:7] + "`", "`fake-model`", "not independent"} {
+		if !strings.Contains(comments[0], want) {
+			t.Fatalf("comment lacks %q:\n%s", want, comments[0])
+		}
+	}
+}
+
+func TestReviewCommentFailureKeepsStatus(t *testing.T) {
+	f := newReviewFixture(t)
+	f.calls.failComment = 1
+	card := f.review(t, approveScript)
+	if card.Status != "human_review" {
+		t.Fatalf("card = %s, want human_review after a failed comment", card.Status)
+	}
+	var n int
+	if err := f.db.QueryRow(`
+		SELECT count(*) FROM events WHERE card_id = $1 AND kind = 'job_error' AND payload_json LIKE '%review comment%'`, card.ID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("review comment job_error events = %d", n)
 	}
 }
 

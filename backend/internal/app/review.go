@@ -127,20 +127,11 @@ func checkState(status, conclusion, state string) string {
 }
 
 func (r githubReader) comment(ctx context.Context, dir, url, body string) error {
-	file, err := os.CreateTemp(filepath.Join(dir, "logs"), "review-comment-*.md")
+	_, comments, err := pullAPI(url)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(file.Name())
-	if _, err := file.WriteString(body); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	_, err = r.gh.Run(ctx, r.acct.Host, r.token, "pr", "comment", url, "--body-file", file.Name())
-	return err
+	return ghWrite(ctx, r.gh, r.acct.Host, r.token, dir, "POST", comments, map[string]string{"body": body})
 }
 
 // reviewRoute picks the review model for an attempt written by author. The
@@ -301,6 +292,10 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	if err := board.SetHeadSHA(ctx, db, card.ID, pr.Head); err != nil {
 		return card, err
 	}
+	comment := trace.Redact(ReviewComment(result.Verdict, result.Body, model, independent, pr.Head), redact)
+	if err := gh.comment(ctx, dir, card.PRURL, comment); err != nil {
+		_ = jobError(ctx, db, card, attempt.AttemptID, "review comment: "+err.Error(), redact)
+	}
 	if result.Verdict == "request_changes" {
 		note := result.Body
 		if note == "" {
@@ -315,6 +310,28 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		return card, err
 	}
 	return review.ApplyCI(ctx, db, card, attempt.AttemptID, pr.Checks, redact)
+}
+
+// ReviewComment is the pull request comment the bot posts with the review
+// verdict (RFC-066).
+func ReviewComment(verdict, body, model string, independent bool, sha string) string {
+	heading := "**AI review: Recommend approve**"
+	if verdict == "request_changes" {
+		heading = "**AI review: Request changes**"
+	}
+	family := "a model of another family than the author"
+	if !independent {
+		family = "a model of the same family as the author, so this review is not independent"
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		body = "(the reviewer gave no reason)"
+	}
+	next := "A person approves the card in the orchestrator before merge."
+	if verdict == "request_changes" {
+		next = "The card went back to the implementer with this note."
+	}
+	return fmt.Sprintf("%s\n\n%s\n\nReviewed `%s` with `%s`, %s. %s\n", heading, body, shortSHA(sha), model, family, next)
 }
 
 // writeReviewPack keeps the reviewer prompt at logs/<attempt>-review.json. A

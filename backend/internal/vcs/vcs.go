@@ -52,6 +52,29 @@ func RewriteBody(previous, summary, metadata string) string {
 	return block + "\n\n" + previous
 }
 
+const (
+	BodyStart = "<!-- orchestrator:body:start -->"
+	BodyEnd   = "<!-- orchestrator:body:end -->"
+)
+
+// MergeBody puts the harness text between BodyStart and BodyEnd and keeps the
+// text a person wrote outside them (RFC-066). A body from before RFC-066,
+// which has only the metadata markers, is replaced whole. A body without any
+// marker follows the harness text.
+func MergeBody(previous, harness string) string {
+	region := BodyStart + "\n" + strings.TrimSpace(harness) + "\n" + BodyEnd
+	i := strings.Index(previous, BodyStart)
+	j := strings.Index(previous, BodyEnd)
+	switch {
+	case i >= 0 && j > i:
+		return previous[:i] + region + previous[j+len(BodyEnd):]
+	case strings.TrimSpace(previous) == "" || strings.Contains(previous, "<!-- orchestrator:metadata:start -->"):
+		return region + "\n"
+	default:
+		return region + "\n\n" + previous
+	}
+}
+
 type PullRequest struct {
 	URL  string
 	Body string

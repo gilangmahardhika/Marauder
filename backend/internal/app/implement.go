@@ -232,11 +232,13 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	if err := board.SetAttemptOutcome(ctx, db, attempt.ID, "checks_passed"); err != nil {
 		return card, err
 	}
+	text, err := BuildPRText(ctx, db, git, card, project.BaseBranch, head, attempt.ID, model, redact)
+	if err != nil {
+		return card, err
+	}
 	published, err := Publish(ctx, db, card.ID, PublishInput{
 		Data: deps.Data, Key: deps.Key, Tools: deps.Tools, ExitCode: 0, AttemptID: attempt.ID,
-		Summary:  prSummary(card),
-		Metadata: fmt.Sprintf("card: %s\nattempt: %s\nmodel: %s\nrequirements: %s", card.ID, attempt.ID, model, strings.Join(card.RequirementIDs, ", ")),
-		Secrets:  redact,
+		Text: text, Secrets: redact,
 	})
 	if errors.Is(err, ErrOwnerGitHub) || errors.Is(err, ErrGitHubSetup) {
 		return published, nil
@@ -357,13 +359,6 @@ func jobError(ctx context.Context, db *sql.DB, card board.Card, attemptID, messa
 		Payload: map[string]any{"message": message},
 	}, redact)
 	return err
-}
-
-func prSummary(card board.Card) string {
-	if len(card.RequirementIDs) == 0 {
-		return card.Title
-	}
-	return card.Title + "\n\nRequirements: " + strings.Join(card.RequirementIDs, ", ")
 }
 
 func tailLines(s string, n int) string {

@@ -74,7 +74,7 @@ func ImplementerTools() []providers.Tool {
 		{
 			Name:        "commit",
 			Description: "Commit every change in the worktree. Call it once the work is done and the local check passes.",
-			Parameters:  object(map[string]any{"message": str("One-line commit message")}, "message"),
+			Parameters:  object(map[string]any{"message": str("Subject of at most 72 characters in the imperative mood, a blank line, then what changed and why")}, "message"),
 		},
 	}
 }
