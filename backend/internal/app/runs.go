@@ -4,9 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/settings"
+	"orchestrator/backend/internal/trace"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -42,24 +47,25 @@ func CardRunState(ctx context.Context, db querier, card board.Card) (bool, []str
 
 // QueueCardRun records one run request for a card the implement job can start:
 // ready, changes_requested, or in_progress with no open attempt (RFC-063). A
-// card that is already queued keeps its single open request.
-func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string) (board.Card, error) {
+// card that is already queued keeps its single open request. Non-nil
+// instructions are saved in the same transaction (RFC-073), so invalid ones
+// queue nothing.
+func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string, instructions *string, actorID string) (board.Card, error) {
+	var text string
+	if instructions != nil {
+		var err error
+		if text, err = cleanInstructions(*instructions); err != nil {
+			return board.Card{}, err
+		}
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return board.Card{}, err
 	}
 	defer tx.Rollback()
-	var found string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM cards WHERE id = $1 AND project_id = $2 FOR UPDATE`, cardID, projectID).Scan(&found)
-	if errors.Is(err, sql.ErrNoRows) {
-		return board.Card{}, board.ErrNotFound
-	}
+	card, err := lockCard(ctx, tx, projectID, cardID)
 	if err != nil {
-		return board.Card{}, err
-	}
-	card, err := board.GetCard(ctx, tx, cardID)
-	if err != nil {
-		return board.Card{}, err
+		return card, err
 	}
 	done, err := doneCards(ctx, tx, projectID)
 	if err != nil {
@@ -72,10 +78,82 @@ func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string) (bo
 	if !ok || !worker.CanStart(done, card.DependsOn) {
 		return card, ErrNotRunnable
 	}
+	if instructions != nil {
+		if err := saveInstructions(ctx, tx, card, actorID, text); err != nil {
+			return card, err
+		}
+	}
 	if _, err := insertCardRun(ctx, tx, projectID, cardID, "api"); err != nil {
 		return card, err
 	}
 	return card, tx.Commit()
+}
+
+const maxInstructions = 4000
+
+// ErrCardDone refuses instructions for a card no attempt will run again.
+var ErrCardDone = errors.New("a done card takes no instructions")
+
+// SetInstructions stores the instructions every later attempt of the card
+// reads next to its newest failure note, until they are replaced (RFC-073).
+// Blank text clears them. Text equal to the current instructions writes nothing.
+func SetInstructions(ctx context.Context, db *sql.DB, projectID, cardID, actorID, text string) (board.Card, error) {
+	clean, err := cleanInstructions(text)
+	if err != nil {
+		return board.Card{}, err
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return board.Card{}, err
+	}
+	defer tx.Rollback()
+	card, err := lockCard(ctx, tx, projectID, cardID)
+	if err != nil {
+		return card, err
+	}
+	if card.Status == "done" {
+		return card, ErrCardDone
+	}
+	if err := saveInstructions(ctx, tx, card, actorID, clean); err != nil {
+		return card, err
+	}
+	return card, tx.Commit()
+}
+
+func cleanInstructions(text string) (string, error) {
+	text = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"))
+	if utf8.RuneCountInString(text) > maxInstructions {
+		msg := fmt.Sprintf("Keep the instructions to %d characters or fewer.", maxInstructions)
+		return "", &settings.Invalid{Fields: map[string]string{"instructions": msg}}
+	}
+	return text, nil
+}
+
+func saveInstructions(ctx context.Context, tx *sql.Tx, card board.Card, actorID, text string) error {
+	current, err := board.CurrentInstructions(ctx, tx, card.ID)
+	if err != nil || current == text {
+		return err
+	}
+	if err := board.SaveInstructions(ctx, tx, card.ID, text); err != nil {
+		return err
+	}
+	_, err = trace.Append(ctx, tx, trace.Event{
+		CardID: card.ID, ProjectID: card.ProjectID, ActorID: actorID, Kind: "instructions_saved",
+		Payload: map[string]any{"length": utf8.RuneCountInString(text)},
+	}, nil)
+	return err
+}
+
+func lockCard(ctx context.Context, tx *sql.Tx, projectID, cardID string) (board.Card, error) {
+	var found string
+	err := tx.QueryRowContext(ctx, `SELECT id FROM cards WHERE id = $1 AND project_id = $2 FOR UPDATE`, cardID, projectID).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return board.Card{}, board.ErrNotFound
+	}
+	if err != nil {
+		return board.Card{}, err
+	}
+	return board.GetCard(ctx, tx, cardID)
 }
 
 // QueueReadyRuns records a run request for every ready card of the project

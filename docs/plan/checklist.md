@@ -598,3 +598,19 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestAIReviewModeNeedsLead`
 - [x] `ReviewersPanel` and `api` Vitest cases
 - [x] On the live server, the REQ-002 Reviewers panel shows the mode and the card JSON has `aiReviewMode`.
+
+## Sprint 38: Instructions for the next attempt
+
+- [x] Migration `00020` adds the `instructions` failure note source.
+- [x] The implementer pack writes the current instructions in their own block after the newest other note, and builders drop forged block lines.
+- [x] `PUT .../cards/{id}/instructions` and Run with `instructions` save them with an `instructions_saved` event, for the roles that may run, on any card that is not `done`.
+- [x] The card JSON lists the `instructions` action and returns `instructions` on the single card.
+- [x] Run on the card page opens the instructions box. The Instructions panel shows and edits them, and Notes label them.
+- [x] `TestPackInstructions`
+- [x] `TestAttemptReadsInstructionsAndNote`
+- [x] `TestSetInstructions`
+- [x] `TestRunWithInstructions`
+- [x] `TestInstructionsRoute`
+- [x] `TestInstructionsRole`
+- [x] `CardActions`, `CardInstructions`, `CardNotes`, `trace`, and `api` Vitest cases
+- [x] On the live server, the card page shows the Instructions panel and the Run box.

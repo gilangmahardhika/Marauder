@@ -66,6 +66,8 @@ A successful body never includes `error`.
 
 `deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` remains for a Lead Developer, Senior Developer, Developer, or QA member.
 
+After the table, every card that is not `done` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
+
 ## Blocked reasons
 
 `blockedReason` is one of these. `unblockTo` follows RFC-041.
@@ -262,7 +264,7 @@ CREATE TABLE failure_notes (
   card_id TEXT NOT NULL REFERENCES cards(id),
   attempt_id TEXT NOT NULL,
   source TEXT NOT NULL CHECK (source IN (
-    'local_check', 'review', 'ci', 'approver', 'dev_check', 'no_commit')),
+    'local_check', 'review', 'ci', 'approver', 'dev_check', 'no_commit', 'instructions')),
   command TEXT,
   exit_code INTEGER,
   note TEXT NOT NULL,
@@ -323,7 +325,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -339,6 +341,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
+| `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
 
@@ -429,6 +432,8 @@ CREATE TABLE project_links (
 `00018` adds `requirements.self_review BOOLEAN NOT NULL DEFAULT false` (RFC-070). Only the self-review route and a manual add write it. Ingest leaves it alone.
 
 `00019` adds `requirements.ai_review_mode TEXT NOT NULL DEFAULT 'continue'`, checked to `('continue', 'manual')` (RFC-072). Only the ai-review-mode route and a manual add write it. Ingest leaves it alone. It also widens the `runs.trigger` check with `retry`, the row the implement and review jobs write to queue the next attempt (RFC-071). Its Down section deletes `retry` rows before narrowing the check.
+
+`00020` widens the `failure_notes.source` check with `instructions` (RFC-073). An instructions row has `attempt_id = 'instructions'`. The newest one is the card's current instructions, and a blank one clears them. The implement job's failure note is the newest row of any other source. Its Down section deletes `instructions` rows before narrowing the check.
 
 `00008` widens the `requirements.source_kind` check to `('prd', 'rfc', 'draft', 'manual')` and adds `requirements.created_by TEXT`, the user id that added a manual row (RFC-053). It is null for parsed and drafted rows. A manual row has `source_path = ''` and `heading` equal to its id.
 
@@ -708,13 +713,16 @@ A project object is:
       "createdAt": "2026-10-12T05:00:00Z",
       "attemptN": 2
     }
-  ]
+  ],
+  "instructions": "Run the lint scripts in every package."
 }
 ```
 
 `requirements` lists the rows of `requirementIds` in the card's project, in the card's order. An id with no row in that project is left out. `rules` lists the rules the card's packs carry, as `conventions.ForCard` reads them (RFC-055): global rules first, then each stack's rules. `label` is `global` or the stack name. The rule body is not returned.
 
 `notes` lists the card's newest 10 `failure_notes` rows in the card's project, newest first, so the first note is the one the next attempt reads. `source` is the stored source. `attemptN` is the `n` of the attempt that wrote the note, or `0` when the note has no attempt in that project, such as an approver's note. The board list does not return `notes`.
+
+`instructions` is the text of the card's newest `instructions` note, or `null` when there is none or it is blank (RFC-073). Every later attempt reads it next to the newest note of any other source. The board list does not return `instructions`.
 
 ## Board and intake
 
@@ -906,7 +914,15 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 { "queued": 2, "readyCount": 0 }
 ```
 
-`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, that has used all its attempts (RFC-071), or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts.
+`POST /api/projects/{projectId}/cards/{id}/run` takes an optional body `{ "instructions": "..." }`. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, that has used all its attempts (RFC-071), or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts. When the body has `instructions`, the call saves them as the instructions route does, in the same transaction as the `runs` row, so a refused run saves nothing (RFC-073). A body that is not JSON, or an `instructions` that is not a string, is `422` on `body`.
+
+`PUT /api/projects/{projectId}/cards/{id}/instructions` sets the text every later attempt of the card reads, and returns the card object (RFC-073). The roles that may run a card may call it. Anyone else is `403`.
+
+```json
+{ "instructions": "Run the lint scripts in every package." }
+```
+
+The server turns CRLF into LF and trims outer whitespace. Blank text clears the instructions. Text equal to the current instructions writes nothing. Otherwise it inserts a failure note with source `instructions`, or updates the instructions note written in the same second, and writes an `instructions_saved` event with the caller as actor and `{ "length": n }` as payload. More than 4000 characters is `422` with `fields.instructions` `Keep the instructions to 4000 characters or fewer.`. A `done` card is `409`. A card in another project is `404`. A method other than `PUT` is `405`. An attempt that already started keeps the prompt it started with.
 
 `POST /api/projects/{projectId}/cards/{id}/approve`
 

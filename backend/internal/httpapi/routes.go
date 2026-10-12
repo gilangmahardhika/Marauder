@@ -467,6 +467,9 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 			actions = append(actions, "run")
 		}
 	}
+	if card.Status != "done" && actionAllowed(role, "instructions") {
+		actions = append(actions, "instructions")
+	}
 	var owner any
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
 		owner = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
@@ -656,7 +659,7 @@ func writeAppErr(w http.ResponseWriter, err error) {
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock):
 		writeErr(w, 422, "validation", err.Error())
-	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable):
+	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone):
 		writeErr(w, 409, "conflict", err.Error())
 	case errors.Is(err, app.ErrOwnerApprove):
 		writeErr(w, 403, "forbidden", err.Error())

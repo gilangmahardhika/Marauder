@@ -271,8 +271,16 @@ export function startRun() {
   });
 }
 
-export function runCard(id: string) {
-  return request<Card>(`${projectPrefix()}/cards/${id}/run`, { method: 'POST', body: '{}' });
+export function runCard(id: string, instructions?: string) {
+  const body = instructions === undefined ? {} : { instructions };
+  return request<Card>(`${projectPrefix()}/cards/${id}/run`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function setInstructions(id: string, instructions: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/instructions`, {
+    method: 'PUT',
+    body: JSON.stringify({ instructions })
+  });
 }
 
 export function deployCard(id: string) {

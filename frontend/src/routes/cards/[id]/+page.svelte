@@ -3,6 +3,7 @@
   import { ApiError, getCard, getCardDiff, unreachable } from '$lib/api';
   import CardActions from '$lib/components/CardActions.svelte';
   import CardChanges from '$lib/components/CardChanges.svelte';
+  import CardInstructions from '$lib/components/CardInstructions.svelte';
   import CardNotes from '$lib/components/CardNotes.svelte';
   import { categoryLabel } from '$lib/conventions';
   import { plainText } from '$lib/markdown';
@@ -22,7 +23,7 @@
   let card = $state<Card | null>(null);
   let missing = $state(false);
 
-  const controls = ['approve', 'deploy', 'request_changes', 'reject', 'unblock'];
+  const controls = ['run', 'approve', 'deploy', 'request_changes', 'reject', 'unblock'];
   const hasControls = $derived(
     card !== null &&
       ((card.actions ?? []).some((action) => controls.includes(action)) ||
@@ -133,6 +134,9 @@
           The owner's GitHub account cannot push this card. The owner saves a token on the Account page and runs Test
           connection. Then unblock the card.
         </Notice>
+      {/if}
+      {#if (card.actions ?? []).includes('instructions')}
+        <CardInstructions bind:card />
       {/if}
       <CardNotes notes={card.notes ?? []} />
       {#if hasControls}

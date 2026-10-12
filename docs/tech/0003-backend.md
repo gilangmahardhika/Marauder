@@ -139,7 +139,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 3. Record the local `refs/heads/<baseBranch>` SHA for the `base_moved` assertion.
 4. Insert an attempt row: `n` is the card's highest `n` plus one, `parent_attempt_id` is the previous attempt, `base_sha` is the worktree HEAD.
 5. If the card is `ready` or `changes_requested`, transition to `in_progress`. A card already `in_progress` with no open attempt stays there.
-6. Read the card's rules and skills once with `conventions.ForCard`: enabled global rules, enabled rules of the project's enabled stacks, then the card's enabled skills. Append one `tool_call` event named `conventions_context` whose `items` field lists each `kind`, `id`, `version`, and `hash` (RFC-055). Build the implementer pack with them, the latest failure note, and no prior model messages. Run the tool loop.
+6. Read the card's rules and skills once with `conventions.ForCard`: enabled global rules, enabled rules of the project's enabled stacks, then the card's enabled skills. Append one `tool_call` event named `conventions_context` whose `items` field lists each `kind`, `id`, `version`, and `hash` (RFC-055). Build the implementer pack with them, the latest failure note of any source but `instructions`, the card's current instructions (`board.CurrentInstructions`, RFC-073), and no prior model messages. Run the tool loop.
 7. Budget hit: end the attempt with outcome `budget`, add one to `attempts_used`, append `budget_stop`, and block with `turn_cap`, `token_cap`, or `wall_cap`.
 8. No new commit since `base_sha`: end with `no_commit`, add one to `attempts_used`, and write a failure note with source `no_commit`. The card stays `in_progress`. If attempts remain, insert a card-scoped `runs` row with trigger `retry`, so step 10 starts the next attempt without a person pressing Run. If none remain, block with `attempt_cap` (RFC-071).
 9. New commit: store `commit_sha`, transition `in_progress -> self_check`, and run the gating check on an export of that SHA (0006).
@@ -224,6 +224,7 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 | --- | --- | --- | --- |
 | `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). With the project's `approval.solo` on, or when `CardSelfReview` is true because every requirement of the card has Self review on, the bot and owner checks are skipped and the approval stores `independent = false` (RFC-067, RFC-070). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy. A new row posts the approval to GitHub (RFC-068) |
 | `RequestChanges(actor, card, reason)` | `human_review`, `approved` | Member, role may request changes, reason at most 4000 characters | `changes_requested`, approval cleared, note with source `approver` holding the reason or `changes requested` in the same transaction. No `runs` row: the card waits for Run. From `approved`, the approval status turns `failure` |
+| `SetInstructions(actor, card, text)` | any status but `done` | Member, role may run a card, text at most 4000 characters after CRLF becomes LF and outer whitespace is trimmed | No status change. A note with source `instructions`, or the same-second one updated, and an `instructions_saved` event. Blank text clears them, and unchanged text writes nothing. `QueueCardRun` with `instructions` does the same in the run's transaction (RFC-073) |
 | `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected`. From `approved`, the approval status turns `failure` |
 | `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
 | `Unblock(actor, card, reset)` | `blocked` | Member, role may unblock, `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
@@ -280,7 +281,7 @@ Each builder returns the fixed system string for the profile and a user string (
 | Pack | Sections |
 | --- | --- |
 | Planner | PRD outline, requirement candidates, decision statements, card titles, dependencies, enabled skills by slug and "use when" |
-| Implementer | This card, the card's rules and skills, linked statements, linked decisions, path list, `localCheck`, last failure note |
+| Implementer | This card, the card's rules and skills, linked statements, linked decisions, path list, `localCheck`, last failure note, the card's current instructions (RFC-073) |
 | Reviewer | The card's rules and skills, linked statements, linked decisions, diff, gating check output, pull request body, human comments |
 | Triage | Command, exit code, last 200 log lines, acceptance lines |
 

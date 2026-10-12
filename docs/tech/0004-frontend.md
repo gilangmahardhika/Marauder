@@ -156,6 +156,7 @@ frontend/
   src/lib/components/CardActions.svelte
   src/lib/components/CardChanges.svelte
   src/lib/components/CardNotes.svelte
+  src/lib/components/CardInstructions.svelte
   src/lib/components/TraceBlock.svelte
   src/lib/components/TraceRow.svelte
   src/lib/components/TraceText.svelte
@@ -184,6 +185,7 @@ frontend/
   src/lib/components/CardActions.test.ts
   src/lib/components/CardChanges.test.ts
   src/lib/components/CardNotes.test.ts
+  src/lib/components/CardInstructions.test.ts
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
   src/lib/components/IntakeActions.test.ts
@@ -313,7 +315,7 @@ Router, Company GitHub, Linked projects, and Account have no toolbar. Their list
 
 Render six sections in this order: Waiting, Running, Review, Shipping, Finished, Stopped. Place each card by `group`. Print the status as words from `statusLabel` in `src/lib/status.ts`, such as "Waiting for review" for `human_review`, with the raw status in `title`. Below it, the row shows the owner's initials avatar and display name, `name`, then `githubLogin`, then the email, or a dashed avatar and "No owner" (RFC-054, RFC-058). Every page that lists a person uses that order (`displayName` in `src/lib/people.ts`) and the `Avatar` component. When `reviewers` is not empty, the same line ends with up to three overlapping reviewer avatars and "+n" for the rest. Their names are in the `title` and `aria-label` ("Reviewers: ..."). The name clamps to one line. The tile is `src/lib/components/BoardCard.svelte`. Its body links to `/cards/{id}`.
 
-Below the link, outside it, a ready card has a footer row (RFC-061). It shows a 44px "Run" button when `actions` includes `run`, a "Queued" pill when `queued` is true, or "Waiting on N cards" when `waitingOn` is not empty, with the ids in `title`. Run POSTs `/api/projects/{id}/cards/{card}/run`, swaps the returned card into the list, and sets the message to "Queued {title}." A `409` reloads the board with "Card changed. Reloaded." The card page shows the same Run through `CardActions`.
+Below the link, outside it, a ready card has a footer row (RFC-061). It shows a 44px "Run" button when `actions` includes `run`, a "Queued" pill when `queued` is true, or "Waiting on N cards" when `waitingOn` is not empty, with the ids in `title`. Run POSTs `/api/projects/{id}/cards/{card}/run`, swaps the returned card into the list, and sets the message to "Queued {title}." A `409` reloads the board with "Card changed. Reloaded." The card page shows Run through `CardActions`, where it first opens the instructions box (RFC-073).
 
 The primary button reads "Run ready cards (N)", where N is `readyCount`. It is enabled when `canRun` is true and N is above zero. Its `title` says why when it is disabled: "All ready cards are queued", "No ready card can start", or "Your role cannot start cards". It POSTs `/api/projects/{id}/runs`, then reloads the list, and the message reads "Queued N cards." The page says "Queued" and never "Running" for these cards, because the worker loop is not built yet.
 
@@ -329,7 +331,9 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 The header shows the title and a badge with `statusLabel`, with the raw status in `title`.
 
-Above Next step, `CardNotes` shows a Notes panel when `notes` is not empty, with the hint "Newest first. The next attempt gets the newest note." Each note shows its source as a badge (AI review, Approver, Local check, CI checks, Dev check, or No commit, and the raw source when unknown), its local time, and "attempt N" when `attemptN` is above 0. A `review` or `approver` note renders with `Markdown` and headings from `h4`. Any other note is check output and renders with `TraceText`. The newest note is open. The rest wait behind "Show N earlier notes".
+Above Notes, when `actions` includes `instructions`, `CardInstructions` shows an Instructions panel (RFC-073) with the hint "Every later attempt reads these with the newest note, until you change them. An attempt that already started keeps the prompt it started with." It renders `instructions` with `Markdown`, or "No instructions. Attempts follow the requirements and the newest note." when it is `null`. The panel's Edit button opens a textarea "Instructions for later attempts", prefilled, growing, with the hint "Leave it empty to clear them. Markdown works.", and Save and Cancel buttons. Save PUTs `{ instructions }` to `/api/projects/{id}/cards/{card}/instructions`, replaces the card with the response, and closes the form. A `422` shows `fields.instructions` under the textarea.
+
+Above Next step, `CardNotes` shows a Notes panel when `notes` is not empty, with the hint "Newest first. The next attempt gets the newest note and the current instructions." Each note shows its source as a badge (AI review, Approver, Local check, CI checks, Dev check, No commit, or Instructions, and the raw source when unknown), its local time, and "attempt N" when `attemptN` is above 0. A `review`, `approver`, or `instructions` note renders with `Markdown` and headings from `h4`, and a blank `instructions` note reads "Instructions cleared". Any other note is check output and renders with `TraceText`. The notes the next attempt reads are open: the newest note that is not `instructions`, and the newest `instructions` note when it is not blank. When neither applies, the newest note is open. The rest wait behind "Show N earlier notes".
 
 Under Next step, the page has six panels in this order:
 
@@ -344,6 +348,7 @@ Render a control only when its name is in `actions`:
 
 | Name | Control |
 | --- | --- |
+| `run` | Button "Run" with "Queues this card for the worker. You can add instructions first." It opens a form: textarea "Instructions for the next attempt", 4 rows, growing, prefilled with `instructions`, hint "Optional. Every later attempt reads these with the newest note, until you change them. Markdown works." Buttons "Run" and "Cancel". The POST body is `{ instructions }` only when the trimmed text differs from `instructions`, else `{}` (RFC-073). The board's Run stays one click |
 | `approve` | Form. SHA input defaulted from `headSha`. Button "Approve SHA". |
 | `request_changes` | Menu item "Request changes" opens a form. Textarea "What should change?", 4 rows, growing, hint "Optional. The next attempt gets this note. Markdown works." Buttons "Request changes" and "Cancel". The body is `{ reason }` |
 | `reject` | Button "Reject" |
@@ -362,7 +367,7 @@ These controls live in `CardActions.svelte`, which takes the card object as its 
 
 `{#if actions.includes('approve')}` is the pattern. Do not also check `status` in the template. The API list is the source.
 
-After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` under the SHA input, `fields.reason` under the reason, or `error.message` in the live region. A successful Request changes closes and clears the reason form. On `409`, reload the card and set the live message to "Card changed. Reloaded."
+After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` under the SHA input, `fields.reason` under the reason, `fields.instructions` under the instructions, or `error.message` in the live region. A successful Request changes closes and clears the reason form. A successful Run closes the instructions form. On `409`, reload the card and set the live message to "Card changed. Reloaded."
 
 A link "Trace" goes to `/cards/{id}/trace`.
 
@@ -591,7 +596,10 @@ npm run build
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
 | `CardActions` Request changes | The menu item opens the reason form. A `422` shows `fields.reason` under it. A later submit POSTs `{ reason }` and closes the form |
-| `CardNotes` | No notes render nothing. The newest review note renders its bold and code as elements, with "AI review" and "· attempt 2". Earlier notes wait behind "Show 1 earlier note", and a local check note stays plain text in a `pre`. An approver note has no attempt number |
+| `CardNotes` | No notes render nothing. The newest review note renders its bold and code as elements, with "AI review" and "· attempt 2". Earlier notes wait behind "Show 1 earlier note", and a local check note stays plain text in a `pre`. An approver note has no attempt number. An instructions note reads "Instructions" and renders markdown, and a blank one reads "Instructions cleared". Current instructions and the newest other note are both open, and older notes wait behind the button |
+| `CardActions` Run | Run opens the instructions box prefilled with `instructions`. Unchanged text POSTs `{}`. A `422` shows `fields.instructions`. Changed text POSTs `{ instructions }` and closes the form |
+| `CardInstructions` | No instructions show the empty sentence. Saved instructions render markdown. Edit prefills the box, a `422` shows `fields.instructions`, and Save PUTs `{ instructions }` and shows the returned text |
+| `api` run body | `runCard(id)` sends `{}`, `runCard(id, '')` sends `{ instructions: '' }`, and `setInstructions` PUTs to the card's `instructions` route |
 | `CardChanges` | Lists files with counts and "binary". A file button opens its lines, with the deleted line on red and the added line on green, and the compare link points at `compareUrl`. A cut diff shows the warning. A missing commit shows "Commit {short} is not in the project clone yet." |
 | `IntakeActions` | Ingest and Add requirement render, and no accept button. `toLines` drops blanks, markers, and non-item lines when a list exists, and keeps every line without one. `fromLines` loads saved checks as a `- ` list that saves back unchanged, and a list item added later keeps them |
 | `markdown` | `<script>` stays text. `javascript:`, `data:`, relative, and non-GitHub links read as `label (url)`, and a GitHub link parses. An unclosed fence runs to the end. Nested emphasis parses; `**open`, `snake_case_name`, and `2 * 3 * 4` stay text, and so do `#123` and `####### x`. Ordered lists keep `start`, one nested level holds deeper items, and a marker switch starts a new list. Rules, hard breaks, CRLF, and NUL are handled. `plainText` drops markers. 20k `*` or `[` parse within a second. `listItems` keeps only the items of a pasted definition of done, joins wrapped items, keeps nested items, skips fenced code, does not join a label or heading onto an item, and is null without a list || `Markdown` | No `script` or `img` element renders. A GitHub link has `target="_blank"` and `rel="noreferrer noopener"`, and a `javascript:` link has no `<a>`. `# x` is an `h3`. A `pre` keeps its text. `a **b** c` reads "a b c" |

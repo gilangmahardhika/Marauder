@@ -110,6 +110,54 @@ test('request changes asks for a reason and sends it', async () => {
   expect(JSON.parse(calls[1].body)).toEqual({ reason: 'Use lint.' });
 });
 
+test('run opens a box prefilled with the instructions and sends only changed text', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  const bodies: unknown[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body ?? '{}'));
+      bodies.push(body);
+      if (typeof body.instructions === 'string' && body.instructions.length > 20) {
+        return new Response(
+          JSON.stringify({
+            error: { code: 'validation', message: 'too long', fields: { instructions: 'Keep them short.' } }
+          }),
+          { status: 422 }
+        );
+      }
+      return new Response(JSON.stringify(card({ status: 'changes_requested', queued: true, actions: [] })), {
+        status: 200
+      });
+    })
+  );
+  const saved = 'Use the lint script.';
+  const first = render(CardActions, {
+    card: card({ status: 'changes_requested', actions: ['run', 'instructions'], instructions: saved })
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  const box = screen.getByLabelText('Instructions for the next attempt') as HTMLTextAreaElement;
+  expect(box.value).toBe(saved);
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  await vi.waitFor(() => expect(screen.queryByLabelText('Instructions for the next attempt')).toBeNull());
+  first.unmount();
+
+  render(CardActions, {
+    card: card({ status: 'changes_requested', actions: ['run', 'instructions'], instructions: saved })
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  const next = screen.getByLabelText('Instructions for the next attempt');
+  await fireEvent.input(next, { target: { value: 'Use the lint script and keep tsc.' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  expect(await screen.findByText('Keep them short.')).toBeTruthy();
+  await fireEvent.input(next, { target: { value: 'Keep tsc.' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  await vi.waitFor(() => expect(screen.queryByLabelText('Instructions for the next attempt')).toBeNull());
+
+  expect(bodies).toEqual([{}, { instructions: 'Use the lint script and keep tsc.' }, { instructions: 'Keep tsc.' }]);
+});
+
 test('blocked card with null unblockTo has no unblock button', () => {
   render(CardActions, {
     card: card({ status: 'blocked', group: 'stopped', actions: [], unblockTo: null, blockedReason: 'source_changed' })

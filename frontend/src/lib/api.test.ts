@@ -7,7 +7,9 @@ import {
   putDeploy,
   putLinks,
   putMe,
+  runCard,
   setAIReviewMode,
+  setInstructions,
   setTribeAdmin,
   syncRepository
 } from './api';
@@ -114,6 +116,27 @@ test('a new requirement sends its AI review mode, and the mode has its own route
   ]);
   expect(JSON.parse(calls[0].body)).toMatchObject({ aiReviewMode: 'manual' });
   expect(JSON.parse(calls[1].body)).toEqual({ aiReviewMode: 'continue' });
+});
+
+test('run sends instructions only when given', async () => {
+  const calls: { url: string; method: string; body: string }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, method: String(init.method ?? 'GET'), body: String(init.body ?? '') });
+      return new Response('{}', { status: 200 });
+    })
+  );
+  session.setProject('proj_widget');
+  await runCard('card_0123456789ab');
+  await runCard('card_0123456789ab', '');
+  await setInstructions('card_0123456789ab', 'Use lint.');
+  expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+    'POST http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/run',
+    'POST http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/run',
+    'PUT http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/instructions'
+  ]);
+  expect(calls.map((call) => JSON.parse(call.body))).toEqual([{}, { instructions: '' }, { instructions: 'Use lint.' }]);
 });
 
 test('putMe saves the caller name', async () => {

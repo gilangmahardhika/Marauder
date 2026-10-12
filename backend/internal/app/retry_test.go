@@ -75,7 +75,7 @@ func TestRunRefusedAtCap(t *testing.T) {
 	if ok, err := app.CanStartImplement(ctx, db, card); err != nil || ok {
 		t.Fatalf("card at the cap is startable: %t %v", ok, err)
 	}
-	if _, err := app.QueueCardRun(ctx, db, "proj_default", card.ID); !errors.Is(err, app.ErrNotRunnable) {
+	if _, err := app.QueueCardRun(ctx, db, "proj_default", card.ID, nil, ""); !errors.Is(err, app.ErrNotRunnable) {
 		t.Fatalf("queue at the cap = %v, want ErrNotRunnable", err)
 	}
 	if n := openRetries(t, db, card.ID); n != 0 {

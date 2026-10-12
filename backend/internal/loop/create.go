@@ -27,7 +27,8 @@ func statements(ctx context.Context, db *sql.DB, projectID string, ids []string)
 func latestNote(ctx context.Context, db *sql.DB, cardID string) (string, error) {
 	var note string
 	err := db.QueryRowContext(ctx, `
-		SELECT note FROM failure_notes WHERE card_id = $1 ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&note)
+		SELECT note FROM failure_notes WHERE card_id = $1 AND source <> 'instructions'
+		ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&note)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}

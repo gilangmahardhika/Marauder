@@ -109,6 +109,36 @@ func InsertFailureNote(ctx context.Context, q DBTX, cardID, attemptID, source, n
 	return err
 }
 
+// CurrentInstructions returns the card's newest instructions note, or "" when
+// it has none or the newest one cleared them (RFC-073).
+func CurrentInstructions(ctx context.Context, q DBTX, cardID string) (string, error) {
+	var note string
+	err := q.QueryRowContext(ctx, `
+		SELECT note FROM failure_notes WHERE card_id = $1 AND source = 'instructions'
+		ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&note)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return note, err
+}
+
+// SaveInstructions stores text as the card's newest instructions note. A save
+// in the same second as the current note replaces its text, since created_at
+// has one-second resolution and could not order the two.
+func SaveInstructions(ctx context.Context, q DBTX, cardID, text string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	res, err := q.ExecContext(ctx, `
+		UPDATE failure_notes SET note = $2
+		WHERE card_id = $1 AND source = 'instructions' AND created_at = $3`, cardID, text, now)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n > 0 {
+		return err
+	}
+	return InsertFailureNote(ctx, q, cardID, "instructions", "instructions", text)
+}
+
 func AcquireLock(ctx context.Context, q DBTX, cardID, holder string) error {
 	res, err := q.ExecContext(ctx, `
 		INSERT INTO locks (card_id, holder, acquired_at, project_id)

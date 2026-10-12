@@ -16,6 +16,9 @@
   let asking = $state(false);
   let reason = $state('');
   let reasonError = $state('');
+  let starting = $state(false);
+  let instructions = $state('');
+  let instructionsError = $state('');
 
   const actions = $derived(card.actions ?? []);
   const menuItems = $derived([
@@ -27,6 +30,7 @@
     busy = true;
     shaError = '';
     reasonError = '';
+    instructionsError = '';
     shell.message = action;
     try {
       card = await work();
@@ -40,6 +44,7 @@
       }
       if (error instanceof ApiError && error.fields.sha) shaError = error.fields.sha;
       if (error instanceof ApiError && error.fields.reason) reasonError = error.fields.reason;
+      if (error instanceof ApiError && error.fields.instructions) instructionsError = error.fields.instructions;
       shell.message = error instanceof Error ? error.message : 'API unreachable at http://127.0.0.1:8787';
       return false;
     } finally {
@@ -59,13 +64,50 @@
     reason = '';
     reasonError = '';
   }
+
+  function openRun() {
+    instructions = card.instructions ?? '';
+    instructionsError = '';
+    starting = true;
+  }
+
+  async function sendRun() {
+    const changed = instructions.trim() !== (card.instructions ?? '');
+    if (await run('Queue run', () => runCard(card.id, changed ? instructions : undefined))) {
+      starting = false;
+    }
+  }
 </script>
 
 <div class="flex flex-col gap-5">
-  {#if actions.includes('run')}
+  {#if actions.includes('run') && starting}
+    <form
+      class="flex flex-col items-start gap-3"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void sendRun();
+      }}
+    >
+      <Field
+        label="Instructions for the next attempt"
+        id="instructions"
+        type="textarea"
+        width="full"
+        rows={4}
+        grow
+        hint="Optional. Every later attempt reads these with the newest note, until you change them. Markdown works."
+        error={instructionsError}
+        bind:value={instructions}
+      />
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="primary" type="submit" disabled={busy}>Run</Button>
+        <Button variant="ghost" type="button" disabled={busy} onclick={() => (starting = false)}>Cancel</Button>
+      </div>
+    </form>
+  {:else if actions.includes('run')}
     <div class="flex flex-wrap items-center gap-3">
-      <Button variant="primary" type="button" disabled={busy} onclick={() => void run('Queue run', () => runCard(card.id))}>Run</Button>
-      <p class="text-sm text-muted">Queues this card for the worker.</p>
+      <Button variant="primary" type="button" disabled={busy} onclick={openRun}>Run</Button>
+      <p class="text-sm text-muted">Queues this card for the worker. You can add instructions first.</p>
     </div>
   {:else if card.queued}
     <p class="text-sm text-muted">Queued. The card starts when the worker picks it up.</p>

@@ -18,6 +18,8 @@ export type Card = {
   requirements?: CardRequirement[];
   rules?: CardRule[];
   notes?: CardNote[];
+  /** Single card only. What every later attempt reads with the newest note (RFC-073). */
+  instructions?: string | null;
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];

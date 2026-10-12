@@ -60,6 +60,11 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 		}
 	}
 	body["notes"] = notes
+	var instructions any
+	if text, err := board.CurrentInstructions(r.Context(), s.DB, card.ID); err == nil && text != "" {
+		instructions = text
+	}
+	body["instructions"] = instructions
 	return body
 }
 

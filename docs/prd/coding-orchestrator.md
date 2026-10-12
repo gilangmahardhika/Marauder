@@ -117,6 +117,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-072 | The pull request checks decide when the AI review gives no verdict |
 | REQ-073 | Self review on a requirement |
 | REQ-074 | A failed attempt retries, and a requirement chooses what an AI request for changes does |
+| REQ-075 | A person writes instructions that later attempts of a card read |
 
 ## Requirements
 
@@ -1045,6 +1046,16 @@ A Lead Developer or an admin sets each requirement's AI review mode: Continue, t
 - An AI request for changes on a Manual card with green checks reaches `human_review`, and the card's notes hold the review body.
 - A Developer who asks for Manual gets `403`. A Lead Developer's change shows on the requirement and on its card.
 
+### REQ-075 A person writes instructions that later attempts of a card read
+
+Before the next attempt of a card starts, a person who may run it can write instructions: in the box that Run opens on the card page, or in the card's Instructions panel, also while the card is queued. Every later attempt reads the newest instructions next to the newest failure note, such as the AI review's, until a person writes new ones or clears them (RFC-073).
+
+#### Acceptance
+
+- After an AI request for changes and saved instructions, the next attempt's prompt has the review note and the instructions.
+- Instructions over 4000 characters are refused, and Run with them queues nothing.
+- A role that cannot run the card gets `403`, and the card page shows no Instructions panel to it.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1157,3 +1168,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 26. Checks decide when the AI review gives no verdict (REQ-072).
 27. Self review on a requirement (REQ-073).
 28. Retry after a failed attempt, and the AI review mode (REQ-074).
+29. Instructions for the next attempt (REQ-075).

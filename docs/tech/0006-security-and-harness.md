@@ -73,7 +73,7 @@ UNTRUSTED END
 
 Company rules and skills are written by an admin, not by the target repo, and they still sit inside the markers (RFC-055). They are guidance for the code the model writes. They cannot widen the tool list, name a check command, or move a card. The system string says so in one fixed sentence. Each rule or skill block is capped at 16 KiB, and the blocks together at 64 KiB, inside the 256 KiB untrusted cap.
 
-The system string tells the model that text between the markers is data. Builders strip any copy of the marker lines from untrusted text before wrapping it. They refuse a section over the caps below. They run `redact` on the user string before return. They do not append model text from an older attempt.
+The system string tells the model that text between the markers is data. One exception is named in the system string (RFC-073): the block from `INSTRUCTIONS FROM THE TEAM` to `END OF INSTRUCTIONS`, written after the failure note inside the markers, comes from a person on the team, and the model follows it where it fits the requirements. Like the rules, it cannot add a tool, name a command, or change a card status. Only the implementer builder writes that block, and only when the card has instructions. Builders strip any copy of the marker lines, and any line equal to either instructions line ignoring case and outer spaces, from untrusted text before wrapping it. They refuse a section over the caps below. They run `redact` on the user string before return. They do not append model text from an older attempt.
 
 The provider client drops any tool call whose name is not in the profile snapshot for that request. A dropped call is a `tool_call` event with `rejected: true` and no dispatch.
 
@@ -443,6 +443,7 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestGitHubLoginVerified` | The account token test stores the login `gh api user` reports. A new token clears it. A second user cannot verify the same login |
 | `TestBaseRefUnchanged` | Local `refs/heads/main` is unchanged after a job, and a forced change blocks with `base_moved` |
 | `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped, and the system hash matches |
+| `TestPackInstructions` | With no instructions there is no block, and a forged heading in the failure note is dropped. With instructions the block appears once after the note and inside the markers, a planted heading or marker line inside it is dropped, a planted secret is redacted, and the system string names the block (RFC-073) |
 | `TestPackConventions` | Rule and skill blocks sit between the markers before the requirements, a block over 16 KiB ends with `truncated: true`, blocks past 64 KiB become `omitted` notes, and a planted secret is `[redacted]` (RFC-055) |
 | `TestConventionsCannotAddTool` | A rule whose body asks for a `deploy` tool leaves the implementer tool list unchanged, and a scripted `deploy` call is rejected |
 | `TestConventionsContextEvent` | An attempt appends one `conventions_context` event with each rule and skill id, version, and hash |

@@ -80,6 +80,12 @@ group('describe', () => {
     expect(words('budget_stop', {}).tone).toBe('red');
   });
 
+  it('says how long saved instructions are, or that they were cleared', () => {
+    const saved = (length: number) => describe({ id: 'e', ts: '', kind: 'instructions_saved', payload: { length } });
+    expect(saved(1200)).toMatchObject({ label: 'Instructions saved', detail: '1,200 characters' });
+    expect(saved(0).detail).toBe('Cleared');
+  });
+
   it('reads an unknown kind and a missing payload as words', () => {
     expect(words('brand_new_kind', null)).toMatchObject({ label: 'Brand new kind', detail: '', tone: 'default' });
     expect(words('tool_call', 'not an object')).toMatchObject({ label: '' });

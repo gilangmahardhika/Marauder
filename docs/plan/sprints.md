@@ -565,3 +565,17 @@ Packages: migration `00019`, `internal/app`, `internal/intake`, `internal/httpap
 - A red check and a person's Request changes still wait for Run.
 
 Done when: `TestRetryAfterNoCommit`, `TestRetryAfterChecksFailed`, `TestRunRefusedAtCap`, `TestReviewContinueQueuesRetry`, `TestReviewManualReachesHumanReview`, `TestRefreshSendsBackWhenNoLongerManual`, `TestCardAIReviewMode`, `TestAIReviewModeNeedsLead`, the updated `TestReviewRequestChanges`, and the `ReviewersPanel` and `api` Vitest cases.
+
+## Sprint 38: Instructions for the next attempt
+
+Goal: Before the next attempt runs, a person can tell the implementer more than the newest note says, and every later attempt reads it until someone changes it (RFC-073, REQ-075).
+
+Packages: migration `00020`, `internal/board`, `internal/contextpack`, `internal/loop`, `internal/trace`, `internal/app`, `internal/httpapi`, frontend `CardActions`, `CardInstructions`, `CardNotes`, `api.ts`, and the card page.
+
+- Instructions are a failure note with source `instructions`. The newest one is current, and a blank one clears them. The implement job's failure note skips them, and the pack writes them in their own block after it.
+- The pack block runs from `INSTRUCTIONS FROM THE TEAM` to `END OF INSTRUCTIONS`, inside the markers. Builders drop any copy of those lines from untrusted text. The system string names the block and says it cannot add a tool, name a command, or change a card status.
+- `PUT .../cards/{id}/instructions` and the Run body's optional `instructions` save them for the roles that may run, on any card that is not `done`, with an `instructions_saved` event. Run saves them in the run's transaction. Over 4000 characters is `422` on `instructions`.
+- The card JSON lists `instructions` in `actions` and returns `instructions` on the single card.
+- On the card page, Run opens "Instructions for the next attempt", prefilled. The Instructions panel shows and edits them. Notes label them "Instructions". The board's Run stays one click.
+
+Done when: `TestPackInstructions`, `TestAttemptReadsInstructionsAndNote`, `TestSetInstructions`, `TestRunWithInstructions`, `TestInstructionsRoute`, `TestInstructionsRole`, and the `CardActions`, `CardInstructions`, `CardNotes`, `trace`, and `api` Vitest cases.

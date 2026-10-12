@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -223,7 +224,34 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 405, "method_not_allowed", "method not allowed")
 			return
 		}
-		next, err := app.QueueCardRun(r.Context(), s.DB, projectID, id)
+		var body struct {
+			Instructions *string `json:"instructions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		next, err := app.QueueCardRun(r.Context(), s.DB, projectID, id, body.Instructions, user.ID)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+		return
+	}
+	if action == "instructions" {
+		if r.Method != http.MethodPut {
+			writeErr(w, 405, "method_not_allowed", "method not allowed")
+			return
+		}
+		var body struct {
+			Instructions string `json:"instructions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		next, err := app.SetInstructions(r.Context(), s.DB, projectID, id, user.ID, body.Instructions)
 		if err != nil {
 			writeAppErr(w, err)
 			return

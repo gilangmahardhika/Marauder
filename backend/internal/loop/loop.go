@@ -176,6 +176,10 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	instructions, err := board.CurrentInstructions(ctx, in.DB, card.ID)
+	if err != nil {
+		return Result{}, err
+	}
 	convs, convItems, err := CardConventions(ctx, in.DB, card.ProjectID, card.ID)
 	if err != nil {
 		return Result{}, err
@@ -186,6 +190,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		},
 		Requirements: statements,
 		FailureNote:  note,
+		Instructions: instructions,
 		Linked:       linked,
 		Conventions:  convs,
 		Secrets:      in.Secrets,

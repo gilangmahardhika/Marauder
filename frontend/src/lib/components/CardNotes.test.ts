@@ -35,6 +35,34 @@ test('the newest review note renders markdown and earlier notes wait behind a bu
   expect(screen.getByText('**not bold** in check output').tagName).toBe('PRE');
 });
 
+test('instructions render markdown and a blank one reads as cleared', async () => {
+  render(CardNotes, {
+    notes: [
+      { source: 'instructions', note: '', createdAt: '2026-10-12T07:00:00Z', attemptN: 0 },
+      { source: 'instructions', note: 'Run the **lint** script.', createdAt: '2026-10-12T06:00:00Z', attemptN: 0 }
+    ]
+  });
+  expect(screen.getByText('Instructions')).toBeTruthy();
+  expect(screen.getByText('Instructions cleared')).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier note' }));
+  expect(screen.getByText('lint').tagName).toBe('STRONG');
+});
+
+test('the current instructions and the newest other note both stay open', async () => {
+  render(CardNotes, {
+    notes: [
+      { source: 'instructions', note: 'Use a self-hosted runner.', createdAt: '2026-10-12T08:00:00Z', attemptN: 0 },
+      review,
+      check
+    ]
+  });
+  expect(screen.getByText('Use a self-hosted runner.')).toBeTruthy();
+  expect(screen.getByText('AI review')).toBeTruthy();
+  expect(screen.queryByText('Local check')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier note' }));
+  expect(screen.getByText('Local check')).toBeTruthy();
+});
+
 test('an approver note has no attempt number', () => {
   render(CardNotes, {
     notes: [{ source: 'approver', note: 'changes requested', createdAt: '2026-10-12T06:00:00Z', attemptN: 0 }]

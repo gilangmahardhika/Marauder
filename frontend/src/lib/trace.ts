@@ -28,7 +28,8 @@ const kinds: Record<string, string> = {
   budget_stop: 'Budget stop',
   config_changed: 'Settings changed',
   assertion_failed: 'Harness assertion',
-  stacks_detected: 'Stacks detected'
+  stacks_detected: 'Stacks detected',
+  instructions_saved: 'Instructions saved'
 };
 
 const tools: Record<string, string> = {
@@ -258,6 +259,16 @@ export function describe(event: TraceEvent): Described {
       return { label: 'Harness assertion failed', detail: [str(p.name), str(p.detail)].filter(Boolean).join(': '), meta: '', tone: 'red', text: '' };
     case 'budget_stop':
       return { label: 'Budget stop', detail: '', meta: '', tone: 'red', text: '' };
+    case 'instructions_saved': {
+      const length = num(p.length);
+      return {
+        label: 'Instructions saved',
+        detail: length > 0 ? `${count(length)} characters` : 'Cleared',
+        meta: '',
+        tone: 'default',
+        text: ''
+      };
+    }
     default:
       return { label: kindLabel(event.kind), detail: '', meta: '', tone: 'default', text: '' };
   }
