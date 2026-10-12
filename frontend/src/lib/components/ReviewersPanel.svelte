@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { ApiError, setReviewers, setSelfReview, unreachable } from '$lib/api';
+  import { ApiError, setAIReviewMode, setReviewers, setSelfReview, unreachable } from '$lib/api';
+  import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
   import { reviewerChoices } from '$lib/requirements';
-  import type { Intake, Requirement, Reviewer } from '$lib/types';
+  import type { AIReviewMode, Intake, Requirement, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
@@ -21,6 +22,7 @@
 
   let values = $state<string[]>([]);
   let self = $state(false);
+  let mode = $state<AIReviewMode>('continue');
   let error = $state('');
   let busy = $state(false);
 
@@ -28,11 +30,13 @@
   const saved = $derived(requirement.reviewers.map((reviewer) => reviewer.id));
   const reviewersDirty = $derived(values.length !== saved.length || values.some((value, index) => value !== saved[index]));
   const selfDirty = $derived(self !== requirement.selfReview);
+  const modeDirty = $derived(mode !== requirement.aiReviewMode);
   const editable = $derived(requirement.canEditReviewers || requirement.canSetSelfReview);
 
   $effect(() => {
     values = requirement.reviewers.map((reviewer) => reviewer.id);
     self = requirement.selfReview;
+    mode = requirement.aiReviewMode;
   });
 
   async function save() {
@@ -43,6 +47,7 @@
       let intake: Intake | null = null;
       if (requirement.canEditReviewers && reviewersDirty) intake = await setReviewers(requirement.id, values);
       if (requirement.canSetSelfReview && selfDirty) intake = await setSelfReview(requirement.id, self);
+      if (requirement.canSetSelfReview && modeDirty) intake = await setAIReviewMode(requirement.id, mode);
       if (intake) onsaved(intake);
       onmessage('Reviewers saved');
     } catch (failure) {
@@ -55,7 +60,12 @@
 </script>
 
 {#snippet saveBar()}
-  <Button variant="primary" type="button" disabled={busy || !(reviewersDirty || selfDirty)} onclick={() => void save()}>
+  <Button
+    variant="primary"
+    type="button"
+    disabled={busy || !(reviewersDirty || selfDirty || modeDirty)}
+    onclick={() => void save()}
+  >
     Save reviewers
   </Button>
 {/snippet}
@@ -90,7 +100,13 @@
       hint="The owner of this requirement's cards reviews and approves them alone. The approval is recorded as not independent."
       bind:checked={self}
     />
-  {:else if requirement.selfReview}
-    <p class="mt-3 text-sm text-ink">Self review: on. The card owner approves alone.</p>
+    <AIReviewModeField bind:value={mode} />
+  {:else}
+    {#if requirement.selfReview}
+      <p class="text-sm text-ink">Self review: on. The card owner approves alone.</p>
+    {/if}
+    {#if requirement.aiReviewMode === 'manual'}
+      <p class="text-sm text-ink">When the AI review asks for changes, a person reviews before another attempt.</p>
+    {/if}
   {/if}
 </Panel>

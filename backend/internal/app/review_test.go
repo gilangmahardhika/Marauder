@@ -150,6 +150,9 @@ func TestReviewRequestChanges(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("changes_requested card cannot run again: %t %v", ok, err)
 	}
+	if n := openRetries(t, f.db, card.ID); n != 1 {
+		t.Fatalf("open retry rows = %d, want the next attempt queued", n)
+	}
 }
 
 func TestReviewNoteRedacted(t *testing.T) {

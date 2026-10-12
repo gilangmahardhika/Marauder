@@ -1,6 +1,7 @@
 import { session } from '$lib/session';
 import type {
   AccountGitHub,
+  AIReviewMode,
   Board,
   Card,
   CardDiff,
@@ -225,7 +226,9 @@ export function acceptRequirements(requirementIds: string[]) {
   return request<Intake>(`${projectPrefix()}/accept`, { method: 'POST', body: JSON.stringify({ requirementIds }) });
 }
 
-export function addRequirement(body: RequirementDraft & { id: string; selfReview?: boolean }) {
+export function addRequirement(
+  body: RequirementDraft & { id: string; selfReview?: boolean; aiReviewMode?: AIReviewMode }
+) {
   return request<Intake>(`${projectPrefix()}/requirements`, { method: 'POST', body: JSON.stringify(body) });
 }
 
@@ -247,6 +250,13 @@ export function setSelfReview(id: string, selfReview: boolean) {
   return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/self-review`, {
     method: 'PUT',
     body: JSON.stringify({ selfReview })
+  });
+}
+
+export function setAIReviewMode(id: string, aiReviewMode: AIReviewMode) {
+  return request<Intake>(`${projectPrefix()}/requirements/${encodeURIComponent(id)}/ai-review-mode`, {
+    method: 'PUT',
+    body: JSON.stringify({ aiReviewMode })
   });
 }
 

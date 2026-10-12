@@ -83,6 +83,9 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	if open || !startable(card.Status) {
 		return card, ErrNotStartable
 	}
+	if card.AttemptsUsed >= card.MaxAttempts {
+		return AtCap(ctx, db, card.ID)
+	}
 	project, err := tenancy.GetProject(ctx, db, projectID)
 	if err != nil {
 		return card, err
@@ -190,7 +193,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
 		}
 		if result.Outcome == "no_commit" {
-			return AtCap(ctx, db, card.ID)
+			return retryOrCap(ctx, db, card.ID)
 		}
 		attempt.ID = result.AttemptID
 		model = route.Model
@@ -236,7 +239,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		if err != nil {
 			return card, err
 		}
-		return AtCap(ctx, db, card.ID)
+		return retryOrCap(ctx, db, card.ID)
 	}
 	if err := board.SetAttemptOutcome(ctx, db, attempt.ID, "checks_passed"); err != nil {
 		return card, err
@@ -307,9 +310,10 @@ func stopAttempt(ctx context.Context, db *sql.DB, cardID string, cause error, at
 }
 
 // CanStartImplement reports whether a Run request may start the card: it is
-// ready, changes_requested, or in_progress, and no attempt of it is open.
+// ready, changes_requested, or in_progress, it has attempts left, and no
+// attempt of it is open.
 func CanStartImplement(ctx context.Context, db querier, card board.Card) (bool, error) {
-	if !startable(card.Status) {
+	if !startable(card.Status) || card.AttemptsUsed >= card.MaxAttempts {
 		return false, nil
 	}
 	open, err := board.OpenAttempt(ctx, db, card.ID)

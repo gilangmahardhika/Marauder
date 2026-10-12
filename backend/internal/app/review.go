@@ -299,7 +299,11 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	if err := board.SetHeadSHA(ctx, db, card.ID, pr.Head); err != nil {
 		return card, err
 	}
-	comment := trace.Redact(ReviewComment(result.Verdict, result.Body, model, independent, pr.Head), redact)
+	mode, err := CardAIReviewMode(ctx, db, card)
+	if err != nil {
+		return card, err
+	}
+	comment := trace.Redact(ReviewComment(result.Verdict, result.Body, model, independent, pr.Head, mode), redact)
 	if err := gh.comment(ctx, dir, card.PRURL, comment); err != nil {
 		_ = jobError(ctx, db, card, attempt.AttemptID, "review comment: "+err.Error(), redact)
 	}
@@ -311,9 +315,40 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		if err := board.InsertFailureNote(ctx, db, card.ID, attempt.AttemptID, "review", note); err != nil {
 			return card, err
 		}
-		return move(ctx, db, card, "changes_requested", machine.Evidence{AttemptID: attempt.AttemptID}, redact)
+		if mode != ReviewManual {
+			return sendBack(ctx, db, card, attempt.AttemptID, redact)
+		}
 	}
 	return settleChecks(ctx, db, deps, card, attempt.AttemptID, freshChecks(ctx, gh, card.PRURL, pr), redact)
+}
+
+// sendBack moves an agent_review card whose AI review asked for changes to
+// changes_requested, and in the same transaction queues the next attempt, or
+// blocks the card with attempt_cap when none remain (RFC-071, RFC-072).
+func sendBack(ctx context.Context, db *sql.DB, card board.Card, attemptID string, redact []string) (board.Card, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return card, err
+	}
+	defer tx.Rollback()
+	next, err := machine.Transition(ctx, tx, card, "changes_requested", machine.Evidence{AttemptID: attemptID}, redact)
+	if err != nil {
+		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
+			_ = tx.Commit()
+		}
+		return card, err
+	}
+	if next.AttemptsUsed >= next.MaxAttempts {
+		if next, err = machine.Transition(ctx, tx, next, "blocked", machine.Evidence{Reason: "attempt_cap"}, redact); err != nil {
+			return card, err
+		}
+	} else if _, err := insertCardRun(ctx, tx, next.ProjectID, next.ID, "retry"); err != nil {
+		return card, err
+	}
+	if err := tx.Commit(); err != nil {
+		return card, err
+	}
+	return next, nil
 }
 
 // reviewFailed records a review that gave no verdict, says so on the pull
@@ -368,8 +403,8 @@ func ReviewFailedComment(why, sha string) string {
 }
 
 // ReviewComment is the pull request comment the bot posts with the review
-// verdict (RFC-066).
-func ReviewComment(verdict, body, model string, independent bool, sha string) string {
+// verdict (RFC-066). mode is the card's AI review mode (RFC-072).
+func ReviewComment(verdict, body, model string, independent bool, sha, mode string) string {
 	heading := "**AI review: Recommend approve**"
 	if verdict == "request_changes" {
 		heading = "**AI review: Request changes**"
@@ -383,7 +418,10 @@ func ReviewComment(verdict, body, model string, independent bool, sha string) st
 		body = "(the reviewer gave no reason)"
 	}
 	next := "A person approves the card in the orchestrator before merge."
-	if verdict == "request_changes" {
+	switch {
+	case verdict == "request_changes" && mode == ReviewManual:
+		next = "A person decides in the orchestrator whether to approve or ask for changes."
+	case verdict == "request_changes":
 		next = "The card went back to the implementer with this note."
 	}
 	return fmt.Sprintf("%s\n\n%s\n\nReviewed `%s` with `%s`, %s. %s\n", heading, body, shortSHA(sha), model, family, next)
@@ -406,7 +444,9 @@ func writeReviewPack(ctx context.Context, dir, attemptID string, in loop.ReviewI
 // RefreshCard reads the pull request head and checks of a card past review
 // (0003 pass steps 1, 2, and 7). It stores head_sha, sends an approved card
 // whose head moved back to human_review, and finishes the CI wait of an
-// agent_review card whose review recommended approval or gave no verdict.
+// agent_review card whose review recommended approval, gave no verdict, or
+// asked for changes on a manual card (RFC-072). A request for changes on a
+// card that is no longer manual sends it back.
 // A review that stopped without recording anything, and no longer holds the
 // card lock, is recorded as failed first (RFC-069).
 func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
@@ -427,6 +467,14 @@ func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardI
 		case "recommend_approve", review.VerdictFailed:
 		case "":
 			return finishStoppedReview(ctx, db, deps, projectID, card, attempt.AttemptID)
+		case "request_changes":
+			mode, err := CardAIReviewMode(ctx, db, card)
+			if err != nil {
+				return card, err
+			}
+			if mode != ReviewManual {
+				return finishSendBack(ctx, db, card, attempt.AttemptID)
+			}
 		default:
 			return card, nil
 		}
@@ -452,6 +500,27 @@ func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardI
 		return card, nil
 	}
 	return settleChecks(ctx, db, deps, card, attempt.AttemptID, pr.Checks, redact)
+}
+
+// finishSendBack sends back an agent_review card whose review asked for
+// changes while it waited for its checks, when the card's mode is no longer
+// manual and no review job holds the card lock.
+func finishSendBack(ctx context.Context, db *sql.DB, card board.Card, attemptID string) (board.Card, error) {
+	holder, err := board.NewID("lok_")
+	if err != nil {
+		return card, err
+	}
+	if err := board.AcquireLock(ctx, db, card.ID, holder); err != nil {
+		if errors.Is(err, board.ErrLocked) {
+			return card, nil
+		}
+		return card, err
+	}
+	defer board.ReleaseLock(context.WithoutCancel(ctx), db, card.ID, holder)
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil || card.Status != "agent_review" {
+		return card, err
+	}
+	return sendBack(ctx, db, card, attemptID, nil)
 }
 
 // finishStoppedReview records the review of an agent_review card as failed

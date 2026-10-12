@@ -550,3 +550,18 @@ Packages: `internal/board`, `internal/app`, `internal/httpapi`, `internal/cli`, 
 - Request changes opens a form with an optional "What should change?" box.
 
 Done when: `TestCardDetailNotes`, `TestRequestChangesReason`, `TestReviewNoteRedacted`, and the `CardNotes` and `CardActions` Vitest cases.
+
+## Sprint 37: Retry after a failed attempt, and the AI review mode
+
+Goal: A card a person ran keeps going without a second click. A failed attempt queues the next one while attempts remain, and each requirement chooses what an AI request for changes does: run the next attempt, or let a person decide in Human review (RFC-071, RFC-072, REQ-074).
+
+Packages: migration `00019`, `internal/app`, `internal/intake`, `internal/httpapi`, frontend `ReviewersPanel`, `AIReviewModeField`, `/intake/new`, and the card page.
+
+- `no_commit` and `checks_failed` with attempts left insert a card-scoped `runs` row with trigger `retry`. At the cap the card blocks with `attempt_cap`. `CanStartImplement` refuses a card at the cap, so Run is not listed and a stale queued row blocks instead of starting.
+- `requirements.ai_review_mode` is `continue` or `manual`. A card is `manual` when any of its requirements is.
+- A `continue` card's `request_changes` moves to `changes_requested` with a `retry` row in one transaction, or blocks at the cap. A `manual` card keeps the `review` note and lets the pull request checks decide, so green checks reach `human_review`. Refresh sends back a waiting card whose mode turned `continue`.
+- `PUT .../requirements/{id}/ai-review-mode` and the add body's `aiReviewMode` need a Lead Developer or an admin. The intake and card JSON return `aiReviewMode`.
+- The Reviewers panel and the New requirement page show "When the AI review asks for changes". The card Details show "After AI review: A person reviews" for a manual card.
+- A red check and a person's Request changes still wait for Run.
+
+Done when: `TestRetryAfterNoCommit`, `TestRetryAfterChecksFailed`, `TestRunRefusedAtCap`, `TestReviewContinueQueuesRetry`, `TestReviewManualReachesHumanReview`, `TestRefreshSendsBackWhenNoLongerManual`, `TestCardAIReviewMode`, `TestAIReviewModeNeedsLead`, the updated `TestReviewRequestChanges`, and the `ReviewersPanel` and `api` Vitest cases.

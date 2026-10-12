@@ -17,6 +17,7 @@ function req(id: string, partial: Partial<Requirement> = {}): Requirement {
     canEditReviewers: false,
     selfReview: false,
     canSetSelfReview: false,
+    aiReviewMode: 'continue',
     ...partial
   };
 }

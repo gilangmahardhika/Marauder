@@ -1,6 +1,7 @@
+import type { Option } from './filter';
 import { listItems } from './markdown';
 import { displayName } from './people';
-import type { Reviewer } from './types';
+import type { AIReviewMode, Reviewer } from './types';
 import type { SearchOption } from './ui/SearchSelect.svelte';
 
 const LIST_MARKER = /^(?:[-*+]|\d{1,9}[.)])(?:[ \t]+\[[ xX]\])?(?:[ \t]+|$)/;
@@ -29,10 +30,20 @@ export function fromLines(lines: string[]): string {
   return lines.map((line) => `- ${line}`).join('\n');
 }
 
-/** Only a Lead Developer or an admin may turn Self review on or off (RFC-070). */
+/** Only a Lead Developer or an admin may turn Self review on or off (RFC-070), or change the AI review mode (RFC-072). */
 export function canSetSelfReview(role: string, admin: boolean): boolean {
   return admin || role === 'lead_developer';
 }
+
+export const reviewModes: Option<AIReviewMode>[] = [
+  { value: 'continue', label: 'Run the next attempt' },
+  { value: 'manual', label: 'A person reviews' }
+];
+
+export const reviewModeHints: Record<AIReviewMode, string> = {
+  continue: 'The card goes back with the review note, and the next attempt starts on its own.',
+  manual: 'The card waits for its pull request checks, then a person reads the note and approves or asks for changes.'
+};
 
 /** Reviewer picker options. The creator opens the pull request, so they are left out. */
 export function reviewerChoices(

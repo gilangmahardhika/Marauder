@@ -318,14 +318,16 @@ func (s *Server) projectAccept(w http.ResponseWriter, r *http.Request) {
 }
 
 type requirementBody struct {
-	ID         string   `json:"id"`
-	Statement  string   `json:"statement"`
-	Acceptance []string `json:"acceptance"`
-	SelfReview bool     `json:"selfReview"`
+	ID           string   `json:"id"`
+	Statement    string   `json:"statement"`
+	Acceptance   []string `json:"acceptance"`
+	SelfReview   bool     `json:"selfReview"`
+	AIReviewMode string   `json:"aiReviewMode"`
 }
 
 // projectRequirements adds a manual requirement. Any member may call it
-// (RFC-053); only a Lead Developer or an admin may turn Self review on (RFC-070).
+// (RFC-053); only a Lead Developer or an admin may turn Self review on
+// (RFC-070) or choose the manual AI review mode (RFC-072).
 func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
@@ -341,7 +343,13 @@ func (s *Server) projectRequirements(w http.ResponseWriter, r *http.Request) {
 		writeIntakeErr(w, intake.ErrSelfReviewForbidden)
 		return
 	}
-	draft := intake.Draft{Statement: body.Statement, Acceptance: body.Acceptance, SelfReview: body.SelfReview}
+	if body.AIReviewMode == intake.ReviewManual && !intake.CanSetSelfReview(user.Role, user.Admin) {
+		writeIntakeErr(w, intake.ErrAIReviewModeForbidden)
+		return
+	}
+	draft := intake.Draft{
+		Statement: body.Statement, Acceptance: body.Acceptance, SelfReview: body.SelfReview, AIReviewMode: body.AIReviewMode,
+	}
 	if _, err := intake.Add(r.Context(), s.DB, projectID, user.ID, body.ID, draft); err != nil {
 		writeIntakeErr(w, err)
 		return
@@ -420,12 +428,38 @@ func (s *Server) projectSelfReview(w http.ResponseWriter, r *http.Request) {
 	s.writeIntake(w, r, projectID)
 }
 
+// projectAIReviewMode sets the AI review mode of one requirement (RFC-072).
+func (s *Server) projectAIReviewMode(w http.ResponseWriter, r *http.Request) {
+	projectID, ok := s.visibleProject(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		AIReviewMode string `json:"aiReviewMode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	user, _ := app.CurrentUser(r.Context())
+	if !intake.CanSetSelfReview(user.Role, user.Admin) {
+		writeIntakeErr(w, intake.ErrAIReviewModeForbidden)
+		return
+	}
+	if err := intake.SetAIReviewMode(r.Context(), s.DB, projectID, r.PathValue("id"), body.AIReviewMode); err != nil {
+		writeIntakeErr(w, err)
+		return
+	}
+	s.writeIntake(w, r, projectID)
+}
+
 func writeIntakeErr(w http.ResponseWriter, err error) {
 	var invalid *intake.Invalid
 	switch {
 	case errors.As(err, &invalid):
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
-	case errors.Is(err, intake.ErrForbidden), errors.Is(err, intake.ErrSelfReviewForbidden):
+	case errors.Is(err, intake.ErrForbidden), errors.Is(err, intake.ErrSelfReviewForbidden),
+		errors.Is(err, intake.ErrAIReviewModeForbidden):
 		writeErr(w, 403, "forbidden", err.Error())
 	case errors.Is(err, intake.ErrNotFound):
 		writeErr(w, 404, "not_found", err.Error())

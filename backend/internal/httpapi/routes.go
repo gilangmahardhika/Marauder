@@ -454,6 +454,10 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if card.OwnerID != "" && card.OwnerID == userID && !selfReview && !s.soloApproval(card.ProjectID) {
 		actions = withoutAction(actions, "approve")
 	}
+	reviewMode, err := app.CardAIReviewMode(r.Context(), s.DB, card)
+	if err != nil {
+		reviewMode = app.ReviewContinue
+	}
 	queued, waitingOn, err := app.CardRunState(r.Context(), s.DB, card)
 	if err != nil {
 		queued, waitingOn = false, []string{}
@@ -494,7 +498,7 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"attemptsUsed": card.AttemptsUsed, "maxAttempts": card.MaxAttempts,
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
 		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
-		"reviewVerdict": reviewVerdict, "selfReview": selfReview,
+		"reviewVerdict": reviewVerdict, "selfReview": selfReview, "aiReviewMode": reviewMode,
 		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,
@@ -523,7 +527,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
-			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, ''), q.self_review
+			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, ''), q.self_review, q.ai_review_mode
 		FROM requirements q LEFT JOIN users u ON u.id = q.created_by
 		WHERE q.project_id = $1 ORDER BY q.id`, projectID)
 	if err != nil {
@@ -533,10 +537,11 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	reqs := []any{}
 	canSetSelfReview := intake.CanSetSelfReview(user.Role, user.Admin)
 	for rows.Next() {
-		var id, kind, path, heading, statement, acceptance, creatorID string
+		var id, kind, path, heading, statement, acceptance, creatorID, reviewMode string
 		var accepted, selfReview bool
 		var createdBy sql.NullString
-		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID, &selfReview); err != nil {
+		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID,
+			&selfReview, &reviewMode); err != nil {
 			return nil, err
 		}
 		var lines []string
@@ -556,6 +561,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 			"canEditReviewers": intake.CanEditReviewers(user.ID, user.Role, creatorID),
 			"selfReview":       selfReview,
 			"canSetSelfReview": canSetSelfReview,
+			"aiReviewMode":     reviewMode,
 		})
 	}
 	decisions := []any{}

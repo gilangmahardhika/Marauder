@@ -1,10 +1,11 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { ApiError, addRequirement, getIntake, setReviewers, unreachable } from '$lib/api';
+  import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import { canSetSelfReview, reviewerChoices, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { Reviewer } from '$lib/types';
+  import type { AIReviewMode, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
@@ -16,6 +17,7 @@
   let acceptance = $state('');
   let reviewers = $state<string[]>([]);
   let selfReview = $state(false);
+  let aiReviewMode = $state<AIReviewMode>('continue');
   let options = $state<Reviewer[]>([]);
   let known = $state<string[]>([]);
   let fields = $state<Record<string, string>>({});
@@ -54,7 +56,8 @@
         id: id.trim(),
         statement,
         acceptance: toLines(acceptance),
-        selfReview: mayChooseSelfReview && selfReview
+        selfReview: mayChooseSelfReview && selfReview,
+        aiReviewMode: mayChooseSelfReview ? aiReviewMode : 'continue'
       });
       added = id.trim() || (body.requirements.find((requirement) => !known.includes(requirement.id))?.id ?? '');
       if (reviewers.length > 0 && added !== '') {
@@ -100,6 +103,7 @@
           hint="You review and approve this requirement's cards yourself. The approval is recorded as not independent."
           bind:checked={selfReview}
         />
+        <AIReviewModeField bind:value={aiReviewMode} />
       {/if}
       {#snippet footer()}
         <Button variant="ghost" href="/intake">Cancel</Button>

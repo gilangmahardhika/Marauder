@@ -428,6 +428,8 @@ CREATE TABLE project_links (
 
 `00018` adds `requirements.self_review BOOLEAN NOT NULL DEFAULT false` (RFC-070). Only the self-review route and a manual add write it. Ingest leaves it alone.
 
+`00019` adds `requirements.ai_review_mode TEXT NOT NULL DEFAULT 'continue'`, checked to `('continue', 'manual')` (RFC-072). Only the ai-review-mode route and a manual add write it. Ingest leaves it alone. It also widens the `runs.trigger` check with `retry`, the row the implement and review jobs write to queue the next attempt (RFC-071). Its Down section deletes `retry` rows before narrowing the check.
+
 `00008` widens the `requirements.source_kind` check to `('prd', 'rfc', 'draft', 'manual')` and adds `requirements.created_by TEXT`, the user id that added a manual row (RFC-053). It is null for parsed and drafted rows. A manual row has `source_path = ''` and `heading` equal to its id.
 
 `00009` is the card owner (RFC-054):
@@ -672,6 +674,7 @@ A project object is:
   "reviewIndependent": true,
   "reviewVerdict": "recommend_approve",
   "selfReview": false,
+  "aiReviewMode": "continue",
   "approvedSha": null,
   "deployedSha": null,
   "environment": "dev",
@@ -681,7 +684,7 @@ A project object is:
 }
 ```
 
-`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
+`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `aiReviewMode` is `manual` when any requirement the card lists has that mode in the card's project, and `continue` otherwise (RFC-072). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 
@@ -827,6 +830,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
       "canEditReviewers": true,
       "selfReview": false,
       "canSetSelfReview": true,
+      "aiReviewMode": "continue",
       "reviewers": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
       "linkedCards": []
     }
@@ -846,7 +850,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 
 `POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
-`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070). `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
+`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070), and the same caller may change `aiReviewMode`, which is `continue` or `manual` (RFC-072). `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
 
 `PUT /api/projects/{projectId}/requirements/{id}/reviewers` replaces the reviewers of one requirement, parsed or manual, and returns the intake shape.
 
@@ -864,13 +868,21 @@ Allowed for the row's creator or a Lead Developer member. Anyone else is `403`, 
 
 Allowed for a Lead Developer or an admin who is a member. Anyone else is `403`, including the row's creator, and a non-member is `404`. An unknown id is `404`.
 
+`PUT /api/projects/{projectId}/requirements/{id}/ai-review-mode` sets what an AI request for changes does on that requirement's cards, and returns the intake shape (RFC-072).
+
+```json
+{ "aiReviewMode": "manual" }
+```
+
+`continue` sends the card back with a `retry` row. `manual` lets the pull request checks decide, so a person sees the verdict in `human_review`. The same callers as the self-review route are allowed, with the same `403` and `404` answers. A value other than `continue` or `manual` is `422` on `aiReviewMode`.
+
 `POST /api/projects/{projectId}/requirements` adds a manual requirement. Any member may call it.
 
 ```json
-{ "id": "", "statement": "Export the board as CSV.", "acceptance": ["The file has one row per card."], "selfReview": false }
+{ "id": "", "statement": "Export the board as CSV.", "acceptance": ["The file has one row per card."], "selfReview": false, "aiReviewMode": "continue" }
 ```
 
-`selfReview` is optional and defaults to `false`. `true` from a caller who is not a Lead Developer or an admin is `403` and adds nothing (RFC-070).
+`selfReview` is optional and defaults to `false`. `true` from a caller who is not a Lead Developer or an admin is `403` and adds nothing (RFC-070). `aiReviewMode` is optional and defaults to `continue`. `manual` from that caller is `403`, and an unknown value is `422` on `aiReviewMode` (RFC-072).
 
 `id` is optional. A non-empty id must match `^REQ-[0-9]+$`. A blank id gets one above the highest `REQ-` number in the project, at least three digits. The number is chosen while holding the project's `intake_state` row, so two adds do not take the same id. `statement` is required, at most 10000 characters. It is markdown text and is stored as written, with CR and CRLF line endings turned into LF. Over the limit, `fields.statement` is "Keep the statement to 10000 characters or fewer." `acceptance` is a list of non-empty lines, at most 50, each at most 1000 characters ("Keep each acceptance line to 1000 characters or fewer."). Each line is inline markdown. A line break inside a line becomes a space, and one leading list or checkbox marker (`- `, `* `, `+ `, `1. `, `1) `, optionally followed by `[ ]` or `[x]`) is dropped, because the pull request writes each line as `- [ ] `. Each element is one check; the client decides how its text is split into checks. The row is not accepted. The response is the intake shape. A bad field is `422` with `fields` keyed `id`, `statement`, or `acceptance`. An id that already exists in that project is `409`.
 
@@ -894,7 +906,7 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 { "queued": 2, "readyCount": 0 }
 ```
 
-`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts.
+`POST /api/projects/{projectId}/cards/{id}/run` has an empty body. The same roles may call it. It locks the card row, then inserts one `runs` row with `card_id` set and returns the card object with `queued: true`. A card that already has an open row keeps that one row, and the call still returns `200`. A card that is not `ready`, `changes_requested`, or `in_progress`, that has an open attempt, that has used all its attempts (RFC-071), or that has a dependency not `done`, is `409` `conflict` (RFC-063). The card's status does not change. The worker starts the implement job for the row under the project's cap and sets `processed_at` when it starts.
 
 `POST /api/projects/{projectId}/cards/{id}/approve`
 
@@ -918,7 +930,7 @@ After an approval that inserted a new row, the server posts with the company tok
 
 The body is optional. The card goes to `unblockTo`. With `resetAttempts: false`, `attemptsUsed` stays, and `maxAttempts` rises to `attemptsUsed + 1` when the count is already at the cap. With `resetAttempts: true`, `attemptsUsed` becomes `0` and `maxAttempts` returns to the router budget.
 
-Approve, request-changes, deploy, and unblock insert a `runs` row with the matching trigger so the board continues without a second click. Each route returns the card object. An action not listed for the card is `422` `transition_rejected`. A status change between read and write is `409` `conflict`. A role that cannot perform the action is `403`.
+Approve, deploy, and unblock insert a `runs` row with the matching trigger so the board continues without a second click. Request-changes does not: the card waits in `changes_requested` until someone presses Run. Only an AI request for changes on a `continue` card queues the next attempt by itself (RFC-071, RFC-072). Each route returns the card object. An action not listed for the card is `422` `transition_rejected`. A status change between read and write is `409` `conflict`. A role that cannot perform the action is `403`.
 
 ## Settings
 

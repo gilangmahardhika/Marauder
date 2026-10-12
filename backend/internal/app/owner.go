@@ -199,6 +199,28 @@ func CardSelfReview(ctx context.Context, db *sql.DB, card board.Card) (bool, err
 	return on.Valid && on.Bool, err
 }
 
+// AI review modes of a requirement (RFC-072).
+const (
+	ReviewContinue = "continue"
+	ReviewManual   = "manual"
+)
+
+// CardAIReviewMode is manual when any requirement the card lists, in the
+// card's project, is manual (RFC-072), and continue otherwise.
+func CardAIReviewMode(ctx context.Context, db *sql.DB, card board.Card) (string, error) {
+	var manual sql.NullBool
+	err := db.QueryRowContext(ctx, `
+		SELECT bool_or(q.ai_review_mode = 'manual')
+		FROM cards c
+		CROSS JOIN LATERAL jsonb_array_elements_text(c.requirement_ids_json::jsonb) AS req(id)
+		JOIN requirements q ON q.project_id = c.project_id AND q.id = req.id
+		WHERE c.id = $1 AND c.project_id = $2`, card.ID, card.ProjectID).Scan(&manual)
+	if err != nil || !manual.Bool {
+		return ReviewContinue, err
+	}
+	return ReviewManual, nil
+}
+
 // CardReviewerUsers lists the reviewers named on each card's requirements in
 // projectID, keyed by card id, without the card owner, disabled users, and
 // users who left the project's tribe. cardID "" lists every card in the

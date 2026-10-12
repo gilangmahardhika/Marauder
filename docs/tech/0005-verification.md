@@ -108,6 +108,14 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestSelfReviewNeedsLead` | A Developer's add with `selfReview: true` is `403`. The creator, as a Developer, is `403` on the self-review route. A Lead Developer's add stores the flag, and an admin turns it on and off. An unknown id is `404` (RFC-070) |
 | `TestSelfReviewOwnerApproves` | With Solo approval off, a card that lists a flagged and an unflagged requirement gives the owner no `approve`, and the owner's POST is `403`. With only the flagged requirement the owner sees `approve`, approves to `approved`, and the row has `independent = false` |
 | `TestCardSelfReview` | `app.CardSelfReview` is true only when every listed requirement is flagged. Mixed, none flagged, no requirements, or a missing id is false |
+| `TestAIReviewModeNeedsLead` | A Developer's add with `aiReviewMode: manual` is `403`, and the Developer's add without it returns `continue`. The Developer is `403` on the ai-review-mode route. An unknown value is `422` on add and on the route. A Lead Developer's add stores `manual` and the route sets it. An unknown id is `404`. The card JSON says `continue` with no requirements and `manual` once the card lists a manual one (RFC-072) |
+| `TestCardAIReviewMode` | `app.CardAIReviewMode` is `manual` when any listed requirement is manual. No manual requirement, no requirements, or an unknown id is `continue` |
+| `TestReviewContinueQueuesRetry` | `request_changes` on a `continue` card reaches `changes_requested` with one open `retry` row and a comment saying the card went back. At the cap it is `blocked` with `attempt_cap` and has no row (RFC-071, RFC-072) |
+| `TestReviewManualReachesHumanReview` | `request_changes` on a `manual` card with green checks reaches `human_review` with the verdict, one `review` note, no `retry` row, and a comment saying a person decides. Pending checks stay in `agent_review` until a refresh sees green. A red check reaches `changes_requested` with no `retry` row |
+| `TestRefreshSendsBackWhenNoLongerManual` | A `manual` card waiting in `agent_review` with `request_changes` whose requirement turns `continue` is sent to `changes_requested` with one `retry` row on the next refresh |
+| `TestRetryAfterNoCommit` | An implement job that ends `no_commit` with attempts left leaves the card `in_progress` with one open `retry` row. At the cap it is `blocked` with `attempt_cap` and has no row (RFC-071) |
+| `TestRetryAfterChecksFailed` | An implement job whose gating check fails with attempts left leaves the card `in_progress` with one open `retry` row |
+| `TestRunRefusedAtCap` | A card at the cap is not startable, and `QueueCardRun` returns `ErrNotRunnable` without a row |
 | `TestApprovalPostsCommentAndStatus` | An approval posts one comment on the pull request and one `success` status with context `orchestrator/approval` on the SHA, with the company token in `GH_TOKEN` and not in argv. A repeat approval of the same SHA posts nothing (RFC-068) |
 | `TestApprovalAnnounceFailureKeepsApproved` | When `gh` fails, the approval is still `200` and `approved`, with one `job_error` for the comment and one for the status |
 | `TestRequestChangesWithdrawsApprovalStatus` | Request changes on an approved card posts `failure` on the approved SHA |
@@ -156,7 +164,7 @@ These use `testdata/fixture-repo`, a git repository with one file and a check sc
 | `TestWorktreeOnce` | Two implement jobs for one card create one branch and one worktree |
 | `TestCheckExit` | Gating exit `0` can open a pull request. Exit `1` cannot. A model message that says the tests passed does not override exit `1` |
 | `TestToolCheckDoesNotMove` | `run_local_check` exit `0` inside an attempt does not change status |
-| `TestNoCommitAttempt` | An attempt that ends without a commit counts, writes a `no_commit` note, and the next pass starts a new attempt |
+| `TestNoCommitAttempt` | An attempt that ends without a commit counts, writes a `no_commit` note, and the next attempt gets a new id and `n`. The implement job queues that attempt with a `retry` row, covered by `TestRetryAfterNoCommit` (RFC-071) |
 | `TestCommandAllowlist` | A tool call that names a command does not exec it |
 | `TestEnvScrub` | The sandbox env has no `GH_TOKEN`, model key, or `DEPLOY_TOKEN` |
 | `TestVerifyAtDeployedSHA` | An uncommitted edit left in the worktree is absent from the dev check export |

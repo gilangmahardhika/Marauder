@@ -279,6 +279,75 @@ func TestSelfReviewNeedsLead(t *testing.T) {
 	}
 }
 
+func TestAIReviewModeNeedsLead(t *testing.T) {
+	srv := accountServer(t)
+	srv.Data = dataRoot(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	dev := seedUser(t, srv, "ada@example.com", "password-long-1", "developer", false)
+	lead := seedUser(t, srv, "lead@example.com", "password-long-2", "lead_developer", false)
+	for _, user := range []app.User{admin, dev, lead} {
+		if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", user.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add := "/api/projects/proj_default/requirements"
+	draft := func(id, mode string) map[string]any {
+		return map[string]any{"id": id, "statement": "Export the report", "acceptance": []string{"A CSV downloads"}, "aiReviewMode": mode}
+	}
+	stored := func(id string) string {
+		t.Helper()
+		var mode string
+		if err := srv.DB.QueryRow(`SELECT ai_review_mode FROM requirements WHERE project_id = 'proj_default' AND id = $1`, id).Scan(&mode); err != nil {
+			t.Fatal(err)
+		}
+		return mode
+	}
+
+	ada := loginToken(t, srv, "ada@example.com", "password-long-1")
+	if rec := postJSON(t, srv, add, ada, draft("REQ-001", "manual")); rec.Code != 403 {
+		t.Fatalf("developer asking for manual = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, add, ada, map[string]any{"id": "REQ-001", "statement": "Export the report"}); rec.Code != 200 ||
+		!strings.Contains(rec.Body.String(), `"aiReviewMode":"continue"`) {
+		t.Fatalf("developer add = %d %s", rec.Code, rec.Body.String())
+	}
+	mode := add + "/REQ-001/ai-review-mode"
+	if rec := putJSON(t, srv, mode, ada, map[string]any{"aiReviewMode": "manual"}); rec.Code != 403 || stored("REQ-001") != "continue" {
+		t.Fatalf("developer change = %d %s", rec.Code, rec.Body.String())
+	}
+
+	leadToken := loginToken(t, srv, "lead@example.com", "password-long-2")
+	if rec := postJSON(t, srv, add, leadToken, draft("REQ-002", "sometimes")); rec.Code != 422 || !strings.Contains(rec.Body.String(), "aiReviewMode") {
+		t.Fatalf("unknown mode on add = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putJSON(t, srv, mode, leadToken, map[string]any{"aiReviewMode": "sometimes"}); rec.Code != 422 || stored("REQ-001") != "continue" {
+		t.Fatalf("unknown mode = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, add, leadToken, draft("REQ-002", "manual")); rec.Code != 200 || stored("REQ-002") != "manual" {
+		t.Fatalf("lead add = %d %s", rec.Code, rec.Body.String())
+	}
+	rec := putJSON(t, srv, mode, leadToken, map[string]any{"aiReviewMode": "manual"})
+	if rec.Code != 200 || stored("REQ-001") != "manual" || strings.Contains(rec.Body.String(), `"aiReviewMode":"continue"`) {
+		t.Fatalf("lead change = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putJSON(t, srv, add+"/REQ-404/ai-review-mode", leadToken, map[string]any{"aiReviewMode": "manual"}); rec.Code != 404 {
+		t.Fatalf("unknown requirement = %d %s", rec.Code, rec.Body.String())
+	}
+
+	card := reviewCard(t, srv, "proj_default")
+	path := "/api/projects/proj_default/cards/" + card.ID
+	if view := getAuth(t, srv, path, leadToken); !strings.Contains(view.Body.String(), `"aiReviewMode":"continue"`) {
+		t.Fatalf("card without requirements = %s", view.Body.String())
+	}
+	if _, err := srv.DB.Exec(`UPDATE cards SET requirement_ids_json = '["REQ-001"]' WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	if view := getAuth(t, srv, path, leadToken); !strings.Contains(view.Body.String(), `"aiReviewMode":"manual"`) {
+		t.Fatalf("card with a manual requirement = %s", view.Body.String())
+	}
+}
+
 func TestSelfReviewOwnerApproves(t *testing.T) {
 	srv := accountServer(t)
 	srv.Data = dataRoot(t)

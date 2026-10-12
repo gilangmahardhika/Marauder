@@ -36,7 +36,7 @@ type Invalid struct {
 }
 
 func (v *Invalid) Error() string {
-	for _, key := range []string{"id", "statement", "acceptance", "userIds"} {
+	for _, key := range []string{"id", "statement", "acceptance", "userIds", "aiReviewMode"} {
 		if msg, ok := v.Fields[key]; ok {
 			return msg
 		}
@@ -44,18 +44,26 @@ func (v *Invalid) Error() string {
 	return "validation"
 }
 
-// Draft is the text of a manual requirement. SelfReview is read by Add only;
-// the caller checks CanSetSelfReview (RFC-070).
+// Draft is the text of a manual requirement. SelfReview and AIReviewMode are
+// read by Add only; the caller checks CanSetSelfReview (RFC-070, RFC-072). A
+// blank AIReviewMode is continue.
 type Draft struct {
-	Statement  string
-	Acceptance []string
-	SelfReview bool
+	Statement    string
+	Acceptance   []string
+	SelfReview   bool
+	AIReviewMode string
 }
 
 func (d Draft) clean() (Draft, error) {
 	fields := map[string]string{}
 	statement := strings.ReplaceAll(strings.ReplaceAll(d.Statement, "\r\n", "\n"), "\r", "\n")
-	out := Draft{Statement: strings.TrimSpace(statement), Acceptance: []string{}, SelfReview: d.SelfReview}
+	out := Draft{Statement: strings.TrimSpace(statement), Acceptance: []string{}, SelfReview: d.SelfReview, AIReviewMode: d.AIReviewMode}
+	if out.AIReviewMode == "" {
+		out.AIReviewMode = ReviewContinue
+	}
+	if !validReviewMode(out.AIReviewMode) {
+		fields["aiReviewMode"] = errReviewMode
+	}
 	switch {
 	case out.Statement == "":
 		fields["statement"] = "Enter a statement."
@@ -134,10 +142,11 @@ func Add(ctx context.Context, db *sql.DB, projectID, userID, id string, draft Dr
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO requirements (
 			id, source_kind, source_path, heading, statement,
-			acceptance_json, non_goals_json, content_hash, project_id, created_by, self_review
-		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6, $7)
+			acceptance_json, non_goals_json, content_hash, project_id, created_by, self_review, ai_review_mode
+		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6, $7, $8)
 		ON CONFLICT (project_id, id) DO NOTHING`,
 		id, clean.Statement, string(encoded), hashParts(clean.Statement, clean.Acceptance), projectID, userID, clean.SelfReview,
+		clean.AIReviewMode,
 	)
 	if err != nil {
 		return "", err

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { expect, test } from 'vitest';
 import ReviewersPanel from './ReviewersPanel.svelte';
 import { canSetSelfReview } from '$lib/requirements';
@@ -21,6 +21,7 @@ function req(partial: Partial<Requirement> = {}): Requirement {
     canEditReviewers: false,
     selfReview: false,
     canSetSelfReview: false,
+    aiReviewMode: 'continue',
     ...partial
   };
 }
@@ -59,4 +60,36 @@ test('others see a read-only Self review line', () => {
 test('nothing about Self review shows when it is off and locked', () => {
   render(ReviewersPanel, { requirement: req(), options: [], onsaved: noop, onmessage: noop });
   expect(screen.queryByText(/Self review/)).toBeNull();
+});
+
+test('a lead chooses what an AI request for changes does', async () => {
+  render(ReviewersPanel, {
+    requirement: req({ canEditReviewers: true, canSetSelfReview: true, aiReviewMode: 'manual' }),
+    options: [],
+    onsaved: noop,
+    onmessage: noop
+  });
+  const group = screen.getByRole('group', { name: 'When the AI review asks for changes' });
+  const manual = within(group).getByRole('button', { name: 'A person reviews' });
+  const next = within(group).getByRole('button', { name: 'Run the next attempt' });
+  expect(manual.getAttribute('aria-pressed')).toBe('true');
+  const save = screen.getByRole('button', { name: 'Save reviewers' }) as HTMLButtonElement;
+  expect(save.disabled).toBe(true);
+  await fireEvent.click(next);
+  expect(next.getAttribute('aria-pressed')).toBe('true');
+  expect(save.disabled).toBe(false);
+});
+
+test('others see a read-only line only when the mode is manual', () => {
+  const { unmount } = render(ReviewersPanel, {
+    requirement: req({ aiReviewMode: 'manual' }),
+    options: [],
+    onsaved: noop,
+    onmessage: noop
+  });
+  expect(screen.queryByRole('group', { name: 'When the AI review asks for changes' })).toBeNull();
+  expect(screen.getByText(/a person reviews before another attempt/)).toBeTruthy();
+  unmount();
+  render(ReviewersPanel, { requirement: req(), options: [], onsaved: noop, onmessage: noop });
+  expect(screen.queryByText(/a person reviews before another attempt/)).toBeNull();
 });

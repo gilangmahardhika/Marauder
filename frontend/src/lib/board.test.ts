@@ -32,6 +32,7 @@ function card(id: string, partial: Partial<Card> = {}): Card {
     reviewIndependent: null,
     reviewVerdict: null,
     selfReview: false,
+    aiReviewMode: 'continue',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

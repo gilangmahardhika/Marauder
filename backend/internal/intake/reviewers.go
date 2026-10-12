@@ -52,6 +52,41 @@ func SetSelfReview(ctx context.Context, db *sql.DB, projectID, id string, on boo
 	return nil
 }
 
+// AI review modes of a requirement (RFC-072).
+const (
+	ReviewContinue = "continue"
+	ReviewManual   = "manual"
+)
+
+const errReviewMode = "Choose continue or manual."
+
+// ErrAIReviewModeForbidden refuses a manual AI review mode, or a change of
+// the mode, by anyone but a Lead Developer or an admin (RFC-072).
+var ErrAIReviewModeForbidden = errors.New("only a Lead Developer or an admin can change the AI review mode")
+
+func validReviewMode(mode string) bool {
+	return mode == ReviewContinue || mode == ReviewManual
+}
+
+// SetAIReviewMode sets the AI review mode of one requirement on projectID.
+// The caller checks CanSetSelfReview.
+func SetAIReviewMode(ctx context.Context, db *sql.DB, projectID, id, mode string) error {
+	if !validReviewMode(mode) {
+		return &Invalid{Fields: map[string]string{"aiReviewMode": errReviewMode}}
+	}
+	res, err := db.ExecContext(ctx, `
+		UPDATE requirements SET ai_review_mode = $3 WHERE project_id = $1 AND id = $2`, projectID, id, mode)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return err
+	} else if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SetReviewers replaces the reviewers of one requirement on projectID. Each
 // reviewer must be an enabled member of the project's tribe with a verified
 // GitHub login, and not the row's creator, who owns the pull request.

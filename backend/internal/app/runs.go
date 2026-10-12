@@ -72,7 +72,7 @@ func QueueCardRun(ctx context.Context, db *sql.DB, projectID, cardID string) (bo
 	if !ok || !worker.CanStart(done, card.DependsOn) {
 		return card, ErrNotRunnable
 	}
-	if _, err := insertCardRun(ctx, tx, projectID, cardID); err != nil {
+	if _, err := insertCardRun(ctx, tx, projectID, cardID, "api"); err != nil {
 		return card, err
 	}
 	return card, tx.Commit()
@@ -104,7 +104,7 @@ func QueueReadyRuns(ctx context.Context, db *sql.DB, projectID string) (int, err
 		if !runnable(card, done) {
 			continue
 		}
-		added, err := insertCardRun(ctx, tx, projectID, id)
+		added, err := insertCardRun(ctx, tx, projectID, id, "api")
 		if err != nil {
 			return 0, err
 		}
@@ -188,11 +188,23 @@ func runnable(card board.Card, done map[string]bool) bool {
 	return card.Status == "ready" && worker.CanStart(done, card.DependsOn)
 }
 
-func insertCardRun(ctx context.Context, q querier, projectID, cardID string) (bool, error) {
+// retryOrCap ends an attempt that left the card in_progress or
+// changes_requested: it blocks the card with attempt_cap when no attempts
+// remain, and otherwise queues the next attempt with a retry request (RFC-071).
+func retryOrCap(ctx context.Context, db *sql.DB, cardID string) (board.Card, error) {
+	card, err := AtCap(ctx, db, cardID)
+	if err != nil || (card.Status != "in_progress" && card.Status != "changes_requested") {
+		return card, err
+	}
+	_, err = insertCardRun(ctx, db, card.ProjectID, card.ID, "retry")
+	return card, err
+}
+
+func insertCardRun(ctx context.Context, q querier, projectID, cardID, trigger string) (bool, error) {
 	res, err := q.ExecContext(ctx, `
-		INSERT INTO runs (id, trigger, created_at, project_id, card_id) VALUES ($1, 'api', $2, $3, $4)
+		INSERT INTO runs (id, trigger, created_at, project_id, card_id) VALUES ($1, $5, $2, $3, $4)
 		ON CONFLICT (card_id) WHERE card_id IS NOT NULL AND processed_at IS NULL DO NOTHING`,
-		mustID("run_"), time.Now().UTC().Format(time.RFC3339), projectID, cardID)
+		mustID("run_"), time.Now().UTC().Format(time.RFC3339), projectID, cardID, trigger)
 	if err != nil {
 		return false, err
 	}

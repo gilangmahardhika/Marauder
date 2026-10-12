@@ -1,11 +1,13 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 import {
+  addRequirement,
   createProject,
   getCards,
   getTribeCandidates,
   putDeploy,
   putLinks,
   putMe,
+  setAIReviewMode,
   setTribeAdmin,
   syncRepository
 } from './api';
@@ -92,6 +94,26 @@ test('tribe admin calls use the tribe and member ids', async () => {
     'GET http://127.0.0.1:8787/api/tribes/tribe_a/candidates'
   ]);
   expect(JSON.parse(calls[0].body)).toEqual({ tribeAdmin: true });
+});
+
+test('a new requirement sends its AI review mode, and the mode has its own route', async () => {
+  const calls: { url: string; method: string; body: string }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, method: String(init.method ?? 'GET'), body: String(init.body ?? '') });
+      return new Response('{}', { status: 200 });
+    })
+  );
+  session.setProject('proj_widget');
+  await addRequirement({ id: '', statement: 'Export', acceptance: [], selfReview: false, aiReviewMode: 'manual' });
+  await setAIReviewMode('REQ-002', 'continue');
+  expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+    'POST http://127.0.0.1:8787/api/projects/proj_widget/requirements',
+    'PUT http://127.0.0.1:8787/api/projects/proj_widget/requirements/REQ-002/ai-review-mode'
+  ]);
+  expect(JSON.parse(calls[0].body)).toMatchObject({ aiReviewMode: 'manual' });
+  expect(JSON.parse(calls[1].body)).toEqual({ aiReviewMode: 'continue' });
 });
 
 test('putMe saves the caller name', async () => {

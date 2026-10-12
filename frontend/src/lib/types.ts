@@ -41,6 +41,8 @@ export type Card = {
   reviewVerdict: 'recommend_approve' | 'request_changes' | 'failed' | null;
   /** Every requirement of the card has Self review on, so its owner may approve. */
   selfReview: boolean;
+  /** `manual` when any requirement of the card is manual (RFC-072). */
+  aiReviewMode: AIReviewMode;
   approvedSha: string | null;
   deployedSha: string | null;
   environment: string;
@@ -133,7 +135,11 @@ export type Requirement = {
   /** The owner of this requirement's cards may approve them alone (RFC-070). */
   selfReview: boolean;
   canSetSelfReview: boolean;
+  /** What an AI request for changes does on this requirement's cards (RFC-072). */
+  aiReviewMode: AIReviewMode;
 };
+
+export type AIReviewMode = 'continue' | 'manual';
 
 export type Reviewer = {
   id: string;

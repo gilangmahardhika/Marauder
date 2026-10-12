@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-073`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-074`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -29,6 +29,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0022-approval-on-github-and-changes.md](rfc/0022-approval-on-github-and-changes.md) | Decision `RFC-068`. An approval posts a pull request comment and an `orchestrator/approval` status, and the card page shows the code changes |
 | [rfc/0023-checks-decide-without-verdict.md](rfc/0023-checks-decide-without-verdict.md) | Decision `RFC-069`. A review with no verdict no longer blocks; the pull request checks decide, and an empty check list waits 2 minutes |
 | [rfc/0024-self-review.md](rfc/0024-self-review.md) | Decision `RFC-070`. A Lead Developer or an admin may turn Self review on for a requirement, so its card owner approves alone, recorded as not independent |
+| [rfc/0025-retry-and-review-mode.md](rfc/0025-retry-and-review-mode.md) | Decisions `RFC-071` and `RFC-072`. A failed attempt queues the next one while attempts remain, and a requirement's AI review mode lets a person decide after a `request_changes` verdict |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

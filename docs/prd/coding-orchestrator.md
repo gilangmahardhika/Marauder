@@ -116,6 +116,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-071 | Approval shows on GitHub, and the card page shows the code changes |
 | REQ-072 | The pull request checks decide when the AI review gives no verdict |
 | REQ-073 | Self review on a requirement |
+| REQ-074 | A failed attempt retries, and a requirement chooses what an AI request for changes does |
 
 ## Requirements
 
@@ -1031,6 +1032,19 @@ A Lead Developer or an admin may turn Self review on for one requirement, when a
 - With Solo approval off, the owner of a card whose only requirement has Self review has `approve` in `actions`, and the owner's approval reaches `approved` with `independent = false`.
 - When the card also lists a requirement without Self review, the owner's `actions` has no `approve` and the owner's approval is `403`.
 
+### REQ-074 A failed attempt retries, and a requirement chooses what an AI request for changes does
+
+After a person runs a card, an attempt that makes no commit or fails its local check queues the next attempt while attempts remain, so nobody presses Run again. A card out of attempts is blocked with `attempt_cap` and is not offered Run (RFC-071).
+
+A Lead Developer or an admin sets each requirement's AI review mode: Continue, the default, or Manual. Nobody else may choose Manual. When the AI review asks for changes on a card whose requirements are all Continue, the card goes back with the review note and the next attempt is queued. When any requirement is Manual, the card waits for its pull request checks and reaches Human review with the review note shown, so an approver may approve the head as it is or ask for changes (RFC-072).
+
+#### Acceptance
+
+- An attempt with no commit and attempts left leaves the card queued. At the cap the card is blocked with `attempt_cap` and Run is not listed.
+- An AI request for changes on a Continue card reaches `changes_requested` with the next attempt queued.
+- An AI request for changes on a Manual card with green checks reaches `human_review`, and the card's notes hold the review body.
+- A Developer who asks for Manual gets `403`. A Lead Developer's change shows on the requirement and on its card.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1142,3 +1156,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 25. Approval on GitHub and the Changes panel (REQ-071).
 26. Checks decide when the AI review gives no verdict (REQ-072).
 27. Self review on a requirement (REQ-073).
+28. Retry after a failed attempt, and the AI review mode (REQ-074).

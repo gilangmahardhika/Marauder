@@ -579,3 +579,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReviewNoteRedacted`
 - [x] `CardNotes` and `CardActions` Vitest cases
 - [x] On the live server, `card_a91765e0d872` shows the reviewer's note.
+
+## Sprint 37: Retry after a failed attempt, and the AI review mode
+
+- [x] Migration `00019` adds `requirements.ai_review_mode` and the `retry` run trigger.
+- [x] `no_commit` and `checks_failed` queue a `retry` row while attempts remain, and block with `attempt_cap` at the cap.
+- [x] A card at the cap does not list `run` and is not started.
+- [x] An AI `request_changes` on a `continue` card queues the next attempt. On a `manual` card the checks decide and green checks reach Human review.
+- [x] Only a Lead Developer or an admin sets the mode, on add or through `PUT .../ai-review-mode`. The intake and card JSON return `aiReviewMode`.
+- [x] The Reviewers panel and the New requirement page show the mode, and the card Details show "After AI review: A person reviews".
+- [x] `TestRetryAfterNoCommit`
+- [x] `TestRetryAfterChecksFailed`
+- [x] `TestRunRefusedAtCap`
+- [x] `TestReviewContinueQueuesRetry`
+- [x] `TestReviewManualReachesHumanReview`
+- [x] `TestRefreshSendsBackWhenNoLongerManual`
+- [x] `TestCardAIReviewMode`
+- [x] `TestAIReviewModeNeedsLead`
+- [x] `ReviewersPanel` and `api` Vitest cases
+- [x] On the live server, the REQ-002 Reviewers panel shows the mode and the card JSON has `aiReviewMode`.
