@@ -104,6 +104,40 @@ func Count(ctx context.Context, q queryer, cardID, kind string) (int, error) {
 	return n, err
 }
 
+// Listed is one stored event of a card, with its payload as stored.
+type Listed struct {
+	ID        string
+	TS        string
+	AttemptID string
+	Kind      string
+	Payload   string
+}
+
+type lister interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// List returns the card's events oldest first. Events in the same second keep
+// the order they were inserted in.
+func List(ctx context.Context, q lister, cardID string) ([]Listed, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, ts, COALESCE(attempt_id, ''), kind, payload_json
+		FROM events WHERE card_id = $1 ORDER BY ts, seq`, cardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []Listed{}
+	for rows.Next() {
+		var ev Listed
+		if err := rows.Scan(&ev.ID, &ev.TS, &ev.AttemptID, &ev.Kind, &ev.Payload); err != nil {
+			return nil, err
+		}
+		events = append(events, ev)
+	}
+	return events, rows.Err()
+}
+
 func Redact(s string, secrets []string) string {
 	ordered := append([]string(nil), secrets...)
 	sort.Slice(ordered, func(i, j int) bool {

@@ -149,10 +149,14 @@ frontend/
   src/lib/board.ts
   src/lib/people.ts
   src/lib/trace.ts
+  src/lib/format.ts
   src/lib/components/Live.svelte
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
   src/lib/components/CardChanges.svelte
+  src/lib/components/TraceBlock.svelte
+  src/lib/components/TraceRow.svelte
+  src/lib/components/TraceText.svelte
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
   src/lib/components/IntakeActions.svelte
@@ -173,6 +177,8 @@ frontend/
   src/lib/llm.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/CardChanges.test.ts
+  src/lib/components/TraceRow.test.ts
+  src/lib/components/TraceBlock.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
@@ -281,7 +287,7 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 | Skills | Slug, title, "use when", body | `state` All, Enabled, or Disabled with counts | No |
 | Project Conventions | Rule title and stack name | `category`, on the rules table only | No |
 | LLM APIs | Family id, base URL, model ids | `protocol` All, Anthropic, or OpenAI and `key` All, Saved, or Not set, with counts. Any protocol other than `openai` counts as Anthropic | No |
-| Card trace | Kind, attempt id, payload JSON | `kind`, and `attempt` when there is more than one attempt, built from the events present with counts | Yes |
+| Card trace | Kind and its label, attempt id, the row's label and detail, payload JSON | `kind` ("Tool call (88)"), and `attempt` ("Attempt 8 (24)") when there is more than one attempt, built from the events present with counts | Yes |
 
 Router, Company GitHub, Linked projects, and Account have no toolbar. Their lists are short or are edit forms.
 
@@ -370,9 +376,18 @@ While `draftPending` is true, the live message is "Planner is drafting requireme
 
 ## Trace
 
-`GET /api/cards/{id}/trace`.
+`GET /api/projects/{projectId}/cards/{id}/trace`, plus `GET /api/projects/{projectId}/cards/{id}` for the title and status. No model call from this page.
 
-A list, oldest first. Each item shows time, kind, attempt id, and the payload inside `<pre>{JSON.stringify(payload, null, 2)}</pre>`. No model call from this page. A toolbar searches kind, attempt id, and payload text, and filters by kind and attempt. The list renders 50 events at a time.
+The page reads as a timeline, oldest first:
+
+- Header: "Trace", the card title as the description, and the status badge in `meta`. A summary strip shows attempts, events, total model tokens, errors (a link to `?kind=job_error` when above zero), and the first and last event time.
+- Day headers split the timeline where the local day changes.
+- Milestones: events without an attempt, such as status changes, refused status changes, errors, and reviewer requests. Consecutive milestones share one bordered list.
+- Attempt blocks (`TraceBlock`): a run of consecutive events with one `attemptId`. The reviewer's events carry the implement attempt's id, so they form a block titled "Review of attempt N"; a later run of the same attempt and role is "(continued)". The header is a button with `aria-expanded` that shows the task class, model, model calls, tools, tokens in and out, duration (`startedAt` to `endedAt` for an implement block, first to last event otherwise), a red problem count, and the outcome badge and short commit, or for a review the verdict and "Not independent". The latest block and any block with a problem start open. Every block starts open while a search or filter is set. A block shows 50 rows, then `ShowMore`.
+- Rows (`TraceRow`): one 44px line per event with the local clock time (ISO in `title`), an icon, a label, a detail, and right-aligned meta such as "1,616 in / 74 out". `trace.describe` gives every kind a template; an unknown kind reads as its name in sentence case. Red rows are errors, failed tools, failed checks, and moves to Blocked; amber rows are refused calls and changes requested. A row is a button with `aria-expanded`; open, it shows the full detail, the long text, the kind, time, attempt id, and event id, and a "Raw event" toggle with the JSON.
+- Long text (`TraceText`): control characters other than newline and tab are stripped, text is cut at 4,000 characters with "Show all (size)", and text that was mostly NUL bytes is hidden as binary output until "Show anyway". Every value renders as text.
+
+The toolbar searches the kind and its label, attempt id, the row's label and detail, and payload text, and filters by kind and attempt. The timeline renders 50 entries at a time.
 
 ## Settings pages
 
@@ -565,7 +580,10 @@ npm run build
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
 | `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |
-| `trace` filters | Events filter by kind, attempt, and payload text. Kind and attempt options come from the events present |
+| `trace` filters | Events filter by kind, attempt, payload text, and the row's words. Kind and attempt options come from the events present, labelled "Status change (1)" and "Attempt 1 (1)" |
+| `trace` timeline | `buildTimeline` splits the implement and review blocks of one attempt with milestones between, and marks a later run as continued. `describe` covers each kind and an unknown kind. `cleanText` strips NUL bytes, reports the byte size, and cuts at the cap |
+| `TraceRow` | A row opens to its details and the raw JSON. An error row is red, a long message offers Show all, and binary output stays hidden until Show anyway |
+| `TraceBlock` | A clean attempt starts closed with its outcome, commit, and duration, and opens to its rows. A block with an error starts open. A review block shows the verdict and "Not independent" |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | Built `build/index.html` | Contains a CSP meta tag with `script-src 'self'` and a hash, and no `unsafe-inline` |

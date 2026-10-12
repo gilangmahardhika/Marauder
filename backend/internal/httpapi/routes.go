@@ -15,6 +15,7 @@ import (
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/providers/llm"
 	"orchestrator/backend/internal/settings"
+	"orchestrator/backend/internal/trace"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -70,13 +71,13 @@ func (s *Server) boardBody(r *http.Request, projectID string, cards []any, ready
 }
 
 func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action string) {
-	if action == "trace" && r.Method == http.MethodGet {
-		s.trace(w, r, id)
-		return
-	}
 	card, err := board.GetCard(r.Context(), s.DB, id)
 	if err != nil {
 		writeAppErr(w, err)
+		return
+	}
+	if action == "trace" && r.Method == http.MethodGet {
+		s.trace(w, r, card)
 		return
 	}
 	if action == "diff" && r.Method == http.MethodGet {
@@ -147,33 +148,43 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 	}
 }
 
-func (s *Server) trace(w http.ResponseWriter, r *http.Request, id string) {
-	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT id, ts, COALESCE(attempt_id, ''), kind, payload_json
-		FROM events WHERE card_id = $1 ORDER BY ts`, id)
+func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) {
+	listed, err := trace.List(r.Context(), s.DB, card.ID)
 	if err != nil {
 		writeErr(w, 500, "internal", "trace")
 		return
 	}
-	defer rows.Close()
-	events := []any{}
-	for rows.Next() {
-		var eventID, ts, attemptID, kind, payload string
-		if err := rows.Scan(&eventID, &ts, &attemptID, &kind, &payload); err != nil {
-			writeErr(w, 500, "internal", "trace")
-			return
-		}
+	stored, err := board.CardAttempts(r.Context(), s.DB, card.ProjectID, card.ID)
+	if err != nil {
+		writeErr(w, 500, "internal", "trace")
+		return
+	}
+	events := make([]any, 0, len(listed))
+	for _, ev := range listed {
 		var decoded any
-		if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
+		if err := json.Unmarshal([]byte(ev.Payload), &decoded); err != nil {
 			decoded = map[string]any{}
 		}
-		item := map[string]any{"id": eventID, "ts": ts, "kind": kind, "payload": decoded}
-		if attemptID != "" {
-			item["attemptId"] = attemptID
+		item := map[string]any{"id": ev.ID, "ts": ev.TS, "kind": ev.Kind, "payload": decoded}
+		if ev.AttemptID != "" {
+			item["attemptId"] = ev.AttemptID
 		}
 		events = append(events, item)
 	}
-	writeJSON(w, 200, map[string]any{"events": events})
+	attempts := make([]any, 0, len(stored))
+	for _, a := range stored {
+		var independent any
+		if a.ReviewIndependent.Valid {
+			independent = a.ReviewIndependent.Bool
+		}
+		attempts = append(attempts, map[string]any{
+			"id": a.ID, "n": a.N, "taskClass": a.TaskClass, "modelId": a.ModelID,
+			"fallbackModelId": a.FallbackModelID, "inputTokens": a.InputTokens, "outputTokens": a.OutputTokens,
+			"commitSha": a.CommitSHA, "reviewModelId": a.ReviewModelID, "reviewVerdict": a.ReviewVerdict,
+			"reviewIndependent": independent, "startedAt": a.StartedAt, "endedAt": a.EndedAt, "outcome": a.Outcome,
+		})
+	}
+	writeJSON(w, 200, map[string]any{"attempts": attempts, "events": events})
 }
 
 func (s *Server) llm(w http.ResponseWriter, r *http.Request) {

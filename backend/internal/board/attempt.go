@@ -216,6 +216,50 @@ func RecordReview(ctx context.Context, q DBTX, attemptID, model, promptHash stri
 	return err
 }
 
+// AttemptSummary is what the trace shows for one attempt. Empty strings are
+// values the attempt does not have yet.
+type AttemptSummary struct {
+	ID                string
+	N                 int
+	TaskClass         string
+	ModelID           string
+	FallbackModelID   string
+	InputTokens       int
+	OutputTokens      int
+	CommitSHA         string
+	ReviewModelID     string
+	ReviewVerdict     string
+	ReviewIndependent sql.NullBool
+	StartedAt         string
+	EndedAt           string
+	Outcome           string
+}
+
+// CardAttempts lists the card's attempts in the project, first attempt first.
+func CardAttempts(ctx context.Context, db *sql.DB, projectID, cardID string) ([]AttemptSummary, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, n, task_class, COALESCE(model_id, ''), COALESCE(fallback_model_id, ''),
+			input_tokens, output_tokens, COALESCE(commit_sha, ''), COALESCE(review_model_id, ''),
+			COALESCE(review_verdict, ''), review_independent, started_at, COALESCE(ended_at, ''),
+			COALESCE(outcome, '')
+		FROM attempts WHERE card_id = $1 AND project_id = $2 ORDER BY n`, cardID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	attempts := []AttemptSummary{}
+	for rows.Next() {
+		var a AttemptSummary
+		if err := rows.Scan(&a.ID, &a.N, &a.TaskClass, &a.ModelID, &a.FallbackModelID,
+			&a.InputTokens, &a.OutputTokens, &a.CommitSHA, &a.ReviewModelID,
+			&a.ReviewVerdict, &a.ReviewIndependent, &a.StartedAt, &a.EndedAt, &a.Outcome); err != nil {
+			return nil, err
+		}
+		attempts = append(attempts, a)
+	}
+	return attempts, rows.Err()
+}
+
 // SetCIRequired records whether the pull request head had checks when the
 // review finished.
 func SetCIRequired(ctx context.Context, q DBTX, attemptID string, required bool) error {

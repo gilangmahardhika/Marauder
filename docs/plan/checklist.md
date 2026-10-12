@@ -504,3 +504,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `CardChanges` Vitest cases
 - [x] Card REQ-001 on `scbd-solid-web` shows its Changes, `resources/js/Pages/Auth/Login.tsx` with `+1 -1`.
 - [x] After approving REQ-001, pull request #34 has the approval comment and a green `orchestrator/approval` status on `ae5d441`.
+
+## Sprint 32: Readable card trace
+
+- [x] Migration `00016` adds `events.seq`, and the trace orders by `ts` then `seq`.
+- [x] The trace route returns `attempts` with model, tokens, times, outcome, commit, and review.
+- [x] `job_error` messages over 8 KiB keep their head and tail, without NUL bytes.
+- [x] The Trace page shows milestones, attempt blocks, one-line rows, and clamped long text.
+- [x] `TestTraceOrderAndAttempts`
+- [x] `TestJobErrorCapped`
+- [x] `trace` Vitest cases
+- [x] `TraceRow` Vitest cases
+- [x] `TraceBlock` Vitest cases
+- [x] The REQ-001 trace on `scbd-solid-web` shows Ready -> In progress before -> Blocked, 8 attempt blocks and a review block, and the 1.2 MB error hidden as binary output.

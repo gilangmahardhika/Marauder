@@ -6,7 +6,7 @@
   import { categoryLabel } from '$lib/conventions';
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
-  import { reasonLabel, statusLabel } from '$lib/status';
+  import { cardTone, reasonLabel, statusLabel } from '$lib/status';
   import type { Card, CardDiff, CardOwner, CardRequirement, CardRule } from '$lib/types';
   import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
@@ -72,14 +72,6 @@
     return url.startsWith('https://github.com/') || url.startsWith('http://127.0.0.1');
   }
 
-  function tone(value: Card) {
-    if (value.status === 'blocked' || value.group === 'stopped') return 'red';
-    if (value.group === 'finished') return 'green';
-    if (value.group === 'review') return 'amber';
-    if (value.group === 'running' || value.group === 'shipping') return 'sky';
-    return 'default';
-  }
-
   /** Rules in API order, grouped by label: global first, then each stack. */
   function groupRules(rules: CardRule[]) {
     const groups: { label: string; rules: CardRule[] }[] = [];
@@ -127,7 +119,7 @@
 {:else if card}
   <Page title={card.title}>
     {#snippet meta()}
-      <span title={card!.status}><Badge tone={tone(card!)}>{statusLabel(card!.status)}</Badge></span>
+      <span title={card!.status}><Badge tone={cardTone(card!)}>{statusLabel(card!.status)}</Badge></span>
     {/snippet}
     {#snippet actions()}
       <Button href={`/cards/${card!.id}/trace`}>View trace</Button>

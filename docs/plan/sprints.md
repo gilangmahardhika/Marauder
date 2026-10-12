@@ -479,3 +479,16 @@ Packages: `internal/app`, `internal/runtime`, `internal/httpapi`, `internal/cli`
 - `CardChanges` on the card page lists files, opens colored hunks, and links to the GitHub compare view.
 
 Done when: `TestApprovalPostsCommentAndStatus`, `TestApprovalAnnounceFailureKeepsApproved`, `TestRequestChangesWithdrawsApprovalStatus`, `TestReviewIgnoresApprovalStatus`, `TestCardDiff`, `TestCardDiffRoute`, and the `CardChanges` Vitest cases.
+
+## Sprint 32: Readable card trace
+
+Goal: A person reads a card's trace as a story: status changes, then each attempt as one line that opens to its steps. It adds no decision; it refines the trace contract in tech/0002 and the Trace page in tech/0004 (REQ-039, REQ-042).
+
+Packages: `internal/trace`, `internal/board`, `internal/httpapi`, `internal/app`, `migrations`, frontend Trace page.
+
+- Migration `00016` adds `events.seq`. `trace.List` orders by `ts` then `seq`, so events in the same second keep their order.
+- `board.CardAttempts` and the trace route's `attempts` list give each attempt's model, tokens, start and end, outcome, commit, and review.
+- `app.jobError` drops NUL bytes and keeps the head and tail of a message over 8 KiB.
+- The Trace page groups events into milestones and attempt blocks, writes each event as one line in words, cuts long text with Show all, hides binary output, and keeps the raw JSON one click away.
+
+Done when: `TestTraceOrderAndAttempts`, `TestJobErrorCapped`, and the `trace`, `TraceRow`, and `TraceBlock` Vitest cases.

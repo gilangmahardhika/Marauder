@@ -85,6 +85,26 @@ export type TraceEvent = {
   payload: unknown;
 };
 
+/** Empty strings are values the attempt does not have yet. */
+export type TraceAttempt = {
+  id: string;
+  n: number;
+  taskClass: string;
+  modelId: string;
+  fallbackModelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  commitSha: string;
+  reviewModelId: string;
+  reviewVerdict: string;
+  reviewIndependent: boolean | null;
+  startedAt: string;
+  endedAt: string;
+  outcome: string;
+};
+
+export type TraceResponse = { attempts: TraceAttempt[]; events: TraceEvent[] };
+
 export type Requirement = {
   id: string;
   sourceKind: 'prd' | 'rfc' | 'draft' | 'manual';

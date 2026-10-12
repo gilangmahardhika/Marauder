@@ -25,7 +25,7 @@ import type {
   SkillInput,
   Stack,
   StackInput,
-  TraceEvent,
+  TraceResponse,
   TribeCandidate,
   TribeMember,
   TribeRecord
@@ -210,7 +210,7 @@ export function getCardDiff(id: string) {
 }
 
 export function getTrace(id: string) {
-  return request<{ events: TraceEvent[] }>(`${projectPrefix()}/cards/${id}/trace`);
+  return request<TraceResponse>(`${projectPrefix()}/cards/${id}/trace`);
 }
 
 export function getIntake() {

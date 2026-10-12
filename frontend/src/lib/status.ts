@@ -1,3 +1,5 @@
+import type { Card } from './types';
+
 const statuses: Record<string, string> = {
   backlog: 'Backlog',
   ready: 'Ready',
@@ -28,7 +30,7 @@ const reasons: Record<string, string> = {
 };
 
 /** "some_code" reads as "Some code". Text that is not a code is returned as is. */
-function sentence(value: string) {
+export function sentence(value: string) {
   if (!/^[a-z0-9_]+$/.test(value)) return value;
   const words = value.replaceAll('_', ' ').trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -40,4 +42,13 @@ export function statusLabel(status: string) {
 
 export function reasonLabel(reason: string) {
   return reasons[reason] ?? sentence(reason);
+}
+
+/** Badge tone for a card's status. */
+export function cardTone(card: Pick<Card, 'status' | 'group'>) {
+  if (card.status === 'blocked' || card.group === 'stopped') return 'red';
+  if (card.group === 'finished') return 'green';
+  if (card.group === 'review') return 'amber';
+  if (card.group === 'running' || card.group === 'shipping') return 'sky';
+  return 'default';
 }

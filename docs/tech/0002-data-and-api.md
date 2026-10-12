@@ -223,6 +223,9 @@ CREATE TABLE events (
   payload_json TEXT NOT NULL
 );
 CREATE INDEX events_card_ts ON events(card_id, ts);
+-- 00016: insert order, so events in the same second keep their order
+ALTER TABLE events ADD COLUMN seq BIGSERIAL;
+CREATE INDEX events_card_seq ON events (card_id, ts, seq);
 
 -- +goose StatementBegin
 CREATE FUNCTION events_immutable() RETURNS trigger
@@ -335,7 +338,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `assertion_failed` | `name`, `detail` |
 | `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
-| `job_error` | `message`, the redacted error that stopped an implement job (RFC-063) |
+| `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
 
@@ -721,19 +724,39 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
 
 ```json
 {
+  "attempts": [
+    {
+      "id": "att_0123456789ab",
+      "n": 1,
+      "taskClass": "implement",
+      "modelId": "example-model",
+      "fallbackModelId": "",
+      "inputTokens": 11883,
+      "outputTokens": 2523,
+      "commitSha": "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+      "reviewModelId": "other-model",
+      "reviewVerdict": "recommend_approve",
+      "reviewIndependent": false,
+      "startedAt": "2026-10-10T05:00:00Z",
+      "endedAt": "2026-10-10T05:01:08Z",
+      "outcome": "checks_passed"
+    }
+  ],
   "events": [
     {
       "id": "evt_0123456789ab",
       "ts": "2026-10-10T05:00:00Z",
       "attemptId": "att_0123456789ab",
-      "kind": "transition",
-      "payload": { "from": "ready", "to": "in_progress", "evidence": "lock held, route stored" }
+      "kind": "model_call",
+      "payload": { "role": "implementer", "modelId": "example-model", "inputTokens": 932, "outputTokens": 84, "stopReason": "tool_use" }
     }
   ]
 }
 ```
 
-Oldest first. Payload is the redacted JSON already stored. New transition payloads may include `actorId`.
+Events are oldest first by `ts`, then by insert order (`seq`), so events in the same second keep the order they were written in. `attemptId` is left out when the event has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
+
+`attempts` lists the card's attempts in the project by `n`. A value the attempt does not have yet is `""`, and `reviewIndependent` is `null` until a review ran. `outcome` is `""` while the attempt runs, then one of `checks_passed`, `checks_failed`, `no_commit`, `budget`, `error`, or `cancelled`. Tokens are the implementer's calls only; the reviewer's calls are in `model_call` events with `role: reviewer`, under the same `attemptId`.
 
 `GET /api/projects/{projectId}/cards/{id}/diff` (RFC-068)
 

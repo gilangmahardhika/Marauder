@@ -150,7 +150,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 The implement job never calls `deploy`.
 
-What runs today (RFC-063): `app.ImplementCard` moves `ready` or `changes_requested` to `in_progress` first, so the step 1 blocks are legal edges, and copies the project's `checks.local` onto a card that has none. The card lock is held during the tool loop only. A `maxWallMinutesPerAttempt` stop blocks with `wall_cap`. Step 11 writes the last 200 lines of the check as a `local_check` note instead of running triage. A check that cannot start blocks with `check_error`, and a failed push or pull request blocks with `publish_failed`. Since RFC-065, before step 2 on a real repo the job runs `<engine> version`, and a failure blocks with `sandbox_config` and a `job_error` without inserting an attempt. When the latest attempt ended with a commit and no outcome, or with `checks_passed` while the card has no pull request, and the worktree HEAD is that commit, the job skips steps 4 to 8 and gates and publishes that commit with that attempt. A `checks_passed` attempt is not counted again. Not built: `turn_cap`, `token_cap`, triage, and step 12.
+What runs today (RFC-063): `app.ImplementCard` moves `ready` or `changes_requested` to `in_progress` first, so the step 1 blocks are legal edges, and copies the project's `checks.local` onto a card that has none. The card lock is held during the tool loop only. A `maxWallMinutesPerAttempt` stop blocks with `wall_cap`. Step 11 writes the last 200 lines of the check as a `local_check` note instead of running triage. A check that cannot start blocks with `check_error`, and a failed push or pull request blocks with `publish_failed`. Since RFC-065, before step 2 on a real repo the job runs `<engine> version`, and a failure blocks with `sandbox_config` and a `job_error` without inserting an attempt. Every `job_error` goes through `app.jobError`, which redacts the message, drops NUL bytes, replaces invalid UTF-8, and keeps the first and last 4 KiB of a message over `app.JobErrorCap` (8 KiB). When the latest attempt ended with a commit and no outcome, or with `checks_passed` while the card has no pull request, and the worktree HEAD is that commit, the job skips steps 4 to 8 and gates and publishes that commit with that attempt. A `checks_passed` attempt is not counted again. Not built: `turn_cap`, `token_cap`, triage, and step 12.
 
 ### Tool loop
 
@@ -384,6 +384,8 @@ Saving `checks.local` or `checks.dev` updates cards in `backlog` and blocks card
 Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, project membership when the path has a project id, handler. The bearer lookup loads the user and rejects an expired or disabled session. CORS sends `Access-Control-Allow-Origin` with the exact configured origin, allows `Authorization` and `Content-Type`, and allows `GET`, `POST`, `PUT`, `DELETE`, and `OPTIONS`. A request with an `Origin` that does not match is `403`. Do not log passwords, bearer tokens, `tokenKey`, or GitHub tokens.
 
 The worker runs on a context that is not the request context.
+
+The trace route reads `trace.List`, which orders the card's events by `ts` then `seq`, and `board.CardAttempts`, which lists the card's attempts in the project by `n`. It runs no SQL of its own.
 
 ## CLI
 
