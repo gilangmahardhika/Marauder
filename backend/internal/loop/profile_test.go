@@ -22,6 +22,16 @@ func TestImplementerTools(t *testing.T) {
 	}
 }
 
+func TestReviewerTools(t *testing.T) {
+	var got []string
+	for _, tool := range loop.ReviewerTools() {
+		got = append(got, tool.Name)
+	}
+	if strings.Join(got, ",") != "read_diff,comment_pr,verdict" {
+		t.Fatalf("reviewer tools = %v", got)
+	}
+}
+
 func keys(m map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for key := range m {

@@ -236,7 +236,7 @@ func Publish(ctx context.Context, db *sql.DB, cardID string, in PublishInput) (b
 	if err := git.Push(ctx, card.ID, runtime.Remote{URL: acct.CloneURL(project.Repo), Token: owner.Token}); err != nil {
 		return card, errors.New(trace.Redact(err.Error(), secrets))
 	}
-	gh := ghcli.Runner{Bin: in.Tools.GH, Exec: in.Tools.Exec, ConfigDir: filepath.Join(git.Data, "empty-gh")}
+	gh := ghcli.Runner{Bin: in.Tools.GH, Git: in.Tools.Git, Exec: in.Tools.Exec, ConfigDir: filepath.Join(git.Data, "empty-gh")}
 	prURL, err := ensurePR(ctx, gh, acct, project, card, owner.Token, in, git.Data)
 	if err != nil {
 		return card, errors.New(trace.Redact(err.Error(), secrets))

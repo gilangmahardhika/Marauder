@@ -134,6 +134,9 @@ func (s *Server) card(w http.ResponseWriter, r *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/cards/"), "/")
 	id, action, _ := strings.Cut(rest, "/")
 	if s.DB != nil {
+		if !s.cardAllowed(w, r, id, action) {
+			return
+		}
 		s.cardRoute(w, r, id, action)
 		return
 	}
@@ -154,6 +157,30 @@ func (s *Server) card(w http.ResponseWriter, r *http.Request) {
 		"id": id, "title": "card", "status": status, "group": group,
 		"actions": actions, "unblockTo": unblock,
 	})
+}
+
+// cardAllowed applies the project card route's checks to /api/cards/{id}: the
+// user must see the card's project, and the role must allow the action.
+func (s *Server) cardAllowed(w http.ResponseWriter, r *http.Request, id, action string) bool {
+	user, ok := app.CurrentUser(r.Context())
+	if !ok {
+		writeErr(w, 401, "unauthenticated", "bearer")
+		return false
+	}
+	card, err := board.GetCard(r.Context(), s.DB, id)
+	if err != nil {
+		writeAppErr(w, err)
+		return false
+	}
+	if err := app.SeeProject(r.Context(), s.DB, card.ProjectID, user.ID); err != nil {
+		writeAccountErr(w, err)
+		return false
+	}
+	if !actionAllowed(user.Role, action) {
+		writeErr(w, 403, "forbidden", "forbidden")
+		return false
+	}
+	return true
 }
 
 func Actions(status, reason string, open bool, role string) (string, []string, any) {

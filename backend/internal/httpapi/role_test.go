@@ -145,6 +145,84 @@ func TestActorOnTransition(t *testing.T) {
 	}
 }
 
+func TestLegacyCardRoutesCheckRole(t *testing.T) {
+	srv := accountServer(t)
+	ctx := context.Background()
+	dev := seedUser(t, srv, "dev@example.com", "password-long-1", "developer", true)
+	outsider := seedUser(t, srv, "out@example.com", "password-long-1", "lead_developer", true)
+	lead := seedUser(t, srv, "lead@example.com", "password-long-1", "lead_developer", true)
+	for _, u := range []identity.User{dev, lead} {
+		if err := app.AddMember(ctx, srv.DB, u, "tribe_default", u.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, u := range []identity.User{outsider, lead} {
+		if err := identity.SaveGitHub(ctx, srv.DB, u.ID, "github.com", "ada", nil, false, srv.TokenKey); err != nil {
+			t.Fatal(err)
+		}
+	}
+	card := reviewCard(t, srv, "proj_default")
+	path := "/api/cards/" + card.ID + "/approve"
+	body := map[string]string{"sha": headSHA}
+	if rec := postJSON(t, srv, path, loginToken(t, srv, "dev@example.com", "password-long-1"), body); rec.Code != 403 {
+		t.Fatalf("developer approve = %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := postJSON(t, srv, path, loginToken(t, srv, "out@example.com", "password-long-1"), body); rec.Code != 404 {
+		t.Fatalf("non-member approve = %d %s", rec.Code, rec.Body.String())
+	}
+	if got := reload(t, srv, card.ID); got.Status != "human_review" {
+		t.Fatalf("status after refused approvals = %s", got.Status)
+	}
+	if rec := postJSON(t, srv, path, loginToken(t, srv, "lead@example.com", "password-long-1"), body); rec.Code != 200 {
+		t.Fatalf("lead approve = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCardShowsLatestReview(t *testing.T) {
+	srv := accountServer(t)
+	ctx := context.Background()
+	lead := seedUser(t, srv, "lead@example.com", "password-long-1", "lead_developer", true)
+	if err := app.AddMember(ctx, srv.DB, lead, "tribe_default", lead.ID); err != nil {
+		t.Fatal(err)
+	}
+	card := reviewCard(t, srv, "proj_default")
+	token := loginToken(t, srv, "lead@example.com", "password-long-1")
+	path := "/api/projects/proj_default/cards/" + card.ID
+	if body := getAuth(t, srv, path, token).Body.String(); !strings.Contains(body, `"reviewedSha":null`) {
+		t.Fatalf("unreviewed card = %s", body)
+	}
+	if _, err := srv.DB.Exec(`UPDATE cards SET pr_url = 'https://github.com/o/r/pull/1' WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	attempt := board.Attempt{CardID: card.ID, N: 1, TaskClass: "implement", ModelID: "m", MaxTurns: 1, BaseSHA: headSHA}
+	if err := board.InsertAttempt(ctx, srv.DB, attempt); err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if err := srv.DB.QueryRow(`SELECT id FROM attempts WHERE card_id = $1`, card.ID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if err := board.FinishAttempt(ctx, srv.DB, id, "checks_passed", headSHA); err != nil {
+		t.Fatal(err)
+	}
+	if err := board.RecordReview(ctx, srv.DB, id, "reviewer", "hash", false, "recommend_approve", headSHA); err != nil {
+		t.Fatal(err)
+	}
+	body := getAuth(t, srv, path, token).Body.String()
+	if !strings.Contains(body, `"reviewedSha":"`+headSHA+`"`) || !strings.Contains(body, `"reviewIndependent":false`) {
+		t.Fatalf("reviewed card = %s", body)
+	}
+}
+
+func reload(t *testing.T, srv *httpapi.Server, id string) board.Card {
+	t.Helper()
+	card, err := board.GetCard(context.Background(), srv.DB, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return card
+}
+
 func reviewCard(t *testing.T, srv *httpapi.Server, project string) board.Card {
 	t.Helper()
 	card, err := board.InsertCard(context.Background(), srv.DB, board.Card{Status: "human_review"})

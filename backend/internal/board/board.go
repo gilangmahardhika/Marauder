@@ -271,8 +271,8 @@ func InsertGate(ctx context.Context, q DBTX, gate Gate) error {
 		attempt = gate.AttemptID
 	}
 	_, err := q.ExecContext(ctx, `
-		INSERT INTO gates (id, card_id, attempt_id, name, passed, evidence_ref, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		INSERT INTO gates (id, card_id, attempt_id, name, passed, evidence_ref, created_at, project_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, (SELECT project_id FROM cards WHERE id = $2))`,
 		gate.ID, gate.CardID, attempt, gate.Name, gate.Passed, gate.EvidenceRef, gate.CreatedAt,
 	)
 	return err

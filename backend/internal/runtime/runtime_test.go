@@ -3,6 +3,8 @@ package runtime_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -198,6 +200,46 @@ func TestCheckOnExport(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, ".git")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestExportLargeArchive(t *testing.T) {
+	repo := t.TempDir()
+	initRepo(t, repo)
+	big := make([]byte, 3<<20)
+	if _, err := rand.Read(big); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "big.bin"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git := lookGit(t)
+	runGit(t, repo, git, "add", "big.bin")
+	runGit(t, repo, git, "-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-m", "big")
+	data := dataDir(t)
+	g := newGit(t, repo, data)
+	ctx := context.Background()
+	sha, err := g.Head(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(data, "exports", "big")
+	if err := g.Export(ctx, sha, dest); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "big.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, big) {
+		t.Fatalf("exported big.bin has %d bytes, want %d", len(got), len(big))
+	}
+	if _, err := os.Stat(dest + ".tar"); !os.IsNotExist(err) {
+		t.Fatalf("archive file left behind: %v", err)
+	}
+	err = g.Export(ctx, strings.Repeat("0", 40), filepath.Join(data, "exports", "missing"))
+	if err == nil || len(err.Error()) > 3<<10 {
+		t.Fatalf("missing sha err length = %d, want an error under 3 KiB", len(fmt.Sprint(err)))
 	}
 }
 

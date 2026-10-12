@@ -118,7 +118,7 @@ The sandbox never mounts the worktree (RFC-037).
 | Check | Export |
 | --- | --- |
 | `run_local_check` tool | Copy of the working tree. Skip `.git`. Copy regular files and directories only. Do not follow symlinks; recreate them as symlinks only when the target stays inside the tree, otherwise skip them |
-| Gating local check | `git archive <commit_sha>` piped to an in-process tar reader that refuses absolute names, `..`, and links outside the export |
+| Gating local check | `git archive --output=<export>.tar <commit_sha>`, read by an in-process tar reader that refuses absolute names, `..`, and links outside the export. The `.tar` file is deleted after the read (RFC-065) |
 | Dev check | Same as gating, for `deployed_sha` |
 
 Exports live under `<data>/exports/<card-id>-<sha-or-attempt>/` and are deleted when the check ends. `Reconcile` deletes leftovers.
@@ -446,6 +446,10 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestConventionsCannotAddTool` | A rule whose body asks for a `deploy` tool leaves the implementer tool list unchanged, and a scripted `deploy` call is rejected |
 | `TestConventionsContextEvent` | An attempt appends one `conventions_context` event with each rule and skill id, version, and hash |
 | `TestReviewerPackConventions` | The reviewer pack carries the card's rules and skills inside the markers |
+| `TestExportLargeArchive` | A 3 MiB file exports whole, no `.tar` is left behind, and a missing SHA returns a git error under 3 KiB (RFC-065) |
+| `TestRunnerPathHasOnlyGitDir` | A job's `gh` child has `PATH` set to the git directory only, and no `PATH` when no git path is given (RFC-065) |
+| `TestReviewerTools` | The reviewer tools are `read_diff`, `comment_pr`, and `verdict`, with no `deploy` or `edit_file` |
+| `TestLegacyCardRoutesCheckRole` | `POST /api/cards/{id}/approve` is `403` for a Developer, `404` for a lead outside the project's tribe, and `200` for a lead member |
 
 ## Operator duties
 

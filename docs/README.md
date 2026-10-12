@@ -23,6 +23,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0016-worker-first-slice.md](rfc/0016-worker-first-slice.md) | Decision `RFC-062`. `serve` runs a worker per project that makes one card per accepted requirement without a model |
 | [rfc/0017-implement-job.md](rfc/0017-implement-job.md) | Decision `RFC-063`. The worker runs the implement job for queued cards, with real `openai` and `anthropic` clients, up to `pr_open` |
 | [rfc/0018-implementer-finds-files.md](rfc/0018-implementer-finds-files.md) | Decision `RFC-064`. The implementer gets the read-only tools `list_files` and `search_files` |
+| [rfc/0019-card-reaches-approved.md](rfc/0019-card-reaches-approved.md) | Decision `RFC-065`. A checked pull request is reviewed by a model, waits for its checks, and a person approves it |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -75,9 +75,11 @@ func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, in
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	slots := NewSlots()
+	advancer := NewAdvancer()
 	var lock *os.File
 	defer func() {
 		slots.Wait()
+		advancer.Wait()
 		if lock != nil {
 			lock.Close()
 		}
@@ -123,6 +125,9 @@ func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, in
 			if _, err := StartQueued(ctx, db, dataRoot, projectID, jobs, slots, logf); err != nil && ctx.Err() == nil {
 				logf("worker: project %s start: %v", projectID, err)
 			}
+		}
+		if err := advancer.Tick(ctx, db, projectID, jobs, time.Now(), logf); err != nil && ctx.Err() == nil {
+			logf("worker: project %s advance: %v", projectID, err)
 		}
 		select {
 		case <-ctx.Done():

@@ -404,6 +404,15 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if reviewers == nil {
 		reviewers = []intake.Reviewer{}
 	}
+	var reviewedSHA, reviewIndependent any
+	if card.PRURL != "" {
+		if review, err := board.LatestReview(r.Context(), s.DB, card.ID); err == nil && review.Verdict != "" {
+			reviewedSHA = nullString(review.ReviewedSHA)
+			if review.Independent.Valid {
+				reviewIndependent = review.Independent.Bool
+			}
+		}
+	}
 	return map[string]any{
 		"id": card.ID, "title": card.Title, "status": card.Status, "group": group,
 		"actions": actions, "unblockTo": unblock, "owner": owner, "reviewers": reviewers, "skills": skills,
@@ -413,7 +422,7 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"manual": card.Manual, "localCheck": nullString(card.LocalCheck), "devCheck": nullString(card.DevCheck),
 		"attemptsUsed": card.AttemptsUsed, "maxAttempts": card.MaxAttempts,
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
-		"headSha": nullString(card.HeadSHA), "reviewedSha": nil, "reviewIndependent": nil,
+		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
 		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,

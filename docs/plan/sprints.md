@@ -424,3 +424,19 @@ Packages: `internal/loop`, `internal/contextpack`, `internal/providers/openai`, 
 - The implement loop sends earlier turns as assistant tool calls and tool results, keeping the newest results under 16 KiB.
 
 Done when: `TestImplementerTools`, `TestListAndSearchFiles`, `TestOpenAIEndpointBaseURL`, `TestAnthropicBaseURL`, `TestRateLimitWaitsThenRetries`, `TestImplementProviderErrorRecordsMessage`, `TestDiscardChangesKeepsCommits`, `TestHistoryKeepsNewestResults`, `TestOpenAISendsTurns`, `TestAnthropicSendsTurns`.
+
+## Sprint 28: A card reaches Approved
+
+Goal: A card with a checked commit gets a pull request, a model review, and a CI wait, and a person approves it (RFC-065). Deploy is not part of this sprint.
+
+Packages: `internal/runtime`, `internal/sandbox`, `internal/machine`, `internal/board`, `internal/loop`, `internal/app`, `internal/worker`, `internal/httpapi`.
+
+- `runtime.Git.Export` writes the archive to a file before it is read. Git errors are cut at 2 KiB.
+- The implement job probes the sandbox engine first, and gates and publishes an earlier attempt's commit without a model call.
+- A job's `gh` child gets the git directory as its `PATH`, so `gh pr create` runs.
+- Leaving `blocked` clears `blocked_reason`. Attempts, gates, and approvals carry the card's `project_id`. `POST /api/cards/{id}/{action}` checks the role and project membership.
+- `app.ReviewCard` runs the review job with `read_diff`, `comment_pr`, and `verdict`, stores the review on the attempt, and applies the pull request checks.
+- `app.RefreshCard` stores the head, sends a moved `approved` card back to `human_review`, and finishes the CI wait.
+- `worker.Advancer` starts reviews and refreshes every tick. The card JSON fills `reviewedSha` and `reviewIndependent`.
+
+Done when: `TestExportLargeArchive`, `TestImplementGatesExistingCommit`, `TestImplementRepublishesPassedCommit`, `TestRunnerPathHasOnlyGitDir`, `TestImplementBlocksWhenEngineDown`, `TestLeavingBlockedClearsReason`, `TestCardRowsKeepCardProject`, `TestLegacyCardRoutesCheckRole`, `TestReviewerTools`, `TestReviewApproveNoCI`, `TestReviewRequestChanges`, `TestReviewPendingCIWaits`, `TestPassFinishesCIWait`, `TestPassFailedCIRequestsChanges`, `TestReviewParseFallback`, `TestReviewWithoutVerdictBlocks`, `TestRefreshStoresHeadSHA`, `TestApprovedHeadMovedReturnsToReview`, `TestAdvancerSchedulesReviewAndRefresh`, `TestCardShowsLatestReview`, `TestCardReachesApproved`.

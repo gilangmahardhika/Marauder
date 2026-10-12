@@ -436,3 +436,32 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestHistoryKeepsNewestResults`
 - [x] `TestOpenAISendsTurns`
 - [x] `TestAnthropicSendsTurns`
+
+## Sprint 28: A card reaches Approved
+
+- [x] The gating export goes through a file, so a large repository exports whole.
+- [x] `TestExportLargeArchive`
+- [x] A rerun gates an existing commit without a model call, and a stopped sandbox engine blocks with `sandbox_config` before an attempt.
+- [x] `TestImplementGatesExistingCommit`
+- [x] `TestImplementRepublishesPassedCommit`
+- [x] `TestRunnerPathHasOnlyGitDir`
+- [x] `TestImplementBlocksWhenEngineDown`
+- [x] Leaving `blocked` clears the reason, child rows keep the card's project, and card routes without a project check the role.
+- [x] `TestLeavingBlockedClearsReason`
+- [x] `TestCardRowsKeepCardProject`
+- [x] `TestLegacyCardRoutesCheckRole`
+- [x] The review job moves `pr_open` cards to `agent_review` and on, and the worker refreshes cards past review.
+- [x] `TestReviewerTools`
+- [x] `TestReviewApproveNoCI`
+- [x] `TestReviewRequestChanges`
+- [x] `TestReviewPendingCIWaits`
+- [x] `TestPassFinishesCIWait`
+- [x] `TestPassFailedCIRequestsChanges`
+- [x] `TestReviewParseFallback`
+- [x] `TestReviewWithoutVerdictBlocks`
+- [x] `TestRefreshStoresHeadSHA`
+- [x] `TestApprovedHeadMovedReturnsToReview`
+- [x] `TestAdvancerSchedulesReviewAndRefresh`
+- [x] `TestCardShowsLatestReview`
+- [x] `TestCardReachesApproved`
+- [x] A real card on `scbd-solid-web` reaches `human_review` with a model review.

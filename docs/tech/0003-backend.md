@@ -105,7 +105,7 @@ One loop goroutine per project ticks every 2 seconds. Projects run those loops a
 
 A row with `card_id` set asks for that one card (RFC-061). The pass starts that card's implement job when the card is still `ready`, its dependencies are `done`, and the cap has room, and sets `processed_at` on that row when the job starts. A row without `card_id` wakes the whole project as above. The API never starts a job itself.
 
-What runs today (RFC-062): `worker.Run` in `serve` starts one loop per project and retries a busy project lock on the next tick. A pass runs step 3 (promote), then a model-free step 5 that makes one `backlog` card per accepted requirement without a card through `loop.CreateCard`, then closes the project's rows that have no `card_id` when nothing changed. `worker.Drain` repeats passes until one changes nothing. Since RFC-063, each tick with any open row also runs `worker.StartQueued`: step 10 for card-scoped rows only, oldest first, under the cap, setting `processed_at` when a job starts. A `ready` card nobody queued is not started. When a project loop takes its lock, it runs Reconcile step 1 and ends open attempts as `cancelled`. Steps 1, 2, 4, and 6 to 9 are not built.
+What runs today (RFC-062): `worker.Run` in `serve` starts one loop per project and retries a busy project lock on the next tick. A pass runs step 3 (promote), then a model-free step 5 that makes one `backlog` card per accepted requirement without a card through `loop.CreateCard`, then closes the project's rows that have no `card_id` when nothing changed. `worker.Drain` repeats passes until one changes nothing. Since RFC-063, each tick with any open row also runs `worker.StartQueued`: step 10 for card-scoped rows only, oldest first, under the cap, setting `processed_at` when a job starts. A `ready` card nobody queued is not started. When a project loop takes its lock, it runs Reconcile step 1 and ends open attempts as `cancelled`. Since RFC-065, every tick, with or without an open row, runs `worker.Advancer`: step 6 starts a review job for each `pr_open` card, two at a time, and retries a review that failed before it moved the card after one minute. Steps 1, 2, and 7 run as one refresh per card through `app.RefreshCard`, at most every 30 seconds per card and two at a time. Steps 4, 8, and 9 are not built.
 
 Jobs run in goroutines beside that project's loop. Implement and plan jobs are capped by that project's `scheduler.implementationCap`. At most one deploy job runs per project. Review and verify jobs are capped at 2 each, per project. Every job takes its card lock with a fresh random holder and releases it with that holder. The job uses that project's repo and that project's data directory.
 
@@ -117,7 +117,7 @@ Each pass, in order:
 4. A card in `changes_requested`, or in `in_progress` with no open attempt, whose `attempts_used >= max_attempts` goes to `blocked` with `attempt_cap`.
 5. Start a plan job when `draftPending` is set, or when an accepted requirement has no linked card. One plan job at a time.
 6. Start a review job for each `pr_open` card.
-7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
+7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. Every check on the pull request head counts as required (RFC-065). A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
 8. Start a deploy job for a card in `approved` only when a Lead Developer member has requested deploy and that project's deploy lock is free. Reaching `approved` does not start deploy.
 9. Start a verify job for each `verifying` card.
 10. Start implement jobs while running implement jobs are under the cap: oldest first among `ready`, `changes_requested`, and `in_progress` with no open attempt, whose requirements are accepted, dependencies are `done`, and `attempts_used < max_attempts`.
@@ -150,7 +150,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 
 The implement job never calls `deploy`.
 
-What runs today (RFC-063): `app.ImplementCard` moves `ready` or `changes_requested` to `in_progress` first, so the step 1 blocks are legal edges, and copies the project's `checks.local` onto a card that has none. The card lock is held during the tool loop only. A `maxWallMinutesPerAttempt` stop blocks with `wall_cap`. Step 11 writes the last 200 lines of the check as a `local_check` note instead of running triage. A check that cannot start blocks with `check_error`, and a failed push or pull request blocks with `publish_failed`. Not built: `turn_cap`, `token_cap`, triage, and step 12.
+What runs today (RFC-063): `app.ImplementCard` moves `ready` or `changes_requested` to `in_progress` first, so the step 1 blocks are legal edges, and copies the project's `checks.local` onto a card that has none. The card lock is held during the tool loop only. A `maxWallMinutesPerAttempt` stop blocks with `wall_cap`. Step 11 writes the last 200 lines of the check as a `local_check` note instead of running triage. A check that cannot start blocks with `check_error`, and a failed push or pull request blocks with `publish_failed`. Since RFC-065, before step 2 on a real repo the job runs `<engine> version`, and a failure blocks with `sandbox_config` and a `job_error` without inserting an attempt. When the latest attempt ended with a commit and no outcome, or with `checks_passed` while the card has no pull request, and the worktree HEAD is that commit, the job skips steps 4 to 8 and gates and publishes that commit with that attempt. A `checks_passed` attempt is not counted again. Not built: `turn_cap`, `token_cap`, triage, and step 12.
 
 ### Tool loop
 
@@ -191,6 +191,8 @@ The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt
 6. Provider failure after retry and fallback: block with `provider_error`.
 
 A review never changes `attempts_used`.
+
+What runs today (RFC-065): `app.ReviewCard` reads the pull request and the diff from local `refs/heads/<baseBranch>` to the attempt's commit, capped at 64 KiB, before step 1, and leaves the card in `pr_open` with a `job_error` when either fails. A missing company organization or token blocks with `github_config` after the move to `agent_review`. The route `different-family-from-author` picks a model through `router.ReviewModel`. The reviewer loop runs at most 8 turns, and `comment_pr` posts with the company token. Every check on the head counts as required, and `ci_required` is stored on the attempt.
 
 ### Deploy job
 

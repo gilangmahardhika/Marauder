@@ -3,7 +3,9 @@ package sandbox
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"orchestrator/backend/internal/execx"
@@ -11,6 +13,11 @@ import (
 
 // ErrEngine means the sandbox engine path is not an absolute podman or docker binary.
 var ErrEngine = errors.New("sandbox engine is not set")
+
+// ErrEngineDown means the engine is installed but not reachable.
+var ErrEngineDown = errors.New("sandbox engine is not reachable")
+
+const probeTimeout = 10 * time.Second
 
 type ExecuteOpts struct {
 	Command string
@@ -59,6 +66,29 @@ func ExecuteCheck(ctx context.Context, opts ExecuteOpts, run func(context.Contex
 		MaxOut:  opts.MaxOut,
 	})
 	return res, true, err
+}
+
+// ProbeEngine runs `<engine> version`, which fails when the engine cannot
+// reach its service, such as a stopped Podman machine. It returns
+// ErrEngineDown with the first line of the engine's output.
+func ProbeEngine(ctx context.Context, engine string, run func(context.Context, execx.Child) (execx.Result, error)) error {
+	if err := CheckEngine(engine); err != nil {
+		return err
+	}
+	res, err := run(ctx, execx.Child{
+		Argv:    []string{engine, "version"},
+		Env:     EngineEnv(engine),
+		Timeout: probeTimeout,
+		MaxOut:  64 << 10,
+	})
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrEngineDown, err)
+	}
+	if res.Exit != 0 {
+		line, _, _ := strings.Cut(strings.TrimSpace(string(res.Out)), "\n")
+		return fmt.Errorf("%w: %s exited %d: %s", ErrEngineDown, filepath.Base(engine), res.Exit, line)
+	}
+	return nil
 }
 
 // CheckEngine accepts an absolute path whose basename is podman or docker.

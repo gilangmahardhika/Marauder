@@ -142,6 +142,25 @@ func TestTransitionCAS(t *testing.T) {
 	}
 }
 
+func TestLeavingBlockedClearsReason(t *testing.T) {
+	db := boardtest.Open(t)
+	card := insertCard(t, db, "in_progress")
+	blocked, err := apply(t, db, card, "blocked", machine.Evidence{Reason: "provider_error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.BlockedReason != "provider_error" {
+		t.Fatalf("blocked_reason = %q, want provider_error", blocked.BlockedReason)
+	}
+	ready, err := apply(t, db, blocked, "ready", machine.Evidence{Reason: "provider_error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready.Status != "ready" || ready.BlockedReason != "" {
+		t.Fatalf("after unblock = %s %q, want ready with no reason", ready.Status, ready.BlockedReason)
+	}
+}
+
 func insertCard(t *testing.T, db *sql.DB, status string) board.Card {
 	t.Helper()
 	card, err := board.InsertCard(context.Background(), db, board.Card{Status: status})

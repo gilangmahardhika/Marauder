@@ -2,6 +2,8 @@ package board
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -49,10 +51,10 @@ func InsertAttempt(ctx context.Context, q DBTX, attempt Attempt) error {
 	_, err := q.ExecContext(ctx, `
 		INSERT INTO attempts (
 			id, card_id, n, parent_attempt_id, task_class, model_id,
-			prompt_hash, system_hash, tool_profile, max_turns, base_sha, started_at
+			prompt_hash, system_hash, tool_profile, max_turns, base_sha, started_at, project_id
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
-			$7, $8, 'implementer', $9, $10, $11
+			$7, $8, 'implementer', $9, $10, $11, (SELECT project_id FROM cards WHERE id = $2)
 		)`,
 		attempt.ID, attempt.CardID, attempt.N, parent, attempt.TaskClass, attempt.ModelID,
 		attempt.PromptHash, attempt.SystemHash, attempt.MaxTurns, attempt.BaseSHA,
@@ -100,8 +102,8 @@ func InsertFailureNote(ctx context.Context, q DBTX, cardID, attemptID, source, n
 		return err
 	}
 	_, err = q.ExecContext(ctx, `
-		INSERT INTO failure_notes (id, card_id, attempt_id, source, note, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
+		INSERT INTO failure_notes (id, card_id, attempt_id, source, note, created_at, project_id)
+		VALUES ($1, $2, $3, $4, $5, $6, (SELECT project_id FROM cards WHERE id = $2))`,
 		id, cardID, attemptID, source, note, time.Now().UTC().Format(time.RFC3339),
 	)
 	return err
@@ -109,8 +111,8 @@ func InsertFailureNote(ctx context.Context, q DBTX, cardID, attemptID, source, n
 
 func AcquireLock(ctx context.Context, q DBTX, cardID, holder string) error {
 	res, err := q.ExecContext(ctx, `
-		INSERT INTO locks (card_id, holder, acquired_at)
-		VALUES ($1, $2, $3)
+		INSERT INTO locks (card_id, holder, acquired_at, project_id)
+		VALUES ($1, $2, $3, (SELECT project_id FROM cards WHERE id = $1))
 		ON CONFLICT (card_id) DO NOTHING`,
 		cardID, holder, time.Now().UTC().Format(time.RFC3339),
 	)
@@ -146,6 +148,84 @@ func AddAttemptTokens(ctx context.Context, q DBTX, id string, input, output int)
 	_, err := q.ExecContext(ctx, `
 		UPDATE attempts SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3 WHERE id = $1`,
 		id, input, output)
+	return err
+}
+
+// UnpublishedCommit returns the card's latest attempt when it ended with a
+// commit that has no pull request yet: the gating check never ran on it (no
+// outcome), or it passed and the publish failed (checks_passed while the card
+// has no pull request). It returns a zero Attempt when there is none.
+func UnpublishedCommit(ctx context.Context, q DBTX, cardID string) (Attempt, error) {
+	var a Attempt
+	var commit, outcome, ended sql.NullString
+	var prURL string
+	err := q.QueryRowContext(ctx, `
+		SELECT a.id, a.n, COALESCE(a.model_id, ''), a.commit_sha, a.outcome, a.ended_at, COALESCE(c.pr_url, '')
+		FROM attempts a JOIN cards c ON c.id = a.card_id
+		WHERE a.card_id = $1 ORDER BY a.n DESC LIMIT 1`, cardID).Scan(&a.ID, &a.N, &a.ModelID, &commit, &outcome, &ended, &prURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Attempt{}, nil
+	}
+	if err != nil {
+		return Attempt{}, err
+	}
+	if !commit.Valid || commit.String == "" || !ended.Valid {
+		return Attempt{}, nil
+	}
+	if outcome.Valid && (outcome.String != "checks_passed" || prURL != "") {
+		return Attempt{}, nil
+	}
+	a.CardID = cardID
+	a.CommitSHA = commit.String
+	a.Outcome = outcome.String
+	return a, nil
+}
+
+// Review is the review state of the card's latest attempt that passed its
+// gating check, the attempt the pull request carries.
+type Review struct {
+	AttemptID   string
+	ModelID     string
+	CommitSHA   string
+	Verdict     string
+	ReviewedSHA string
+	Independent sql.NullBool
+}
+
+// LatestReview returns the review state of the card's latest checks_passed
+// attempt, or a zero Review when there is none.
+func LatestReview(ctx context.Context, q DBTX, cardID string) (Review, error) {
+	var r Review
+	err := q.QueryRowContext(ctx, `
+		SELECT id, COALESCE(model_id, ''), COALESCE(commit_sha, ''), COALESCE(review_verdict, ''),
+			COALESCE(reviewed_sha, ''), review_independent
+		FROM attempts WHERE card_id = $1 AND outcome = 'checks_passed'
+		ORDER BY n DESC LIMIT 1`, cardID).Scan(&r.AttemptID, &r.ModelID, &r.CommitSHA, &r.Verdict, &r.ReviewedSHA, &r.Independent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Review{}, nil
+	}
+	return r, err
+}
+
+// RecordReview stores the review of an attempt (RFC-065).
+func RecordReview(ctx context.Context, q DBTX, attemptID, model, promptHash string, independent bool, verdict, reviewedSHA string) error {
+	_, err := q.ExecContext(ctx, `
+		UPDATE attempts SET review_model_id = $2, review_prompt_hash = $3, review_independent = $4,
+			review_verdict = $5, reviewed_sha = $6
+		WHERE id = $1`, attemptID, model, promptHash, independent, verdict, reviewedSHA)
+	return err
+}
+
+// SetCIRequired records whether the pull request head had checks when the
+// review finished.
+func SetCIRequired(ctx context.Context, q DBTX, attemptID string, required bool) error {
+	_, err := q.ExecContext(ctx, `UPDATE attempts SET ci_required = $2 WHERE id = $1`, attemptID, required)
+	return err
+}
+
+// SetHeadSHA stores the pull request head read from GitHub.
+func SetHeadSHA(ctx context.Context, q DBTX, cardID, sha string) error {
+	_, err := q.ExecContext(ctx, `UPDATE cards SET head_sha = $2 WHERE id = $1`, cardID, sha)
 	return err
 }
 

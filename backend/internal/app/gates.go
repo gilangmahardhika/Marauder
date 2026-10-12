@@ -66,13 +66,13 @@ func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO approvals (id, card_id, sha, approver, created_at) VALUES ($1, $2, $3, $4, $5)`,
-		id, cardID, sha, cfg.Operator, now); err != nil {
+		INSERT INTO approvals (id, card_id, sha, approver, created_at, project_id) VALUES ($1, $2, $3, $4, $5, $6)`,
+		id, cardID, sha, cfg.Operator, now, next.ProjectID); err != nil {
 		return card, err
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO runs (id, trigger, created_at) VALUES ($1, 'approve', $2)`,
-		mustID("run_"), now); err != nil {
+		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'approve', $2, $3)`,
+		mustID("run_"), now, next.ProjectID); err != nil {
 		return card, err
 	}
 	if err := tx.Commit(); err != nil {

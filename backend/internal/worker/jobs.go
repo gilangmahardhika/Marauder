@@ -12,9 +12,11 @@ import (
 const defaultImplementationCap = 2
 
 // Jobs are the job runners the worker starts. worker cannot import app, so
-// serve and run-next pass them in. A nil Implement starts no implement job.
+// serve and run-next pass them in. A nil runner starts no job of its kind.
 type Jobs struct {
 	Implement func(ctx context.Context, projectID, cardID string) (status string, err error)
+	Review    func(ctx context.Context, projectID, cardID string) (status string, err error)
+	Refresh   func(ctx context.Context, projectID, cardID string) (status string, err error)
 }
 
 // Slots tracks one project's implement jobs running in this process.

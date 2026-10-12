@@ -172,13 +172,16 @@ func RunNext(ctx context.Context, db *sql.DB, dataRoot, projectID string, jobs w
 	return result, false, err
 }
 
-// ImplementJobs binds the implement job to the database and job dependencies
-// for the worker.
+// ImplementJobs binds the implement, review, and refresh jobs to the database
+// and job dependencies for the worker.
 func ImplementJobs(db *sql.DB, deps JobDeps) worker.Jobs {
-	return worker.Jobs{Implement: func(ctx context.Context, projectID, cardID string) (string, error) {
-		card, err := ImplementCard(ctx, db, deps, projectID, cardID)
-		return card.Status, err
-	}}
+	bind := func(job func(context.Context, *sql.DB, JobDeps, string, string) (board.Card, error)) func(context.Context, string, string) (string, error) {
+		return func(ctx context.Context, projectID, cardID string) (string, error) {
+			card, err := job(ctx, db, deps, projectID, cardID)
+			return card.Status, err
+		}
+	}
+	return worker.Jobs{Implement: bind(ImplementCard), Review: bind(ReviewCard), Refresh: bind(RefreshCard)}
 }
 
 func runnable(card board.Card, done map[string]bool) bool {

@@ -127,6 +127,16 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	if !sandboxReady(card.LocalCheck, projectCfg, engine, fixture) {
 		return BlockCard(ctx, db, card, "sandbox_config", redact)
 	}
+	if !fixture {
+		run := deps.Tools.Exec
+		if run == nil {
+			run = execx.Command
+		}
+		if err := sandbox.ProbeEngine(ctx, engine, run); err != nil {
+			_ = jobError(ctx, db, card, "", err.Error()+"; start the podman machine or the docker daemon, then unblock the card", redact)
+			return BlockCard(ctx, db, card, "sandbox_config", redact)
+		}
+	}
 
 	class, err := router.TaskClass(card.Risk, card.AttemptsUsed)
 	if err != nil {
@@ -148,83 +158,117 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		return card, errors.New(trace.Redact(err.Error(), redact))
 	}
 
-	budgets := cfg.Router.Budgets
-	attemptCtx := ctx
-	if budgets.MaxWallMinutesPerAttempt > 0 {
-		var cancel context.CancelFunc
-		attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(budgets.MaxWallMinutesPerAttempt)*time.Minute)
-		defer cancel()
-	}
-	result, err := loop.Run(attemptCtx, loop.Input{
-		DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
-		Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
-		Provider: provider, Secrets: redact, Allow: projectCfg.Checks.AllowExecutables,
-		Engine: engine, Image: projectCfg.Sandbox.Image,
-	})
+	attempt, err := unpublishedCommit(ctx, db, git, card.ID, project.BaseBranch)
 	if err != nil {
-		return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
+		return card, errors.New(trace.Redact(err.Error(), redact))
 	}
-	if result.Outcome == "no_commit" {
-		return AtCap(ctx, db, card.ID)
+	model := attempt.ModelID
+	if attempt.ID == "" {
+		budgets := cfg.Router.Budgets
+		attemptCtx := ctx
+		if budgets.MaxWallMinutesPerAttempt > 0 {
+			var cancel context.CancelFunc
+			attemptCtx, cancel = context.WithTimeout(ctx, time.Duration(budgets.MaxWallMinutesPerAttempt)*time.Minute)
+			defer cancel()
+		}
+		result, err := loop.Run(attemptCtx, loop.Input{
+			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
+			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
+			Provider: provider, Secrets: redact, Allow: projectCfg.Checks.AllowExecutables,
+			Engine: engine, Image: projectCfg.Sandbox.Image,
+		})
+		if err != nil {
+			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
+		}
+		if result.Outcome == "no_commit" {
+			return AtCap(ctx, db, card.ID)
+		}
+		attempt.ID = result.AttemptID
+		model = route.Model
+		if err := db.QueryRowContext(ctx, `SELECT COALESCE(commit_sha, '') FROM attempts WHERE id = $1`, attempt.ID).Scan(&attempt.CommitSHA); err != nil {
+			return card, err
+		}
 	}
 
 	card, err = board.GetCard(ctx, db, card.ID)
 	if err != nil {
 		return card, err
 	}
-	card, err = move(ctx, db, card, "self_check", machine.Evidence{AttemptID: result.AttemptID}, redact)
+	card, err = move(ctx, db, card, "self_check", machine.Evidence{AttemptID: attempt.ID}, redact)
 	if err != nil {
 		return card, err
 	}
-	var head string
-	if err := db.QueryRowContext(ctx, `SELECT COALESCE(commit_sha, '') FROM attempts WHERE id = $1`, result.AttemptID).Scan(&head); err != nil {
-		return card, err
-	}
-	exit, tail, err := gatingCheck(ctx, git, deps.Tools, card, projectCfg, engine, fixture, head, result.AttemptID)
+	head := attempt.CommitSHA
+	exit, tail, err := gatingCheck(ctx, git, deps.Tools, card, projectCfg, engine, fixture, head, attempt.ID)
 	if err != nil {
 		reason := "check_error"
 		if errors.Is(err, sandbox.ErrParse) || errors.Is(err, sandbox.ErrAllow) || errors.Is(err, sandbox.ErrEmpty) ||
 			errors.Is(err, sandbox.ErrImage) || errors.Is(err, sandbox.ErrEngine) {
 			reason = "sandbox_config"
 		}
-		_ = jobError(ctx, db, card, result.AttemptID, err.Error(), redact)
+		_ = jobError(ctx, db, card, attempt.ID, err.Error(), redact)
 		return BlockCard(ctx, db, card, reason, redact)
 	}
-	if err := board.AddAttemptUsed(ctx, db, card.ID); err != nil {
-		return card, err
+	if attempt.Outcome != "checks_passed" {
+		if err := board.AddAttemptUsed(ctx, db, card.ID); err != nil {
+			return card, err
+		}
 	}
 	if exit != 0 {
-		if err := board.SetAttemptOutcome(ctx, db, result.AttemptID, "checks_failed"); err != nil {
+		if err := board.SetAttemptOutcome(ctx, db, attempt.ID, "checks_failed"); err != nil {
 			return card, err
 		}
 		note := fmt.Sprintf("local check %q exited %d\n%s", card.LocalCheck, exit, tail)
-		if err := board.InsertFailureNote(ctx, db, card.ID, result.AttemptID, "local_check", trace.Redact(note, redact)); err != nil {
+		if err := board.InsertFailureNote(ctx, db, card.ID, attempt.ID, "local_check", trace.Redact(note, redact)); err != nil {
 			return card, err
 		}
 		code := exit
-		card, err = move(ctx, db, card, "in_progress", machine.Evidence{ExitCode: &code, AttemptID: result.AttemptID}, redact)
+		card, err = move(ctx, db, card, "in_progress", machine.Evidence{ExitCode: &code, AttemptID: attempt.ID}, redact)
 		if err != nil {
 			return card, err
 		}
 		return AtCap(ctx, db, card.ID)
 	}
-	if err := board.SetAttemptOutcome(ctx, db, result.AttemptID, "checks_passed"); err != nil {
+	if err := board.SetAttemptOutcome(ctx, db, attempt.ID, "checks_passed"); err != nil {
 		return card, err
 	}
 	published, err := Publish(ctx, db, card.ID, PublishInput{
-		Data: deps.Data, Key: deps.Key, Tools: deps.Tools, ExitCode: 0, AttemptID: result.AttemptID,
+		Data: deps.Data, Key: deps.Key, Tools: deps.Tools, ExitCode: 0, AttemptID: attempt.ID,
 		Summary:  prSummary(card),
-		Metadata: fmt.Sprintf("card: %s\nattempt: %s\nmodel: %s\nrequirements: %s", card.ID, result.AttemptID, route.Model, strings.Join(card.RequirementIDs, ", ")),
+		Metadata: fmt.Sprintf("card: %s\nattempt: %s\nmodel: %s\nrequirements: %s", card.ID, attempt.ID, model, strings.Join(card.RequirementIDs, ", ")),
 		Secrets:  redact,
 	})
 	if errors.Is(err, ErrOwnerGitHub) || errors.Is(err, ErrGitHubSetup) {
 		return published, nil
 	}
 	if err != nil {
-		_ = jobError(ctx, db, card, result.AttemptID, err.Error(), redact)
+		_ = jobError(ctx, db, card, attempt.ID, err.Error(), redact)
 		return BlockCard(ctx, db, card, "publish_failed", redact)
 	}
 	return published, nil
+}
+
+// unpublishedCommit returns the card's latest attempt when its commit has no
+// pull request yet and is still the worktree head, so a rerun checks and
+// publishes that commit without a model call (RFC-065). Otherwise it returns
+// a zero Attempt.
+func unpublishedCommit(ctx context.Context, db *sql.DB, git runtime.Git, cardID, baseBranch string) (board.Attempt, error) {
+	attempt, err := board.UnpublishedCommit(ctx, db, cardID)
+	if err != nil || attempt.ID == "" {
+		return board.Attempt{}, err
+	}
+	wt, err := git.EnsureWorktree(ctx, cardID, baseBranch)
+	if err != nil {
+		return board.Attempt{}, err
+	}
+	head, err := git.WorktreeHead(ctx, wt)
+	if err != nil {
+		return board.Attempt{}, err
+	}
+	if head != attempt.CommitSHA {
+		return board.Attempt{}, nil
+	}
+	return attempt, nil
 }
 
 // stopAttempt handles a tool loop that ended with an error. The loop already

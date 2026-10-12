@@ -38,16 +38,50 @@ type jobFixture struct {
 // jobExec runs git for real and fakes the network: fetch, the FETCH_HEAD
 // checkout, push, and every gh call.
 type jobExec struct {
-	mu    sync.Mutex
-	faked [][]string
+	mu          sync.Mutex
+	faked       [][]string
+	failArchive int
+	failPush    int
+	prView      string
+}
+
+// setPR sets the JSON that `gh pr view --json headRefOid,...` returns.
+func (e *jobExec) setPR(json string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.prView = json
 }
 
 func (e *jobExec) run(ctx context.Context, child execx.Child) (execx.Result, error) {
 	argv := child.Argv
+	if filepath.Base(argv[0]) == "gh" && slices.Contains(argv, "headRefOid,body,comments,statusCheckRollup") {
+		e.mu.Lock()
+		defer e.mu.Unlock()
+		e.faked = append(e.faked, argv)
+		return execx.Result{Out: []byte(e.prView)}, nil
+	}
+	if slices.Contains(argv, "archive") {
+		e.mu.Lock()
+		fail := e.failArchive > 0
+		if fail {
+			e.failArchive--
+		}
+		e.mu.Unlock()
+		if fail {
+			return execx.Result{Exit: 128, Out: []byte("fatal: archive failed")}, nil
+		}
+	}
 	if filepath.Base(argv[0]) == "gh" || slices.Contains(argv, "fetch") || slices.Contains(argv, "push") || slices.Contains(argv, "FETCH_HEAD") {
 		e.mu.Lock()
 		e.faked = append(e.faked, argv)
+		fail := slices.Contains(argv, "push") && e.failPush > 0
+		if fail {
+			e.failPush--
+		}
 		e.mu.Unlock()
+		if fail {
+			return execx.Result{Exit: 128, Out: []byte("remote: Write access to repository not granted.")}, nil
+		}
 		if slices.Contains(argv, "create") {
 			return execx.Result{Out: []byte(prURL + "\n")}, nil
 		}
@@ -153,6 +187,82 @@ func TestImplementReachesPROpen(t *testing.T) {
 	}
 }
 
+func TestImplementGatesExistingCommit(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	f.calls.failArchive = 1
+	card := f.run(t, commitScript)
+	if card.Status != "blocked" || card.BlockedReason != "check_error" {
+		t.Fatalf("first run = %s %s", card.Status, card.BlockedReason)
+	}
+	ctx := context.Background()
+	if _, err := app.Unblock(ctx, f.db, card.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fake.Load([]byte(commitScript))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err = app.ImplementCard(ctx, f.db, app.JobDeps{
+		Data: f.data, Key: tokenKey, Provider: provider,
+		Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Exec: f.calls.run},
+	}, "proj_default", f.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Status != "pr_open" || card.PRURL != prURL {
+		t.Fatalf("rerun = %s %s", card.Status, card.PRURL)
+	}
+	if n := len(provider.Prompts()); n != 0 {
+		t.Fatalf("rerun made %d model calls, want 0", n)
+	}
+	var attempts int
+	var outcome string
+	if err := f.db.QueryRow(`
+		SELECT count(*), max(outcome) FROM attempts WHERE card_id = $1`, card.ID).Scan(&attempts, &outcome); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 || outcome != "checks_passed" {
+		t.Fatalf("attempts = %d outcome %s", attempts, outcome)
+	}
+}
+
+func TestImplementRepublishesPassedCommit(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	f.calls.failPush = 1
+	card := f.run(t, commitScript)
+	if card.Status != "blocked" || card.BlockedReason != "publish_failed" || card.AttemptsUsed != 1 {
+		t.Fatalf("first run = %s %s used %d", card.Status, card.BlockedReason, card.AttemptsUsed)
+	}
+	ctx := context.Background()
+	if _, err := app.Unblock(ctx, f.db, card.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	provider, err := fake.Load([]byte(commitScript))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err = app.ImplementCard(ctx, f.db, app.JobDeps{
+		Data: f.data, Key: tokenKey, Provider: provider,
+		Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Exec: f.calls.run},
+	}, "proj_default", f.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Status != "pr_open" || card.PRURL != prURL || card.AttemptsUsed != 1 {
+		t.Fatalf("rerun = %s %s used %d", card.Status, card.PRURL, card.AttemptsUsed)
+	}
+	if n := len(provider.Prompts()); n != 0 {
+		t.Fatalf("rerun made %d model calls, want 0", n)
+	}
+	var attempts int
+	if err := f.db.QueryRow(`SELECT count(*) FROM attempts WHERE card_id = $1`, card.ID).Scan(&attempts); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1", attempts)
+	}
+}
+
 func TestImplementCheckFailsReturnsInProgress(t *testing.T) {
 	f := newJobFixture(t, "false", 3, routerConfig, fixtureProject)
 	card := f.run(t, commitScript)
@@ -201,6 +311,49 @@ func TestImplementBlocksUnpinnedImage(t *testing.T) {
 	}
 	if len(real.calls.faked) != 0 {
 		t.Fatalf("network calls before preflight passed: %v", real.calls.faked)
+	}
+}
+
+func TestImplementBlocksWhenEngineDown(t *testing.T) {
+	image := "localhost/check@sha256:" + strings.Repeat("a", 64)
+	real := newJobFixture(t, "", 3, routerConfig, "checks:\n  local: scbd-check\n  allowExecutables: [scbd-check]\nsandbox:\n  engine: podman\n  image: "+image+"\n")
+	if _, err := real.db.Exec(`UPDATE projects SET repo_path = $1 WHERE id = 'proj_default'`, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	var probed []string
+	down := func(ctx context.Context, child execx.Child) (execx.Result, error) {
+		if filepath.Base(child.Argv[0]) == "podman" {
+			probed = child.Argv
+			return execx.Result{Exit: 125, Out: []byte("Cannot connect to Podman. Please verify your connection\n")}, nil
+		}
+		return real.calls.run(ctx, child)
+	}
+	provider, err := fake.Load([]byte(commitScript))
+	if err != nil {
+		t.Fatal(err)
+	}
+	card, err := app.ImplementCard(context.Background(), real.db, app.JobDeps{
+		Data: real.data, Key: tokenKey, Provider: provider,
+		Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Podman: "/opt/podman/bin/podman", Exec: down},
+	}, "proj_default", real.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Status != "blocked" || card.BlockedReason != "sandbox_config" {
+		t.Fatalf("card = %s %s", card.Status, card.BlockedReason)
+	}
+	if len(probed) != 2 || probed[1] != "version" {
+		t.Fatalf("probe argv = %v", probed)
+	}
+	var payload string
+	if err := real.db.QueryRow(`SELECT payload_json FROM events WHERE card_id = $1 AND kind = 'job_error'`, card.ID).Scan(&payload); err != nil {
+		t.Fatalf("job_error event: %v", err)
+	}
+	if !strings.Contains(payload, "not reachable") || !strings.Contains(payload, "Cannot connect to Podman") {
+		t.Fatalf("payload = %s", payload)
+	}
+	if n := len(provider.Prompts()); n != 0 {
+		t.Fatalf("model calls = %d", n)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,7 +30,10 @@ const (
 type Runner struct {
 	Bin       string
 	ConfigDir string
-	Exec      func(context.Context, execx.Child) (execx.Result, error)
+	// Git is the absolute git path. gh pr create runs git, so its directory
+	// becomes the child's PATH.
+	Git  string
+	Exec func(context.Context, execx.Child) (execx.Result, error)
 }
 
 // API runs `gh api --hostname host args...`.
@@ -77,6 +81,9 @@ func (g Runner) Run(ctx context.Context, host, token string, args ...string) ([]
 	}
 	if host != "github.com" {
 		env = append(env, "GH_ENTERPRISE_TOKEN="+token)
+	}
+	if g.Git != "" {
+		env = append(env, "PATH="+filepath.Dir(g.Git), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
 	}
 	res, err := run(ctx, execx.Child{Argv: argv, Env: env, Dir: configDir, Timeout: timeout, MaxOut: MaxOut})
 	if err != nil {

@@ -67,6 +67,9 @@ func Transition(ctx context.Context, tx *sql.Tx, card board.Card, to string, ev 
 	if to == "blocked" {
 		write.SetBlockedReason = true
 		write.BlockedReason = sql.NullString{String: ev.Reason, Valid: true}
+	} else if card.Status == "blocked" {
+		write.SetBlockedReason = true
+		write.BlockedReason = sql.NullString{}
 	}
 	if to == "pr_open" && ev.PRURL != "" {
 		write.SetPRURL = true
