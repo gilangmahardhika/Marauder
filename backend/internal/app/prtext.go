@@ -138,7 +138,7 @@ func PRBody(in PRInput) string {
 			if statement == "" {
 				statement = "(not found in this project)"
 			}
-			fmt.Fprintf(&b, "**%s**: %s\n\n", req.ID, untrustedText(statement))
+			fmt.Fprintf(&b, "**%s**\n\n%s\n\n", req.ID, untrustedText(closeFences(statement)))
 			if len(req.Acceptance) > 0 {
 				b.WriteString("Acceptance criteria:\n")
 				for _, line := range req.Acceptance {
@@ -220,6 +220,34 @@ func requirementIDs(reqs []PRRequirement) []string {
 // region of the body.
 func untrustedText(s string) string {
 	return strings.ReplaceAll(s, "<!-- orchestrator:", "&lt;!-- orchestrator:")
+}
+
+var fenceLine = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})(.*)$")
+
+// closeFences ends a code fence that a markdown statement left open, so the
+// statement cannot turn the rest of the pull request body into code.
+func closeFences(s string) string {
+	open := ""
+	for _, line := range strings.Split(s, "\n") {
+		m := fenceLine.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		mark, rest := m[1], m[2]
+		switch {
+		case open == "":
+			if mark[0] == '`' && strings.Contains(rest, "`") {
+				continue
+			}
+			open = mark
+		case mark[0] == open[0] && len(mark) >= len(open) && strings.TrimSpace(rest) == "":
+			open = ""
+		}
+	}
+	if open == "" {
+		return s
+	}
+	return s + "\n" + open
 }
 
 func codeText(s string) string {

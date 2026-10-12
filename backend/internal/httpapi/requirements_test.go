@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 
 	"orchestrator/backend/internal/app"
@@ -155,6 +157,50 @@ func TestIntakeLinkedCards(t *testing.T) {
 	}
 	if got := find(t, rec.Body.Bytes(), "REQ-002").LinkedCards; got == nil || len(got) != 0 {
 		t.Fatalf("REQ-002 linkedCards = %v, want []", got)
+	}
+}
+
+func TestStatementLimitAndLineEndings(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	path := "/api/projects/proj_default/requirements"
+
+	long := strings.Repeat("é", 10000)
+	if rec := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-001", "statement": long}); rec.Code != 200 {
+		t.Fatalf("10000 characters = %d %s", rec.Code, rec.Body.String())
+	}
+	over := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-002", "statement": long + "x"})
+	if over.Code != 422 || !strings.Contains(over.Body.String(), `"statement":"Keep the statement to 10000 characters or fewer."`) {
+		t.Fatalf("10001 characters = %d %s", over.Code, over.Body.String())
+	}
+
+	added := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-003", "statement": "# Export\r\n\r\n- one\r- two"})
+	if got := find(t, added.Body.Bytes(), "REQ-003").Statement; got != "# Export\n\n- one\n- two" {
+		t.Fatalf("stored statement = %q", got)
+	}
+	edited := putJSON(t, srv, path+"/REQ-003", dev, map[string]any{"statement": "a\r\nb", "acceptance": []string{}})
+	if got := find(t, edited.Body.Bytes(), "REQ-003").Statement; got != "a\nb" {
+		t.Fatalf("edited statement = %q", got)
+	}
+}
+
+func TestAcceptanceLineMarkers(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	path := "/api/projects/proj_default/requirements"
+
+	lines := []string{"- a", "* b", "+ c", "1. d", "2) e", "- [ ] f", "- [x] `g`", "**h** stays", "-1 stays", "i\r\nj"}
+	added := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-001", "statement": "Export", "acceptance": lines})
+	want := []string{"a", "b", "c", "d", "e", "f", "`g`", "**h** stays", "-1 stays", "i j"}
+	if got := find(t, added.Body.Bytes(), "REQ-001").Acceptance; !reflect.DeepEqual(got, want) {
+		t.Fatalf("stored acceptance = %q", got)
+	}
+
+	if rec := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-002", "statement": "x", "acceptance": []string{"- "}}); rec.Code != 422 ||
+		!strings.Contains(rec.Body.String(), "Acceptance lines cannot be empty.") {
+		t.Fatalf("marker only = %d %s", rec.Code, rec.Body.String())
+	}
+	over := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-003", "statement": "x", "acceptance": []string{strings.Repeat("a", 1001)}})
+	if over.Code != 422 || !strings.Contains(over.Body.String(), "Keep each acceptance line to 1000 characters or fewer.") {
+		t.Fatalf("1001 characters = %d %s", over.Code, over.Body.String())
 	}
 }
 

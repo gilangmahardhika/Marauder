@@ -1,5 +1,8 @@
 <script lang="ts">
+  import AcceptanceList from '$lib/components/AcceptanceList.svelte';
+  import Markdown from '$lib/components/Markdown.svelte';
   import { sourceLabel } from '$lib/intake';
+  import { plainText } from '$lib/markdown';
   import { displayName } from '$lib/people';
   import type { Requirement } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
@@ -52,7 +55,7 @@
       class="block w-full cursor-pointer text-left"
       onclick={() => (open = !open)}
     >
-      <span class="line-clamp-2 text-sm text-ink">{requirement.statement}</span>
+      <span class="line-clamp-2 text-sm text-ink">{plainText(requirement.statement)}</span>
       {#if requirement.sourceKind === 'manual'}
         <span class="mt-0.5 line-clamp-1 text-xs break-all text-muted">Added by {requirement.createdBy ?? 'a former user'}</span>
       {:else}
@@ -100,16 +103,9 @@
   <tr id={detailId} class="border-b border-line bg-ground/40">
     <td colspan={columns} class="px-4 pt-1 pb-5">
       <div class="flex max-w-3xl flex-col gap-4 {selectable ? 'sm:pl-11' : ''}">
-        <p class="text-sm leading-relaxed text-ink">{requirement.statement}</p>
+        <Markdown text={requirement.statement} />
         {#if requirement.acceptance.length > 0}
-          <ul class="flex flex-col gap-1.5" aria-label={`Acceptance for ${requirement.id}`}>
-            {#each requirement.acceptance as line, index (index)}
-              <li class="flex items-start gap-2 text-sm text-ink">
-                <Icon name="check" class="mt-0.5 size-4 shrink-0 text-muted" />
-                {line}
-              </li>
-            {/each}
-          </ul>
+          <AcceptanceList lines={requirement.acceptance} label={`Acceptance for ${requirement.id}`} />
         {/if}
         <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
           {#if requirement.sourceKind === 'manual'}

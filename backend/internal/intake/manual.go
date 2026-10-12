@@ -18,10 +18,14 @@ var (
 	ErrInUse     = errors.New("a card lists this requirement")
 )
 
-var manualID = regexp.MustCompile(`^REQ-[0-9]+$`)
+var (
+	manualID   = regexp.MustCompile(`^REQ-[0-9]+$`)
+	listMarker = regexp.MustCompile(`^(?:[-*+]|[0-9]{1,9}[.)])(?:[ \t]+\[[ xX]\])?(?:[ \t]+|$)`)
+	lineBreak  = strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ")
+)
 
 const (
-	maxStatement  = 4000
+	maxStatement  = 10000
 	maxAcceptance = 50
 	maxLine       = 1000
 )
@@ -50,24 +54,25 @@ type Draft struct {
 
 func (d Draft) clean() (Draft, error) {
 	fields := map[string]string{}
-	out := Draft{Statement: strings.TrimSpace(d.Statement), Acceptance: []string{}, SelfReview: d.SelfReview}
+	statement := strings.ReplaceAll(strings.ReplaceAll(d.Statement, "\r\n", "\n"), "\r", "\n")
+	out := Draft{Statement: strings.TrimSpace(statement), Acceptance: []string{}, SelfReview: d.SelfReview}
 	switch {
 	case out.Statement == "":
 		fields["statement"] = "Enter a statement."
 	case utf8.RuneCountInString(out.Statement) > maxStatement:
-		fields["statement"] = fmt.Sprintf("Keep the statement under %d characters.", maxStatement)
+		fields["statement"] = fmt.Sprintf("Keep the statement to %d characters or fewer.", maxStatement)
 	}
 	if len(d.Acceptance) > maxAcceptance {
 		fields["acceptance"] = fmt.Sprintf("Use at most %d acceptance lines.", maxAcceptance)
 	}
 	for _, line := range d.Acceptance {
-		line = strings.TrimSpace(line)
+		line = acceptanceLine(line)
 		if line == "" {
 			fields["acceptance"] = "Acceptance lines cannot be empty."
 			continue
 		}
 		if utf8.RuneCountInString(line) > maxLine {
-			fields["acceptance"] = fmt.Sprintf("Keep each acceptance line under %d characters.", maxLine)
+			fields["acceptance"] = fmt.Sprintf("Keep each acceptance line to %d characters or fewer.", maxLine)
 		}
 		out.Acceptance = append(out.Acceptance, line)
 	}
@@ -75,6 +80,13 @@ func (d Draft) clean() (Draft, error) {
 		return out, &Invalid{Fields: fields}
 	}
 	return out, nil
+}
+
+// acceptanceLine keeps one line and drops one leading list or checkbox marker,
+// since the pull request body writes each line as "- [ ] " (RFC-066).
+func acceptanceLine(line string) string {
+	line = strings.TrimSpace(lineBreak.Replace(line))
+	return strings.TrimSpace(listMarker.ReplaceAllString(line, ""))
 }
 
 // Add stores a manual requirement on projectID. A blank id takes the next

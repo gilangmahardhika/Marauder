@@ -47,7 +47,7 @@ func TestPRBodySections(t *testing.T) {
 	})
 	for _, want := range []string{
 		"## Summary\n\nChange login label to Username only\n\nThe login form asked for a username or an email.",
-		"## Requirement\n\n**REQ-001**: on /login page",
+		"## Requirement\n\n**REQ-001**\n\non /login page",
 		"Acceptance criteria:\n- [ ] Label form text becomes Username",
 		"- `resources/js/Pages/Auth/Login.tsx` (+1 -1)",
 		"- `logo.png` (binary)",
@@ -65,6 +65,37 @@ func TestPRBodySections(t *testing.T) {
 	}
 	if strings.Count(vcs.MergeBody("", body), vcs.BodyEnd) != 1 {
 		t.Fatalf("requirement text closed the harness region:\n%s", body)
+	}
+}
+
+func TestPRBodyMarkdownStatement(t *testing.T) {
+	body := app.PRBody(app.PRInput{
+		CardID: "card_1", CardTitle: "REQ-001",
+		Requirements: []app.PRRequirement{
+			{ID: "REQ-001", Statement: "Export the board.\n\n## Notes\n\n```go\nfunc open() {", Acceptance: []string{"One row per card"}},
+			{ID: "REQ-002", Statement: "~~~\nclosed\n~~~"},
+		},
+		CommitMessage: "Export CSV",
+		CommitSHA:     "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+		Files:         []runtime.FileChange{{Path: "export.go", Added: 3, Deleted: 0}},
+		LocalCheck:    "make test",
+	})
+	for _, want := range []string{
+		"**REQ-001**\n\nExport the board.\n\n## Notes\n\n```go\nfunc open() {\n```\n\nAcceptance criteria:\n- [ ] One row per card",
+		"**REQ-002**\n\n~~~\nclosed\n~~~\n\n## Changes",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body lacks %q:\n%s", want, body)
+		}
+	}
+	fences := 0
+	for _, line := range strings.Split(body[:strings.Index(body, "## Changes")], "\n") {
+		if strings.HasPrefix(line, "```") {
+			fences++
+		}
+	}
+	if fences%2 != 0 {
+		t.Fatalf("a code fence is still open at ## Changes:\n%s", body)
 	}
 }
 

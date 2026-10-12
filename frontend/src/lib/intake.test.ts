@@ -38,6 +38,14 @@ describe('intake filters', () => {
     expect(ids('  ')).toHaveLength(3);
   });
 
+  it('matches markdown statements and acceptance lines by their words', () => {
+    const marked = [req('REQ-009', { statement: 'Export the **board as** CSV', acceptance: ['Uses `text/csv` with *UTF-8*'] })];
+    const ids = (q: string) => filterRequirements(marked, { q, status: 'all', source: '' }).map((item) => item.id);
+    expect(ids('board as csv')).toEqual(['REQ-009']);
+    expect(ids('**board')).toEqual(['REQ-009']);
+    expect(ids('text/csv with utf-8')).toEqual(['REQ-009']);
+  });
+
   it('filters by status and source', () => {
     expect(filterRequirements(reqs, { q: '', status: 'open', source: '' }).map((item) => item.id)).toEqual(['REQ-002', 'REQ-003']);
     expect(filterRequirements(reqs, { q: '', status: 'accepted', source: '' }).map((item) => item.id)).toEqual(['REQ-001']);

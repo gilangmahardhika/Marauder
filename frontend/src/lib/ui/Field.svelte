@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { HTMLInputAttributes } from 'svelte/elements';
+  import { autogrow } from './autogrow';
   import { control, controlBase, labelClass, widths, type Width } from './control';
   import PasswordInput from './PasswordInput.svelte';
 
@@ -15,7 +16,8 @@
     width = 'md',
     mono = false,
     placeholder = '',
-    rows
+    rows,
+    grow = false
   }: {
     label: string;
     id: string;
@@ -29,6 +31,7 @@
     mono?: boolean;
     placeholder?: string;
     rows?: number;
+    grow?: boolean;
   } = $props();
 
   const font = $derived(mono ? 'font-mono text-[13px]' : '');
@@ -38,7 +41,15 @@
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
   <label for={id} class={labelClass}>{label}</label>
   {#if type === 'textarea'}
-    <textarea {id} {disabled} {placeholder} {rows} aria-describedby={described} class="{controlBase} py-2.5 {font}" bind:value
+    <textarea
+      {id}
+      {disabled}
+      {placeholder}
+      {rows}
+      aria-describedby={described}
+      class="{controlBase} py-2.5 {font} {grow ? 'resize-none overflow-hidden' : ''}"
+      use:autogrow={{ on: grow, value }}
+      bind:value
     ></textarea>
   {:else if type === 'password'}
     <PasswordInput {id} {label} {autocomplete} {disabled} {placeholder} describedby={described} bind:value />

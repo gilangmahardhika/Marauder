@@ -4,6 +4,7 @@
   import CardActions from '$lib/components/CardActions.svelte';
   import CardChanges from '$lib/components/CardChanges.svelte';
   import { categoryLabel } from '$lib/conventions';
+  import { plainText } from '$lib/markdown';
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
   import { cardTone, reasonLabel, statusLabel } from '$lib/status';
@@ -172,7 +173,7 @@
                     {/if}
                     {#if !requirement.accepted}<Badge tone="amber">Draft</Badge>{/if}
                   </span>
-                  <span class="mt-1 line-clamp-3 text-sm text-muted">{requirement.statement}</span>
+                  <span class="mt-1 line-clamp-3 text-sm text-muted">{plainText(requirement.statement)}</span>
                 </a>
               </li>
             {/each}

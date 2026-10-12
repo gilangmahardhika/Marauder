@@ -305,7 +305,7 @@ The SvelteKit build is static. It has no server code (0004).
 | Control | Rule |
 | --- | --- |
 | CSP | `kit.csp` in hash mode: `default-src 'self'`, `script-src 'self'`, `style-src 'self'`, `img-src 'self'`, `connect-src 'self' http://127.0.0.1:8787`, `object-src 'none'`, `base-uri 'self'`, `form-action 'self'`, `frame-ancestors 'none'` where the server can send headers |
-| Markup | No `{@html}`. Model text, logs, and PR bodies render as text |
+| Markup | No `{@html}`. Model text, logs, and PR bodies render as text. A requirement statement and its acceptance lines are parsed by `$lib/markdown` into a token tree rendered as elements and text nodes, with links only to `https://github.com/` or `http://127.0.0.1` with an optional numeric port, so a userinfo trick like `http://127.0.0.1:1@host` stays text |
 | Bearer | `sessionStorage` key `orchestrator.bearer`. Never `localStorage`, cookies, or URLs |
 | Secrets | Secret inputs are `PasswordInput`, start masked, use `autocomplete="off"`, and are cleared after save. The eye toggle reveals only typed text and masks again when the value is cleared |
 | Dependencies | `package-lock.json` committed. Install with `npm ci`. Versions pinned exactly. `npm audit --omit=dev` in the release order |

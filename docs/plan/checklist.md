@@ -547,3 +547,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestCardSelfReview`
 - [x] `ReviewersPanel` Vitest cases
 - [x] Migration `00018` applies on the live board at startup.
+
+## Sprint 35: Markdown statements and a growing requirement form
+
+- [x] `$lib/markdown` and `Markdown.svelte` render a statement with text nodes only, and links only to GitHub or the local harness.
+- [x] The requirement form has Write/Preview, and the statement and acceptance boxes start at 8 and 6 rows and grow.
+- [x] The intake row renders markdown, and the table cell, card page, and search use `plainText`.
+- [x] The statement limit is 10000 characters, stored with LF line endings.
+- [x] The pull request body puts the statement under its bold id and closes an open code fence.
+- [x] `TestStatementLimitAndLineEndings`
+- [x] `TestPRBodyMarkdownStatement`
+- [x] `markdown`, `Markdown`, and `RequirementForm` Vitest cases
+- [x] On the live server, `/intake/new` grows with a markdown statement and Preview formats it.
+- [x] Acceptance lines take inline markdown, and Preview shows them as a checklist beside the statement.
+- [x] An acceptance line drops one leading list or checkbox marker in `toLines` and in the API.
+- [x] A local link with userinfo after the port, like `http://127.0.0.1:1@host`, stays text.
+- [x] `TestAcceptanceLineMarkers`
+- [x] On the live server, `/intake/new` previews markdown acceptance lines as a checklist.
+- [x] A pasted document with a list saves only its list items, Preview counts the lines left out, and the edit page loads checks as a `- ` list.
+- [x] On the live server, a pasted definition of done previews only its list items.

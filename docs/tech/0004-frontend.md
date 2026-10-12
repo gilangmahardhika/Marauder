@@ -122,6 +122,7 @@ frontend/
   src/lib/shell.svelte.ts
   src/lib/ui/Button.svelte
   src/lib/ui/Field.svelte
+  src/lib/ui/autogrow.ts
   src/lib/ui/PasswordInput.svelte
   src/lib/ui/Select.svelte
   src/lib/ui/Menu.svelte
@@ -159,6 +160,8 @@ frontend/
   src/lib/components/TraceText.svelte
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
+  src/lib/components/Markdown.svelte
+  src/lib/components/AcceptanceList.svelte
   src/lib/components/IntakeActions.svelte
   src/lib/components/RequirementRow.svelte
   src/lib/components/ReviewersPanel.svelte
@@ -170,6 +173,7 @@ frontend/
   src/lib/api.test.ts
   src/lib/conventions.test.ts
   src/lib/intake.test.ts
+  src/lib/markdown.test.ts
   src/lib/filter.test.ts
   src/lib/board.test.ts
   src/lib/people.test.ts
@@ -181,6 +185,8 @@ frontend/
   src/lib/components/TraceBlock.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/ReviewersPanel.test.ts
+  src/lib/components/Markdown.test.ts
+  src/lib/components/RequirementForm.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
   src/lib/ui/MultiSearchSelect.test.ts
@@ -255,6 +261,8 @@ Base URL is `http://127.0.0.1:8787` unless the build is given the cloud API orig
 
 Svelte text `{value}` is the way API strings hit the page. `{@html}` is forbidden. A pull request URL becomes an `<a href>` only when it starts with `https://github.com/` or `http://127.0.0.1`. Any other value is text.
 
+A requirement statement is markdown. `$lib/markdown` parses it into a token tree and `Markdown.svelte` renders that tree as elements with text nodes, never as an HTML string. The subset is paragraphs, ATX headings (rendered from `h3` down), bullet and ordered lists with one nested level, fenced code, blockquotes, rules, inline code, bold, italic, links, autolinks, and hard breaks. Tables, images, raw HTML, and setext headings stay literal text. A link becomes `<a target="_blank" rel="noreferrer noopener">` only under the same URL rule, `https://github.com/`, or `http://127.0.0.1` with an optional numeric port followed by `/`, `?`, `#`, or the end; any other link, including `http://127.0.0.1:1@host`, reads as `label (url)`. Each acceptance line is inline markdown: `Markdown` with `inline` renders inline code, bold, italic, links, and autolinks, and `AcceptanceList` shows the lines as a checklist. `plainText` gives the one-line excerpt for clamped cells.
+
 Buttons that submit a form use `type="submit"`. Buttons that do not submit use `type="button"`. Every input has a `<label for>`.
 
 `Live.svelte` is one paragraph:
@@ -319,7 +327,7 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 The header shows the title and a badge with `statusLabel`, with the raw status in `title`. Under Next step, the page has six panels in this order:
 
 - People: the owner and each reviewer with avatar, display name, email, and "GitHub @login" or "No verified GitHub login", labelled Owner or Reviewer. With no reviewers, a line says reviewers come from the card's requirements and links "Edit reviewers" to `/intake/{first requirement id}`.
-- Intake: each of `requirements` with its id, heading, the statement clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
+- Intake: each of `requirements` with its id, heading, the statement as a `plainText` excerpt clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
 - Rules: `rules` grouped by `label`, Global first, each with its title and category badge. The footer links to `/settings/conventions`.
 - Skills: each skill's title and `useWhen`, clamped to two lines.
 - Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, "Approval: Self review: the owner approves alone" when `selfReview` is true (RFC-070), approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
@@ -361,7 +369,7 @@ The page has two tabs, Requirements and Decisions, each with its count. `?tab=de
 
 A toolbar sits above each table. The search box matches id, statement, heading, source path, and acceptance lines, ignoring case. On Decisions it matches id, statement, and source path. The Requirements tab also has a status filter, "Needs acceptance", "Accepted", or "All", each with its count, and a source select: All sources, PRD, RFC, Manual, or Draft. The filters live in the URL as `q`, `status`, and `source`, so returning from `/intake/[id]` keeps them. Without `status`, the page shows "Needs acceptance" while any requirement is unaccepted, and "All" otherwise. When nothing matches, an empty state offers "Clear filters".
 
-Requirements are a table: a select checkbox, id, statement clamped to two lines with the source path under it ("Added by" with `createdBy` for a manual row), source badge ("Draft" in amber), reviewer count, the first of `linkedCards` as a link to `/cards/[id]` with "+n" for the rest, Accepted or Not accepted, and a details button with `aria-expanded`. The checkbox column renders only when a shown row can be accepted. Under 1280px wide the reviewer column is hidden, and under 720px the source and card columns are hidden too. Clicking the statement or the details button opens a row under it with the full statement, the acceptance lines, the source path or "Added by" with `createdBy`, "Ingested by" for a parsed row with `createdBy`, the `reviewers` as badges by name, and the card links. A manual row has an "Edit requirement" link to `/intake/[id]`. A parsed row whose `canEditReviewers` is true has an "Edit reviewers" link to the same page (RFC-054). Decisions are a table of id, statement, and source path.
+Requirements are a table: a select checkbox, id, statement as a `plainText` excerpt clamped to two lines with the source path under it ("Added by" with `createdBy` for a manual row), source badge ("Draft" in amber), reviewer count, the first of `linkedCards` as a link to `/cards/[id]` with "+n" for the rest, Accepted or Not accepted, and a details button with `aria-expanded`. The checkbox column renders only when a shown row can be accepted. Under 1280px wide the reviewer column is hidden, and under 720px the source and card columns are hidden too. Clicking the statement or the details button opens a row under it with the full statement rendered as markdown, the acceptance lines each rendered as inline markdown, the source path or "Added by" with `createdBy`, "Ingested by" for a parsed row with `createdBy`, the `reviewers` as badges by name, and the card links. A manual row has an "Edit requirement" link to `/intake/[id]`. A parsed row whose `canEditReviewers` is true has an "Edit reviewers" link to the same page (RFC-054). Decisions are a table of id, statement, and source path.
 
 Each table renders 50 rows, then a "Show 50 more" button. Changing the tab, search, or a filter goes back to 50 rows and drops selected ids that are no longer shown.
 
@@ -369,7 +377,7 @@ Button "Ingest" POSTs `ingest` and replaces the list. When the response has `ski
 
 Acceptance needs `canAccept` (RFC-053). When it is false, there are no checkboxes and no accept buttons. When it is true, each unaccepted row has a checkbox, and the header checkbox selects every unaccepted row that the filter shows, including rows past the first 50. While any row is selected, a sticky bar at the bottom says how many, with Clear and the page's primary button, "Accept selected", which POSTs `accept` with the selected ids. "Accept all shown (n)" in the toolbar POSTs `accept` with every unaccepted id the filter shows. Both accept buttons are disabled while `draftPending` is true. After an accept, the selection is cleared and the page shows the returned intake.
 
-`/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
+`/intake/new` has an optional id field with the hint "Leave blank to use the next free REQ- number.", a statement, and acceptance lines, one per line. `RequirementForm` puts one Write/Preview `Segmented` control, labelled "Requirement view", above the statement and acceptance. Write shows a statement textarea of 8 rows with the hint "Markdown works: headings, lists, code, bold, italic, and links." and an acceptance textarea of 6 rows with the hint "One check per line. If you paste a markdown list, only its items are saved. Markdown works inside a line: code, bold, italic, and links." Preview renders the statement with `Markdown` and the acceptance lines, split by `toLines` as they will be saved, with `AcceptanceList`; an empty one shows "Nothing to preview", and each field keeps its API error under its preview. `toLines` (through `acceptanceChecks`) reads the textarea the way ingest reads an Acceptance section: when the text has a markdown list, `listItems` keeps only its items, each as its own inline markdown, a wrapped item joined with a space and a nested item as its own check, and leaves out headings, bold labels, prose, rules, and fenced code. Preview then says "N lines are not list items, so they are not saved." Without a list, each non-blank line is a check. A leading list or checkbox marker is dropped either way, the same rule as the API. `/intake/[id]` loads saved checks with `fromLines` as a `- ` list, so adding a list item later keeps them. Both textareas grow with their text (`Field` `grow`), so the page scrolls instead of the box. It POSTs `requirements` and returns to `/intake`. `/intake/[id]` shows the id read-only, edits the statement and acceptance with `PUT`, and deletes after a confirm step. For a row that is not manual it says to edit the requirement in the repository and shows no requirement form. Field errors come from the API `fields`.
 
 Both pages name PR reviewers with a `MultiSearchSelect` (at most 15). Options are `reviewerOptions` without the row's creator, labelled by name with the login and email as the detail line. The search placeholder is "Search by name, login, or email". On `/intake/[id]` a Reviewers panel shows for every row: editable with "Save reviewers" when `canEditReviewers` is true, which PUTs `requirements/{id}/reviewers` with `{ userIds }`, and read only otherwise. On `/intake/new` the picker sits under the acceptance lines and leaves out the caller. After the POST, a non-empty pick is saved with the same PUT. If that PUT fails, the page opens `/intake/[id]` for the new row so the reviewers can be saved again.
 
@@ -504,7 +512,7 @@ The product name is Marauder. `src/app.css` imports Tailwind CSS 4 and defines t
 
 Shared controls live in `src/lib/ui/`. One primary button on a page. `.danger` is for blocked status. `.error` is for a field error. Inputs and buttons are at least 44px tall. `:focus-visible` keeps a 2px ink outline. Do not remove outlines. Do not put layout in a `style` attribute.
 
-The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`. Every password or secret input is a `PasswordInput`: `Field type="password"` and `SecretField` both render it. It starts masked, and an eye button inside the right edge (a 44px `type="button"` with `aria-pressed` and "Show {label}" or "Hide {label}") reveals only what was typed. It masks again when the value is cleared or the input is disabled.
+The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. A `Field` textarea with `grow` uses the `autogrow` action, which sets its height from `scrollHeight` through the CSSOM on mount, input, and value change, and is `resize-none`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`. Every password or secret input is a `PasswordInput`: `Field type="password"` and `SecretField` both render it. It starts masked, and an eye button inside the right edge (a 44px `type="button"` with `aria-pressed` and "Show {label}" or "Hide {label}") reveals only what was typed. It masks again when the value is cleared or the input is disabled.
 
 Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the live status line. It holds no page actions.
 
@@ -574,9 +582,11 @@ npm run build
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
 | `CardChanges` | Lists files with counts and "binary". A file button opens its lines, with the deleted line on red and the added line on green, and the compare link points at `compareUrl`. A cut diff shows the warning. A missing commit shows "Commit {short} is not in the project clone yet." |
-| `IntakeActions` | Ingest and Add requirement render, and no accept button |
+| `IntakeActions` | Ingest and Add requirement render, and no accept button. `toLines` drops blanks, markers, and non-item lines when a list exists, and keeps every line without one. `fromLines` loads saved checks as a `- ` list that saves back unchanged, and a list item added later keeps them |
+| `markdown` | `<script>` stays text. `javascript:`, `data:`, relative, and non-GitHub links read as `label (url)`, and a GitHub link parses. An unclosed fence runs to the end. Nested emphasis parses; `**open`, `snake_case_name`, and `2 * 3 * 4` stay text, and so do `#123` and `####### x`. Ordered lists keep `start`, one nested level holds deeper items, and a marker switch starts a new list. Rules, hard breaks, CRLF, and NUL are handled. `plainText` drops markers. 20k `*` or `[` parse within a second. `listItems` keeps only the items of a pasted definition of done, joins wrapped items, keeps nested items, skips fenced code, does not join a label or heading onto an item, and is null without a list || `Markdown` | No `script` or `img` element renders. A GitHub link has `target="_blank"` and `rel="noreferrer noopener"`, and a `javascript:` link has no `<a>`. `# x` is an `h3`. A `pre` keeps its text. `a **b** c` reads "a b c" |
+| `RequirementForm` | Statement has 8 rows and Acceptance 6, both growing. Preview shows the formatted heading and bold text, Write brings the textarea back, acceptance previews as a checklist of formatted lines with the list markers dropped and its error kept, a pasted document previews only its list items and counts the lines left out, and an empty statement or acceptance has nothing to preview |
 | `ReviewersPanel` | `canSetSelfReview` is true for a Lead Developer or an admin only. A row with `canSetSelfReview` shows a checked Self review box and Save reviewers. Otherwise a flagged row shows the read-only "Self review: on" line, and an unflagged row says nothing about Self review (RFC-070) |
-| `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
+| `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. A markdown statement or acceptance line also matches by its `plainText` words. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
 | `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
 | `OwnerFilter` | Clicking an avatar adds its owner and clicking again removes it. Owners past the limit are in the "+n" checklist |

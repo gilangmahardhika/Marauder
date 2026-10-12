@@ -239,7 +239,7 @@ func TestImplementReachesPROpen(t *testing.T) {
 		t.Fatalf("create bodies = %d", len(bodies))
 	}
 	body := bodies[0]
-	for _, want := range []string{"## Summary\n\nJob commit", "**REQ-001**: Say job. token [redacted]", "- [ ] Hello says job",
+	for _, want := range []string{"## Summary\n\nJob commit", "**REQ-001**\n\nSay job. token [redacted]", "- [ ] Hello says job",
 		"- `hello.txt` (+", "Local check `true` exited 0", "<details><summary>Orchestrator metadata</summary>", "card: " + card.ID} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body lacks %q:\n%s", want, body)

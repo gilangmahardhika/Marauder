@@ -520,3 +520,19 @@ Packages: `internal/intake`, `internal/app`, `internal/httpapi`, `migrations`, f
 - The New requirement page and the Reviewers panel show the Self review checkbox to a Lead Developer or an admin. The card page shows Self review in Details.
 
 Done when: `TestSelfReviewNeedsLead`, `TestSelfReviewOwnerApproves`, `TestCardSelfReview`, and the `ReviewersPanel` Vitest cases.
+
+## Sprint 35: Markdown statements and a growing requirement form
+
+Goal: A requirement statement and its acceptance lines can be written in markdown and read formatted on the intake pages, and the requirement form grows with its text (REQ-055, RFC-066). It adds no decision; it refines the REQ-055 display in tech/0004 and the RFC-066 body layout in tech/0003.
+
+Packages: `internal/intake`, `internal/app`, frontend `$lib/markdown`, `$lib/requirements`, `Markdown`, `AcceptanceList`, `RequirementForm`, `RequirementRow`, `Field`, and the card page.
+
+- `$lib/markdown` parses a statement into a token tree, and `Markdown.svelte` renders it as elements and text nodes, with links only to GitHub or the local harness. `plainText` gives the clamped excerpt and joins the search text.
+- `RequirementForm` has one Write/Preview toggle for the statement and acceptance, an 8-row statement and a 6-row acceptance box, and both grow with their text through the `autogrow` action. Preview shows the acceptance lines as a checklist through `AcceptanceList`.
+- The intake row renders the statement and acceptance lines as markdown. The table cell and the card page show a plain excerpt.
+- The statement limit is 10000 characters, and CR and CRLF are stored as LF.
+- An acceptance line drops one leading list or checkbox marker and keeps one line, in `toLines` and in the API, so the pull request checklist does not read `- [ ] - [ ]`.
+- When the acceptance text has a markdown list, only its items become checks, as ingest reads an Acceptance section, and Preview counts the lines left out. The edit page loads saved checks as a `- ` list.
+- The pull request body puts each id in bold on its own line, then the statement, and closes a code fence the statement left open.
+
+Done when: `TestStatementLimitAndLineEndings`, `TestAcceptanceLineMarkers`, `TestPRBodyMarkdownStatement`, and the `markdown`, `Markdown`, `RequirementForm`, `IntakeActions`, and `intake` Vitest cases.

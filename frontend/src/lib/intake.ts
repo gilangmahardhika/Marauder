@@ -1,4 +1,5 @@
 import { matchText } from './filter';
+import { plainText } from './markdown';
 import type { Decision, Requirement } from './types';
 
 export type StatusFilter = 'open' | 'accepted' | 'all';
@@ -45,7 +46,18 @@ export function filterRequirements(reqs: Requirement[], filter: IntakeFilter) {
     (req) =>
       (filter.status === 'all' || req.accepted === (filter.status === 'accepted')) &&
       (filter.source === '' || req.sourceKind === filter.source) &&
-      matchText([req.id, req.statement, req.heading, req.sourcePath, ...req.acceptance], filter.q)
+      matchText(
+        [
+          req.id,
+          req.statement,
+          plainText(req.statement),
+          req.heading,
+          req.sourcePath,
+          ...req.acceptance,
+          ...req.acceptance.map((line) => plainText(line))
+        ],
+        filter.q
+      )
   );
 }
 
