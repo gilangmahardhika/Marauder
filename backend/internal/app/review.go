@@ -190,7 +190,7 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	if err != nil {
 		return card, err
 	}
-	redact := modelKeys(secrets)
+	redact := append(modelKeys(secrets), deps.Secrets...)
 	project, err := tenancy.GetProject(ctx, db, projectID)
 	if err != nil {
 		return card, err

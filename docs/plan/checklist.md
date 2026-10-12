@@ -614,3 +614,20 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestInstructionsRole`
 - [x] `CardActions`, `CardInstructions`, `CardNotes`, `trace`, and `api` Vitest cases
 - [x] On the live server, the card page shows the Instructions panel and the Run box.
+
+## Sprint 39: A live, verbose trace
+
+- [x] `trace.Clip` redacts before it cuts, and `job_error` uses it.
+- [x] `model_call` stores the reply `text` and `tool_call` stores `args`, both capped, with no file text.
+- [x] `JobDeps.Secrets` adds the `databaseUrl` and `tokenKey` text to both jobs' redaction.
+- [x] The trace route takes `since` and returns `seq`, `maxTurns`, and `live`.
+- [x] The Trace page polls while live, merges rows, shows Live and Now running, and follows the newest row.
+- [x] `TestTraceClip`
+- [x] `TestModelCallText`
+- [x] `TestToolCallArgs`
+- [x] `TestTraceSince`
+- [x] `TestTraceLive`
+- [x] `TestReviewerPackHasNoAuthorText`
+- [x] `TestTraceOrderAndAttempts` and `TestJobErrorCapped` still pass
+- [x] `trace`, `pager`, `TraceBlock`, and Trace page Vitest cases
+- [x] On the live server, the Trace page shows the new fields and does not poll a card that is idle.

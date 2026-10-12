@@ -108,6 +108,7 @@ func Count(ctx context.Context, q queryer, cardID, kind string) (int, error) {
 // Listed is one stored event of a card, with its payload as stored.
 type Listed struct {
 	ID        string
+	Seq       int64
 	TS        string
 	AttemptID string
 	Kind      string
@@ -121,9 +122,23 @@ type lister interface {
 // List returns the card's events oldest first. Events in the same second keep
 // the order they were inserted in.
 func List(ctx context.Context, q lister, cardID string) ([]Listed, error) {
-	rows, err := q.QueryContext(ctx, `
-		SELECT id, ts, COALESCE(attempt_id, ''), kind, payload_json
-		FROM events WHERE card_id = $1 ORDER BY ts, seq`, cardID)
+	return scanListed(q.QueryContext(ctx, `
+		SELECT id, seq, ts, COALESCE(attempt_id, ''), kind, payload_json
+		FROM events WHERE card_id = $1 ORDER BY ts, seq`, cardID))
+}
+
+// ListSince returns the card's events with ts at or after since, oldest
+// first. An empty since returns every event. The caller checks the card is in
+// the project; events are read by card id because older ones may carry
+// proj_default.
+func ListSince(ctx context.Context, q lister, cardID, since string) ([]Listed, error) {
+	return scanListed(q.QueryContext(ctx, `
+		SELECT id, seq, ts, COALESCE(attempt_id, ''), kind, payload_json
+		FROM events WHERE card_id = $1 AND ($2 = '' OR ts >= $2)
+		ORDER BY ts, seq`, cardID, since))
+}
+
+func scanListed(rows *sql.Rows, err error) ([]Listed, error) {
 	if err != nil {
 		return nil, err
 	}
@@ -131,12 +146,35 @@ func List(ctx context.Context, q lister, cardID string) ([]Listed, error) {
 	events := []Listed{}
 	for rows.Next() {
 		var ev Listed
-		if err := rows.Scan(&ev.ID, &ev.TS, &ev.AttemptID, &ev.Kind, &ev.Payload); err != nil {
+		if err := rows.Scan(&ev.ID, &ev.Seq, &ev.TS, &ev.AttemptID, &ev.Kind, &ev.Payload); err != nil {
 			return nil, err
 		}
 		events = append(events, ev)
 	}
 	return events, rows.Err()
+}
+
+// TextCap is the most bytes of a model reply kept in model_call.text, and
+// ArgCap the most bytes of each value in tool_call.args.
+const (
+	TextCap = 4 << 10
+	ArgCap  = 1 << 10
+)
+
+// Clip makes text safe for one payload field: NUL bytes are dropped, invalid
+// UTF-8 is replaced, secrets are redacted, and text over max bytes keeps its
+// head and tail around a cut marker. Redacting before the cut keeps a secret
+// that crosses the cut from surviving in part.
+func Clip(text string, secrets []string, max int) string {
+	text = Redact(strings.ToValidUTF8(strings.ReplaceAll(text, "\x00", ""), "\uFFFD"), secrets)
+	if len(text) <= max {
+		return text
+	}
+	half := max / 2
+	head := strings.ToValidUTF8(text[:half], "")
+	tail := strings.ToValidUTF8(text[len(text)-half:], "")
+	cut := len(text) - len(head) - len(tail)
+	return fmt.Sprintf("%s\n... (%d bytes cut) ...\n%s", head, cut, tail)
 }
 
 func Redact(s string, secrets []string) string {

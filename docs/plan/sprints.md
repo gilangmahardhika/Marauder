@@ -579,3 +579,17 @@ Packages: migration `00020`, `internal/board`, `internal/contextpack`, `internal
 - On the card page, Run opens "Instructions for the next attempt", prefilled. The Instructions panel shows and edits them. Notes label them "Instructions". The board's Run stays one click.
 
 Done when: `TestPackInstructions`, `TestAttemptReadsInstructionsAndNote`, `TestSetInstructions`, `TestRunWithInstructions`, `TestInstructionsRoute`, `TestInstructionsRole`, and the `CardActions`, `CardInstructions`, `CardNotes`, `trace`, and `api` Vitest cases.
+
+## Sprint 39: A live, verbose trace
+
+Goal: A person who presses Run can follow the attempt on the Trace page without reloading, and each row says what the agent asked for and what the model said (RFC-074, REQ-076).
+
+Packages: `internal/trace`, `internal/loop`, `internal/board`, `internal/app`, `internal/cli`, `internal/httpapi`, `internal/providers/fake`, frontend `trace.ts`, `pager.svelte.ts`, `TraceBlock`, `api.ts`, and the Trace page.
+
+- `trace.Clip` drops NUL bytes and invalid UTF-8, redacts, then keeps the head and tail around a cut marker. `job_error` uses it at 8 KiB.
+- `model_call` stores `text`, the model's reply, at most 4 KiB. `tool_call` stores `args` per tool, each string at most 1 KiB; `edit_file` stores `bytes` and `lines` and never the file text.
+- `JobDeps.Secrets` carries the `databaseUrl` and `tokenKey` text from `serve` and `run-next`, and both jobs redact it.
+- The trace route takes `since` (10 seconds of overlap, `422` when it is not RFC3339), and returns `seq` per event, `maxTurns` per attempt, and `live`.
+- The Trace page polls every 3 seconds while `live`, merges events by id, shows a Live badge and a Now running strip, and follows the newest row while Follow latest is on. It announces only when an attempt ends.
+
+Done when: `TestTraceClip`, `TestModelCallText`, `TestToolCallArgs`, `TestTraceSince`, `TestTraceLive`, `TestReviewerPackHasNoAuthorText`, `TestTraceOrderAndAttempts`, `TestJobErrorCapped`, and the `trace`, `pager`, `TraceBlock`, and Trace page Vitest cases.

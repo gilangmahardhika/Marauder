@@ -118,6 +118,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-073 | Self review on a requirement |
 | REQ-074 | A failed attempt retries, and a requirement chooses what an AI request for changes does |
 | REQ-075 | A person writes instructions that later attempts of a card read |
+| REQ-076 | A person follows an attempt live on the Trace page |
 
 ## Requirements
 
@@ -1056,6 +1057,16 @@ Before the next attempt of a card starts, a person who may run it can write inst
 - Instructions over 4000 characters are refused, and Run with them queues nothing.
 - A role that cannot run the card gets `403`, and the card page shows no Instructions panel to it.
 
+### REQ-076 A person follows an attempt live on the Trace page
+
+While a card works, its Trace page shows new events without a reload. Each model call also records the model's reply text, and each tool call records the arguments a person needs to follow it, such as the file path, the search text, the commit message, or the check command. Both are redacted and capped. This amends REQ-041: a model call event stores the five usage fields and the reply text (RFC-074).
+
+#### Acceptance
+
+- During an attempt, a new tool call appears on an open Trace page within a few seconds, and the page stops refreshing once the card stops working.
+- A read file row names the file, and an edit file row stores its size and not the file text.
+- A configured secret in the model's reply is stored as `[redacted]`.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1169,3 +1180,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 27. Self review on a requirement (REQ-073).
 28. Retry after a failed attempt, and the AI review mode (REQ-074).
 29. Instructions for the next attempt (REQ-075).
+30. A live, verbose trace (REQ-076).

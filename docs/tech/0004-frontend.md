@@ -188,6 +188,8 @@ frontend/
   src/lib/components/CardInstructions.test.ts
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
+  src/lib/pager.svelte.test.ts
+  src/routes/cards/[id]/trace/page.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/ReviewersPanel.test.ts
   src/lib/components/Markdown.test.ts
@@ -403,13 +405,18 @@ While `draftPending` is true, the live message is "Planner is drafting requireme
 
 `GET /api/projects/{projectId}/cards/{id}/trace`, plus `GET /api/projects/{projectId}/cards/{id}` for the title and status. No model call from this page.
 
+While the response's `live` is true, the page reads the trace again every 3 seconds with `since` set to the newest event's `ts`, merges the events by `id` (`trace.mergeEvents`, ordered by `ts` then `seq`), and stops when `live` turns false (RFC-074). A tick is skipped while a request is in flight, a response for another card is dropped, and a failed poll keeps the rows already shown. The card is read again when `live` changes or an attempt ends. Events are kept in `$state.raw`.
+
 The page reads as a timeline, oldest first:
 
-- Header: "Trace", the card title as the description, and the status badge in `meta`. A summary strip shows attempts, events, total model tokens, errors (a link to `?kind=job_error` when above zero), and the first and last event time.
+- Header: "Trace", the card title as the description, and the status badge in `meta`, with a sky "Live" badge while `live` is true.
+- Now running: while `live` is true, a strip above the summary shows "Attempt N" (or "Waiting for the worker" before an attempt opens), the phase from the newest status change, the elapsed time from `startedAt` ticking each second, "Turn X of Y" from the attempt's implementer model calls and `maxTurns`, the attempt's tokens, and the newest event's label, detail, and age. The live region announces only when an attempt ends, such as "Attempt 2 ended: Checks passed".
+- Follow latest: a toolbar checkbox shown while `live` is true, on by default. When a poll adds rows, the page scrolls the newest entry into view. When every timeline entry was shown, new entries show too (`pager.follow`); a block that showed every row keeps showing every row as rows arrive, and a block keeps its open state.
+- Summary: a strip shows attempts, events, total model tokens, errors (a link to `?kind=job_error` when above zero), and the first and last event time.
 - Day headers split the timeline where the local day changes.
 - Milestones: events without an attempt, such as status changes, refused status changes, errors, and reviewer requests. Consecutive milestones share one bordered list.
 - Attempt blocks (`TraceBlock`): a run of consecutive events with one `attemptId`. The reviewer's events carry the implement attempt's id, so they form a block titled "Review of attempt N"; a later run of the same attempt and role is "(continued)". The header is a button with `aria-expanded` that shows the task class, model, model calls, tools, tokens in and out, duration (`startedAt` to `endedAt` for an implement block, first to last event otherwise), a red problem count, and the outcome badge and short commit, or for a review the verdict and "Not independent". The latest block and any block with a problem start open. Every block starts open while a search or filter is set. A block shows 50 rows, then `ShowMore`.
-- Rows (`TraceRow`): one 44px line per event with the local clock time (ISO in `title`), an icon, a label, a detail, and right-aligned meta such as "1,616 in / 74 out". `trace.describe` gives every kind a template; an unknown kind reads as its name in sentence case. Red rows are errors, failed tools, failed checks, and moves to Blocked; amber rows are refused calls and changes requested. A row is a button with `aria-expanded`; open, it shows the full detail, the long text, the kind, time, attempt id, and event id, and a "Raw event" toggle with the JSON.
+- Rows (`TraceRow`): one 44px line per event with the local clock time (ISO in `title`), an icon, a label, a detail, and right-aligned meta such as "1,616 in / 74 out". `trace.describe` gives every kind a template; an unknown kind reads as its name in sentence case. A tool row puts its `args` first, such as "src/x.ts · 120 lines", `"useSession" · 3 matches`, "exit 0 · npm test", or a commit's first line. A model row with `text` shows the reply's first line as its detail and the whole reply when open; without `text`, the model id and stop reason. Red rows are errors, failed tools, failed checks, and moves to Blocked; amber rows are refused calls and changes requested. A row is a button with `aria-expanded`; open, it shows the full detail, the long text, the kind, time, attempt id, and event id, and a "Raw event" toggle with the JSON.
 - Long text (`TraceText`): control characters other than newline and tab are stripped, text is cut at 4,000 characters with "Show all (size)", and text that was mostly NUL bytes is hidden as binary output until "Show anyway". Every value renders as text.
 
 The toolbar searches the kind and its label, attempt id, the row's label and detail, and payload text, and filters by kind and attempt. The timeline renders 50 entries at a time.
@@ -616,7 +623,10 @@ npm run build
 | `trace` filters | Events filter by kind, attempt, payload text, and the row's words. Kind and attempt options come from the events present, labelled "Status change (1)" and "Attempt 1 (1)" |
 | `trace` timeline | `buildTimeline` splits the implement and review blocks of one attempt with milestones between, and marks a later run as continued. `describe` covers each kind and an unknown kind. `cleanText` strips NUL bytes, reports the byte size, and cuts at the cap |
 | `TraceRow` | A row opens to its details and the raw JSON. An error row is red, a long message offers Show all, and binary output stays hidden until Show anyway |
-| `TraceBlock` | A clean attempt starts closed with its outcome, commit, and duration, and opens to its rows. A block with an error starts open. A review block shows the verdict and "Not independent" |
+| `TraceBlock` | A clean attempt starts closed with its outcome, commit, and duration, and opens to its rows. A block with an error starts open. A review block shows the verdict and "Not independent". An open block that showed every row stays open and shows rows that arrive later |
+| `trace` live | `mergeEvents` keeps one row per id, ordered by `ts` then `seq`. Tool rows show their `args` ("src/x.ts · 3 lines", "exit 0 · npm test", a commit's first line), and a model row shows its reply text (RFC-074) |
+| `pager` follow | When every entry was shown, `follow` grows the limit to the new total. When some were hidden, the limit stays |
+| Trace page poll | With fake timers: a live trace polls every 3 seconds with `since` set to the newest `ts`, merges the new rows, announces "Attempt 1 ended: Checks passed", and stops polling once `live` is false. A trace that is not live is read once and shows no Now running strip |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | `api` AI review mode | `addRequirement` sends `aiReviewMode` in the POST body, as the New requirement page does, and `setAIReviewMode` PUTs `{ aiReviewMode }` to `requirements/{id}/ai-review-mode` in the selected project (RFC-072) |

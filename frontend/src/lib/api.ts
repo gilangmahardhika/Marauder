@@ -210,8 +210,10 @@ export function getCardDiff(id: string) {
   return request<CardDiff>(`${projectPrefix()}/cards/${id}/diff`);
 }
 
-export function getTrace(id: string) {
-  return request<TraceResponse>(`${projectPrefix()}/cards/${id}/trace`);
+/** With `since`, the server returns events from 10 seconds before it; merge them by id. */
+export function getTrace(id: string, since?: string) {
+  const query = since ? `?since=${encodeURIComponent(since)}` : '';
+  return request<TraceResponse>(`${projectPrefix()}/cards/${id}/trace${query}`);
 }
 
 export function getIntake() {

@@ -106,10 +106,7 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 		if modelID == "" {
 			modelID = in.Model
 		}
-		if err := reviewEvent(ctx, in, "model_call", map[string]any{
-			"role": "reviewer", "modelId": modelID, "stopReason": resp.StopReason,
-			"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens,
-		}); err != nil {
+		if err := reviewEvent(ctx, in, "model_call", modelCallPayload("reviewer", modelID, resp, in.Secrets)); err != nil {
 			return result, err
 		}
 		if len(resp.ToolCalls) == 0 {
@@ -149,9 +146,11 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 			default:
 				summary, rejected = "not in profile", true
 			}
-			if err := reviewEvent(ctx, in, "tool_call", map[string]any{
-				"name": call.Name, "ok": !rejected, "rejected": rejected, "summary": summary,
-			}); err != nil {
+			payload := map[string]any{"name": call.Name, "ok": !rejected, "rejected": rejected, "summary": summary}
+			if args := toolArgs(call, "", in.Secrets); len(args) > 0 {
+				payload["args"] = args
+			}
+			if err := reviewEvent(ctx, in, "tool_call", payload); err != nil {
 				return result, err
 			}
 			if result.Verdict != "" {

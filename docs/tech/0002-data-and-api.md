@@ -330,8 +330,8 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | Kind | Payload fields |
 | --- | --- |
 | `route` | `taskClass`, `modelId`, `fallback`, `familyFlag`, `reason` |
-| `model_call` | `role`, `modelId`, `promptHash`, `inputTokens`, `outputTokens`, `stopReason` |
-| `tool_call` | `name`, `ok`, `rejected`, `summary` |
+| `model_call` | `role`, `modelId`, `inputTokens`, `outputTokens`, `stopReason`, and `text`, the model's reply text, when it wrote any (RFC-074). The prompt is not stored; `attempts.prompt_hash` and `review_prompt_hash` keep its hash |
+| `tool_call` | `name`, `ok`, `rejected`, `summary`, and `args` for the tools below (RFC-074) |
 | `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
@@ -344,6 +344,20 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`.
+
+`tool_call.args` holds what a person needs to follow the step (RFC-074):
+
+| Tool | `args` |
+| --- | --- |
+| `list_files`, `read_file` | `path` |
+| `read_linked_file` | `project`, `path` |
+| `search_files` | `text` |
+| `edit_file` | `path`, `bytes`, `lines`. Never the file text |
+| `run_local_check` | `command`, the card's `local_check` |
+| `commit` | `message`, as the model wrote it |
+| `comment_pr`, `verdict` | `body` |
+
+`model_call.text` is at most 4 KiB and each string in `args` at most 1 KiB (`trace.TextCap`, `trace.ArgCap`). `trace.Clip` drops NUL bytes, replaces invalid UTF-8, redacts with the job's secrets, and then keeps the head and tail around `... (N bytes cut) ...`, in that order, so a secret across the cut is gone before the cut. `job_error.message` uses the same function at 8 KiB. No pack builder reads `events`.
 
 Every payload passes through `redact` before insert. A new transition may include `actorId`. Existing rows stay as stored. Nothing updates an event to backfill it.
 
@@ -745,10 +759,11 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
 
 `GET /api/projects/{projectId}/cards/{id}` returns one card object. Unknown id, or a card in another project, is `404`.
 
-`GET /api/projects/{projectId}/cards/{id}/trace`
+`GET /api/projects/{projectId}/cards/{id}/trace` and `GET /api/projects/{projectId}/cards/{id}/trace?since=2026-10-10T05:00:00Z` (RFC-074)
 
 ```json
 {
+  "live": false,
   "attempts": [
     {
       "id": "att_0123456789ab",
@@ -758,6 +773,7 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
       "fallbackModelId": "",
       "inputTokens": 11883,
       "outputTokens": 2523,
+      "maxTurns": 12,
       "commitSha": "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
       "reviewModelId": "other-model",
       "reviewVerdict": "recommend_approve",
@@ -770,16 +786,19 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
   "events": [
     {
       "id": "evt_0123456789ab",
+      "seq": 4182,
       "ts": "2026-10-10T05:00:00Z",
       "attemptId": "att_0123456789ab",
       "kind": "model_call",
-      "payload": { "role": "implementer", "modelId": "example-model", "inputTokens": 932, "outputTokens": 84, "stopReason": "tool_use" }
+      "payload": { "role": "implementer", "modelId": "example-model", "inputTokens": 932, "outputTokens": 84, "stopReason": "tool_use", "text": "I will read the login page first." }
     }
   ]
 }
 ```
 
-Events are oldest first by `ts`, then by insert order (`seq`), so events in the same second keep the order they were written in. `attemptId` is left out when the event has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
+Events are oldest first by `ts`, then by insert order (`seq`), so events in the same second keep the order they were written in. Each event has `seq`. `attemptId` is left out when the event has none.
+
+`since` is an optional RFC3339 time. With it, the route returns only events with `ts` at or after 10 seconds before `since`, so an event that committed late or in the same second is read again; the client merges events by `id`. A value that is not RFC3339 is `422` with `fields.since`. `attempts` is always the full list. `live` is true while the card is queued (an open `runs` row), is in `in_progress`, `self_check`, `agent_review`, `deploying_dev`, or `verifying`, or has an attempt with no `endedAt`. The Trace page polls while `live` is true. `maxTurns` is the attempt's turn budget, `0` when it has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
 
 `attempts` lists the card's attempts in the project by `n`. A value the attempt does not have yet is `""`, and `reviewIndependent` is `null` until a review ran. `outcome` is `""` while the attempt runs, then one of `checks_passed`, `checks_failed`, `no_commit`, `budget`, `error`, or `cancelled`. Tokens are the implementer's calls only; the reviewer's calls are in `model_call` events with `role: reviewer`, under the same `attemptId`.
 

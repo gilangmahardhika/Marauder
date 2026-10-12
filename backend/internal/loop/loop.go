@@ -356,10 +356,7 @@ func (s *session) loop(ctx context.Context) error {
 		if modelID == "" {
 			modelID = s.in.Model
 		}
-		if err := s.event(ctx, "model_call", map[string]any{
-			"role": "implementer", "modelId": modelID, "stopReason": resp.StopReason,
-			"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens,
-		}); err != nil {
+		if err := s.event(ctx, "model_call", modelCallPayload("implementer", modelID, resp, s.in.Secrets)); err != nil {
 			return err
 		}
 		if len(resp.ToolCalls) == 0 {
@@ -373,6 +370,9 @@ func (s *session) loop(ctx context.Context) error {
 			summary, rejected, callErr := s.dispatch(ctx, call)
 			payload := map[string]any{
 				"name": call.Name, "ok": callErr == nil && !rejected, "rejected": rejected, "summary": summary,
+			}
+			if args := toolArgs(call, s.card.LocalCheck, s.in.Secrets); len(args) > 0 {
+				payload["args"] = args
 			}
 			if err := s.event(ctx, "tool_call", payload); err != nil {
 				return err
@@ -475,6 +475,58 @@ func (s *session) localCheck(ctx context.Context) (int, string, error) {
 		return 0, "", fmt.Errorf("check was not executed")
 	}
 	return res.Exit, lastLines(string(res.Out), 200), nil
+}
+
+// modelCallPayload is one model_call event. text is the reply the model wrote
+// beside its tool calls, never the prompt.
+func modelCallPayload(role, modelID string, resp providers.Response, secrets []string) map[string]any {
+	payload := map[string]any{
+		"role": role, "modelId": modelID, "stopReason": resp.StopReason,
+		"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens,
+	}
+	if text := trace.Clip(resp.Text, secrets, trace.TextCap); strings.TrimSpace(text) != "" {
+		payload["text"] = text
+	}
+	return payload
+}
+
+// toolArgs are the arguments a person needs to follow a tool call. File text
+// is never kept: edit_file records its size only.
+func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[string]any {
+	clip := func(s string) string { return trace.Clip(s, secrets, trace.ArgCap) }
+	args := map[string]any{}
+	switch call.Name {
+	case "list_files", "read_file":
+		args["path"] = clip(strArg(call.Args, "path"))
+	case "read_linked_file":
+		args["project"] = clip(strArg(call.Args, "project"))
+		args["path"] = clip(strArg(call.Args, "path"))
+	case "search_files":
+		args["text"] = clip(strArg(call.Args, "text"))
+	case "edit_file":
+		text := strArg(call.Args, "text")
+		args["path"] = clip(strArg(call.Args, "path"))
+		args["bytes"] = len(text)
+		args["lines"] = countLines(text)
+	case "commit":
+		args["message"] = clip(strArg(call.Args, "message"))
+	case "run_local_check":
+		args["command"] = clip(localCheck)
+	case "comment_pr", "verdict":
+		args["body"] = clip(strArg(call.Args, "body"))
+	}
+	return args
+}
+
+func countLines(text string) int {
+	if text == "" {
+		return 0
+	}
+	n := strings.Count(text, "\n")
+	if !strings.HasSuffix(text, "\n") {
+		n++
+	}
+	return n
 }
 
 func (s *session) event(ctx context.Context, kind string, payload map[string]any) error {

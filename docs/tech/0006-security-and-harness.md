@@ -209,12 +209,14 @@ func probe(raw string, hosts []string, fixture bool) error
 
 Load secrets once per job into that project's snapshot, never into a global that HTTP handlers can format. The list is `databaseUrl`, `tokenKey`, the caller's GitHub token if it was decrypted, the card owner's GitHub token when the job decrypted it (RFC-054), the company GitHub token, each model key, and the deploy token. Password hashes are not redacted by substring search. They are never written to a pack, an event, or a log. `redact(s string, secrets []string) string` replaces each non-empty secret with `[redacted]`. Apply it to:
 
-- event payloads
+- event payloads, and before that each `model_call.text` and `tool_call.args` value, which `trace.Clip` redacts before it cuts (RFC-074). JSON escapes characters such as `&`, so redacting the marshalled payload alone can miss a secret that holds one
 - pack user strings
 - tool results before they re-enter the model
 - HTTP error messages
 - child output before it reaches the log file
 - failure notes before they are stored, since the card page returns them to every project member
+
+The implement and review jobs get `databaseUrl` and `tokenKey` through `JobDeps.Secrets`, which `serve` and `run-next` fill from `secrets.json`. A job started where the file cannot be read still redacts its model keys and GitHub tokens.
 
 A secret shorter than 8 characters is refused at save, and a job refuses to start if one is loaded. Short values make redaction collide with ordinary text.
 
@@ -338,6 +340,10 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | Write from `edit_file` | 1 MiB |
 | Log kept for a pack | Last 200 lines, after redaction, max 64 KiB |
 | Child output | 1 MiB |
+| `job_error.message` | 8 KiB, head and tail kept |
+| `model_call.text` | 4 KiB, head and tail kept (RFC-074) |
+| Each `tool_call.args` string | 1 KiB, head and tail kept (RFC-074) |
+| Trace poll | Every 3 s while `live`; `since` reads 10 s back |
 | Check timeout | 10 min |
 | Git and `gh` timeout | 2 min |
 | Health timeout | 5 s |
@@ -376,6 +382,10 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestHealthUnlisted` | A host not in `devHosts` is `deploy_config` |
 | `TestHealthRedirect` | A 302 is a failure and the second URL is not requested |
 | `TestRedactPack` | The deploy token planted in a log is `[redacted]` in the pack and the event |
+| `TestTraceClip` | A secret holding `&`, and one across the cut, are `[redacted]` before `trace.Clip` cuts (RFC-074) |
+| `TestModelCallText` | The `databaseUrl` in a model reply is `[redacted]` in `model_call.text` |
+| `TestToolCallArgs` | `edit_file` stores sizes and never the file text, and a secret in a commit message is `[redacted]` |
+| `TestReviewerPackHasNoAuthorText` | The implementer's stored reply never reaches the reviewer prompt |
 | `TestShortSecret` | A 4 character token PUT returns `422` |
 | `TestEventsImmutable` | `UPDATE events` and `DELETE events` fail |
 | `TestLockHolder` | A release with the wrong holder leaves the row and appends `assertion_failed` |

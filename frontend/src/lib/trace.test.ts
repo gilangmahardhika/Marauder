@@ -1,5 +1,5 @@
 import { describe as group, expect, it } from 'vitest';
-import { attemptOptions, buildTimeline, cleanText, describe, filterEvents, kindOptions, outcomeLabel, summarize } from './trace';
+import { attemptOptions, buildTimeline, cleanText, describe, filterEvents, kindOptions, mergeEvents, outcomeLabel, summarize } from './trace';
 import type { TraceAttempt, TraceEvent } from './types';
 
 const events: TraceEvent[] = [
@@ -86,9 +86,43 @@ group('describe', () => {
     expect(saved(0).detail).toBe('Cleared');
   });
 
+  it('shows what each tool was asked for and what the model said', () => {
+    const tool = (name: string, args: unknown, summary = '') => words('tool_call', { name, ok: true, summary, args });
+    expect(tool('read_file', { path: 'src/x.ts' }, 'a\nb\nc')).toMatchObject({ label: 'Read file', detail: 'src/x.ts · 3 lines' });
+    expect(tool('read_linked_file', { project: 'proj_api', path: 'go.mod' }, 'module x')).toMatchObject({ detail: 'proj_api: go.mod · 1 line' });
+    expect(tool('list_files', { path: 'src' }, 'a\nb')).toMatchObject({ detail: 'src · 2 paths' });
+    expect(tool('search_files', { text: 'useSession' }, '')).toMatchObject({ detail: '"useSession" · No matches' });
+    expect(tool('edit_file', { path: 'src/a.ts', bytes: 300, lines: 12 }, 'wrote src/a.ts')).toMatchObject({ detail: 'src/a.ts · 12 lines', text: '' });
+    expect(tool('run_local_check', { command: 'npm test' }, 'exit 0\nok')).toMatchObject({ detail: 'exit 0 · npm test', tone: 'green' });
+    expect(tool('commit', { message: 'Fix login\n\nUses the session.' }, 'committed')).toMatchObject({ detail: 'Fix login', text: 'Fix login\n\nUses the session.' });
+    expect(tool('comment_pr', { body: 'Looks fine.' }, 'commented')).toMatchObject({ detail: 'Looks fine.', text: 'Looks fine.' });
+    expect(tool('verdict', { body: 'Meets REQ-001.' }, 'recommend_approve')).toMatchObject({ detail: 'Recommend approve', text: 'Meets REQ-001.' });
+    expect(words('model_call', { role: 'implementer', modelId: 'm', text: '\nI will read the login page first.\nThen edit it.' })).toMatchObject({
+      detail: 'I will read the login page first.',
+      text: 'I will read the login page first.\nThen edit it.'
+    });
+  });
+
   it('reads an unknown kind and a missing payload as words', () => {
     expect(words('brand_new_kind', null)).toMatchObject({ label: 'Brand new kind', detail: '', tone: 'default' });
     expect(words('tool_call', 'not an object')).toMatchObject({ label: '' });
+  });
+});
+
+group('mergeEvents', () => {
+  it('keeps one row per id and orders by time, then insert order', () => {
+    const shown: TraceEvent[] = [
+      { id: 'a', seq: 1, ts: '2026-10-12T10:00:00Z', kind: 'transition', payload: {} },
+      { id: 'b', seq: 2, ts: '2026-10-12T10:00:05Z', kind: 'model_call', payload: {} }
+    ];
+    const polled: TraceEvent[] = [
+      { id: 'b', seq: 2, ts: '2026-10-12T10:00:05Z', kind: 'model_call', payload: {} },
+      { id: 'd', seq: 4, ts: '2026-10-12T10:00:05Z', kind: 'tool_call', payload: {} },
+      { id: 'c', seq: 3, ts: '2026-10-12T10:00:05Z', kind: 'tool_call', payload: {} },
+      { id: 'e', seq: 5, ts: '2026-10-12T10:00:09Z', kind: 'tool_call', payload: {} }
+    ];
+    expect(mergeEvents(shown, polled).map((event) => event.id)).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(mergeEvents(shown, [])).toHaveLength(2);
   });
 });
 

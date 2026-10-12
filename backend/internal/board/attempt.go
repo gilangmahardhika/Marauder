@@ -256,6 +256,7 @@ type AttemptSummary struct {
 	FallbackModelID   string
 	InputTokens       int
 	OutputTokens      int
+	MaxTurns          int
 	CommitSHA         string
 	ReviewModelID     string
 	ReviewVerdict     string
@@ -269,7 +270,7 @@ type AttemptSummary struct {
 func CardAttempts(ctx context.Context, db *sql.DB, projectID, cardID string) ([]AttemptSummary, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, n, task_class, COALESCE(model_id, ''), COALESCE(fallback_model_id, ''),
-			input_tokens, output_tokens, COALESCE(commit_sha, ''), COALESCE(review_model_id, ''),
+			input_tokens, output_tokens, COALESCE(max_turns, 0), COALESCE(commit_sha, ''), COALESCE(review_model_id, ''),
 			COALESCE(review_verdict, ''), review_independent, started_at, COALESCE(ended_at, ''),
 			COALESCE(outcome, '')
 		FROM attempts WHERE card_id = $1 AND project_id = $2 ORDER BY n`, cardID, projectID)
@@ -281,7 +282,7 @@ func CardAttempts(ctx context.Context, db *sql.DB, projectID, cardID string) ([]
 	for rows.Next() {
 		var a AttemptSummary
 		if err := rows.Scan(&a.ID, &a.N, &a.TaskClass, &a.ModelID, &a.FallbackModelID,
-			&a.InputTokens, &a.OutputTokens, &a.CommitSHA, &a.ReviewModelID,
+			&a.InputTokens, &a.OutputTokens, &a.MaxTurns, &a.CommitSHA, &a.ReviewModelID,
 			&a.ReviewVerdict, &a.ReviewIndependent, &a.StartedAt, &a.EndedAt, &a.Outcome); err != nil {
 			return nil, err
 		}

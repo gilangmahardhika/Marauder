@@ -13,6 +13,16 @@
 
   let open = $state(untrack(() => startOpen));
   let limit = $state(pageSize);
+  let seen = untrack(() => block.events.length);
+
+  // Rows that arrive while every row is shown are shown too.
+  $effect.pre(() => {
+    const total = block.events.length;
+    untrack(() => {
+      if (seen <= limit && total > limit) limit = total;
+      seen = total;
+    });
+  });
 
   const bodyId = $derived(`trace-block-${block.key}`);
   const attempt = $derived(block.attempt);

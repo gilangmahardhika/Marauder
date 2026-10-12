@@ -96,6 +96,8 @@ export type Board = {
 
 export type TraceEvent = {
   id: string;
+  /** Insert order; it breaks ties between events in the same second. */
+  seq?: number;
   ts: string;
   attemptId?: string;
   kind: string;
@@ -111,6 +113,8 @@ export type TraceAttempt = {
   fallbackModelId: string;
   inputTokens: number;
   outputTokens: number;
+  /** 0 when the attempt has no turn budget. */
+  maxTurns?: number;
   commitSha: string;
   reviewModelId: string;
   reviewVerdict: string;
@@ -120,7 +124,8 @@ export type TraceAttempt = {
   outcome: string;
 };
 
-export type TraceResponse = { attempts: TraceAttempt[]; events: TraceEvent[] };
+/** `live` is true while the card is queued or working, so more events may come. */
+export type TraceResponse = { attempts: TraceAttempt[]; events: TraceEvent[]; live?: boolean };
 
 export type Requirement = {
   id: string;

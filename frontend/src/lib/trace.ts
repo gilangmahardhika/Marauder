@@ -140,15 +140,39 @@ function evidence(text: string) {
   return shortShas(text);
 }
 
+/** What the tool was asked for, from `args`, in a few words. */
+function target(name: string, args: Record<string, unknown>) {
+  switch (name) {
+    case 'list_files':
+    case 'read_file':
+    case 'edit_file':
+      return str(args.path);
+    case 'read_linked_file':
+      return [str(args.project), str(args.path)].filter(Boolean).join(': ');
+    case 'search_files':
+      return args.text === undefined ? '' : `"${firstLine(str(args.text), 80)}"`;
+    case 'run_local_check':
+      return firstLine(str(args.command), 80);
+    default:
+      return '';
+  }
+}
+
+function joined(...parts: string[]) {
+  return parts.filter(Boolean).join(' · ');
+}
+
 function describeTool(p: Record<string, unknown>): Described {
   const name = str(p.name);
   const summary = str(p.summary);
   const label = toolLabel(name);
+  const args = record(p.args);
+  const on = target(name, args);
   if (p.rejected === true) {
-    return { label, detail: `Refused: ${firstLine(summary)}`, meta: '', tone: 'amber', text: summary };
+    return { label, detail: joined(on, `Refused: ${firstLine(summary)}`), meta: '', tone: 'amber', text: summary };
   }
   if (p.ok === false) {
-    return { label, detail: firstLine(summary), meta: '', tone: 'red', text: summary };
+    return { label, detail: joined(on, firstLine(summary)), meta: '', tone: 'red', text: summary };
   }
   switch (name) {
     case 'conventions_context': {
@@ -161,23 +185,33 @@ function describeTool(p: Record<string, unknown>): Described {
       return { label, detail: summary, meta: '', tone: 'default', text: links.map((link) => `${str(link.projectId)} ${str(link.sha)}`).join('\n') };
     }
     case 'list_files':
-      return { label, detail: plural(lineCount(summary), 'path', 'paths'), meta: '', tone: 'default', text: summary };
+      return { label, detail: joined(on, plural(lineCount(summary), 'path', 'paths')), meta: '', tone: 'default', text: summary };
     case 'search_files': {
       const n = lineCount(summary);
-      return { label, detail: n === 0 ? 'No matches' : plural(n, 'match', 'matches'), meta: '', tone: 'default', text: summary };
+      return { label, detail: joined(on, n === 0 ? 'No matches' : plural(n, 'match', 'matches')), meta: '', tone: 'default', text: summary };
     }
     case 'read_file':
     case 'read_linked_file':
-      return { label, detail: plural(lineCount(summary), 'line', 'lines'), meta: '', tone: 'default', text: summary };
-    case 'edit_file':
-      return { label, detail: summary.replace(/^wrote /, ''), meta: '', tone: 'default', text: '' };
+      return { label, detail: joined(on, plural(lineCount(summary), 'line', 'lines')), meta: '', tone: 'default', text: summary };
+    case 'edit_file': {
+      const size = args.lines === undefined ? '' : plural(num(args.lines), 'line', 'lines');
+      return { label, detail: joined(on || summary.replace(/^wrote /, ''), size), meta: '', tone: 'default', text: '' };
+    }
     case 'run_local_check': {
       const head = firstLine(summary);
-      return { label, detail: head, meta: '', tone: /^exit 0\b/.test(head) ? 'green' : 'red', text: summary };
+      return { label, detail: joined(head, on), meta: '', tone: /^exit 0\b/.test(head) ? 'green' : 'red', text: summary };
     }
     case 'read_diff': {
       const files = summary.split('\n').filter((line) => line.startsWith('diff --git ')).length;
       return { label, detail: plural(files, 'file', 'files'), meta: '', tone: 'default', text: summary };
+    }
+    case 'commit': {
+      const message = str(args.message);
+      return { label, detail: message ? firstLine(message) : firstLine(summary), meta: '', tone: 'default', text: lineCount(message) > 1 ? message : '' };
+    }
+    case 'comment_pr': {
+      const body = str(args.body);
+      return { label, detail: body ? firstLine(body) : firstLine(summary), meta: '', tone: 'default', text: body };
     }
     case 'verdict':
       return {
@@ -185,7 +219,7 @@ function describeTool(p: Record<string, unknown>): Described {
         detail: verdictLabel(summary),
         meta: '',
         tone: summary === 'recommend_approve' ? 'green' : summary === 'request_changes' ? 'amber' : 'default',
-        text: ''
+        text: str(args.body)
       };
     default:
       return { label, detail: firstLine(summary), meta: '', tone: 'default', text: lineCount(summary) > 1 || summary.length > 160 ? summary : '' };
@@ -212,12 +246,13 @@ export function describe(event: TraceEvent): Described {
     case 'model_call': {
       const role = str(p.role);
       const stop = str(p.stopReason);
+      const reply = str(p.text).trim();
       return {
         label: role === 'reviewer' ? 'Reviewer model' : role === 'planner' ? 'Planner model' : 'Model call',
-        detail: [str(p.modelId), stop ? sentence(stop).toLowerCase() : ''].filter(Boolean).join(' · '),
+        detail: reply ? firstLine(reply) : joined(str(p.modelId), stop ? sentence(stop).toLowerCase() : ''),
         meta: `${count(num(p.inputTokens))} in / ${count(num(p.outputTokens))} out`,
         tone: 'default',
-        text: ''
+        text: reply
       };
     }
     case 'tool_call':
@@ -272,6 +307,16 @@ export function describe(event: TraceEvent): Described {
     default:
       return { label: kindLabel(event.kind), detail: '', meta: '', tone: 'default', text: '' };
   }
+}
+
+/**
+ * Adds polled events to the ones already shown. An event read twice keeps one
+ * row; the order is by time, then by insert order within a second.
+ */
+export function mergeEvents(current: TraceEvent[], incoming: TraceEvent[]): TraceEvent[] {
+  const byId = new Map(current.map((event) => [event.id, event]));
+  for (const event of incoming) byId.set(event.id, event);
+  return [...byId.values()].sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : (a.seq ?? 0) - (b.seq ?? 0)));
 }
 
 /** A problem is an event shown in red or amber. */

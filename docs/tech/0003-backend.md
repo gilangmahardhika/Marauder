@@ -388,7 +388,9 @@ Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, proje
 
 The worker runs on a context that is not the request context.
 
-The trace route reads `trace.List`, which orders the card's events by `ts` then `seq`, and `board.CardAttempts`, which lists the card's attempts in the project by `n`. It runs no SQL of its own.
+The trace route reads `trace.ListSince`, which orders the card's events by `ts` then `seq` and, with `since`, starts 10 seconds before it, and `board.CardAttempts`, which lists the card's attempts in the project by `n` with `max_turns`. `live` comes from the card's status, `app.CardRunState` for an open run request, and any attempt with no end (RFC-074). It runs no SQL of its own.
+
+The implement and review loops write `model_call.text` and `tool_call.args` through `trace.Clip` with the job's secrets. `JobDeps.Secrets` carries the `databaseUrl` and `tokenKey` text from `secrets.json`; `serve` and `run-next` set it, and both jobs add it to the model keys and GitHub tokens they redact.
 
 ## CLI
 

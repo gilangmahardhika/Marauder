@@ -71,11 +71,14 @@ func (f *Fake) Complete(_ context.Context, req providers.Request) (providers.Res
 		return providers.Response{Text: next.text, StopReason: "stop"}, nil
 	}
 	return providers.Response{
+		Text:       next.text,
 		ToolCalls:  []providers.ToolCall{{Name: next.tool, Args: next.args}},
 		StopReason: "tool_use",
 	}, nil
 }
 
+// turnFrom reads one scripted turn. A tool turn's "say" is the reply text the
+// model writes beside the call; every other key is a tool argument.
 func turnFrom(fields map[string]any) turn {
 	var t turn
 	if errText, ok := fields["error"].(string); ok && errText != "" {
@@ -86,6 +89,10 @@ func turnFrom(fields map[string]any) turn {
 		t.tool = name
 		t.args = map[string]any{}
 		for key, value := range fields {
+			if key == "say" {
+				t.text, _ = value.(string)
+				continue
+			}
 			if key == "tool" {
 				continue
 			}

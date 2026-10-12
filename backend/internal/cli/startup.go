@@ -37,6 +37,11 @@ type secretFile struct {
 	LLMKeys     map[string]string `json:"llmKeys"`
 }
 
+// jobSecrets are the service secrets a job's events and packs redact.
+func (f secretFile) jobSecrets() []string {
+	return []string{f.DatabaseURL, f.TokenKey}
+}
+
 func withBoard(opts Options, repoFlag, dataFlag string, fn func(context.Context, *sql.DB, resolvedPaths) error) error {
 	paths, err := resolvePaths(opts, repoFlag, dataFlag)
 	if err != nil {
@@ -118,7 +123,7 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools})
+		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets()})
 		worker.Run(ctx, db, paths.Data, 2*time.Second, jobs, func(format string, args ...any) {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})

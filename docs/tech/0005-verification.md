@@ -129,6 +129,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardDiff` | On a real repository the diff lists each file with counts and hunks, redacts a planted model key, cuts a file past 1,500 lines, and returns not found for another project |
 | `TestTraceOrderAndAttempts` | Three events appended in the same second, with ids that sort the other way, come back in insert order. `attemptId` is left out when empty. `attempts` lists the attempt's `n`, model, tokens, outcome, commit, and end, with `reviewIndependent` null. The card under another project is `404` |
 | `TestJobErrorCapped` | A 1.5 MiB message with NUL bytes and invalid UTF-8 is stored under 10 KiB as valid UTF-8 without NUL, with its head, its tail (redacted), and the cut marker |
+| `TestTraceClip` | `trace.Clip` drops NUL, redacts a secret holding `&`, keeps valid UTF-8 and the head and tail around the cut marker, and redacts a secret that spans the cut (RFC-074) |
+| `TestModelCallText` | A model reply beside a tool call is stored as `model_call.text`, with the `databaseUrl` from `JobDeps.Secrets` redacted, cut under 4 KiB with its head and tail, as valid UTF-8. A reply with no text stores no `text` |
+| `TestToolCallArgs` | Each tool row stores its `args`: `path` for list, read, and edit, `text` for search, `command` for the local check, and the commit `message` redacted. `edit_file` stores `bytes` and `lines`, and no event holds the file text |
+| `TestReviewerPackHasNoAuthorText` | The implementer's stored reply text is in its `model_call` event and in no reviewer prompt |
+| `TestTraceSince` | `since` returns events from 10 seconds before it, including two in the same second in insert order, each with a rising `seq`. Without `since`, all events. `since=yesterday` is `422` on `since`. The card under another project is `404` |
+| `TestTraceLive` | `live` is false for a `human_review` card with no open attempt, true with an open attempt (with `maxTurns`), false once it ends, true while a run is queued, and true for an `in_progress` card |
 | `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
 | `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
 | `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |

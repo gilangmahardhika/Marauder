@@ -52,6 +52,9 @@ type JobDeps struct {
 	Key      []byte
 	Tools    Tools
 	Provider providers.Provider
+	// Secrets are service secrets every job redacts besides its own keys and
+	// tokens: the databaseUrl and tokenKey text.
+	Secrets []string
 	// Now is the clock of the review job's check wait; nil means time.Now.
 	Now func() time.Time
 }
@@ -98,7 +101,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	if err != nil {
 		return card, err
 	}
-	redact := modelKeys(secrets)
+	redact := append(modelKeys(secrets), deps.Secrets...)
 
 	if card.Status == "ready" || card.Status == "changes_requested" {
 		if card, err = move(ctx, db, card, "in_progress", machine.Evidence{}, redact); err != nil {
@@ -369,7 +372,7 @@ func gatingCheck(ctx context.Context, git runtime.Git, tools Tools, card board.C
 func jobError(ctx context.Context, db *sql.DB, card board.Card, attemptID, message string, redact []string) error {
 	_, err := trace.Append(ctx, db, trace.Event{
 		CardID: card.ID, AttemptID: attemptID, ProjectID: card.ProjectID, Kind: "job_error",
-		Payload: map[string]any{"message": capMessage(trace.Redact(message, redact))},
+		Payload: map[string]any{"message": trace.Clip(message, redact, JobErrorCap)},
 	}, redact)
 	return err
 }
@@ -378,19 +381,6 @@ func jobError(ctx context.Context, db *sql.DB, card board.Card, attemptID, messa
 // longer message keeps its head and its tail, where git and providers put the
 // cause.
 const JobErrorCap = 8 << 10
-
-func capMessage(message string) string {
-	message = strings.ToValidUTF8(strings.ReplaceAll(message, "\x00", ""), "\uFFFD")
-	if len(message) <= JobErrorCap {
-		return message
-	}
-	half := JobErrorCap / 2
-	head, tail := message[:half], message[len(message)-half:]
-	head = strings.ToValidUTF8(head, "")
-	tail = strings.ToValidUTF8(tail, "")
-	cut := len(message) - len(head) - len(tail)
-	return fmt.Sprintf("%s\n... (%d bytes cut) ...\n%s", head, cut, tail)
-}
 
 func tailLines(s string, n int) string {
 	lines := strings.Split(s, "\n")

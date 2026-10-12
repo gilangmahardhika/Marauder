@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
@@ -153,8 +154,26 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 	}
 }
 
+// traceOverlap is how far before since a trace poll reads again, so an event
+// that committed late or in the same second is not missed.
+const traceOverlap = 10 * time.Second
+
+// liveStatuses are the statuses in which a job may still write trace events.
+var liveStatuses = map[string]bool{
+	"in_progress": true, "self_check": true, "agent_review": true, "deploying_dev": true, "verifying": true,
+}
+
 func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) {
-	listed, err := trace.List(r.Context(), s.DB, card.ID)
+	since := ""
+	if raw := r.URL.Query().Get("since"); raw != "" {
+		at, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeFields(w, 422, "validation", "since must be an RFC3339 time", map[string]string{"since": "must be an RFC3339 time"})
+			return
+		}
+		since = at.Add(-traceOverlap).UTC().Format(time.RFC3339)
+	}
+	listed, err := trace.ListSince(r.Context(), s.DB, card.ID, since)
 	if err != nil {
 		writeErr(w, 500, "internal", "trace")
 		return
@@ -164,13 +183,20 @@ func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) 
 		writeErr(w, 500, "internal", "trace")
 		return
 	}
+	live := liveStatuses[card.Status]
+	if !live {
+		if live, _, err = app.CardRunState(r.Context(), s.DB, card); err != nil {
+			writeErr(w, 500, "internal", "trace")
+			return
+		}
+	}
 	events := make([]any, 0, len(listed))
 	for _, ev := range listed {
 		var decoded any
 		if err := json.Unmarshal([]byte(ev.Payload), &decoded); err != nil {
 			decoded = map[string]any{}
 		}
-		item := map[string]any{"id": ev.ID, "ts": ev.TS, "kind": ev.Kind, "payload": decoded}
+		item := map[string]any{"id": ev.ID, "seq": ev.Seq, "ts": ev.TS, "kind": ev.Kind, "payload": decoded}
 		if ev.AttemptID != "" {
 			item["attemptId"] = ev.AttemptID
 		}
@@ -182,14 +208,17 @@ func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) 
 		if a.ReviewIndependent.Valid {
 			independent = a.ReviewIndependent.Bool
 		}
+		if a.EndedAt == "" {
+			live = true
+		}
 		attempts = append(attempts, map[string]any{
 			"id": a.ID, "n": a.N, "taskClass": a.TaskClass, "modelId": a.ModelID,
 			"fallbackModelId": a.FallbackModelID, "inputTokens": a.InputTokens, "outputTokens": a.OutputTokens,
-			"commitSha": a.CommitSHA, "reviewModelId": a.ReviewModelID, "reviewVerdict": a.ReviewVerdict,
+			"maxTurns": a.MaxTurns, "commitSha": a.CommitSHA, "reviewModelId": a.ReviewModelID, "reviewVerdict": a.ReviewVerdict,
 			"reviewIndependent": independent, "startedAt": a.StartedAt, "endedAt": a.EndedAt, "outcome": a.Outcome,
 		})
 	}
-	writeJSON(w, 200, map[string]any{"attempts": attempts, "events": events})
+	writeJSON(w, 200, map[string]any{"attempts": attempts, "events": events, "live": live})
 }
 
 func (s *Server) llm(w http.ResponseWriter, r *http.Request) {

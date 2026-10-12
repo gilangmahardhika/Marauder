@@ -176,6 +176,7 @@ func Execute(opts Options) int {
 				projectID := projectOr(project)
 				deps := app.JobDeps{Data: paths.Data, Tools: jobTools()}
 				if secrets, err := loadSecrets(paths.Data, opts.getenv); err == nil {
+					deps.Secrets = secrets.jobSecrets()
 					if key, err := hex.DecodeString(secrets.TokenKey); err == nil && len(key) == 32 {
 						deps.Key = key
 					}

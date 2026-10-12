@@ -69,6 +69,24 @@ test('a review block shows the verdict and that it was not independent', () => {
   expect(screen.getByText('Not independent')).toBeTruthy();
 });
 
+test('an open block stays open and shows rows that arrive later', async () => {
+  const rows = (n: number): TraceEvent[] =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `t${i}`,
+      ts: `2026-10-12T03:${String(35 + Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`,
+      attemptId: 'att_8',
+      kind: 'tool_call',
+      payload: { name: 'read_file', ok: true, summary: 'x', args: { path: `src/file${i}.ts` } }
+    }));
+  const { rerender } = render(TraceBlock, { block: block(rows(50)) });
+  const header = screen.getByRole('button', { name: /Attempt 8/ });
+  await fireEvent.click(header);
+  expect(screen.getByText('src/file49.ts · 1 line')).toBeTruthy();
+  await rerender({ block: block(rows(53)) });
+  expect(header.getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByText('src/file52.ts · 1 line')).toBeTruthy();
+});
+
 test('a review without a verdict says it failed', () => {
   const failed = { ...attempt, reviewModelId: 'deepseek-flash', reviewVerdict: 'failed' };
   const [item] = buildTimeline(

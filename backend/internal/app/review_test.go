@@ -46,8 +46,12 @@ func newReviewFixture(t *testing.T) reviewFixture {
 		t.Fatal(err)
 	}
 	f.calls.setPR(prJSON(sha, noChecks))
-	later := func() time.Time { return time.Now().Add(review.NoChecksWait + time.Minute) }
-	return reviewFixture{jobFixture: f, card: card, sha: sha, now: later}
+	return reviewFixture{jobFixture: f, card: card, sha: sha, now: newReviewFixtureClock()}
+}
+
+// newReviewFixtureClock is a check-wait clock already past review.NoChecksWait.
+func newReviewFixtureClock() func() time.Time {
+	return func() time.Time { return time.Now().Add(review.NoChecksWait + time.Minute) }
 }
 
 func prJSON(head, checks string) string {
