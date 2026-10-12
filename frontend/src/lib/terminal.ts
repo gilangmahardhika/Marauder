@@ -135,6 +135,20 @@ export function terminalLines(events: TraceEvent[], attempts: TraceAttempt[] = [
   return out;
 }
 
+/** The model reply being written, from the trace stream. It is shown only, never stored (RFC-088). */
+export type PendingReply = { attemptId: string; turn: number; role: string; modelId: string; text: string; since: string };
+
+/** The reply being written as the terminal's last entry. Its body is empty until the first text arrives. */
+export function pendingEntry(pending: PendingReply): TerminalEntry {
+  return {
+    id: `pending-${pending.attemptId}-${pending.role}-${pending.turn}`,
+    ts: pending.since,
+    tone: 'model',
+    head: words('model', pending.role, pending.modelId, 'writing…'),
+    body: clean(pending.text)
+  };
+}
+
 /** The first `max` lines of text, and how many lines are left out. */
 export function clipLines(text: string, max = foldLines): { shown: string; hidden: number } {
   if (text === '') return { shown: '', hidden: 0 };

@@ -123,12 +123,13 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets()})
+		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets(), Live: srv.Live})
 		worker.Run(ctx, db, paths.Data, 2*time.Second, jobs, func(format string, args ...any) {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})
 	}()
 	server := &http.Server{Addr: addr, Handler: srv.Handler()}
+	server.RegisterOnShutdown(srv.Live.Close)
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

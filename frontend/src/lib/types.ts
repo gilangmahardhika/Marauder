@@ -131,6 +131,27 @@ export type TraceResponse = {
   live?: boolean;
 };
 
+/**
+ * One frame of the trace stream (RFC-088). `trace` carries stored events since the last frame; `turn`, `delta`,
+ * `reset`, and `turn_end` carry the model's reply while it is written, which is never stored. `done` ends the stream:
+ * `live: false` when the card stopped working, `reconnect: true` when the page should connect again. `resync` means the
+ * server dropped a viewer that fell behind.
+ */
+export type TraceStreamEvent =
+  | ({ kind: "trace" } & TraceResponse)
+  | {
+      kind: "turn";
+      attemptId: string;
+      turn: number;
+      role: string;
+      modelId?: string;
+    }
+  | { kind: "delta"; attemptId: string; turn: number; text?: string }
+  | { kind: "reset"; attemptId: string; turn: number }
+  | { kind: "turn_end"; attemptId: string; turn: number }
+  | { kind: "done"; live?: boolean; reconnect?: boolean }
+  | { kind: "resync" };
+
 export type Requirement = {
   id: string;
   sourceKind: "prd" | "rfc" | "draft" | "manual";

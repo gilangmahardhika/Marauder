@@ -41,6 +41,9 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | Rule or skill text asks for a tool, a command, or a status | Nothing changes. The text sits inside the untrusted markers, and the tool list is the profile constant (RFC-055) |
 | A requirement draft or a refined text asks to accept the requirement, change a status, or run something | Nothing changes. The draft and guidance sit inside the markers, the refine request has no tools, and the refine route writes no requirement, acceptance, or card. The text reaches the record only when a member applies it and saves, and that save clears acceptance (RFC-086, RFC-087) |
 | A model key appears in streamed refine text, split across pieces | The redact buffer holds back the bytes that could start a key until the next piece decides, so the stream carries `[redacted]` and never part of the key (RFC-087) |
+| A secret appears in a streamed agent reply, split across pieces | The loops redact live text with every job secret, the same list the stored events use, through `trace.NewStreamRedactor`, so a trace stream carries `[redacted]` and never part of a secret. Reasoning and tool arguments are never streamed (RFC-088) |
+| Someone outside the project watches a card's live reply | The trace stream has the trace route's checks: a bearer in the header, membership of the project's tribe, and a card in that project. The bearer never goes in the URL. A stream ends after 10 minutes, so membership is checked again on reconnect (RFC-088) |
+| Many viewers or a slow viewer hold up the agent | Publishing never blocks: a viewer that falls 256 frames behind is dropped with `resync`, and the server allows 16 viewers per card and 64 in all (RFC-088) |
 | Rules and skills exceed the 64 KiB section cap | The blocks that do not fit become `omitted` notes. The pack never exceeds its cap |
 | `create_card` names a skill the project has not enabled | No card is stored (RFC-056) |
 | Stack detection meets a symlink or a file over 1 MiB | The link is not followed, and the file is read only to 1 MiB |
@@ -348,7 +351,8 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | `job_error.message` | 8 KiB, head and tail kept |
 | `model_call.text` | 4 KiB, head and tail kept (RFC-074) |
 | Each `tool_call.args` string | 1 KiB, head and tail kept (RFC-074) |
-| Trace poll | Every 3 s while `live`; `since` reads 10 s back |
+| Trace stream | While `live` and the tab is visible: database read every 1 s and after each model call, ping every 15 s, 10 min per connection, 16 viewers per card and 64 in all, 256 frames buffered per viewer, 64 KiB of live text per turn (RFC-088) |
+| Trace poll | Only while the stream is down: every 3 s, every 1 s in the terminal view; `since` reads 10 s back; the stream is tried again after 5 s |
 | Model reply | 8,192 tokens, unless the request sets its own |
 | Reviewer reply | 32,768 tokens; a reply cut at the limit is asked again once (RFC-075) |
 | Check timeout | 10 min |
@@ -463,7 +467,10 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestGitHubLoginVerified` | The account token test stores the login `gh api user` reports. A new token clears it. A second user cannot verify the same login |
 | `TestBaseRefUnchanged` | Local `refs/heads/main` is unchanged after a job, and a forced change blocks with `base_moved` |
 | `TestRefinePromptMarkers` | For each field the refine request has no tools, uses `RefineStatementSystem` or `RefineAcceptanceSystem`, neither of which mentions deploy, status, cards, verdicts, or tools, and has the id, the field marked "(refine this)", the other marked "(context only)", and the guidance between one pair of markers, with marker lines in the draft and guidance stripped (RFC-086, RFC-087) |
-| `TestRedactorEverySplit` | Two keys in a text split into three pieces at every pair of positions come out redacted whole, and no piece carries more than a short prefix of a key |
+| `TestStreamRedactorEverySplit` | `trace.NewStreamRedactor` with three secrets, one a database URL, over a text with a NUL byte and a multi-byte character split into three pieces at every pair of positions: the output is the redacted text whole, valid UTF-8, without NUL, and no piece carries part of a secret. `TestStreamRedactorReset` drops held text (RFC-087, RFC-088) |
+| `TestTraceStreamRedactsSplitSecret` | A reviewer reply whose secret is split across three stream pieces reaches the trace stream as `[redacted]`, and no `delta` frame carries any part of the secret (RFC-088) |
+| `TestTraceStreamRequiresMember` | The trace stream without a bearer is `401`, for a user outside the tribe is not `200`, under another project is `404`, and with a bad `since` is `422` (RFC-088) |
+| `TestTraceStreamCap` | With 16 viewers on the card, another trace stream is `429` `rate_limited` (RFC-088) |
 | `TestPromptMarkers` | The user pack contains both markers once, untrusted copies of the markers are stripped (including from the path map and a repository `AGENTS.md`), both of those sit inside the markers, the system hash matches the rewritten `ImplementerSystem` (RFC-082), and the system names `todo_write` and `replace_in_file` and neither deploy nor verdict |
 | `TestPackInstructions` | With no instructions there is no block, and a forged heading in the failure note is dropped. With instructions the block appears once after the note and inside the markers, a planted heading or marker line inside it is dropped, a planted secret is redacted, and the system string names the block (RFC-073) |
 | `TestPackConventions` | Rule and skill blocks sit between the markers before the requirements, a block over 16 KiB ends with `truncated: true`, blocks past 64 KiB become `omitted` notes, and a planted secret is `[redacted]` (RFC-055) |

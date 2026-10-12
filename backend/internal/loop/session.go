@@ -12,6 +12,7 @@ import (
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/execx"
+	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/sandbox"
@@ -226,10 +227,10 @@ func (s *session) loop(ctx context.Context) error {
 			return nil
 		}
 		turns := withNote(withTodos(s.history(), s.todos), s.in.MaxTurns-turn, s.in.MaxTurns)
-		resp, err := s.in.Provider.Complete(ctx, providers.Request{
+		resp, endTurn, err := complete(ctx, s.in.Provider, providers.Request{
 			Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
 			Tools: ImplementerTools(), TaskClass: s.in.TaskClass,
-		})
+		}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets)
 		if err != nil {
 			return err
 		}
@@ -241,7 +242,9 @@ func (s *session) loop(ctx context.Context) error {
 		if modelID == "" {
 			modelID = s.in.Model
 		}
-		if err := s.event(ctx, "model_call", modelCallPayload("implementer", modelID, resp, s.in.Secrets)); err != nil {
+		err = s.event(ctx, "model_call", modelCallPayload("implementer", modelID, resp, s.in.Secrets))
+		endTurn()
+		if err != nil {
 			return err
 		}
 		if len(resp.ToolCalls) == 0 {

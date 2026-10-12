@@ -264,7 +264,7 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		DB: db, Card: card, AttemptID: attempt.AttemptID, Model: model, Provider: provider,
 		Diff:        diff,
 		CheckOutput: fmt.Sprintf("local check %q exited 0 on %s", card.LocalCheck, attempt.CommitSHA),
-		PRBody:      pr.Body, Comments: pr.Comments, Secrets: redact,
+		PRBody:      pr.Body, Comments: pr.Comments, Secrets: redact, Live: deps.Live,
 		Comment: func(ctx context.Context, body string) error {
 			return gh.comment(ctx, dir, card.PRURL, body)
 		},

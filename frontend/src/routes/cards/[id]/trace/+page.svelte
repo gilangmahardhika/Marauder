@@ -1,12 +1,13 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { page } from '$app/stores';
-  import { ApiError, getCard, getTrace, unreachable } from '$lib/api';
+  import { ApiError, getCard, getTrace, streamTrace, unreachable } from '$lib/api';
   import TerminalView from '$lib/components/TerminalView.svelte';
   import TraceBlock from '$lib/components/TraceBlock.svelte';
   import TraceRow from '$lib/components/TraceRow.svelte';
   import { count, day, duration, stamp, tokens } from '$lib/format';
   import { pager } from '$lib/pager.svelte';
+  import type { PendingReply } from '$lib/terminal';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import { cardTone, statusLabel } from '$lib/status';
@@ -21,7 +22,7 @@
     summarize,
     type Block
   } from '$lib/trace';
-  import type { Card, TraceAttempt, TraceEvent } from '$lib/types';
+  import type { Card, TraceAttempt, TraceEvent, TraceResponse, TraceStreamEvent } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -46,8 +47,22 @@
   let now = $state(Date.now());
   let message = $state('Loading trace');
   let list = $state<HTMLOListElement | null>(null);
+  /** The reply the model is writing, from the trace stream; the stored model call replaces it. */
+  let pending = $state<PendingReply | null>(null);
+  /** Set when the stream failed; the page polls until the retry. */
+  let streamFailed = $state(false);
+  /** Bumped to open the stream again. */
+  let streamKey = $state(0);
+  let tabVisible = $state(typeof document === 'undefined' || document.visibilityState !== 'hidden');
   let current = '';
   let inFlight = '';
+  /** Streamed text not yet shown; it is added once per animation frame. */
+  let queued = '';
+  let flushing = 0;
+  let retry: ReturnType<typeof setTimeout> | undefined;
+
+  /** How long the page polls after the stream fails before it tries the stream again. */
+  const retryMs = 5000;
 
   const cardId = $derived($page.params.id ?? '');
 
@@ -55,7 +70,7 @@
 
   const params = $derived($page.url.searchParams);
   const view = $derived(params.get('view') === 'terminal' ? 'terminal' : 'structured');
-  /** How often the page reads the trace again while the card works. */
+  /** How often the page reads the trace again while the card works and the stream is down. */
   const pollMs = $derived(view === 'terminal' ? 1000 : 3000);
   const kinds = $derived(kindOptions(events));
   const attemptChoices = $derived(attemptOptions(events, attempts));
@@ -117,6 +132,15 @@
       : 0
   );
   const latest = $derived(events.at(-1) ?? null);
+  /** The reply being written, unless a filter hides model calls or its attempt. */
+  const pendingShown = $derived(
+    pending &&
+      (filter.kind === '' || filter.kind === 'model_call') &&
+      (filter.attempt === '' || filter.attempt === pending.attemptId) &&
+      (filter.q.trim() === '' || pending.text.toLowerCase().includes(filter.q.trim().toLowerCase()))
+      ? pending
+      : null
+  );
   const latestWords = $derived(latest ? describe(latest) : null);
 
   function age(ts: string) {
@@ -134,6 +158,42 @@
     list?.lastElementChild?.scrollIntoView({ block: 'end' });
   }
 
+  /**
+   * Shows a trace body; merged adds its events to the ones shown. A stored model call replaces the reply being
+   * written. It returns whether an attempt ended.
+   */
+  function apply(id: string, body: TraceResponse, merged: boolean): boolean {
+    const before = events;
+    const wasLive = live;
+    const next = merged ? mergeEvents(before, body.events) : body.events;
+    const done = ended(attempts, body.attempts ?? []);
+    events = next;
+    attempts = body.attempts ?? [];
+    live = body.live === true;
+    loaded = true;
+    const writing = pending;
+    if (
+      writing &&
+      (!live ||
+        body.events.some(
+          (event) =>
+            event.kind === 'model_call' &&
+            event.attemptId === writing.attemptId &&
+            (event.payload as { role?: unknown } | null)?.role === writing.role
+        ))
+    ) {
+      clearPending();
+    }
+    if (done.length > 0) message = done.map((attempt) => `Attempt ${attempt.n} ended: ${outcomeLabel(attempt)}`).join('. ');
+    if (merged && follow && view === 'structured' && next.length > before.length) void showLatest();
+    if (merged && (done.length > 0 || wasLive !== live)) {
+      void getCard(id)
+        .then((body) => id === current && (card = body))
+        .catch(() => {});
+    }
+    return done.length > 0;
+  }
+
   /** Reads the trace; with `since`, merges the new events into the ones shown. A failed poll keeps the last good data. */
   async function load(id: string, since = '') {
     if (inFlight === id) return;
@@ -141,27 +201,73 @@
     try {
       const body = await getTrace(id, since || undefined);
       if (id !== current) return;
-      const before = events;
-      const wasLive = live;
-      const next = since ? mergeEvents(before, body.events) : body.events;
-      const done = ended(attempts, body.attempts ?? []);
-      events = next;
-      attempts = body.attempts ?? [];
-      live = body.live === true;
-      loaded = true;
-      if (done.length > 0) message = done.map((attempt) => `Attempt ${attempt.n} ended: ${outcomeLabel(attempt)}`).join('. ');
-      else if (!since) message = 'Trace';
-      if (since && follow && view === 'structured' && next.length > before.length) void showLatest();
-      if (since && (done.length > 0 || wasLive !== live)) {
-        void getCard(id)
-          .then((body) => id === current && (card = body))
-          .catch(() => {});
-      }
+      if (!apply(id, body, since !== '') && !since) message = 'Trace';
     } catch (error: unknown) {
       if (id === current && !since) message = error instanceof ApiError ? error.message : unreachable();
     } finally {
       if (inFlight === id) inFlight = '';
     }
+  }
+
+  function clearPending() {
+    pending = null;
+    queued = '';
+  }
+
+  function flushText() {
+    flushing = 0;
+    if (pending && queued) pending = { ...pending, text: pending.text + queued };
+    queued = '';
+  }
+
+  function scheduleFlush() {
+    if (flushing) return;
+    flushing = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(flushText) : window.setTimeout(flushText, 16);
+  }
+
+  /** Applies one stream frame. It returns true when the frame ends the stream. */
+  function onStream(id: string, event: TraceStreamEvent): boolean {
+    if (id !== current) return true;
+    switch (event.kind) {
+      case 'trace':
+        apply(id, event, true);
+        return false;
+      case 'turn':
+        flushText();
+        pending = { attemptId: event.attemptId, turn: event.turn, role: event.role, modelId: event.modelId ?? '', text: '', since: new Date().toISOString() };
+        return false;
+      case 'delta':
+        if (pending && pending.attemptId === event.attemptId && pending.turn === event.turn) {
+          queued += event.text ?? '';
+          scheduleFlush();
+        }
+        return false;
+      case 'reset':
+        queued = '';
+        if (pending) pending = { ...pending, text: '' };
+        return false;
+      case 'turn_end':
+        flushText();
+        return false;
+      case 'done':
+        if (event.reconnect) streamKey += 1;
+        else {
+          live = event.live === true;
+          if (!live) clearPending();
+        }
+        return true;
+      case 'resync':
+        clearPending();
+        void load(id);
+        streamKey += 1;
+        return true;
+    }
+  }
+
+  function streamDown() {
+    streamFailed = true;
+    clearTimeout(retry);
+    retry = setTimeout(() => (streamFailed = false), retryMs);
   }
 
   $effect(() => {
@@ -172,6 +278,9 @@
     attempts = [];
     live = false;
     loaded = false;
+    clearPending();
+    clearTimeout(retry);
+    streamFailed = false;
     void load(id);
     void getCard(id)
       .then((body) => id === current && (card = body))
@@ -179,16 +288,55 @@
   });
 
   $effect(() => {
-    if (!live) return;
+    const onVisibility = () => (tabVisible = document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearTimeout(retry);
+      if (flushing && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(flushing);
+    };
+  });
+
+  $effect(() => {
+    if (!live || !tabVisible || streamFailed) return;
+    void streamKey;
+    const id = cardId;
+    const since = untrack(() => events.at(-1)?.ts ?? '');
+    const controller = new AbortController();
+    let finished = false;
+    streamTrace(
+      id,
+      since || undefined,
+      (event) => {
+        if (onStream(id, event)) finished = true;
+      },
+      controller.signal
+    )
+      .then(() => {
+        if (!controller.signal.aborted && id === current && !finished) streamDown();
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && id === current) streamDown();
+      });
+    return () => {
+      controller.abort();
+      flushText();
+    };
+  });
+
+  $effect(() => {
+    if (!live || !streamFailed || !tabVisible) return;
     const id = cardId;
     const every = pollMs;
-    now = Date.now();
     const timer = setInterval(() => void load(id, events.at(-1)?.ts ?? ''), every);
+    return () => clearInterval(timer);
+  });
+
+  $effect(() => {
+    if (!live) return;
+    now = Date.now();
     const clock = setInterval(() => (now = Date.now()), 1000);
-    return () => {
-      clearInterval(timer);
-      clearInterval(clock);
-    };
+    return () => clearInterval(clock);
   });
 </script>
 
@@ -198,7 +346,7 @@
       <span title={card.status}><Badge tone={cardTone(card)}>{statusLabel(card.status)}</Badge></span>
     {/if}
     {#if live}
-      <span title="This page reads new events every few seconds"><Badge tone="sky">Live</Badge></span>
+      <span title="This page shows output as it arrives"><Badge tone="sky">Live</Badge></span>
     {/if}
   {/snippet}
   {#snippet actions()}
@@ -228,7 +376,12 @@
             <dd class="text-ink">{tokens(running.inputTokens + running.outputTokens)}</dd>
           </div>
         {/if}
-        {#if latest && latestWords}
+        {#if pending}
+          <div class="flex min-w-0 basis-full items-baseline gap-1.5">
+            <dt class="shrink-0 text-muted">Last</dt>
+            <dd class="min-w-0 truncate text-ink">The model is writing…</dd>
+          </div>
+        {:else if latest && latestWords}
           <div class="flex min-w-0 basis-full items-baseline gap-1.5">
             <dt class="shrink-0 text-muted">Last</dt>
             <dd class="min-w-0 truncate text-ink">
@@ -291,7 +444,7 @@
           <Button type="button" variant="secondary" onclick={() => setParams({ q: '', kind: '', attempt: '' })}>Clear filters</Button>
         </EmptyState>
       {:else if view === 'terminal'}
-        <TerminalView events={shown} {attempts} bind:follow />
+        <TerminalView events={shown} {attempts} pending={pendingShown} bind:follow />
       {:else}
         <ol bind:this={list} class="flex flex-col gap-2" aria-label="Events, oldest first">
           {#each sections as section (section.key)}

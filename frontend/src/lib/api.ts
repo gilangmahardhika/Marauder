@@ -29,6 +29,7 @@ import type {
   Stack,
   StackInput,
   TraceResponse,
+  TraceStreamEvent,
   TribeCandidate,
   TribeMember,
   TribeRecord,
@@ -105,14 +106,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return payload as T;
 }
 
-/** Reads complete server-sent events from buffer and returns them with the unfinished rest. */
-export function parseEvents(buffer: string): {
-  events: RefineEvent[];
+/** Reads complete server-sent events from buffer and returns them with the unfinished rest. The event name is `kind`. */
+export function parseEvents<T extends { kind: string } = RefineEvent>(
+  buffer: string,
+): {
+  events: T[];
   rest: string;
 } {
   const blocks = buffer.replace(/\r\n?/g, "\n").split("\n\n");
   const rest = blocks.pop() ?? "";
-  const events: RefineEvent[] = [];
+  const events: T[] = [];
   for (const block of blocks) {
     let kind = "";
     const data: string[] = [];
@@ -122,9 +125,37 @@ export function parseEvents(buffer: string): {
         data.push(line.slice(5).replace(/^ /, ""));
     }
     if (!kind || data.length === 0) continue;
-    events.push({ kind, ...JSON.parse(data.join("\n")) } as RefineEvent);
+    events.push({ ...JSON.parse(data.join("\n")), kind } as T);
   }
   return { events, rest };
+}
+
+/** Rejects with ApiError for a reply that is not a stream; otherwise passes each event to onEvent until the body ends. */
+async function readStream<T extends { kind: string }>(
+  response: Response,
+  onEvent: (event: T) => void,
+): Promise<void> {
+  if (!response.ok || !response.body) {
+    const text = await response.text();
+    let payload: ErrorBody = {};
+    try {
+      payload = text ? (JSON.parse(text) as ErrorBody) : {};
+    } catch {
+      /* A proxy page is not JSON; the status text stands. */
+    }
+    throw failure(response, payload);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const parsed = parseEvents<T>(done ? buffer + "\n\n" : buffer);
+    buffer = parsed.rest;
+    for (const event of parsed.events) onEvent(event);
+    if (done) return;
+  }
 }
 
 export function openSession(email: string, password: string) {
@@ -301,6 +332,25 @@ export function getTrace(id: string, since?: string) {
   return request<TraceResponse>(`${projectPrefix()}/cards/${id}/trace${query}`);
 }
 
+/**
+ * Streams the card's trace while it works (RFC-088): stored events as they commit, and the model's reply as it is
+ * written. It resolves when the server ends the stream and rejects with ApiError, or when signal aborts. The bearer
+ * goes in a header, so this reads the fetch body instead of using EventSource.
+ */
+export async function streamTrace(
+  id: string,
+  since: string | undefined,
+  onEvent: (event: TraceStreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const query = since ? `?since=${encodeURIComponent(since)}` : "";
+  const response = await send(
+    `${projectPrefix()}/cards/${id}/trace/stream${query}`,
+    { signal },
+  );
+  await readStream(response, onEvent);
+}
+
 export function getIntake() {
   return request<Intake>(`${projectPrefix()}/intake`);
 }
@@ -356,27 +406,7 @@ export async function streamRefine(
     body: JSON.stringify(body),
     signal,
   });
-  if (!response.ok || !response.body) {
-    const text = await response.text();
-    let payload: ErrorBody = {};
-    try {
-      payload = text ? (JSON.parse(text) as ErrorBody) : {};
-    } catch {
-      /* A proxy page is not JSON; the status text stands. */
-    }
-    throw failure(response, payload);
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const parsed = parseEvents(done ? buffer + "\n\n" : buffer);
-    buffer = parsed.rest;
-    for (const event of parsed.events) onEvent(event);
-    if (done) return;
-  }
+  await readStream(response, onEvent);
 }
 
 export function setReviewers(id: string, userIds: string[]) {

@@ -825,3 +825,23 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestRefinePromptMarkers`
 - [x] `streamRefine`, `RefinePanel`, `RequirementForm`, and edit page Vitest
 - [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
+
+## Sprint 52: Stream the card trace
+
+- [x] `live.Hub`, and the stream redactor in `trace`.
+- [x] `providers.RestartStreamer` in the routed provider.
+- [x] Implementer and reviewer loops stream each turn.
+- [x] Trace stream route with the stored trace, live frames, the database read, heartbeat, `done`, and `resync`.
+- [x] Trace page reads the stream, falls back to polling, and the terminal view shows the reply being written.
+- [x] `TestHubSnapshotAndSlowSubscriber`
+- [x] `TestStreamRedactorEverySplit`
+- [x] `TestRoutedStreamRestartAfterToken`
+- [x] `TestLoopStreamsTurnText`
+- [x] `TestReviewStreamsText`
+- [x] `TestTraceStreamFrames`
+- [x] `TestTraceStreamRedactsSplitSecret`
+- [x] `TestTraceStreamOtherProcessEvents`
+- [x] `TestTraceStreamRequiresMember`
+- [x] `TestTraceStreamCap`
+- [x] `streamTrace`, Trace page, and `TerminalView` Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

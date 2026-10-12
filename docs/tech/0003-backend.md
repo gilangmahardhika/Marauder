@@ -11,7 +11,8 @@ Module path: `orchestrator/backend`.
 | Package | Responsibility | Must not |
 | --- | --- | --- |
 | `internal/machine` | Legal edges, evidence checks, compare-and-swap `Transition` | Call git, models, or HTTP |
-| `internal/trace` | Append events, redact, list by card | Update a row in place |
+| `internal/trace` | Append events, redact, list by card, redact streamed text | Update a row in place |
+| `internal/live` | Fan out the model's reply text to trace streams in memory (RFC-088) | Store or log reply text |
 | `internal/board` | PostgreSQL reads and writes for cards, attempts, locks, runs | Choose the next status |
 | `internal/intake` | goldmark parse, hashes, accept, drafts, manual rows | Create a worktree |
 | `internal/settings` | `config.yaml`, `secrets.json`, validation, snapshots | Return a secret to HTTP |
@@ -321,6 +322,18 @@ type Streamer interface {
 
 `onText` gets each piece of reply text in order, and the `Response` is the whole reply with the same usage mapping as `Complete`. The anthropic client uses `Messages.NewStreaming` with the same params as `Complete`, calls `onText` for each `text_delta`, and rebuilds the message with `Message.Accumulate`. The openai client uses `Chat.Completions.NewStreaming` with `stream_options.include_usage`, calls `onText` for each content delta of choice 0, rebuilds the reply with `ChatCompletionAccumulator`, and reads usage, cached tokens included, from the final chunk. The routed stream keeps a `sent` flag: until the first text reaches the caller, the rate-limit wait, the retry, and the fallback behave as in `Complete`. After it, any error is wrapped in `router.ErrNoRetry`, which `router.Call` returns at once, because the caller has already shown part of the reply. A client without `Stream` is called through `Complete` and its text sent as one piece.
 
+The routed provider also implements `providers.RestartStreamer` for the agent loops (RFC-088):
+
+```go
+type RestartStreamer interface {
+    StreamRestart(ctx context.Context, req Request, onText func(string), onRestart func()) (Response, error)
+}
+```
+
+`StreamRestart` keeps the rate-limit wait, the retry, and the fallback after text has been sent. Before it sends a reply again after text, it calls `onRestart`. Refine keeps `Stream` and its no-retry rule.
+
+`trace.NewStreamRedactor(secrets, send)` redacts text that arrives in pieces. It drops NUL bytes, holds back the longest secret's length minus one byte, moves the cut back to the start of any secret that crosses it, and cuts on a UTF-8 boundary, so `send` never gets part of a secret. `Flush` sends the rest, and `Reset` drops it. Refine and the loops use it.
+
 A fake implements `Provider` and replays a script file (0005). The REQ-043 fixture uses the fake. Live keys are not required for that suite.
 
 ## Git and GitHub
@@ -419,6 +432,12 @@ Middleware order: `Host` check, CORS and `Origin` check, body cap, bearer, proje
 The worker runs on a context that is not the request context.
 
 The trace route reads `trace.ListSince`, which orders the card's events by `ts` then `seq` and, with `since`, starts 10 seconds before it, and `board.CardAttempts`, which lists the card's attempts in the project by `n` with `max_turns`. `live` comes from the card's status, `app.CardRunState` for an open run request, and any attempt with no end (RFC-074). It runs no SQL of its own.
+
+`live.Hub` holds each card's trace stream viewers and the turn being written (RFC-088). `Publish(cardID, frame)` never blocks: a viewer whose 256-frame buffer is full is dropped and its stream ends with `resync`. `Subscribe` returns the current turn's `turn` frame and its text so far (64 KiB at most), or `live.ErrFull` past 16 viewers for the card or 64 in all. `serve` makes one hub, sets it on `httpapi.Server.Live` and `JobDeps.Live`, and closes it in `http.Server.RegisterOnShutdown`, which ends every stream. `run-next` sets no hub.
+
+`loop.Input.Live` and `loop.ReviewInput.Live` take a `live.Publisher`. When it is set, each model call goes through `StreamRestart`, else `Stream`, else `Complete`, and publishes `turn` with the attempt, turn, role, and requested model, then the reply text through `trace.NewStreamRedactor` with the job's secrets, `reset` on a restart, and `turn_end` after the `model_call` event is appended, or at once when the call fails. Reasoning and tool arguments are never published.
+
+The trace stream route subscribes first, then reads the trace as the trace route does and sends it, then the hub snapshot. Its loop forwards hub frames, reads the card and `trace.ListSince` again every second and after `turn_end`, sends only events it has not sent, writes a ping comment every 15 seconds, and ends with `done` when `live` turns false or after 10 minutes. It has no 30-second handler timeout.
 
 The implement and review loops write `model_call.text` and `tool_call.args` through `trace.Clip` with the job's secrets. `JobDeps.Secrets` carries the `databaseUrl` and `tokenKey` text from `secrets.json`; `serve` and `run-next` set it, and both jobs add it to the model keys and GitHub tokens they redact.
 

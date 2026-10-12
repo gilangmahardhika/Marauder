@@ -807,9 +807,25 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
 
 Events are oldest first by `ts`, then by insert order (`seq`), so events in the same second keep the order they were written in. Each event has `seq`. `attemptId` is left out when the event has none.
 
-`since` is an optional RFC3339 time. With it, the route returns only events with `ts` at or after 10 seconds before `since`, so an event that committed late or in the same second is read again; the client merges events by `id`. A value that is not RFC3339 is `422` with `fields.since`. `attempts` is always the full list. `live` is true while the card is queued (an open `runs` row), is in `in_progress`, `self_check`, `agent_review`, `deploying_dev`, or `verifying`, or has an attempt with no `endedAt`. The Trace page polls while `live` is true. `maxTurns` is the attempt's turn budget, `0` when it has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
+`since` is an optional RFC3339 time. With it, the route returns only events with `ts` at or after 10 seconds before `since`, so an event that committed late or in the same second is read again; the client merges events by `id`. A value that is not RFC3339 is `422` with `fields.since`. `attempts` is always the full list. `live` is true while the card is queued (an open `runs` row), is in `in_progress`, `self_check`, `agent_review`, `deploying_dev`, or `verifying`, or has an attempt with no `endedAt`. While `live` is true the Trace page reads the trace stream below, and polls this route only while the stream is down (RFC-088). `maxTurns` is the attempt's turn budget, `0` when it has none. Payload is the redacted JSON already stored. New transition payloads may include `actorId`. Events are read by card id after the route checks that the card is in the project, because older events may carry `proj_default` as their project.
 
 `attempts` lists the card's attempts in the project by `n`. A value the attempt does not have yet is `""`, and `reviewIndependent` is `null` until a review ran. `outcome` is `""` while the attempt runs, then one of `checks_passed`, `checks_failed`, `no_commit`, `no_change`, `budget`, `error`, or `cancelled`. `no_change` is an attempt that made no commit while its clean HEAD is already ahead of the base branch; that HEAD goes to the gating check (RFC-085). `budget` is an attempt stopped by `turn_cap` or `token_cap` (RFC-081). Tokens are the implementer's calls only; the reviewer's calls are in `model_call` events with `role: reviewer`, under the same `attemptId`.
+
+`GET /api/projects/{projectId}/cards/{id}/trace/stream` and `.../trace/stream?since=...` (RFC-088)
+
+The route takes the same `since` and has the same checks as the trace route: a member of the project's tribe, a card in that project, `404` otherwise, and `422` for a bad `since`. Past 16 open streams for the card or 64 in all it is `429` `rate_limited`. Otherwise it replies `200` with `Content-Type: text/event-stream`, `Cache-Control: no-store`, and `X-Accel-Buffering: no`. Each frame is `event: <name>` and one `data:` line of JSON:
+
+| Event | Data |
+| --- | --- |
+| `trace` | `{ "events": [...], "attempts": [...], "live": true }`, shaped as the trace route. The first frame has the events since `since`; later ones only events not sent yet, and come when a read finds new events, changed attempts, or `live` false |
+| `turn` | `{ "attemptId", "turn", "role", "modelId" }`: a model call started. `role` is `implementer` or `reviewer` |
+| `delta` | `{ "attemptId", "turn", "text" }`: the next piece of the reply, redacted with every job secret |
+| `reset` | `{ "attemptId", "turn" }`: the provider is sending the reply again; drop that turn's text |
+| `turn_end` | `{ "attemptId", "turn" }`: the call ended; its `model_call` event is stored |
+| `done` | `{ "live": false }` when the card stopped working, or `{ "reconnect": true }` after 10 minutes |
+| `resync` | `{}`: the server dropped this viewer because it fell behind; read the trace again and reconnect |
+
+After the first `trace` frame, a viewer that joins mid-reply gets that turn's `turn` and one `delta` with the text so far, at most 64 KiB. The server reads the database every second and right after `turn_end`, so events written by a `run-next` process arrive too. Only jobs in the `serve` process send `turn` and `delta`. A `: ping` comment line comes every 15 seconds. The stream also ends when the client goes away or the server shuts down. The reply text is never stored; the `model_call` event, cut at 4 KiB, is the record.
 
 `GET /api/projects/{projectId}/cards/{id}/diff` (RFC-068)
 

@@ -82,6 +82,10 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		s.trace(w, r, card)
 		return
 	}
+	if action == "trace/stream" && r.Method == http.MethodGet {
+		s.traceStream(w, r, card)
+		return
+	}
 	if action == "diff" && r.Method == http.MethodGet {
 		diff, err := app.ReadCardDiff(r.Context(), s.DB, s.jobDeps(), card.ProjectID, id)
 		if err != nil {
@@ -164,43 +168,49 @@ var liveStatuses = map[string]bool{
 }
 
 func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) {
-	since := ""
-	if raw := r.URL.Query().Get("since"); raw != "" {
-		at, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			writeFields(w, 422, "validation", "since must be an RFC3339 time", map[string]string{"since": "must be an RFC3339 time"})
-			return
-		}
-		since = at.Add(-traceOverlap).UTC().Format(time.RFC3339)
+	since, ok := traceSince(w, r)
+	if !ok {
+		return
 	}
-	listed, err := trace.ListSince(r.Context(), s.DB, card.ID, since)
+	listed, attempts, live, err := s.traceRead(r.Context(), card, since)
 	if err != nil {
 		writeErr(w, 500, "internal", "trace")
 		return
 	}
-	stored, err := board.CardAttempts(r.Context(), s.DB, card.ProjectID, card.ID)
+	writeJSON(w, 200, map[string]any{"attempts": attempts, "events": traceEvents(listed), "live": live})
+}
+
+// traceSince reads the since query as the time a trace read starts from,
+// traceOverlap earlier, or writes a 422.
+func traceSince(w http.ResponseWriter, r *http.Request) (string, bool) {
+	raw := r.URL.Query().Get("since")
+	if raw == "" {
+		return "", true
+	}
+	at, err := time.Parse(time.RFC3339, raw)
 	if err != nil {
-		writeErr(w, 500, "internal", "trace")
-		return
+		writeFields(w, 422, "validation", "since must be an RFC3339 time", map[string]string{"since": "must be an RFC3339 time"})
+		return "", false
+	}
+	return at.Add(-traceOverlap).UTC().Format(time.RFC3339), true
+}
+
+// traceRead returns the card's events since since, its attempts, and whether
+// a job may still write to its trace.
+func (s *Server) traceRead(ctx context.Context, card board.Card, since string) ([]trace.Listed, []any, bool, error) {
+	listed, err := trace.ListSince(ctx, s.DB, card.ID, since)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	stored, err := board.CardAttempts(ctx, s.DB, card.ProjectID, card.ID)
+	if err != nil {
+		return nil, nil, false, err
 	}
 	live := liveStatuses[card.Status]
 	if !live {
-		if live, _, err = app.CardRunState(r.Context(), s.DB, card); err != nil {
-			writeErr(w, 500, "internal", "trace")
-			return
+		if live, _, err = app.CardRunState(ctx, s.DB, card); err != nil {
+			return nil, nil, false, err
 		}
-	}
-	events := make([]any, 0, len(listed))
-	for _, ev := range listed {
-		var decoded any
-		if err := json.Unmarshal([]byte(ev.Payload), &decoded); err != nil {
-			decoded = map[string]any{}
-		}
-		item := map[string]any{"id": ev.ID, "seq": ev.Seq, "ts": ev.TS, "kind": ev.Kind, "payload": decoded}
-		if ev.AttemptID != "" {
-			item["attemptId"] = ev.AttemptID
-		}
-		events = append(events, item)
 	}
 	attempts := make([]any, 0, len(stored))
 	for _, a := range stored {
@@ -218,7 +228,23 @@ func (s *Server) trace(w http.ResponseWriter, r *http.Request, card board.Card) 
 			"reviewIndependent": independent, "startedAt": a.StartedAt, "endedAt": a.EndedAt, "outcome": a.Outcome,
 		})
 	}
-	writeJSON(w, 200, map[string]any{"attempts": attempts, "events": events, "live": live})
+	return listed, attempts, live, nil
+}
+
+func traceEvents(listed []trace.Listed) []any {
+	events := make([]any, 0, len(listed))
+	for _, ev := range listed {
+		var decoded any
+		if err := json.Unmarshal([]byte(ev.Payload), &decoded); err != nil {
+			decoded = map[string]any{}
+		}
+		item := map[string]any{"id": ev.ID, "seq": ev.Seq, "ts": ev.TS, "kind": ev.Kind, "payload": decoded}
+		if ev.AttemptID != "" {
+			item["attemptId"] = ev.AttemptID
+		}
+		events = append(events, item)
+	}
+	return events
 }
 
 func (s *Server) llm(w http.ResponseWriter, r *http.Request) {

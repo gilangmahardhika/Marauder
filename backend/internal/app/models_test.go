@@ -214,3 +214,37 @@ func TestRoutedStreamNoRetryAfterToken(t *testing.T) {
 		t.Fatalf("calls = %v", calls)
 	}
 }
+
+func TestRoutedStreamRestartAfterToken(t *testing.T) {
+	var mu sync.Mutex
+	calls := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls[r.URL.Path]++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/event-stream")
+		if strings.HasPrefix(r.URL.Path, "/primary/") {
+			_, _ = io.WriteString(w, streamChunk("partial ")+`data: {"error":{"message":"connection reset"}}`+"\n\n")
+			return
+		}
+		_, _ = io.WriteString(w, streamChunk("fallback ")+streamChunk("answer")+"data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	cfg, secrets := streamFamilies(srv.URL)
+
+	var log []string
+	restarter := app.RoutedProvider(cfg, secrets, "big", "small").(providers.RestartStreamer)
+	resp, err := restarter.StreamRestart(context.Background(), providers.Request{User: "hi"},
+		func(text string) { log = append(log, text) },
+		func() { log = append(log, "<restart>") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "partial |<restart>|partial |<restart>|fallback |answer"
+	if strings.Join(log, "|") != want || resp.Text != "fallback answer" || resp.Model != "small" {
+		t.Fatalf("log %q resp %+v", log, resp)
+	}
+	if calls["/primary/chat/completions"] != 2 || calls["/backup/chat/completions"] != 1 {
+		t.Fatalf("calls = %v", calls)
+	}
+}

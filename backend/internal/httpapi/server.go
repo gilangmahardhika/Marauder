@@ -8,6 +8,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/providers"
 )
 
@@ -23,10 +24,13 @@ type Server struct {
 	// RefineProvider replaces the routed implement model for requirement
 	// refinement in tests; nil in production.
 	RefineProvider providers.Provider
+	// Live carries the model's reply text to trace streams; the implement
+	// and review jobs of the same process publish to it.
+	Live *live.Hub
 }
 
 func New() *Server {
-	return &Server{AllowOrigin: "http://127.0.0.1:4173"}
+	return &Server{AllowOrigin: "http://127.0.0.1:4173", Live: live.New()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -233,7 +237,7 @@ func filterActions(actions []string, role string) []string {
 
 func actionAllowed(role, action string) bool {
 	switch action {
-	case "", "trace", "diff":
+	case "", "trace", "trace/stream", "diff":
 		return true
 	case "approve", "reject":
 		return role == "lead_developer" || role == "qa_lead" || role == "product_owner"

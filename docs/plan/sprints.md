@@ -748,3 +748,17 @@ Packages: `internal/providers`, `internal/router`, `internal/app`, `internal/con
 - A spark button and a refine box per field, with streamed text, Stop, the field's comparison, Apply, and Discard.
 
 Done when: `TestAnthropicStream`, `TestOpenAIStream`, `TestRoutedStreamFallsBackBeforeFirstToken`, `TestRoutedStreamNoRetryAfterToken`, `TestRefineFieldStreams`, `TestRefineFieldAcceptanceLines`, `TestRefineFieldRedactsSplitKey`, `TestRefineFieldErrorsBeforeStream`, `TestRefineFieldCancel`, `TestRefinePromptMarkers`, the `streamRefine`, `RefinePanel`, `RequirementForm`, and edit page Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 52: Stream the card trace
+
+Goal: While a card works, the Trace page shows stored events as they commit and the model's reply token by token, over one streamed connection (RFC-088, under REQ-076).
+
+Packages: `internal/live`, `internal/trace`, `internal/providers`, `internal/app`, `internal/loop`, `internal/httpapi`, `internal/cli`, frontend `api.ts`, `terminal.ts`, `TerminalView`, and the Trace page.
+
+- `live.Hub` with per-card viewers, the text so far, non-blocking sends, caps, and a close on shutdown. The stream redactor moves to `trace`.
+- `providers.RestartStreamer`: the routed provider keeps its retry and fallback after text and says when it starts again.
+- The implementer and reviewer loops stream each turn as `turn`, `delta`, `reset`, and `turn_end`, redacted with every job secret.
+- `GET /api/projects/{projectId}/cards/{id}/trace/stream`: the stored trace, live frames, a database read every second and after each model call, a heartbeat, and `done` or `resync`.
+- The Trace page reads the stream while live and polls only as a fallback. The terminal view shows the reply being written with a caret.
+
+Done when: `TestHubSnapshotAndSlowSubscriber`, `TestStreamRedactorEverySplit`, `TestRoutedStreamRestartAfterToken`, `TestLoopStreamsTurnText`, `TestReviewStreamsText`, `TestTraceStreamFrames`, `TestTraceStreamRedactsSplitSecret`, `TestTraceStreamOtherProcessEvents`, `TestTraceStreamRequiresMember`, `TestTraceStreamCap`, the `streamTrace`, Trace page, and `TerminalView` Vitest cases, `npm run check`, the fixture, and the rest of the suite.

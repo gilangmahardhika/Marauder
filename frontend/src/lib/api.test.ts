@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import type { RefineEvent } from './types';
+import type { RefineEvent, TraceStreamEvent } from './types';
 import {
   addRequirement,
   createProject,
@@ -12,7 +12,9 @@ import {
   setAIReviewMode,
   setInstructions,
   setTribeAdmin,
+  parseEvents,
   streamRefine,
+  streamTrace,
   syncRepository
 } from './api';
 import { session } from './session';
@@ -234,4 +236,65 @@ test('streamRefine passes an abort through instead of calling it a network error
   const controller = new AbortController();
   controller.abort();
   await expect(streamRefine(refineBody, vi.fn(), controller.signal)).rejects.toMatchObject({ name: 'AbortError' });
+});
+
+test('streamTrace reads trace, reply, and done frames, and skips ping comments', async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(
+        chunked([
+          'event: trace\ndata: {"events":[{"id":"e1","ts":"2026-10-12T10:00:01Z","kind":"transition","payload":{}}],"attempts":[],"live":true}\n\n',
+          ': ping\n\nevent: turn\ndata: {"attemptId":"att_1","turn":2,"role":"implementer","modelId":"model-a"}\n\nevent: delta\ndata: {"attemptId":"att_1","turn":2,"text":"Read',
+          'ing the é file."}\n\nevent: reset\ndata: {"attemptId":"att_1","turn":2}\n\n',
+          'event: turn_end\ndata: {"attemptId":"att_1","turn":2}\n\nevent: done\ndata: {"live":false}\n\n'
+        ]),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+      );
+    })
+  );
+  session.setProject('proj_widget');
+  const events: TraceStreamEvent[] = [];
+  await streamTrace('card_1', '2026-10-12T10:00:00Z', (event) => events.push(event), new AbortController().signal);
+  expect(calls[0].url).toBe('http://127.0.0.1:8787/api/projects/proj_widget/cards/card_1/trace/stream?since=2026-10-12T10%3A00%3A00Z');
+  expect(new Headers(calls[0].init.headers).get('Authorization')).toBe('Bearer stored-bearer');
+  expect(calls[0].init.method ?? 'GET').toBe('GET');
+  expect(events).toEqual([
+    { kind: 'trace', events: [{ id: 'e1', ts: '2026-10-12T10:00:01Z', kind: 'transition', payload: {} }], attempts: [], live: true },
+    { kind: 'turn', attemptId: 'att_1', turn: 2, role: 'implementer', modelId: 'model-a' },
+    { kind: 'delta', attemptId: 'att_1', turn: 2, text: 'Reading the é file.' },
+    { kind: 'reset', attemptId: 'att_1', turn: 2 },
+    { kind: 'turn_end', attemptId: 'att_1', turn: 2 },
+    { kind: 'done', live: false }
+  ]);
+});
+
+test('streamTrace throws ApiError for a 429 before the stream', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'rate_limited', message: 'too many trace streams are open; try again soon' } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json' }
+        })
+    )
+  );
+  const onEvent = vi.fn();
+  await expect(streamTrace('card_1', undefined, onEvent, new AbortController().signal)).rejects.toMatchObject({
+    name: 'ApiError',
+    status: 429,
+    code: 'rate_limited'
+  });
+  expect(onEvent).not.toHaveBeenCalled();
+});
+
+test('parseEvents keeps the frame name when the payload has its own kind', () => {
+  const { events, rest } = parseEvents<{ kind: string; id?: string }>(
+    'event: trace\ndata: {"kind":"model_call","id":"e1"}\n\nevent: delta\ndata: {"te'
+  );
+  expect(events).toEqual([{ kind: 'trace', id: 'e1' }]);
+  expect(rest).toBe('event: delta\ndata: {"te');
 });

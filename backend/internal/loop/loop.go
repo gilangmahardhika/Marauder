@@ -13,6 +13,7 @@ import (
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/contextpack"
 	"orchestrator/backend/internal/execx"
+	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/runtime"
@@ -188,6 +189,8 @@ type Input struct {
 	// 16 KiB (RFC-081). MaxTokensPerCard of zero sets no token cap.
 	HistoryBudget    int
 	MaxTokensPerCard int
+	// Live, when set, gets each turn's reply text as the model writes it.
+	Live live.Publisher
 }
 
 // Result is how the attempt ended. Outcome is empty for a new commit,

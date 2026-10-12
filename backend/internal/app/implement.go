@@ -13,6 +13,7 @@ import (
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/company"
 	"orchestrator/backend/internal/execx"
+	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers"
@@ -57,6 +58,8 @@ type JobDeps struct {
 	Secrets []string
 	// Now is the clock of the review job's check wait; nil means time.Now.
 	Now func() time.Time
+	// Live, when set, gets the reply text of each model call as it is written.
+	Live live.Publisher
 }
 
 func (d JobDeps) now() time.Time {
@@ -193,7 +196,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		result, err := loop.Run(attemptCtx, loop.Input{
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
 			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
-			Provider: provider, Secrets: redact, Allow: projectCfg.Checks.AllowExecutables,
+			Provider: provider, Secrets: redact, Live: deps.Live, Allow: projectCfg.Checks.AllowExecutables,
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,
 			HistoryBudget: llm.Options(cfg, route.Model).HistoryBytes(), MaxTokensPerCard: tokenCap,

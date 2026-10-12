@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { expect, test } from 'vitest';
 import TerminalView from './TerminalView.svelte';
+import type { PendingReply } from '$lib/terminal';
 import type { TraceEvent } from '$lib/types';
 
 function tool(n: number, summary = `out ${n}`): TraceEvent {
@@ -59,4 +60,24 @@ test('scrolling up stops following and Jump to latest follows again', async () =
   await fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }));
   expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull();
   expect(log.scrollTop).toBe(1000);
+});
+
+test('shows the reply being written as the last entry, with a caret, and marks the log busy', async () => {
+  const pending: PendingReply = { attemptId: 'att_1', turn: 2, role: 'reviewer', modelId: 'model-b', text: '', since: '2026-10-12T10:00:05Z' };
+  const view = render(TerminalView, { props: { events: [tool(1)], pending } });
+  const log = screen.getByRole('log', { name: 'Terminal output, oldest first' });
+  const row = screen.getByTestId('pending-reply');
+  expect(log.lastElementChild).toBe(row);
+  expect(row.textContent).toContain('model  reviewer  model-b  writing…');
+  expect(row.textContent).toContain('Waiting for the model…');
+  expect(row.querySelector('[aria-hidden="true"]')?.textContent).toBe('▍');
+  expect(log.getAttribute('aria-busy')).toBe('true');
+
+  await view.rerender({ events: [tool(1)], pending: { ...pending, text: 'The diff \u001b[1mlooks\u001b[0m right.' } });
+  expect(screen.getByTestId('pending-reply').textContent).toContain('The diff looks right.');
+  expect(screen.getByTestId('pending-reply').textContent).not.toContain('Waiting for the model…');
+
+  await view.rerender({ events: [tool(1)], pending: null });
+  expect(screen.queryByTestId('pending-reply')).toBeNull();
+  expect(log.getAttribute('aria-busy')).toBeNull();
 });

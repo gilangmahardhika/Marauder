@@ -8,6 +8,7 @@ import (
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/contextpack"
+	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/trace"
 )
@@ -65,6 +66,8 @@ type ReviewInput struct {
 	Comments    string
 	Comment     func(ctx context.Context, body string) error
 	Secrets     []string
+	// Live, when set, gets each turn's reply text as the model writes it.
+	Live live.Publisher
 }
 
 // ReviewResult is the reviewer's verdict and the hash of the prompt it saw.
@@ -104,10 +107,10 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 	invalid := 0
 	cut := false
 	for turn := 0; turn < reviewTurns; turn++ {
-		resp, err := in.Provider.Complete(ctx, providers.Request{
+		resp, endTurn, err := complete(ctx, in.Provider, providers.Request{
 			Model: in.Model, System: system, User: user, Turns: turns,
 			Tools: ReviewerTools(), TaskClass: "review", MaxTokens: ReviewMaxTokens,
-		})
+		}, in.Live, in.Card.ID, live.Frame{AttemptID: in.AttemptID, Turn: turn, Role: "reviewer"}, in.Secrets)
 		if err != nil {
 			return result, err
 		}
@@ -115,7 +118,9 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 		if modelID == "" {
 			modelID = in.Model
 		}
-		if err := reviewEvent(ctx, in, "model_call", modelCallPayload("reviewer", modelID, resp, in.Secrets)); err != nil {
+		err = reviewEvent(ctx, in, "model_call", modelCallPayload("reviewer", modelID, resp, in.Secrets))
+		endTurn()
+		if err != nil {
 			return result, err
 		}
 		if len(resp.ToolCalls) == 0 {

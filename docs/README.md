@@ -40,6 +40,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0033-agent-loop.md](rfc/0033-agent-loop.md) | Decisions `RFC-080` to `RFC-085`. Ranged reads and exact replacements, a stable per-model history, a loop that finishes, a path map and `AGENTS.md` in the pack, a todo list, prompt caching, a sandboxed `run_command`, and fair attempt accounting |
 | [rfc/0034-refine-requirement.md](rfc/0034-refine-requirement.md) | Decision `RFC-086`. A member asks the implement model to refine a manual requirement, compares the proposal with the current text, and applies it to the form before saving |
 | [rfc/0035-streaming-field-refine.md](rfc/0035-streaming-field-refine.md) | Decision `RFC-087`. The statement and the acceptance lines refine apart, each from its own spark button, and the reply streams into the page as it is written |
+| [rfc/0036-streaming-trace.md](rfc/0036-streaming-trace.md) | Decision `RFC-088`. While a card works, the Trace page holds one streamed connection that pushes stored events and the model's reply token by token |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

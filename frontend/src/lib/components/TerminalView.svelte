@@ -2,14 +2,15 @@
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { clock, count } from '$lib/format';
-  import { clipLines, foldLines, pageEvents, terminalLines, type TerminalTone } from '$lib/terminal';
+  import { clipLines, foldLines, pageEvents, pendingEntry, terminalLines, type PendingReply, type TerminalTone } from '$lib/terminal';
   import type { TraceAttempt, TraceEvent } from '$lib/types';
 
   let {
     events,
     attempts = [],
+    pending = null,
     follow = $bindable(true)
-  }: { events: TraceEvent[]; attempts?: TraceAttempt[]; follow?: boolean } = $props();
+  }: { events: TraceEvent[]; attempts?: TraceAttempt[]; pending?: PendingReply | null; follow?: boolean } = $props();
 
   let limit = $state(pageEvents);
   let box = $state<HTMLDivElement | null>(null);
@@ -18,6 +19,7 @@
   const entries = $derived(terminalLines(events, attempts));
   const start = $derived(Math.max(0, entries.length - limit));
   const visible = $derived(entries.slice(start));
+  const writing = $derived(pending ? pendingEntry(pending) : null);
 
   const tones: Record<TerminalTone, string> = {
     model: 'text-sky-300',
@@ -48,6 +50,7 @@
 
   $effect(() => {
     void entries.length;
+    void writing?.body.length;
     if (follow) void toBottom();
   });
 </script>
@@ -60,6 +63,7 @@
     {onscroll}
     role="log"
     aria-label="Terminal output, oldest first"
+    aria-busy={writing ? 'true' : undefined}
     tabindex="0"
     class="max-h-[75vh] overflow-auto rounded-panel bg-ink px-4 py-3 font-mono text-xs leading-5 text-ground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
   >
@@ -91,6 +95,15 @@
         {/if}
       </div>
     {/each}
+    {#if writing}
+      <div class="grid grid-cols-[auto_1fr] gap-x-3" data-testid="pending-reply">
+        <time class="text-stone-400 select-none" datetime={writing.ts}>{clock(writing.ts)}</time>
+        <p class="m-0 break-words whitespace-pre-wrap {tones.model}">{writing.head}</p>
+        <pre class="col-start-2 m-0 mb-1 font-mono break-words whitespace-pre-wrap text-stone-300">{#if writing.body}{writing.body}{:else}<span
+              class="text-stone-400">Waiting for the model…</span
+            >{/if}<span class="ml-0.5 text-sky-300 motion-safe:animate-pulse" aria-hidden="true">▍</span></pre>
+      </div>
+    {/if}
   </div>
   {#if !follow}
     <button

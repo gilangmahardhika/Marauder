@@ -113,7 +113,7 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 			emit("start", map[string]string{"modelId": model})
 		}
 	}
-	out := newRedactor(redact, func(text string) {
+	out := trace.NewStreamRedactor(redact, func(text string) {
 		start(modelID)
 		emit("delta", map[string]string{"text": text})
 	})
@@ -122,16 +122,16 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 	var resp providers.Response
 	switch p := provider.(type) {
 	case modelStreamer:
-		resp, err = p.streamFrom(ctx, req, start, out.write)
+		resp, err = p.streamFrom(ctx, req, start, out.Write)
 	case providers.Streamer:
 		resp, err = p.Stream(ctx, req, func(text string) {
 			start(modelID)
-			out.write(text)
+			out.Write(text)
 		})
 	default:
 		resp, err = p.Complete(ctx, req)
 		if err == nil {
-			out.write(resp.Text)
+			out.Write(resp.Text)
 		}
 	}
 	if err != nil {
@@ -140,7 +140,7 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 		}
 		return fmt.Errorf("%w: %s", ErrRefineProvider, trace.Redact(err.Error(), redact))
 	}
-	out.flush()
+	out.Flush()
 	if resp.Model != "" {
 		modelID = resp.Model
 	}
@@ -199,59 +199,4 @@ func finished(field string, draft intake.Draft, text string) (RefineDone, error)
 		return RefineDone{Text: strings.Join(clean.Acceptance, "\n"), Acceptance: clean.Acceptance}, nil
 	}
 	return RefineDone{Text: clean.Statement}, nil
-}
-
-// redactor passes streamed text on with model keys replaced. It holds back the
-// last len(longest key)-1 bytes, and any key that starts before the cut, so a
-// key split across pieces is redacted whole before it is sent.
-type redactor struct {
-	keys    []string
-	hold    int
-	pending string
-	send    func(string)
-}
-
-func newRedactor(keys []string, send func(string)) *redactor {
-	r := &redactor{keys: keys, send: send}
-	for _, key := range keys {
-		r.hold = max(r.hold, len(key)-1)
-	}
-	return r
-}
-
-func (r *redactor) write(text string) {
-	r.pending += text
-	cut := len(r.pending) - r.hold
-	for moved := true; moved && cut > 0; {
-		moved = false
-		for _, key := range r.keys {
-			if key == "" {
-				continue
-			}
-			from := max(0, cut-len(key)+1)
-			if i := strings.Index(r.pending[from:], key); i >= 0 && from+i < cut {
-				if end := from + i + len(key); end > cut {
-					cut = from + i
-					moved = true
-				}
-			}
-		}
-	}
-	for cut > 0 && cut < len(r.pending) && !utf8.RuneStart(r.pending[cut]) {
-		cut--
-	}
-	if cut <= 0 {
-		return
-	}
-	if out := trace.Redact(r.pending[:cut], r.keys); out != "" {
-		r.send(out)
-	}
-	r.pending = r.pending[cut:]
-}
-
-func (r *redactor) flush() {
-	if r.pending != "" {
-		r.send(trace.Redact(r.pending, r.keys))
-		r.pending = ""
-	}
 }

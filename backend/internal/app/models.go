@@ -149,6 +149,48 @@ func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, o
 	return resp, err
 }
 
+// StreamRestart is Complete for a streaming reply that keeps the rate-limit
+// wait, the retry, and the fallback after text was sent. Before a reply is
+// sent again after text, it calls onRestart (RFC-088).
+func (p routedProvider) StreamRestart(ctx context.Context, req providers.Request, onText func(string), onRestart func()) (providers.Response, error) {
+	var resp providers.Response
+	sent := false
+	send := func(client providers.Provider, next providers.Request) (providers.Response, error) {
+		if sent {
+			sent = false
+			if onRestart != nil {
+				onRestart()
+			}
+		}
+		return stream(ctx, client, next, func(text string) {
+			sent = true
+			onText(text)
+		})
+	}
+	err := router.Call(p.primary, p.fallback, func(model string) error {
+		client, _, _, err := llm.ForModel(p.cfg, p.secrets, model)
+		if err != nil {
+			return err
+		}
+		next := llm.WithOptions(req, llm.Options(p.cfg, model))
+		next.Model = model
+		resp, err = send(client, next)
+		var limited *providers.RateLimited
+		if errors.As(err, &limited) {
+			if werr := sleepCtx(ctx, rateWait(limited.Wait)); werr != nil {
+				return werr
+			}
+			resp, err = send(client, next)
+		}
+		resp.Model = model
+		return err
+	})
+	if err != nil && ctx.Err() == nil {
+		return resp, fmt.Errorf("%w: %s", ErrProvider, strings.TrimPrefix(err.Error(), "provider_error: "))
+	}
+	return resp, err
+}
+
 // stream sends req through the client's Stream, or through Complete as one
 // piece of text for a client that cannot stream.
 func stream(ctx context.Context, client providers.Provider, req providers.Request, onText func(string)) (providers.Response, error) {
