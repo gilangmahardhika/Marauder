@@ -101,6 +101,13 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestModelIdUnique` | The same model id in two families is `422` |
 | `TestBotApprover` | An approval by a user whose GitHub login is the company bot login returns `422` |
 | `TestOwnerCannotApprove` | The card owner's `actions` has no `approve`, and an approval POST by the owner is `403` with no approval row (RFC-054) |
+| `TestSoloOwnerApproves` | With Solo approval off the owner is `403`. After `soloApproval: true` is saved, the owner, whose login is the bot login, sees `approve` and approves, with `independent = false` (RFC-067) |
+| `TestApprovalPostsCommentAndStatus` | An approval posts one comment on the pull request and one `success` status with context `orchestrator/approval` on the SHA, with the company token in `GH_TOKEN` and not in argv. A repeat approval of the same SHA posts nothing (RFC-068) |
+| `TestApprovalAnnounceFailureKeepsApproved` | When `gh` fails, the approval is still `200` and `approved`, with one `job_error` for the comment and one for the status |
+| `TestRequestChangesWithdrawsApprovalStatus` | Request changes on an approved card posts `failure` on the approved SHA |
+| `TestReviewIgnoresApprovalStatus` | A pending `orchestrator/approval` status on the head still moves the card to `human_review`, with `ci_required = false` |
+| `TestCardDiff` | On a real repository the diff lists each file with counts and hunks, redacts a planted model key, cuts a file past 1,500 lines, and returns not found for another project |
+| `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
 | `TestIngestRecordsCreator` | A web ingest stores the caller as `created_by` on new parsed rows. A second ingest by another user keeps the first. A CLI ingest stores null |
 | `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |
 | `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |

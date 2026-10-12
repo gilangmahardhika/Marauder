@@ -192,7 +192,7 @@ The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt
 
 A review never changes `attempts_used`.
 
-What runs today (RFC-065): `app.ReviewCard` reads the pull request and the diff from local `refs/heads/<baseBranch>` to the attempt's commit, capped at 64 KiB, before step 1, and leaves the card in `pr_open` with a `job_error` when either fails. A missing company organization or token blocks with `github_config` after the move to `agent_review`. The route `different-family-from-author` picks a model through `router.ReviewModel`. The reviewer loop runs at most 8 turns, and `comment_pr` posts with the company token. Every check on the head counts as required, and `ci_required` is stored on the attempt.
+What runs today (RFC-065): `app.ReviewCard` reads the pull request and the diff from local `refs/heads/<baseBranch>` to the attempt's commit, capped at 64 KiB, before step 1, and leaves the card in `pr_open` with a `job_error` when either fails. A missing company organization or token blocks with `github_config` after the move to `agent_review`. The route `different-family-from-author` picks a model through `router.ReviewModel`. The reviewer loop runs at most 8 turns, and `comment_pr` posts with the company token. Every check on the head counts as required, except the harness's own `orchestrator/approval` status (RFC-068), and `ci_required` is stored on the attempt.
 
 ### Deploy job
 
@@ -222,9 +222,9 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 
 | Function | From | Checks | Result |
 | --- | --- | --- | --- |
-| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy |
-| `RequestChanges(actor, card)` | `human_review`, `approved` | Member, role may request changes | `changes_requested`, approval cleared, note with source `approver`, `runs` row |
-| `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected` |
+| `Approve(actor, card, sha)` | `human_review` | Member, role may approve, GitHub login set, login is not the company bot, actor is not the card owner (RFC-054). With the project's `approval.solo` on, the bot and owner checks are skipped and the approval stores `independent = false` (RFC-067). `sha` equals the refreshed head | `approved`, one approval row, `runs` row. Does not deploy. A new row posts the approval to GitHub (RFC-068) |
+| `RequestChanges(actor, card)` | `human_review`, `approved` | Member, role may request changes | `changes_requested`, approval cleared, note with source `approver`, `runs` row. From `approved`, the approval status turns `failure` |
+| `Reject(actor, card)` | `human_review`, `approved` | Member, role may reject | `blocked` with `rejected`. From `approved`, the approval status turns `failure` |
 | `Deploy(actor, card)` | `approved` | Member, role is Lead Developer, `deploy` is in `actions` | `deploying_dev` through `Transition`, `runs` row with trigger `deploy` |
 | `Unblock(actor, card, reset)` | `blocked` | Member, role may unblock, `unblockTo` is not null | `ready` or `human_review` per RFC-041, `runs` row |
 | `Accept(actor, project, ids)` | intake | Member, role is Lead Developer, Senior Developer, QA Lead, or Product Owner (RFC-053) | `accepted_by` is the user id, `runs` row |
@@ -237,6 +237,10 @@ Rollback argv is `[rollbackCommand, previousSha]`, or `[rollbackCommand]` when `
 HTTP passes the session user. The break-glass CLI passes `--as`. A missing permission returns `app.ErrActionNotListed` when the name is not in `actions`, and `403` when the route is not a card action. A non-member is `404`.
 
 Approving the same SHA twice finds the live approval row by the unique index and returns the card unchanged.
+
+What runs today (RFC-068): `app.ApproveFresh` returns the card, whether it inserted a row, and whether the approval is independent. The HTTP route and the CLI call `app.AnnounceApproval` only for a new row. It posts a comment on the pull request and a commit status with context `app.ApprovalContext` (`orchestrator/approval`) and state `success` on `approvedSha`, with the company token, after the transition has committed. Request changes and Reject on an `approved` card call `app.WithdrawApproval`, which posts `failure` on the old `approvedSha`. Both detach from the request's cancel and stop after 30 seconds. Each failed post appends `job_error` with `approval comment:` or `approval status:` and leaves the card as it is. The company token needs commit-status write: `repo` on a classic token, or "Commit statuses: write" on a fine-grained one.
+
+`app.ReadCardDiff` serves the card page's Changes panel. It reads `git diff --numstat` and `git diff --no-renames` from `refs/heads/<baseBranch>` to the head SHA in the project clone, fetching `refs/heads/orch/<cardId>` with the company token when the SHA is missing (`runtime.Git.FetchCard`). The text is capped at 256 KiB and each file at 1,500 lines, and is redacted with the model keys and the company token before `app.ParseDiff` splits it into files, hunks, and lines.
 
 ## Router
 
@@ -346,7 +350,7 @@ gh api -X POST repos/OWNER/REPO/pulls/NUMBER/requested_reviewers -f reviewers[]=
 
 Push, `pr create`, `pr edit`, and the reviewer request carry the card owner's token. `pr view`, `pr comment`, and the company test carry the company token. If `cards.pr_url` is already set, skip `pr create`. The unique index is the second guard. Text from the model goes through `--body-file`, never through argv.
 
-What runs today (RFC-066): `gh pr edit` and `gh pr comment` ask GraphQL for fields that need the `read:org` scope, so the harness writes through REST instead. The pull request edit is `gh api repos/OWNER/REPO/pulls/NUMBER --method PATCH --input FILE`, after reading the body with `gh api repos/OWNER/REPO/pulls/NUMBER --jq .body`. A comment is `gh api repos/OWNER/REPO/issues/NUMBER/comments --method POST --input FILE`. The file is JSON under the project's `logs/`, deleted after the call, so the title and text never reach argv.
+What runs today (RFC-066): `gh pr edit` and `gh pr comment` ask GraphQL for fields that need the `read:org` scope, so the harness writes through REST instead. The pull request edit is `gh api repos/OWNER/REPO/pulls/NUMBER --method PATCH --input FILE`, after reading the body with `gh api repos/OWNER/REPO/pulls/NUMBER --jq .body`. A comment is `gh api repos/OWNER/REPO/issues/NUMBER/comments --method POST --input FILE`, and the approval status is `gh api repos/OWNER/REPO/statuses/SHA --method POST --input FILE` (RFC-068). The file is JSON under the project's `logs/`, deleted after the call, so the title and text never reach argv.
 
 ## Settings
 

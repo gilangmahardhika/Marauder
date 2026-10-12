@@ -2,6 +2,7 @@
   import { ApiError, getDeploy, putDeploy, unreachable } from '$lib/api';
   import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
   import { shell, showShell } from '$lib/shell.svelte';
+  import Checkbox from '$lib/ui/Checkbox.svelte';
   import Field from '$lib/ui/Field.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
@@ -24,6 +25,7 @@
   let implementationCap = $state(2);
   let prdPath = $state('docs/prd');
   let rfcPath = $state('docs/rfc');
+  let soloApproval = $state(false);
   let message = $state('Loading deploy settings');
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
@@ -53,6 +55,7 @@
         implementationCap = body.implementationCap || 2;
         prdPath = body.prdPath;
         rfcPath = body.rfcPath;
+        soloApproval = body.soloApproval;
         canEdit = body.canEdit;
         message = 'Deploy settings';
       })
@@ -82,6 +85,7 @@
         implementationCap,
         prdPath,
         rfcPath,
+        soloApproval,
         ...omitEmptySecret('deployToken', token, clear)
       });
       tokenSet = saved.deployTokenSet;
@@ -145,6 +149,12 @@
           <Field label="PRD path" id="prd" width="full" mono bind:value={prdPath} />
           <Field label="RFC path" id="rfc" width="full" mono bind:value={rfcPath} />
         </div>
+        <Checkbox
+          id="solo"
+          label="Solo approval"
+          hint="The card owner, and a person whose GitHub login is the company bot, may approve. The approval is recorded as not independent. Leave off when a second person can review."
+          bind:checked={soloApproval}
+        />
       </Panel>
     </fieldset>
     <SaveBar

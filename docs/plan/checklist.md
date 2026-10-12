@@ -480,3 +480,27 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReviewRequestChanges`
 - [x] `TestReviewCommentFailureKeepsStatus`
 - [x] Pull request #34 on `scbd-solid-web` shows the new title, body, and review comment.
+
+## Sprint 30: Solo approval
+
+- [x] The Deploy settings save and show `soloApproval`, stored as `approval.solo`.
+- [x] With Solo approval on, the owner and the bot login may approve, and the approval stores `independent = false`.
+- [x] `TestSoloOwnerApproves`
+- [x] `TestOwnerCannotApprove`
+- [x] `TestBotApprover`
+- [x] `scbd-solid-web` has Solo approval on, and `gilangmahardhika@gmail.com` can approve card REQ-001.
+
+## Sprint 31: Approval on GitHub and the Changes panel
+
+- [x] A new approval posts a pull request comment and a `success` `orchestrator/approval` status. Request changes and Reject on an approved card post `failure`. A failed post leaves the card `approved` with a `job_error`.
+- [x] The review job does not count `orchestrator/approval` as a check.
+- [x] `GET /api/projects/{projectId}/cards/{id}/diff` returns the card's diff to members, and the card page shows it in the Changes panel.
+- [x] `TestApprovalPostsCommentAndStatus`
+- [x] `TestApprovalAnnounceFailureKeepsApproved`
+- [x] `TestRequestChangesWithdrawsApprovalStatus`
+- [x] `TestReviewIgnoresApprovalStatus`
+- [x] `TestCardDiff`
+- [x] `TestCardDiffRoute`
+- [x] `CardChanges` Vitest cases
+- [x] Card REQ-001 on `scbd-solid-web` shows its Changes, `resources/js/Pages/Auth/Login.tsx` with `+1 -1`.
+- [x] After approving REQ-001, pull request #34 has the approval comment and a green `orchestrator/approval` status on `ae5d441`.

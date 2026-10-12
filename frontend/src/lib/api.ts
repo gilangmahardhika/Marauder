@@ -3,6 +3,7 @@ import type {
   AccountGitHub,
   Board,
   Card,
+  CardDiff,
   CompanyGitHub,
   CompanyAccess,
   CompanyRepo,
@@ -202,6 +203,10 @@ export function getCards() {
 
 export function getCard(id: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}`);
+}
+
+export function getCardDiff(id: string) {
+  return request<CardDiff>(`${projectPrefix()}/cards/${id}/diff`);
 }
 
 export function getTrace(id: string) {

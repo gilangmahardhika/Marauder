@@ -226,7 +226,7 @@ func filterActions(actions []string, role string) []string {
 
 func actionAllowed(role, action string) bool {
 	switch action {
-	case "", "trace":
+	case "", "trace", "diff":
 		return true
 	case "approve", "reject":
 		return role == "lead_developer" || role == "qa_lead" || role == "product_owner"

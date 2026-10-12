@@ -252,6 +252,7 @@ CREATE TABLE approvals (
   cleared_at TEXT
 );
 CREATE UNIQUE INDEX approvals_live ON approvals(card_id, sha) WHERE cleared_at IS NULL;
+-- 00015: ALTER TABLE approvals ADD COLUMN independent BOOLEAN NOT NULL DEFAULT true; false for an owner or bot-login approval under Solo approval (RFC-067)
 
 CREATE TABLE failure_notes (
   id TEXT PRIMARY KEY,
@@ -734,6 +735,41 @@ An empty store returns `canRun: false`, `readyCount: 0`, `running: false`, and `
 
 Oldest first. Payload is the redacted JSON already stored. New transition payloads may include `actorId`.
 
+`GET /api/projects/{projectId}/cards/{id}/diff` (RFC-068)
+
+```json
+{
+  "sha": "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+  "base": "main",
+  "compareUrl": "https://github.com/acme/widget/compare/main...ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+  "missing": false,
+  "truncated": false,
+  "files": [
+    {
+      "path": "resources/js/Pages/Auth/Login.tsx",
+      "added": 1,
+      "deleted": 1,
+      "binary": false,
+      "truncated": false,
+      "hunks": [
+        {
+          "header": "@@ -67,7 +67,7 @@",
+          "lines": [
+            { "kind": "ctx", "text": "<div>" },
+            { "kind": "del", "text": "Username atau Email" },
+            { "kind": "add", "text": "Username" }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+Any member of the project's tribe may read it. A non-member, an unknown id, or a card in another project is `404`. `sha` is the card's `headSha`, or the commit of its last attempt when there is no head. With neither, `sha` is empty and `files` is `[]`. The diff runs from `refs/heads/<baseBranch>` to `sha` in the project clone, with renames shown as a delete and an add. A SHA not in the clone is fetched from `refs/heads/orch/<cardId>` with the company token. If it is still missing, or the project has no clone, `missing` is `true` and `files` is `[]`.
+
+`kind` is `add`, `del`, `ctx`, or `meta`. An `add`, `del`, or `ctx` line's `text` drops the leading `+`, `-`, or space. A `meta` line is git's `\ No newline at end of file` as written. A binary file has `binary: true`, counts of `0`, and no hunks. The diff text is capped at 256 KiB. When it is cut, the response sets `truncated`, and the file it stopped in and the files it never reached set their own `truncated`, with counts from `git diff --numstat`. A file keeps at most 1,500 lines and sets `truncated` past that. Model keys and the company token are redacted before parsing. `compareUrl` is empty when the company account has no host or organization, or the project has no repository.
+
 `GET /api/projects/{projectId}/intake`
 
 ```json
@@ -817,9 +853,11 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 { "sha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c" }
 ```
 
-The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, rejects the card owner (`403`, RFC-054), and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy.
+The approver is the session user. The role must be Lead Developer, QA Lead, or Product Owner, and the user must be a member. The server refreshes the head from GitHub with the company token, rejects a missing GitHub login, rejects the company bot login, rejects the card owner (`403`, RFC-054), and checks that `sha` equals the head. Approving the same card and SHA twice returns the card and does not insert a second approval. A SHA mismatch is `422` with `fields.sha`. A missing GitHub login is `422` with `fields.login`. Approval does not start deploy. When the card's project has `approval.solo` on, the owner and the bot login are not rejected, and their approval row stores `independent = false` (RFC-067).
 
-`POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`.
+After an approval that inserted a new row, the server posts with the company token a comment on the card's pull request (`POST repos/{owner}/{repo}/issues/{n}/comments`) and a commit status on the approved SHA (`POST repos/{owner}/{repo}/statuses/{sha}`) with `state: success`, `context: orchestrator/approval`, and `description: Approved by @<login> in the orchestrator`. The posts take at most 30 seconds and do not change the response: a failed post writes a `job_error` event whose message starts with `approval comment:` or `approval status:`, and the card stays `approved` (RFC-068).
+
+`POST /api/projects/{projectId}/cards/{id}/request-changes` and `POST /api/projects/{projectId}/cards/{id}/reject` have empty bodies. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and writes a failure note with source `approver`. Reject sets `blockedReason` to `rejected`. When the card was `approved`, either one posts `orchestrator/approval` with `state: failure` and `description: Approval withdrawn` on the approved SHA (RFC-068).
 
 `POST /api/projects/{projectId}/cards/{id}/deploy` has an empty body. It is allowed when `deploy` is in `actions`. The card moves from `approved` toward `deploying_dev` through `machine.Transition`, and a `runs` row with trigger `deploy` wakes that project's worker.
 
@@ -1103,7 +1141,8 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
   "sandboxImage": "",
   "implementationCap": 2,
   "prdPath": "docs/prd",
-  "rfcPath": "docs/rfc"
+  "rfcPath": "docs/rfc",
+  "soloApproval": false
 }
 ```
 
@@ -1121,6 +1160,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `sandboxImage` | Contains `@sha256:` followed by 64 hex chars |
 | `implementationCap` | Integer from 1 to 8 |
 | `prdPath`, `rfcPath` | Relative, no `..`, inside the project's repo |
+| `soloApproval` | Boolean. Lets the card owner and the company bot login approve (RFC-067) |
 
 Empty deploy fields may be saved. A deploy then blocks with `deploy_config` and runs no command. A non-empty `devCheck` with an empty `devUrl` is also `deploy_config` at deploy time. Changing `localCheck` or `devCheck` applies the rule in 0006 to existing cards.
 
@@ -1198,9 +1238,11 @@ scheduler:
 paths:
   prd: docs/prd
   rfc: docs/rfc
+approval:
+  solo: false
 ```
 
-The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, and `paths` into one object, as shown above. Service `secrets.json`:
+The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `paths`, and `approval` into one object, as shown above. Service `secrets.json`:
 
 ```json
 {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 
 	"orchestrator/backend/internal/board"
@@ -23,34 +24,52 @@ type GateConfig struct {
 	BotLogin  string
 	Approvers []string
 	ActorID   string
+	// Solo lets the card owner and the bot login pass the gate (RFC-067).
+	Solo bool
 }
 
 func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig) (board.Card, error) {
+	result, err := ApproveFresh(ctx, db, cardID, sha, cfg)
+	return result.Card, err
+}
+
+// Approval is the result of an approval. Fresh is false when the same card and
+// SHA were already approved, so nothing new was stored.
+type Approval struct {
+	Card        board.Card
+	Fresh       bool
+	Independent bool
+}
+
+// ApproveFresh approves like Approve and reports whether it stored a new
+// approval, so the caller announces it once (RFC-068).
+func ApproveFresh(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig) (Approval, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
-		return board.Card{}, err
+		return Approval{}, err
 	}
-	if card.OwnerID != "" && cfg.ActorID == card.OwnerID {
-		return card, ErrOwnerApprove
+	byOwner := card.OwnerID != "" && cfg.ActorID == card.OwnerID
+	if byOwner && !cfg.Solo {
+		return Approval{Card: card}, ErrOwnerApprove
 	}
 	if sha == "" || sha != card.HeadSHA {
-		return card, ErrSHA
+		return Approval{Card: card}, ErrSHA
 	}
 	if !canApprove(cfg) {
-		return card, ErrApprover
+		return Approval{Card: card}, ErrApprover
 	}
 	var existing int
 	if err := db.QueryRowContext(ctx, `
 		SELECT count(*) FROM approvals WHERE card_id = $1 AND sha = $2 AND cleared_at IS NULL`,
 		cardID, sha).Scan(&existing); err != nil {
-		return card, err
+		return Approval{Card: card}, err
 	}
 	if existing > 0 {
-		return card, nil
+		return Approval{Card: card}, nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return card, err
+		return Approval{Card: card}, err
 	}
 	defer tx.Rollback()
 	next, err := machine.Transition(ctx, tx, card, "approved", machine.Evidence{SHA: sha, Approver: cfg.Operator, ActorID: cfg.ActorID}, nil)
@@ -58,27 +77,28 @@ func Approve(ctx context.Context, db *sql.DB, cardID, sha string, cfg GateConfig
 		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
 			_ = tx.Commit()
 		}
-		return card, err
+		return Approval{Card: card}, err
 	}
 	id, err := board.NewID("apr_")
 	if err != nil {
-		return card, err
+		return Approval{Card: card}, err
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
+	independent := !byOwner && !strings.EqualFold(cfg.Operator, cfg.BotLogin)
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO approvals (id, card_id, sha, approver, created_at, project_id) VALUES ($1, $2, $3, $4, $5, $6)`,
-		id, cardID, sha, cfg.Operator, now, next.ProjectID); err != nil {
-		return card, err
+		INSERT INTO approvals (id, card_id, sha, approver, created_at, project_id, independent) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		id, cardID, sha, cfg.Operator, now, next.ProjectID, independent); err != nil {
+		return Approval{Card: card}, err
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO runs (id, trigger, created_at, project_id) VALUES ($1, 'approve', $2, $3)`,
 		mustID("run_"), now, next.ProjectID); err != nil {
-		return card, err
+		return Approval{Card: card}, err
 	}
 	if err := tx.Commit(); err != nil {
-		return card, err
+		return Approval{Card: card}, err
 	}
-	return next, nil
+	return Approval{Card: next, Fresh: true, Independent: independent}, nil
 }
 
 func RequestChanges(ctx context.Context, db *sql.DB, cardID string, cfg GateConfig) (board.Card, error) {
@@ -191,7 +211,7 @@ func linkedUnaccepted(ctx context.Context, db *sql.DB, card board.Card) bool {
 }
 
 func canApprove(cfg GateConfig) bool {
-	if cfg.Operator == "" || cfg.Operator == cfg.BotLogin {
+	if cfg.Operator == "" || (cfg.Operator == cfg.BotLogin && !cfg.Solo) {
 		return false
 	}
 	for _, login := range cfg.Approvers {

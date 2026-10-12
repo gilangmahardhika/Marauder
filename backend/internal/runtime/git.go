@@ -160,7 +160,7 @@ func (g Git) Diff(ctx context.Context, base, head string, max int) (string, bool
 	path := file.Name()
 	file.Close()
 	defer os.Remove(path)
-	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "diff", "--no-color", "--no-ext-diff", "--output="+path,
+	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "diff", "--no-color", "--no-ext-diff", "--no-renames", "--output="+path,
 		"--end-of-options", base+"..."+head)...); err != nil {
 		return "", false, err
 	}

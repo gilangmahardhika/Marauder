@@ -152,6 +152,7 @@ frontend/
   src/lib/components/Live.svelte
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
+  src/lib/components/CardChanges.svelte
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
   src/lib/components/IntakeActions.svelte
@@ -171,6 +172,7 @@ frontend/
   src/lib/trace.test.ts
   src/lib/llm.test.ts
   src/lib/components/CardActions.test.ts
+  src/lib/components/CardChanges.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
@@ -307,13 +309,14 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 `src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
 
-The header shows the title and a badge with `statusLabel`, with the raw status in `title`. Under Next step, the page has five panels in this order:
+The header shows the title and a badge with `statusLabel`, with the raw status in `title`. Under Next step, the page has six panels in this order:
 
 - People: the owner and each reviewer with avatar, display name, email, and "GitHub @login" or "No verified GitHub login", labelled Owner or Reviewer. With no reviewers, a line says reviewers come from the card's requirements and links "Edit reviewers" to `/intake/{first requirement id}`.
 - Intake: each of `requirements` with its id, heading, the statement clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
 - Rules: `rules` grouped by `label`, Global first, each with its title and category badge. The footer links to `/settings/conventions`.
 - Skills: each skill's title and `useWhen`, clamped to two lines.
 - Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
+- Changes (`CardChanges`, RFC-068): loads `GET /api/projects/{id}/cards/{card}/diff` once per card id and `headSha`. The header shows the file count and the total added and deleted lines. Each file is a button with `aria-expanded` that shows its path, `+a -d` or "binary", and opens its hunks. Added lines have a green background and a `+`, deleted lines a red background and a `-`, as text nodes in a monospace block that scrolls sideways. After 50 files, Show more reveals the rest. A cut diff shows "The diff is large, so it is cut", a missing commit shows "Commit {short} is not in the project clone yet.", and a card with no commit says there is nothing to show. The footer links "View these changes on GitHub" to `compareUrl` when it is set. A load error shows in the panel and does not hide the rest of the page.
 
 Render a control only when its name is in `actions`:
 
@@ -466,7 +469,7 @@ Fields, in three fieldsets:
 | --- | --- |
 | Dev server | Dev URL, dev hosts (one per line), deploy command, rollback command, health URL, deploy token |
 | Checks | Local check, dev check, allowed executables (one per line), sandbox engine select (`podman`, `docker`), sandbox image |
-| Board | Implementation cap (number, default 2), PRD path, RFC path |
+| Board | Implementation cap (number, default 2), PRD path, RFC path, Solo approval (checkbox, default off, RFC-067) |
 
 Static help text:
 
@@ -552,6 +555,7 @@ npm run build
 | `CardActions` with `actions: []` | No Approve, Request changes, Reject, or Unblock control is rendered |
 | `CardActions` on an approved card | Request changes and Reject render. Approve does not |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
+| `CardChanges` | Lists files with counts and "binary". A file button opens its lines, with the deleted line on red and the added line on green, and the compare link points at `compareUrl`. A cut diff shows the warning. A missing commit shows "Commit {short} is not in the project clone yet." |
 | `IntakeActions` | Ingest and Add requirement render, and no accept button |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |

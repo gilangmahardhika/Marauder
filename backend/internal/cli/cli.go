@@ -119,8 +119,18 @@ func Execute(opts Options) int {
 				if err != nil {
 					return err
 				}
-				_, err = app.Approve(ctx, db, args[0], sha, app.GateConfig{Operator: cfg.Operator, BotLogin: "bot", Approvers: []string{cfg.Operator}})
-				return err
+				result, err := app.ApproveFresh(ctx, db, args[0], sha, app.GateConfig{Operator: cfg.Operator, BotLogin: "bot", Approvers: []string{cfg.Operator}})
+				if err != nil || !result.Fresh {
+					return err
+				}
+				deps := app.JobDeps{Data: paths.Data, Tools: jobTools()}
+				if secrets, err := loadSecrets(paths.Data, opts.getenv); err == nil {
+					if key, err := hex.DecodeString(secrets.TokenKey); err == nil && len(key) == 32 {
+						deps.Key = key
+					}
+				}
+				app.AnnounceApproval(ctx, db, deps, result.Card, cfg.Operator, result.Independent)
+				return nil
 			})
 		},
 	}

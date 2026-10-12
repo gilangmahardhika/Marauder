@@ -79,6 +79,15 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 		writeAppErr(w, err)
 		return
 	}
+	if action == "diff" && r.Method == http.MethodGet {
+		diff, err := app.ReadCardDiff(r.Context(), s.DB, s.jobDeps(), card.ProjectID, id)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, diff)
+		return
+	}
 	switch action {
 	case "":
 		if r.Method == http.MethodGet {
@@ -92,7 +101,8 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeErr(w, 400, "validation", "body")
 			return
 		}
-		next, err := app.Approve(r.Context(), s.DB, id, body.SHA, s.gate(r))
+		gate := s.gate(r, card.ProjectID)
+		result, err := app.ApproveFresh(r.Context(), s.DB, id, body.SHA, gate)
 		if err != nil {
 			if errors.Is(err, app.ErrSHA) {
 				writeJSON(w, 422, map[string]any{"error": map[string]any{"code": "validation", "message": err.Error(), "fields": map[string]string{"sha": err.Error()}}})
@@ -101,20 +111,25 @@ func (s *Server) cardRoute(w http.ResponseWriter, r *http.Request, id, action st
 			writeAppErr(w, err)
 			return
 		}
-		writeJSON(w, 200, s.cardDetail(r, next))
+		if result.Fresh {
+			app.AnnounceApproval(r.Context(), s.DB, s.jobDeps(), result.Card, gate.Operator, result.Independent)
+		}
+		writeJSON(w, 200, s.cardDetail(r, result.Card))
 	case "request-changes":
-		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r))
+		next, err := app.RequestChanges(r.Context(), s.DB, id, s.gate(r, card.ProjectID))
 		if err != nil {
 			writeAppErr(w, err)
 			return
 		}
+		s.withdraw(r, card)
 		writeJSON(w, 200, s.cardDetail(r, next))
 	case "reject":
-		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r))
+		next, err := app.Reject(r.Context(), s.DB, id, s.gate(r, card.ProjectID))
 		if err != nil {
 			writeAppErr(w, err)
 			return
 		}
+		s.withdraw(r, card)
 		writeJSON(w, 200, s.cardDetail(r, next))
 	case "unblock":
 		var body struct {
@@ -352,7 +367,7 @@ func (s *Server) loadSettings() (settings.Config, settings.Secrets, error) {
 	return settings.Load(s.Data)
 }
 
-func (s *Server) gate(r *http.Request) app.GateConfig {
+func (s *Server) gate(r *http.Request, projectID string) app.GateConfig {
 	user, _ := app.CurrentUser(r.Context())
 	acct, _ := app.LoadCompany(r.Context(), s.DB)
 	return app.GateConfig{
@@ -360,7 +375,30 @@ func (s *Server) gate(r *http.Request) app.GateConfig {
 		BotLogin:  acct.BotLogin,
 		Approvers: []string{user.GitHubLogin},
 		ActorID:   user.ID,
+		Solo:      s.soloApproval(projectID),
 	}
+}
+
+func (s *Server) jobDeps() app.JobDeps {
+	return app.JobDeps{Data: s.Data, Key: s.TokenKey, Tools: s.Tools}
+}
+
+// withdraw fails the approval status on GitHub when before was an approved
+// card that a person sent back (RFC-068).
+func (s *Server) withdraw(r *http.Request, before board.Card) {
+	if before.Status == "approved" && before.ApprovedSHA != "" {
+		app.WithdrawApproval(r.Context(), s.DB, s.jobDeps(), before, before.ApprovedSHA)
+	}
+}
+
+// soloApproval reports the project's approval.solo setting (RFC-067). A
+// missing or unreadable config keeps the default, off.
+func (s *Server) soloApproval(projectID string) bool {
+	if s.Data == "" || projectID == "" {
+		return false
+	}
+	cfg, _, err := settings.LoadProject(s.Data, projectID)
+	return err == nil && cfg.Approval.Solo
 }
 
 func (s *Server) cardBody(r *http.Request, card board.Card) map[string]any {
@@ -381,7 +419,7 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		role, userID = user.Role, user.ID
 	}
 	group, actions, unblock := Actions(card.Status, card.BlockedReason, open, role)
-	if card.OwnerID != "" && card.OwnerID == userID {
+	if card.OwnerID != "" && card.OwnerID == userID && !s.soloApproval(card.ProjectID) {
 		actions = withoutAction(actions, "approve")
 	}
 	queued, waitingOn, err := app.CardRunState(r.Context(), s.DB, card)

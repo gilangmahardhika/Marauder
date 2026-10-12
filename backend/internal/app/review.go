@@ -97,6 +97,9 @@ func (r githubReader) read(ctx context.Context, url string) (pullRequest, error)
 		if name == "" {
 			name = c.Context
 		}
+		if name == ApprovalContext {
+			continue
+		}
 		pr.Checks = append(pr.Checks, review.Check{Name: name, State: checkState(c.Status, c.Conclusion, c.State)})
 	}
 	return pr, nil

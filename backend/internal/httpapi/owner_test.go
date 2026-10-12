@@ -176,6 +176,53 @@ func TestOwnerCannotApprove(t *testing.T) {
 	}
 }
 
+func TestSoloOwnerApproves(t *testing.T) {
+	srv := accountServer(t)
+	srv.Data = dataRoot(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	owner := seedUser(t, srv, "lead@example.com", "password-long-1", "lead_developer", false)
+	if err := identity.SaveGitHub(ctx, srv.DB, owner.ID, "github.com", "acme-bot", nil, false, srv.TokenKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.DB.Exec(`UPDATE workspace_github SET bot_login = 'acme-bot' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	card := reviewCard(t, srv, "proj_default")
+	if _, err := srv.DB.Exec(`UPDATE cards SET owner_id = $2 WHERE id = $1`, card.ID, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/projects/proj_default/cards/" + card.ID
+	ownerToken := loginToken(t, srv, "lead@example.com", "password-long-1")
+	if denied := postJSON(t, srv, path+"/approve", ownerToken, map[string]string{"sha": headSHA}); denied.Code != 403 {
+		t.Fatalf("approve with solo off = %d %s", denied.Code, denied.Body.String())
+	}
+
+	adminToken := loginToken(t, srv, "admin@example.com", "password-long-0")
+	saved := putJSON(t, srv, "/api/projects/proj_default/settings/deploy", adminToken, map[string]any{"environment": "dev", "soloApproval": true})
+	if saved.Code != 200 || !strings.Contains(saved.Body.String(), `"soloApproval":true`) {
+		t.Fatalf("save solo = %d %s", saved.Code, saved.Body.String())
+	}
+	if view := getAuth(t, srv, path, ownerToken); !strings.Contains(view.Body.String(), `"approve"`) {
+		t.Fatalf("owner view with solo on = %s", view.Body.String())
+	}
+	approved := postJSON(t, srv, path+"/approve", ownerToken, map[string]string{"sha": headSHA})
+	if approved.Code != 200 || !strings.Contains(approved.Body.String(), `"status":"approved"`) {
+		t.Fatalf("solo approve = %d %s", approved.Code, approved.Body.String())
+	}
+	var approver string
+	var independent bool
+	if err := srv.DB.QueryRow(`SELECT approver, independent FROM approvals WHERE card_id = $1`, card.ID).Scan(&approver, &independent); err != nil {
+		t.Fatal(err)
+	}
+	if approver != "acme-bot" || independent {
+		t.Fatalf("approval = %q independent=%v", approver, independent)
+	}
+}
+
 func TestCardReviewers(t *testing.T) {
 	srv := accountServer(t)
 	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)

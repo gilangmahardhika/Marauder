@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-069`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-071`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -25,6 +25,8 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0018-implementer-finds-files.md](rfc/0018-implementer-finds-files.md) | Decision `RFC-064`. The implementer gets the read-only tools `list_files` and `search_files` |
 | [rfc/0019-card-reaches-approved.md](rfc/0019-card-reaches-approved.md) | Decision `RFC-065`. A checked pull request is reviewed by a model, waits for its checks, and a person approves it |
 | [rfc/0020-pull-request-text.md](rfc/0020-pull-request-text.md) | Decision `RFC-066`. The harness writes the pull request title and description, and the review verdict is a pull request comment |
+| [rfc/0021-solo-approval.md](rfc/0021-solo-approval.md) | Decision `RFC-067`. A project may let the card owner and the bot login approve, recorded as not independent |
+| [rfc/0022-approval-on-github-and-changes.md](rfc/0022-approval-on-github-and-changes.md) | Decision `RFC-068`. An approval posts a pull request comment and an `orchestrator/approval` status, and the card page shows the code changes |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

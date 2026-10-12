@@ -22,7 +22,7 @@ v1 is a harness that runs that path. Models propose edits and review comments. T
 | Developer | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 | QA | May start a run. Does not accept, approve, reject, request changes, or deploy. |
 
-Every member of a project's tribe may add a requirement to that project by hand (REQ-055). A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver and as the author of the cards they own (REQ-057). Clone and fetch use the company GitHub account (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver, and an owner never approves their own card.
+Every member of a project's tribe may add a requirement to that project by hand (REQ-055). A user has one of those six job roles. The role applies in every tribe they belong to. They sign in with email and password and keep their own GitHub host, login, and token, which name them as an approver and as the author of the cards they own (REQ-057). Clone and fetch use the company GitHub account (REQ-052). A user may belong to more than one tribe. They see a project only when they are a member of its tribe. The orchestrator bot is never an approver, and an owner never approves their own card, unless the project turns on Solo approval (REQ-070).
 
 Models are workers the harness calls. They are not users, and they do not hold the board.
 
@@ -112,6 +112,8 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-067 | Run one ready card |
 | REQ-068 | Accepted requirements become cards |
 | REQ-069 | A queued card runs with a real model up to a pull request |
+| REQ-070 | Solo approval |
+| REQ-071 | Approval shows on GitHub, and the card page shows the code changes |
 
 ## Requirements
 
@@ -482,7 +484,7 @@ The reviewer verdict is a recommendation. It is not the approval gate in REQ-030
 
 ### REQ-030 Human approval is a permitted member and one SHA
 
-A Lead Developer, QA Lead, or Product Owner who is a member of the project may approve the current pull request head. The approval stores that user's GitHub login and the SHA. The user must have a GitHub login saved, and that login must not be the project bot. The orchestrator bot identity is rejected even if the git host would accept its approval.
+A Lead Developer, QA Lead, or Product Owner who is a member of the project may approve the current pull request head. The approval stores that user's GitHub login and the SHA. The user must have a GitHub login saved, and that login must not be the project bot. The orchestrator bot identity is rejected even if the git host would accept its approval. Solo approval (REQ-070) is the one exception.
 
 v1 accepts the approval from the CLI and from the web UI. Both call the same service. A git host webhook may deliver the same facts later, through the same checks. Approval does not start deploy (REQ-050).
 
@@ -490,7 +492,7 @@ v1 accepts the approval from the CLI and from the web UI. Both call the same ser
 
 - Approval by a permitted member, for the current head SHA, moves the card to `approved` and stores that SHA. It does not start deploy.
 - Approval by a Developer, Senior Developer, or QA is rejected and the card stays in `human_review`.
-- Approval by the bot login, or by a member with no GitHub login, is rejected and the card stays in `human_review`.
+- Approval by the bot login, or by a member with no GitHub login, is rejected and the card stays in `human_review`. With Solo approval on (REQ-070), the bot login may approve.
 - Approval that names a SHA other than the current head is rejected.
 - Approving the same SHA twice, from the CLI, the UI, or both, results in one approval record.
 
@@ -676,7 +678,7 @@ A Lead Developer member, a tribe admin of the project's tribe, or a company admi
 | Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
 | Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member, tribe admin, or admin |
 
-No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve. A settings change writes an event that names the section and the fields, never the values.
+No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve unless the project turns on Solo approval (REQ-070). A settings change writes an event that names the section and the fields, never the values.
 
 #### Acceptance
 
@@ -777,7 +779,7 @@ An admin sets one GitHub account for the company: a host, an organization, and a
 - `GET /api/settings/github` returns `tokenSet` and no token.
 - A non-admin who saves the company GitHub account is rejected.
 - Saving with an empty token keeps the stored token.
-- Approval is rejected when the caller's GitHub login equals the company bot login.
+- Approval is rejected when the caller's GitHub login equals the company bot login, unless the project has Solo approval on (REQ-070).
 
 ### REQ-053 A project is one repository that the service clones
 
@@ -833,14 +835,14 @@ Each requirement records the member who added it by hand or ran the ingest that 
 
 ### REQ-057 The owner commits and opens the pull request
 
-A card's commits use the owner's verified GitHub login as the author and committer name and the owner's GitHub noreply address as the email. The worker pushes the card branch and opens or updates the pull request with the owner's token, in the child environment only. Clone and fetch use the company token. When the owner is missing, disabled, unverified, or has no token, the card is blocked with `owner_github` and nothing is pushed. The owner cannot approve their own card (RFC-054).
+A card's commits use the owner's verified GitHub login as the author and committer name and the owner's GitHub noreply address as the email. The worker pushes the card branch and opens or updates the pull request with the owner's token, in the child environment only. Clone and fetch use the company token. When the owner is missing, disabled, unverified, or has no token, the card is blocked with `owner_github` and nothing is pushed. The owner cannot approve their own card (RFC-054), unless the project has Solo approval on (REQ-070).
 
 #### Acceptance
 
 - A commit on an owned card has the owner's login and `<id>+<login>@users.noreply.github.com` as author and committer.
 - The push and the pull request calls carry the owner's token in the environment and never in argv.
 - A card whose owner has no verified token moves to `blocked` with `owner_github`, and no push runs.
-- Approval by the owner is rejected, and the owner's `actions` list has no `approve`.
+- With Solo approval off, approval by the owner is rejected, and the owner's `actions` list has no `approve`.
 
 ### REQ-058 The requirement's creator picks pull request reviewers
 
@@ -984,6 +986,28 @@ An admin's Test connection on an LLM family sends one short request to its first
 - With a cap of 2 and three queued cards, two start, the third waits, then starts oldest first. A ready card nobody queued does not start.
 - An `in_progress` card with no open attempt lists `run`. One with an open attempt, and a `backlog`, `pr_open`, or `blocked` card, are `409`.
 
+### REQ-070 Solo approval
+
+A team of one has no second person to approve, and its one GitHub account is often also the company bot. A project's Deploy settings have a Solo approval switch, off by default. While it is on, the card owner may approve their own card, and a member whose GitHub login equals the company bot login may approve, request changes, and reject. Every other approval rule stays: the job role, tribe membership, a saved GitHub login, and the current head SHA. An approval by the owner or by the bot login is stored as not independent (RFC-067).
+
+#### Acceptance
+
+- With Solo approval off, the owner's approval is `403` and the owner's `actions` list has no `approve`.
+- With Solo approval on, the owner's `actions` list has `approve`, and the owner's approval with the bot login reaches `approved`, stored with `independent = false`.
+- Saving the switch writes a `config_changed` event that names `soloApproval`.
+
+### REQ-071 Approval shows on GitHub, and the card page shows the code changes
+
+A new approval posts a comment on the card's pull request and a `success` commit status with context `orchestrator/approval` on the approved SHA, with the company token. Request changes or Reject on an approved card sets that status to `failure`. A failed post writes a `job_error` and leaves the card `approved`. The review job does not count `orchestrator/approval` as a required check. The card page has a Changes panel with each changed file, its added and deleted line counts, the colored diff, and a link to the GitHub compare view. Only members of the project's tribe can read the diff, and secrets in it are redacted (RFC-068).
+
+#### Acceptance
+
+- Approving posts one comment and one `success` status on the SHA. Approving the same SHA again posts nothing.
+- When GitHub refuses the post, the card is still `approved` and a `job_error` names the failed post.
+- Request changes on an approved card posts a `failure` status on the approved SHA.
+- A pending `orchestrator/approval` status does not keep a card out of `human_review`.
+- A member reads the card's diff with per-file counts and hunks. A non-member gets `404`. A planted model key shows as `[redacted]`.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1091,3 +1115,5 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 21. Run one ready card (REQ-067).
 22. Accepted requirements become cards (REQ-068).
 23. A queued card runs with a real model up to a pull request (REQ-069).
+24. Solo approval (REQ-070).
+25. Approval on GitHub and the Changes panel (REQ-071).

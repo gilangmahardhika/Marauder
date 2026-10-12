@@ -239,6 +239,26 @@ export type RouterSettings = {
   reviewIndependentPossible: boolean;
 };
 
+export type DiffLine = { kind: 'add' | 'del' | 'ctx' | 'meta'; text: string };
+
+export type DiffFile = {
+  path: string;
+  added: number;
+  deleted: number;
+  binary: boolean;
+  truncated: boolean;
+  hunks: { header: string; lines: DiffLine[] }[];
+};
+
+export type CardDiff = {
+  sha: string;
+  base: string;
+  compareUrl: string;
+  missing: boolean;
+  truncated: boolean;
+  files: DiffFile[];
+};
+
 export type DeploySettings = {
   environment: string;
   devUrl: string;
@@ -256,6 +276,7 @@ export type DeploySettings = {
   implementationCap: number;
   prdPath: string;
   rfcPath: string;
+  soloApproval: boolean;
 };
 
 export type RuleCategory = 'naming' | 'database' | 'style' | 'framework' | 'security' | 'testing';

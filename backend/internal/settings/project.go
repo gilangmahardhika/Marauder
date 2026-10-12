@@ -46,6 +46,9 @@ type ProjectConfig struct {
 		PRD string `yaml:"prd"`
 		RFC string `yaml:"rfc"`
 	} `yaml:"paths"`
+	Approval struct {
+		Solo bool `yaml:"solo"`
+	} `yaml:"approval"`
 }
 
 // ProjectSecrets is <data>/projects/<id>/secrets.json. It is never encoded to a client.
@@ -69,6 +72,7 @@ type Deploy struct {
 	ImplementationCap int      `json:"implementationCap"`
 	PRDPath           string   `json:"prdPath"`
 	RFCPath           string   `json:"rfcPath"`
+	SoloApproval      bool     `json:"soloApproval"`
 }
 
 // ProjectPaths are the directories a deploy command must stay out of.
@@ -119,6 +123,7 @@ func DeployView(cfg ProjectConfig) Deploy {
 		ImplementationCap: cfg.Scheduler.ImplementationCap,
 		PRDPath:           cfg.Paths.PRD,
 		RFCPath:           cfg.Paths.RFC,
+		SoloApproval:      cfg.Approval.Solo,
 	}
 	if d.Environment == "" {
 		d.Environment = "dev"
@@ -176,6 +181,7 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	next.Scheduler.ImplementationCap = d.ImplementationCap
 	next.Paths.PRD = d.PRDPath
 	next.Paths.RFC = d.RFCPath
+	next.Approval.Solo = d.SoloApproval
 
 	dir := ProjectDir(data, projectID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -190,7 +196,7 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	}
 	changed := []string{"environment", "devUrl", "devHosts", "devCommand", "rollbackCommand", "healthUrl",
 		"localCheck", "devCheck", "allowExecutables", "sandboxEngine", "sandboxImage",
-		"implementationCap", "prdPath", "rfcPath"}
+		"implementationCap", "prdPath", "rfcPath", "soloApproval"}
 	if clear || token != nil {
 		if clear {
 			secrets.DeployToken = ""

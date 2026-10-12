@@ -119,6 +119,27 @@ func (g Git) Push(ctx context.Context, cardID string, remote Remote) error {
 	return g.network(ctx, env, remote.Token, argv)
 }
 
+// FetchCard fetches orch/<cardID> from remote so its head commit is in the
+// clone. It moves no local branch.
+func (g Git) FetchCard(ctx context.Context, cardID string, remote Remote) error {
+	if err := validCardID(cardID); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(remote.URL, "https://") {
+		return fmt.Errorf("remote must be https")
+	}
+	if err := writeAskpass(g.Data); err != nil {
+		return err
+	}
+	env := append(gitEnv(g.Bin, g.Data),
+		"GIT_ASKPASS="+AskpassPath(g.Data),
+		"ORCH_ASKPASS=1",
+		"GH_TOKEN="+remote.Token,
+	)
+	argv := append(g.prefix(), "-C", g.Repo, "fetch", "--no-tags", "--", remote.URL, "refs/heads/orch/"+cardID)
+	return g.network(ctx, env, remote.Token, argv)
+}
+
 func (g Git) network(ctx context.Context, env []string, token string, argv []string) error {
 	if token != "" {
 		for _, arg := range argv {

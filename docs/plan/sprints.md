@@ -454,3 +454,28 @@ Packages: `internal/runtime`, `internal/vcs`, `internal/contextpack`, `internal/
 - The implementer is asked for a 72-character subject and a short body in each commit message.
 
 Done when: `TestPRTitleFromCommit`, `TestPRBodySections`, `TestPRBodyKeepsHumanText`, `TestImplementReachesPROpen`, `TestPublishEditsExistingPR`, `TestReviewPostsComment`, `TestReviewRequestChanges`, `TestReviewCommentFailureKeepsStatus`.
+
+## Sprint 30: Solo approval
+
+Goal: A one-person project can approve its own cards, and the record says the approval was not independent (RFC-067, REQ-070).
+
+Packages: `internal/settings`, `internal/app`, `internal/httpapi`, `migrations`, frontend Deploy settings.
+
+- `approval.solo` in the project `config.yaml`, read and written as `soloApproval` by the Deploy settings route and shown as a checkbox.
+- `app.GateConfig.Solo` skips the owner and bot-login refusals. The card's `actions` keeps `approve` for the owner.
+- Migration `00015` adds `approvals.independent`, `false` for an owner or bot-login approval.
+
+Done when: `TestSoloOwnerApproves`, `TestOwnerCannotApprove`, `TestBotApprover`.
+
+## Sprint 31: Approval on GitHub and the Changes panel
+
+Goal: An approval in the orchestrator shows on the pull request, and the card page shows the code the card changes (RFC-068, REQ-071).
+
+Packages: `internal/app`, `internal/runtime`, `internal/httpapi`, `internal/cli`, frontend card page.
+
+- `app.ApproveFresh` reports a new approval. `app.AnnounceApproval` posts a comment and a `success` `orchestrator/approval` status on the approved SHA with the company token, from the HTTP route and the CLI. Request changes and Reject on an approved card post `failure`. A failed post writes `job_error` and leaves the card.
+- The review job skips `orchestrator/approval` when it reads checks.
+- `runtime.Git.Diff` passes `--no-renames`, and `runtime.Git.FetchCard` fetches the card branch. `app.ReadCardDiff` and `GET /api/projects/{projectId}/cards/{id}/diff` return the parsed, capped, redacted diff to members.
+- `CardChanges` on the card page lists files, opens colored hunks, and links to the GitHub compare view.
+
+Done when: `TestApprovalPostsCommentAndStatus`, `TestApprovalAnnounceFailureKeepsApproved`, `TestRequestChangesWithdrawsApprovalStatus`, `TestReviewIgnoresApprovalStatus`, `TestCardDiff`, `TestCardDiffRoute`, and the `CardChanges` Vitest cases.

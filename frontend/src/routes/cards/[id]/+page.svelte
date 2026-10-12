@@ -1,12 +1,13 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getCard, unreachable } from '$lib/api';
+  import { ApiError, getCard, getCardDiff, unreachable } from '$lib/api';
   import CardActions from '$lib/components/CardActions.svelte';
+  import CardChanges from '$lib/components/CardChanges.svelte';
   import { categoryLabel } from '$lib/conventions';
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
   import { reasonLabel, statusLabel } from '$lib/status';
-  import type { Card, CardOwner, CardRequirement, CardRule } from '$lib/types';
+  import type { Card, CardDiff, CardOwner, CardRequirement, CardRule } from '$lib/types';
   import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -46,6 +47,25 @@
 
   $effect(() => {
     shell.title = missing ? 'Card' : (card?.title ?? 'Card');
+  });
+
+  let diff = $state<CardDiff | null>(null);
+  let diffError = $state('');
+  const diffKey = $derived(card ? `${card.id}@${card.headSha ?? ''}` : '');
+
+  $effect(() => {
+    const key = diffKey;
+    if (!key) return;
+    const id = key.slice(0, key.indexOf('@'));
+    diff = null;
+    diffError = '';
+    getCardDiff(id)
+      .then((body) => {
+        if (diffKey === key) diff = body;
+      })
+      .catch((error: unknown) => {
+        if (diffKey === key) diffError = error instanceof ApiError ? error.message : unreachable();
+      });
   });
 
   function linkable(url: string) {
@@ -231,6 +251,7 @@
           {#if card.blockedReason}{@render item('Blocked reason', reasonLabel(card.blockedReason), false, true)}{/if}
         </dl>
       </Panel>
+      <CardChanges {diff} error={diffError} />
     </div>
   </Page>
 {/if}
