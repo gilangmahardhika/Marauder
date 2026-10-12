@@ -40,13 +40,13 @@ func TestLLM(ctx context.Context, data, familyID string) error {
 		}
 		ctx, cancel := context.WithTimeout(ctx, llmTestTimeout)
 		defer cancel()
-		_, err = p.Complete(ctx, providers.Request{
+		_, err = p.Complete(ctx, llm.WithOptions(providers.Request{
 			Model:     family.Models[0].ID,
 			System:    "Reply with the single word OK.",
 			User:      "ping",
 			MaxTokens: 16,
 			TaskClass: "test",
-		})
+		}, family.Models[0].ModelOptions))
 		if err != nil {
 			return errors.New(trace.Redact(err.Error(), []string{key}))
 		}
@@ -82,7 +82,7 @@ func (p routedProvider) Complete(ctx context.Context, req providers.Request) (pr
 		if err != nil {
 			return err
 		}
-		next := req
+		next := llm.WithOptions(req, llm.Options(p.cfg, model))
 		next.Model = model
 		resp, err = client.Complete(ctx, next)
 		var limited *providers.RateLimited

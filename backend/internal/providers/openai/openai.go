@@ -57,7 +57,15 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		}
 		params.Tools = append(params.Tools, sdk.ChatCompletionFunctionTool(def))
 	}
-	completion, err := c.client.Chat.Completions.New(ctx, params)
+	if req.Effort != "" {
+		params.ReasoningEffort = shared.ReasoningEffort(req.Effort)
+	}
+	var opts []option.RequestOption
+	// OpenAI has no thinking switch; GLM, DeepSeek, Kimi, and Qwen read this field.
+	if req.Thinking == "enabled" || req.Thinking == "disabled" {
+		opts = append(opts, option.WithJSONSet("thinking", map[string]string{"type": req.Thinking}))
+	}
+	completion, err := c.client.Chat.Completions.New(ctx, params, opts...)
 	if err != nil {
 		return providers.Response{}, c.wrap(err)
 	}
@@ -70,6 +78,12 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		InputTokens:  int(completion.Usage.PromptTokens),
 		OutputTokens: int(completion.Usage.CompletionTokens),
 		StopReason:   choice.FinishReason,
+	}
+	if field, ok := choice.Message.JSON.ExtraFields["reasoning_content"]; ok {
+		var text string
+		if json.Unmarshal([]byte(field.Raw()), &text) == nil && text != "" {
+			out.Reasoning = []providers.Reasoning{{Model: req.Model, Kind: "reasoning_content", Text: text}}
+		}
 	}
 	for _, call := range choice.Message.ToolCalls {
 		if call.Function.Name == "" {
@@ -90,6 +104,13 @@ func messages(req providers.Request) []sdk.ChatCompletionMessageParamUnion {
 		assistant := sdk.ChatCompletionAssistantMessageParam{}
 		if turn.Text != "" {
 			assistant.Content.OfString = sdk.String(turn.Text)
+		}
+		var reasoning string
+		for _, r := range providers.Replay(turn, req.Model) {
+			reasoning += r.Text
+		}
+		if reasoning != "" {
+			assistant.SetExtraFields(map[string]any{"reasoning_content": reasoning})
 		}
 		for _, call := range turn.Calls {
 			args, _ := json.Marshal(call.Args)

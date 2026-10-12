@@ -233,12 +233,13 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 		}
 		var body struct {
 			Families []struct {
-				ID       string   `json:"id"`
-				Protocol string   `json:"protocol"`
-				BaseURL  string   `json:"baseUrl"`
-				Models   []string `json:"models"`
-				APIKey   *string  `json:"apiKey"`
-				Clear    bool     `json:"clear"`
+				ID           string                           `json:"id"`
+				Protocol     string                           `json:"protocol"`
+				BaseURL      string                           `json:"baseUrl"`
+				Models       []string                         `json:"models"`
+				ModelOptions map[string]settings.ModelOptions `json:"modelOptions"`
+				APIKey       *string                          `json:"apiKey"`
+				Clear        bool                             `json:"clear"`
 			} `json:"families"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -248,9 +249,10 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 		var families []settings.Family
 		keys := map[string]*string{}
 		for _, family := range body.Families {
-			models := []settings.Model{}
-			for _, id := range family.Models {
-				models = append(models, settings.Model{ID: id})
+			models, err := settings.NewModels(family.Models, family.ModelOptions)
+			if err != nil {
+				writeAppErr(w, err)
+				return
 			}
 			families = append(families, settings.Family{ID: family.ID, Protocol: family.Protocol, BaseURL: family.BaseURL, Models: models})
 			if family.Clear {
@@ -281,7 +283,7 @@ func (s *Server) llm(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, map[string]any{
 			"id": family.ID, "protocol": family.Protocol, "baseUrl": family.BaseURL,
-			"models": models, "keySet": secrets.LLMKeys[family.ID] != "",
+			"models": models, "modelOptions": family.Options(), "keySet": secrets.LLMKeys[family.ID] != "",
 		})
 	}
 	if out == nil {

@@ -482,7 +482,7 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 `src/routes/admin/llm/+page.svelte` lists the company families from GET `/api/settings/llm` in a table: id, protocol, base URL, the first model ids, and whether a key is saved. Each row links to its edit page. "Add family" in the page header opens `/admin/llm/new`. A toolbar searches and filters the families (see Search and filters).
 
-`src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key.
+`src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key. Under each model id are its Thinking select (Provider default, On, Off, and Adaptive on anthropic only), a Budget number field shown for On on anthropic, and an Effort select whose values follow the protocol, with Provider default first (RFC-079). They save in the family's `modelOptions`.
 
 `src/routes/admin/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/admin/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
 
@@ -646,6 +646,8 @@ npm run build
 | `terminal` lines | Each kind has its head, text, and tone. A failed or refused tool is red, a check is green only on `exit 0`, ANSI codes are stripped, an unknown kind shows JSON, an attempt line starts each attempt, and `clipLines` folds past 200 lines (RFC-078) |
 | `TerminalView` | Heads and output render in the log. Output past 200 lines shows "Show all N lines". Past 300 entries, "Show earlier events" pages in the rest. Scrolling up shows "Jump to latest", which scrolls to the bottom and hides again |
 | Trace page terminal view | With `?view=terminal` the log renders, the Kind filter applies, and Terminal is pressed. A live card polls every second in the terminal view and every 3 seconds in the structured view |
+| `llm` model options | `toDraft`, `fromDraft`, and `keepKey` keep `modelOptions`. `fromDraft` drops a model's empty settings, the settings of a removed model, and a budget unless thinking is `enabled` on anthropic (RFC-079) |
+| `FamilyForm` model options | Adaptive is offered on anthropic only, the budget field shows only for On on anthropic, and the effort list follows the protocol |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | `api` AI review mode | `addRequirement` sends `aiReviewMode` in the POST body, as the New requirement page does, and `setAIReviewMode` PUTs `{ aiReviewMode }` to `requirements/{id}/ai-review-mode` in the selected project (RFC-072) |

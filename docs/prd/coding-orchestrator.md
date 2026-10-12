@@ -119,6 +119,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-074 | A failed attempt retries, and a requirement chooses what an AI request for changes does |
 | REQ-075 | A person writes instructions that later attempts of a card read |
 | REQ-076 | A person follows an attempt live on the Trace page |
+| REQ-077 | An admin sets thinking and effort per model |
 
 ## Requirements
 
@@ -1072,6 +1073,17 @@ While a card works, its Trace page shows new events without a reload. Each model
 - A configured secret in the model's reply is stored as `[redacted]`.
 - In the Terminal view, a tool call shows its whole stored output under its command, and new output appears within about a second while the card works.
 
+### REQ-077 An admin sets thinking and effort per model
+
+On an LLM family's page, an admin sets each model's thinking (provider default, on, off, or adaptive on the anthropic protocol), the thinking budget when it is on, and the effort. Every request to that model sends them, a fallback sends its own model's settings, and a model with none set sends the same request as before. The model's reasoning goes back to it between tool turns of an attempt and is not stored (RFC-079).
+
+#### Acceptance
+
+- A model with no settings sends no `thinking`, `output_config`, or `reasoning_effort`.
+- Thinking on with a budget sends that budget, and the reply keeps its own token limit.
+- `adaptive` on an openai family, a budget outside 1,024 to 32,768, or an effort the protocol does not take is `422` on `modelOptions`.
+- With thinking on, a tool turn after a reply that thought succeeds on the same model, and the trace holds the reply text only.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1186,3 +1198,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 28. Retry after a failed attempt, and the AI review mode (REQ-074).
 29. Instructions for the next attempt (REQ-075).
 30. A live, verbose trace (REQ-076).
+31. Thinking and effort per model (REQ-077).

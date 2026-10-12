@@ -1077,6 +1077,7 @@ LLM APIs and the router are one company setting (RFC-052). Every signed-in user 
       "protocol": "anthropic",
       "baseUrl": "https://api.anthropic.com",
       "models": [],
+      "modelOptions": {},
       "keySet": false
     }
   ]
@@ -1093,6 +1094,9 @@ LLM APIs and the router are one company setting (RFC-052). Every signed-in user 
       "protocol": "anthropic",
       "baseUrl": "https://api.anthropic.com",
       "models": ["claude-example"],
+      "modelOptions": {
+        "claude-example": { "thinking": "enabled", "thinkingBudget": 8192, "effort": "high" }
+      },
       "apiKey": "optional-new-key",
       "clear": false
     }
@@ -1107,6 +1111,12 @@ LLM APIs and the router are one company setting (RFC-052). Every signed-in user 
 | `baseUrl` | `https`, or `http` on `127.0.0.1`, `localhost`, or `::1` for a local server |
 | `models` | Non-empty strings, unique across all families, so a model id names one family |
 | `apiKey` | Optional for a loopback `baseUrl`, required for the family to be usable otherwise |
+| `modelOptions` | Optional. Keys are ids in this family's `models`. Each value has optional `thinking`, `thinkingBudget`, and `effort` (RFC-079). `GET` lists only models with a setting, and `{}` when none has one |
+| `modelOptions.*.thinking` | `""`, `enabled`, `disabled`, or `adaptive`. `adaptive` only on the `anthropic` protocol |
+| `modelOptions.*.thinkingBudget` | `0`, or 1024 to 32768 when `thinking` is `enabled` on the `anthropic` protocol. Saved as `0` otherwise. `0` with `enabled` means 8192 |
+| `modelOptions.*.effort` | `""`. On `anthropic`: `low`, `medium`, `high`, `xhigh`, `max`. On `openai`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+
+A bad `modelOptions` key or value is `422` with field `modelOptions`.
 
 Removing a family whose models are used by the router is `422` on `families`.
 
@@ -1296,7 +1306,11 @@ llm:
     - id: anthropic
       protocol: anthropic
       baseUrl: https://api.anthropic.com
-      models: []
+      models:
+        - id: claude-example
+          thinking: enabled
+          thinkingBudget: 8192
+          effort: high
     - id: openai
       protocol: openai
       baseUrl: https://api.openai.com/v1

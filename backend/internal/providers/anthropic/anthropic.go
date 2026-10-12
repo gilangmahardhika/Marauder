@@ -46,10 +46,27 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		maxTokens = providers.DefaultMaxTokens
 	}
 	params := sdk.MessageNewParams{
-		Model:     sdk.Model(req.Model),
-		MaxTokens: int64(maxTokens),
-		Messages:  messages(req),
+		Model:    sdk.Model(req.Model),
+		Messages: messages(req),
 	}
+	switch req.Thinking {
+	case "enabled":
+		budget := req.ThinkingBudget
+		if budget <= 0 {
+			budget = providers.DefaultThinkingBudget
+		}
+		// budget_tokens must stay under max_tokens, and the reply keeps its own limit.
+		maxTokens += budget
+		params.Thinking = sdk.ThinkingConfigParamUnion{OfEnabled: &sdk.ThinkingConfigEnabledParam{BudgetTokens: int64(budget)}}
+	case "adaptive":
+		params.Thinking = sdk.ThinkingConfigParamUnion{OfAdaptive: &sdk.ThinkingConfigAdaptiveParam{}}
+	case "disabled":
+		params.Thinking = sdk.ThinkingConfigParamUnion{OfDisabled: &sdk.ThinkingConfigDisabledParam{}}
+	}
+	if req.Effort != "" {
+		params.OutputConfig = sdk.OutputConfigParam{Effort: sdk.OutputConfigEffort(req.Effort)}
+	}
+	params.MaxTokens = int64(maxTokens)
 	if req.System != "" {
 		params.System = []sdk.TextBlockParam{{Text: req.System}}
 	}
@@ -71,6 +88,10 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 	}
 	for _, block := range msg.Content {
 		switch block.Type {
+		case "thinking":
+			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: req.Model, Kind: "thinking", Text: block.Thinking, Signature: block.Signature})
+		case "redacted_thinking":
+			out.Reasoning = append(out.Reasoning, providers.Reasoning{Model: req.Model, Kind: "redacted_thinking", Data: block.Data})
 		case "text":
 			out.Text += block.Text
 		case "tool_use":
@@ -98,6 +119,16 @@ func messages(req providers.Request) []sdk.MessageParam {
 	out := []sdk.MessageParam{sdk.NewUserMessage(sdk.NewTextBlock(req.User))}
 	for _, turn := range req.Turns {
 		var said []sdk.ContentBlockParamUnion
+		// With thinking on, the API refuses a tool turn whose signed thinking
+		// blocks do not come back first.
+		for _, r := range providers.Replay(turn, req.Model) {
+			switch r.Kind {
+			case "thinking":
+				said = append(said, sdk.NewThinkingBlock(r.Signature, r.Text))
+			case "redacted_thinking":
+				said = append(said, sdk.NewRedactedThinkingBlock(r.Data))
+			}
+		}
 		if turn.Text != "" {
 			said = append(said, sdk.NewTextBlock(turn.Text))
 		}

@@ -23,9 +23,22 @@ type ToolCall struct {
 // Turn is one earlier model reply and the result of each of its tool calls,
 // in the same order. Clients send turns as assistant and tool messages.
 type Turn struct {
-	Text    string
-	Calls   []ToolCall
-	Results []string
+	Text      string
+	Calls     []ToolCall
+	Results   []string
+	Reasoning []Reasoning
+}
+
+// Reasoning is one piece of a reply's hidden reasoning, kept in memory so the
+// next request of the same attempt can send it back to the model that wrote it.
+// Kind is thinking or redacted_thinking on the anthropic protocol, and
+// reasoning_content on the openai protocol. It is never stored.
+type Reasoning struct {
+	Model     string
+	Kind      string
+	Text      string
+	Signature string
+	Data      string
 }
 
 type Request struct {
@@ -36,6 +49,11 @@ type Request struct {
 	Tools     []Tool
 	TaskClass string
 	MaxTokens int
+	// Thinking, ThinkingBudget, and Effort are the model's settings (RFC-079).
+	// Empty values send nothing.
+	Thinking       string
+	ThinkingBudget int
+	Effort         string
 }
 
 type Response struct {
@@ -46,6 +64,7 @@ type Response struct {
 	InputTokens  int
 	OutputTokens int
 	StopReason   string
+	Reasoning    []Reasoning
 }
 
 type Provider interface {
@@ -54,6 +73,22 @@ type Provider interface {
 
 // DefaultMaxTokens caps one reply when the request names no limit.
 const DefaultMaxTokens = 8192
+
+// DefaultThinkingBudget is the thinking budget of a model with thinking
+// enabled and no budget of its own.
+const DefaultThinkingBudget = 8192
+
+// Replay is the reasoning of turn to send back with a request to model: none
+// when another model answered that turn.
+func Replay(turn Turn, model string) []Reasoning {
+	var out []Reasoning
+	for _, r := range turn.Reasoning {
+		if r.Model == model {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // Truncated reports a reply cut at the token limit: max_tokens on the
 // anthropic protocol, length on the openai protocol.

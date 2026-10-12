@@ -260,11 +260,18 @@ export type ProjectLink = {
   sharedPaths: string[];
 };
 
+export type ModelOptions = {
+  thinking?: string;
+  thinkingBudget?: number;
+  effort?: string;
+};
+
 export type Family = {
   id: string;
   protocol: string;
   baseUrl: string;
   models: string[];
+  modelOptions?: Record<string, ModelOptions>;
   keySet: boolean;
 };
 

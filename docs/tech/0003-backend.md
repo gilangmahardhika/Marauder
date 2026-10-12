@@ -297,7 +297,9 @@ type Provider interface {
 }
 ```
 
-`Request` has `Model`, `System`, `User`, `Tools`, and `MaxTokens`. `Response` has text, tool calls, token counts, and a stop reason.
+`Request` has `Model`, `System`, `User`, `Turns`, `Tools`, `MaxTokens`, `Thinking`, `ThinkingBudget`, and `Effort`. `Response` has text, tool calls, token counts, a stop reason, and `Reasoning`.
+
+Thinking and effort come from the model's entry in the service `config.yaml` (RFC-079). `app.RoutedProvider` copies them onto each request from the model it is calling, so a fallback uses its own. Empty values send nothing. The anthropic client sends `thinking` and `output_config.effort`, and with `enabled` raises `max_tokens` by the budget (`providers.DefaultThinkingBudget`, 8,192, when zero). The openai client sends `reasoning_effort` and a `thinking` body field for compatible servers. Each client returns the reply's reasoning as `providers.Reasoning` tagged with the model: the signed `thinking` and `redacted_thinking` blocks, or `reasoning_content`. The loops keep it on the `Turn`, and a client sends a turn's reasoning back only when `Reasoning.Model` equals the request's model. It is never written to an event.
 
 The `anthropic` protocol uses `anthropic-sdk-go`. The `openai` protocol uses `openai-go/v3` with the family's `baseUrl`, which also covers local OpenAI-compatible servers on loopback without a key. Keys come from the job's secrets snapshot. Logs receive the redacted request.
 

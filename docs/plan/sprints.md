@@ -643,3 +643,17 @@ Packages: frontend `lib/terminal.ts`, `TerminalView`, the Trace page. No backend
 - The Trace page has a Structured and Terminal switch in `?view=terminal`, and polls every second in the terminal view while live.
 
 Done when: the `terminal`, `TerminalView`, and Trace page terminal view Vitest suites, `npm run check`, and the backend suite unchanged.
+
+## Sprint 44: Thinking and effort per model
+
+Goal: An admin turns thinking on or off and picks the effort for each model, and every request to that model sends them (RFC-079, under REQ-077).
+
+Packages: `internal/settings`, `internal/providers`, `internal/providers/anthropic`, `internal/providers/openai`, `internal/providers/llm`, `internal/loop`, `internal/app`, `internal/httpapi`, frontend `lib/llm.ts`, `FamilyForm`.
+
+- `settings.Model` gains `thinking`, `thinkingBudget`, and `effort`, and `SaveLLM` checks them against the family's protocol.
+- `GET` and `PUT /api/settings/llm` carry each family's `modelOptions`. `models` stays a list of ids.
+- `app.RoutedProvider` and "Test connection" send each model's settings. The anthropic client sends `thinking`, `output_config.effort`, and raises `max_tokens` by the budget. The openai client sends `reasoning_effort` and the `thinking` body field.
+- Both clients return the reply's reasoning, the loops keep it on the turn, and the clients send it back to the same model only.
+- `FamilyForm` has Thinking, Budget, and Effort under each model id.
+
+Done when: `TestNoModelOptionsSendsNothing`, `TestSaveLLMModelOptions`, `TestLLMSettingsModelOptions`, `TestAnthropicThinking`, `TestAnthropicReplaysThinking`, `TestOpenAIEffortAndThinking`, `TestOpenAIReplaysReasoningContent`, `TestRoutedProviderModelOptions`, the `llm` and `FamilyForm` model options Vitest cases, `npm run check`, and the rest of the backend suite.

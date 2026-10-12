@@ -684,3 +684,22 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Trace page terminal view Vitest
 - [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
 - [x] The live server runs the Sprint 43 build, and a real card's trace from its API renders in `TerminalView`, one line per event plus one per attempt.
+
+## Sprint 44: Thinking and effort per model
+
+- [x] `settings.Model` holds `thinking`, `thinkingBudget`, and `effort`, checked by protocol on save.
+- [x] `modelOptions` on `GET` and `PUT /api/settings/llm`.
+- [x] `app.RoutedProvider` and "Test connection" send each model's settings through both clients.
+- [x] Reasoning goes back to the same model between tool turns, and is not stored.
+- [x] Thinking, Budget, and Effort in `FamilyForm`.
+- [x] `TestNoModelOptionsSendsNothing`
+- [x] `TestSaveLLMModelOptions`
+- [x] `TestLLMSettingsModelOptions`
+- [x] `TestAnthropicThinking`
+- [x] `TestAnthropicReplaysThinking`
+- [x] `TestOpenAIEffortAndThinking`
+- [x] `TestOpenAIReplaysReasoningContent`
+- [x] `TestRoutedProviderModelOptions`
+- [x] `llm` model options Vitest
+- [x] `FamilyForm` model options Vitest
+- [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes

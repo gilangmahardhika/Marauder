@@ -90,6 +90,50 @@ func TestLLMTestBadKey(t *testing.T) {
 	}
 }
 
+func TestLLMSettingsModelOptions(t *testing.T) {
+	srv := accountServer(t)
+	srv.Data = dataRoot(t)
+	seedUser(t, srv, "ada@example.com", "password-long-1", "product_owner", true)
+	admin := loginToken(t, srv, "ada@example.com", "password-long-1")
+	family := func(options map[string]any) map[string]any {
+		return map[string]any{"families": []map[string]any{{
+			"id": "anthropic", "protocol": "anthropic", "baseUrl": "https://api.anthropic.com",
+			"models": []string{"claude-a", "claude-b"}, "modelOptions": options, "apiKey": modelKey,
+		}}}
+	}
+
+	saved := putJSON(t, srv, "/api/settings/llm", admin, family(map[string]any{
+		"claude-a": map[string]any{"thinking": "enabled", "thinkingBudget": 4096, "effort": "high"},
+	}))
+	want := `"modelOptions":{"claude-a":{"thinking":"enabled","thinkingBudget":4096,"effort":"high"}}`
+	if saved.Code != 200 || !strings.Contains(saved.Body.String(), want) || strings.Contains(saved.Body.String(), modelKey) {
+		t.Fatalf("put = %d %s", saved.Code, saved.Body.String())
+	}
+	got := getAuth(t, srv, "/api/settings/llm", admin)
+	if got.Code != 200 || !strings.Contains(got.Body.String(), want) || strings.Contains(got.Body.String(), modelKey) {
+		t.Fatalf("get = %d %s", got.Code, got.Body.String())
+	}
+
+	for name, options := range map[string]map[string]any{
+		"unlisted model": {"claude-z": map[string]any{"effort": "high"}},
+		"bad effort":     {"claude-a": map[string]any{"effort": "minimal"}},
+		"bad budget":     {"claude-a": map[string]any{"thinking": "enabled", "thinkingBudget": 100}},
+	} {
+		rec := putJSON(t, srv, "/api/settings/llm", admin, family(options))
+		if rec.Code != 422 || !strings.Contains(rec.Body.String(), `"modelOptions"`) {
+			t.Fatalf("%s: put = %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if got := getAuth(t, srv, "/api/settings/llm", admin); !strings.Contains(got.Body.String(), want) {
+		t.Fatalf("a refused put changed the settings: %s", got.Body.String())
+	}
+
+	cleared := putJSON(t, srv, "/api/settings/llm", admin, family(nil))
+	if cleared.Code != 200 || !strings.Contains(cleared.Body.String(), `"modelOptions":{}`) {
+		t.Fatalf("clear = %d %s", cleared.Code, cleared.Body.String())
+	}
+}
+
 func TestModelSettingsAdminOnly(t *testing.T) {
 	srv := accountServer(t)
 	srv.Data = dataRoot(t)

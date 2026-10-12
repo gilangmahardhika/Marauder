@@ -128,7 +128,7 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 			cut = true
 			continue
 		}
-		done := providers.Turn{Text: resp.Text}
+		done := providers.Turn{Text: resp.Text, Reasoning: resp.Reasoning}
 		for i, call := range resp.ToolCalls {
 			if call.ID == "" {
 				call.ID = fmt.Sprintf("call_%d_%d", turn, i)

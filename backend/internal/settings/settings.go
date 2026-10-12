@@ -32,7 +32,88 @@ type Secrets struct {
 }
 
 type Model struct {
-	ID string `yaml:"id" json:"id"`
+	ID           string `yaml:"id" json:"id"`
+	ModelOptions `yaml:",inline"`
+}
+
+// ModelOptions are the thinking and effort settings sent with every request to
+// one model (RFC-079). Empty values send nothing.
+type ModelOptions struct {
+	Thinking       string `yaml:"thinking,omitempty" json:"thinking,omitempty"`
+	ThinkingBudget int    `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
+	Effort         string `yaml:"effort,omitempty" json:"effort,omitempty"`
+}
+
+const (
+	MinThinkingBudget = 1024
+	MaxThinkingBudget = 32768
+)
+
+var efforts = map[string][]string{
+	"anthropic": {"low", "medium", "high", "xhigh", "max"},
+	"openai":    {"none", "minimal", "low", "medium", "high", "xhigh"},
+}
+
+// Options lists the settings of each model that has any, keyed by model id.
+func (f Family) Options() map[string]ModelOptions {
+	out := map[string]ModelOptions{}
+	for _, model := range f.Models {
+		if model.ModelOptions != (ModelOptions{}) {
+			out[model.ID] = model.ModelOptions
+		}
+	}
+	return out
+}
+
+// NewModels pairs each id with its options. An option for an id that is not in
+// ids is refused on modelOptions.
+func NewModels(ids []string, options map[string]ModelOptions) ([]Model, error) {
+	models := []Model{}
+	listed := map[string]bool{}
+	for _, id := range ids {
+		listed[id] = true
+		models = append(models, Model{ID: id, ModelOptions: options[id]})
+	}
+	for id := range options {
+		if !listed[id] {
+			return nil, &Invalid{Fields: map[string]string{"modelOptions": "options for " + id + ", which is not one of the family's models"}}
+		}
+	}
+	return models, nil
+}
+
+// checkOptions refuses a value the protocol does not take, and drops a budget
+// that thinking does not use.
+func checkOptions(protocol string, opts ModelOptions) (ModelOptions, error) {
+	bad := func(msg string) (ModelOptions, error) {
+		return opts, &Invalid{Fields: map[string]string{"modelOptions": msg}}
+	}
+	switch opts.Thinking {
+	case "", "enabled", "disabled":
+	case "adaptive":
+		if protocol != "anthropic" {
+			return bad("adaptive thinking needs the anthropic protocol")
+		}
+	default:
+		return bad("thinking must be enabled, disabled, or adaptive")
+	}
+	if opts.Thinking == "enabled" && protocol == "anthropic" {
+		if opts.ThinkingBudget != 0 && (opts.ThinkingBudget < MinThinkingBudget || opts.ThinkingBudget > MaxThinkingBudget) {
+			return bad("the thinking budget must be from 1024 to 32768 tokens")
+		}
+	} else {
+		opts.ThinkingBudget = 0
+	}
+	if opts.Effort != "" {
+		ok := false
+		for _, effort := range efforts[protocol] {
+			ok = ok || effort == opts.Effort
+		}
+		if !ok {
+			return bad("effort " + opts.Effort + " is not taken by the " + protocol + " protocol")
+		}
+	}
+	return opts, nil
 }
 
 type Family struct {
@@ -121,11 +202,14 @@ func SaveLLM(data string, families []Family, keys map[string]*string) (Config, e
 	}
 	seen := map[string]bool{}
 	for _, family := range families {
-		for _, model := range family.Models {
+		for i, model := range family.Models {
 			if model.ID == "" || seen[model.ID] {
 				return current, ErrValidation
 			}
 			seen[model.ID] = true
+			if family.Models[i].ModelOptions, err = checkOptions(family.Protocol, model.ModelOptions); err != nil {
+				return current, err
+			}
 		}
 	}
 	for id, key := range keys {

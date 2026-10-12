@@ -81,6 +81,53 @@ func TestModelIdUnique(t *testing.T) {
 	}
 }
 
+func TestSaveLLMModelOptions(t *testing.T) {
+	family := func(protocol string, opts settings.ModelOptions) []settings.Family {
+		return []settings.Family{{ID: "f", Protocol: protocol, BaseURL: "http://127.0.0.1:1", Models: []settings.Model{{ID: "m", ModelOptions: opts}}}}
+	}
+	refused := map[string][]settings.Family{
+		"adaptive on openai":    family("openai", settings.ModelOptions{Thinking: "adaptive"}),
+		"unknown thinking":      family("anthropic", settings.ModelOptions{Thinking: "sometimes"}),
+		"budget under 1024":     family("anthropic", settings.ModelOptions{Thinking: "enabled", ThinkingBudget: 1023}),
+		"budget over 32768":     family("anthropic", settings.ModelOptions{Thinking: "enabled", ThinkingBudget: 32769}),
+		"unknown effort":        family("anthropic", settings.ModelOptions{Effort: "extreme"}),
+		"openai-only effort":    family("anthropic", settings.ModelOptions{Effort: "minimal"}),
+		"anthropic-only effort": family("openai", settings.ModelOptions{Effort: "max"}),
+	}
+	for name, families := range refused {
+		dir := t.TempDir()
+		_, err := settings.SaveLLM(dir, families, nil)
+		var invalid *settings.Invalid
+		if !errors.As(err, &invalid) || invalid.Fields["modelOptions"] == "" {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "config.yaml")); !os.IsNotExist(err) {
+			t.Fatalf("%s: config.yaml was written", name)
+		}
+	}
+	if _, err := settings.NewModels([]string{"m"}, map[string]settings.ModelOptions{"other": {Effort: "high"}}); err == nil {
+		t.Fatal("an option for an unlisted model was accepted")
+	}
+
+	dir := t.TempDir()
+	families := family("anthropic", settings.ModelOptions{Thinking: "enabled", ThinkingBudget: 4096, Effort: "high"})
+	families = append(families, family("openai", settings.ModelOptions{Thinking: "disabled", ThinkingBudget: 4096, Effort: "minimal"})...)
+	families[1].ID, families[1].Models[0].ID = "g", "n"
+	if _, err := settings.SaveLLM(dir, families, nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := settings.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.LLM.Families[0].Models[0].ModelOptions; got != (settings.ModelOptions{Thinking: "enabled", ThinkingBudget: 4096, Effort: "high"}) {
+		t.Fatalf("anthropic options = %+v", got)
+	}
+	if got := cfg.LLM.Families[1].Models[0].ModelOptions; got != (settings.ModelOptions{Thinking: "disabled", Effort: "minimal"}) {
+		t.Fatalf("openai options = %+v, want the unused budget dropped", got)
+	}
+}
+
 func TestConfigEvent(t *testing.T) {
 	payload := map[string]any{"section": "github", "fields": []string{"owner", "approvers"}}
 	raw, err := json.Marshal(payload)

@@ -296,7 +296,7 @@ func (s *session) history() []providers.Turn {
 	used, full, newest := 0, true, true
 	for t := len(s.turns) - 1; t >= 0; t-- {
 		turn := s.turns[t]
-		next := providers.Turn{Text: turn.Text, Results: make([]string, len(turn.Results))}
+		next := providers.Turn{Text: turn.Text, Results: make([]string, len(turn.Results)), Reasoning: turn.Reasoning}
 		for _, call := range turn.Calls {
 			if call.Name == "edit_file" {
 				args := map[string]any{}
@@ -362,7 +362,7 @@ func (s *session) loop(ctx context.Context) error {
 		if len(resp.ToolCalls) == 0 {
 			return nil
 		}
-		done := providers.Turn{Text: resp.Text}
+		done := providers.Turn{Text: resp.Text, Reasoning: resp.Reasoning}
 		for i, call := range resp.ToolCalls {
 			if call.ID == "" {
 				call.ID = fmt.Sprintf("call_%d_%d", turn, i)

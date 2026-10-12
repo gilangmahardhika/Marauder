@@ -1,6 +1,6 @@
 <script lang="ts">
   import SecretField from '$lib/components/SecretField.svelte';
-  import type { FamilyDraft } from '$lib/llm';
+  import { blankOptions, effortChoices, thinkingChoices, usesBudget, type FamilyDraft } from '$lib/llm';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
   import FieldGroup from '$lib/ui/FieldGroup.svelte';
@@ -13,6 +13,19 @@
     idLocked = false,
     fields = {}
   }: { family: FamilyDraft; idLocked?: boolean; fields?: Record<string, string> } = $props();
+
+  const thinking = $derived(thinkingChoices(family.protocol));
+  const efforts = $derived(effortChoices(family.protocol));
+
+  function addModel() {
+    family.models = [...family.models, ''];
+    family.options = [...family.options, blankOptions()];
+  }
+
+  function removeModel(index: number) {
+    family.models = family.models.filter((_, item) => item !== index);
+    family.options = family.options.filter((_, item) => item !== index);
+  }
 </script>
 
 <div class="grid gap-5 sm:grid-cols-2">
@@ -32,23 +45,50 @@
   </Select>
 </div>
 <Field label="Base URL" id="family-url" width="lg" mono placeholder="https://" error={fields.baseUrl} bind:value={family.baseUrl} />
-<FieldGroup label="Models" hint="One model id per row.">
+<FieldGroup label="Models" hint="One model id per row, with the thinking and effort every request to it sends.">
   {#if family.models.length > 0}
     <div class="max-w-field-lg overflow-hidden rounded-control border border-line bg-surface">
-      {#each family.models as _, index}
-        <Row
-          id={`model-${index}`}
-          label={`Model ${index + 1}`}
-          bind:value={family.models[index]}
-          onremove={() => (family.models = family.models.filter((_, item) => item !== index))}
-        />
+      {#each family.models as model, index}
+        <div class="border-b border-line last:border-b-0">
+          <Row id={`model-${index}`} label={`Model ${index + 1}`} bind:value={family.models[index]} onremove={() => removeModel(index)} />
+          {#if family.options[index]}
+            <div
+              role="group"
+              aria-label={`Settings for ${model || `model ${index + 1}`}`}
+              class="grid gap-3 bg-ground/40 px-3 py-3 sm:grid-cols-3"
+            >
+              <Select label="Thinking" id={`model-${index}-thinking`} width="full" bind:value={family.options[index].thinking}>
+                {#each thinking as choice (choice.value)}
+                  <option value={choice.value}>{choice.label}</option>
+                {/each}
+              </Select>
+              {#if usesBudget(family.protocol, family.options[index].thinking)}
+                <Field
+                  label="Budget"
+                  id={`model-${index}-budget`}
+                  type="number"
+                  width="full"
+                  mono
+                  placeholder="8192"
+                  bind:value={family.options[index].thinkingBudget}
+                />
+              {/if}
+              <Select label="Effort" id={`model-${index}-effort`} width="full" bind:value={family.options[index].effort}>
+                {#each efforts as choice (choice.value)}
+                  <option value={choice.value}>{choice.label}</option>
+                {/each}
+              </Select>
+            </div>
+          {/if}
+        </div>
       {/each}
     </div>
   {/if}
-  <Button type="button" variant="ghost" onclick={() => (family.models = [...family.models, ''])}>
+  <Button type="button" variant="ghost" onclick={addModel}>
     <Icon name="plus" />
     Add model
   </Button>
   {#if fields.models}<p class="error text-xs">{fields.models}</p>{/if}
+  {#if fields.modelOptions}<p class="error text-xs">{fields.modelOptions}</p>{/if}
 </FieldGroup>
 <SecretField label="API key" name="apiKey" saved={family.keySet} error={fields.apiKey} bind:value={family.key} bind:clear={family.clear} />

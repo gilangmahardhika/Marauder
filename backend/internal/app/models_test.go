@@ -59,6 +59,48 @@ func TestFallbackAfterRetry(t *testing.T) {
 	}
 }
 
+func TestRoutedProviderModelOptions(t *testing.T) {
+	var mu sync.Mutex
+	bodies := map[string][]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = append(bodies[r.URL.Path], string(body))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/primary/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":{"message":"overloaded","type":"server_error"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, okChat)
+	}))
+	defer srv.Close()
+
+	var cfg settings.Config
+	cfg.LLM.Families = []settings.Family{
+		{ID: "primary", Protocol: "openai", BaseURL: srv.URL + "/primary", Models: []settings.Model{{ID: "big", ModelOptions: settings.ModelOptions{Thinking: "enabled", Effort: "high"}}}},
+		{ID: "backup", Protocol: "openai", BaseURL: srv.URL + "/backup", Models: []settings.Model{{ID: "small", ModelOptions: settings.ModelOptions{Effort: "low"}}}},
+	}
+	secrets := settings.Secrets{LLMKeys: map[string]string{"primary": "k-primary-1", "backup": "k-backup-1"}}
+
+	if _, err := app.RoutedProvider(cfg, secrets, "big", "small").Complete(context.Background(), providers.Request{User: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	primary, backup := bodies["/primary/chat/completions"], bodies["/backup/chat/completions"]
+	if len(primary) != 2 || len(backup) != 1 {
+		t.Fatalf("bodies = %v", bodies)
+	}
+	for _, body := range primary {
+		if !strings.Contains(body, `"reasoning_effort":"high"`) || !strings.Contains(body, `"thinking":{"type":"enabled"}`) {
+			t.Fatalf("primary body = %s", body)
+		}
+	}
+	if !strings.Contains(backup[0], `"reasoning_effort":"low"`) || strings.Contains(backup[0], `"thinking"`) {
+		t.Fatalf("fallback body = %s", backup[0])
+	}
+}
+
 func TestRateLimitWaitsThenRetries(t *testing.T) {
 	var mu sync.Mutex
 	calls := map[string]int{}

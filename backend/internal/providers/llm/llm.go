@@ -34,6 +34,24 @@ func ForModel(cfg settings.Config, secrets settings.Secrets, model string) (prov
 	return nil, settings.Family{}, "", fmt.Errorf("%w: %s", ErrUnknownModel, model)
 }
 
+// Options are the thinking and effort settings saved for model, or none.
+func Options(cfg settings.Config, model string) settings.ModelOptions {
+	for _, family := range cfg.LLM.Families {
+		for _, m := range family.Models {
+			if m.ID == model {
+				return m.ModelOptions
+			}
+		}
+	}
+	return settings.ModelOptions{}
+}
+
+// WithOptions sets the request's thinking and effort from opts (RFC-079).
+func WithOptions(req providers.Request, opts settings.ModelOptions) providers.Request {
+	req.Thinking, req.ThinkingBudget, req.Effort = opts.Thinking, opts.ThinkingBudget, opts.Effort
+	return req
+}
+
 // ForFamily picks the client by protocol. A family without a key is allowed
 // only when its baseUrl is a loopback server.
 func ForFamily(family settings.Family, key string) (providers.Provider, error) {

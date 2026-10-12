@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterFamilies, keyOptions, protocolOptions } from './llm';
+import { filterFamilies, fromDraft, keepKey, keyOptions, protocolOptions, toDraft } from './llm';
 import type { Family } from './types';
 
 const families: Family[] = [
@@ -49,5 +49,55 @@ describe('LLM family filters', () => {
   it('counts each option', () => {
     expect(protocolOptions(families).map((option) => option.count)).toEqual([3, 2, 1]);
     expect(keyOptions(families).map((option) => option.count)).toEqual([3, 2, 1]);
+  });
+});
+
+describe('LLM model options', () => {
+  const claude: Family = {
+    id: 'claude',
+    protocol: 'anthropic',
+    baseUrl: 'https://api.anthropic.com',
+    models: ['claude-a', 'claude-b'],
+    modelOptions: { 'claude-a': { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' } },
+    keySet: true
+  };
+
+  it('keepKey sends the saved options of another family', () => {
+    expect(keepKey(claude).modelOptions).toEqual(claude.modelOptions);
+    expect(keepKey(families[0]).modelOptions).toEqual({});
+  });
+
+  it('toDraft and fromDraft round-trip the options', () => {
+    const draft = toDraft(claude);
+    expect(draft.options).toEqual([
+      { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' },
+      { thinking: '', thinkingBudget: '', effort: '' }
+    ]);
+    expect(fromDraft(draft).modelOptions).toEqual(claude.modelOptions);
+  });
+
+  it('fromDraft drops empty settings, removed models, and unused budgets', () => {
+    const draft = toDraft(claude);
+    draft.models[1] = ' claude-c ';
+    draft.options[1] = { thinking: 'adaptive', thinkingBudget: 2048, effort: '' };
+    expect(fromDraft(draft).modelOptions).toEqual({
+      'claude-a': { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' },
+      'claude-c': { thinking: 'adaptive' }
+    });
+
+    draft.models = ['claude-c'];
+    draft.options = [draft.options[1]];
+    expect(Object.keys(fromDraft(draft).modelOptions)).toEqual(['claude-c']);
+
+    draft.options[0] = { thinking: '', thinkingBudget: '', effort: '' };
+    expect(fromDraft(draft).modelOptions).toEqual({});
+  });
+
+  it('fromDraft keeps only what the protocol takes', () => {
+    const draft = toDraft(claude);
+    draft.protocol = 'openai';
+    draft.options[0] = { thinking: 'adaptive', thinkingBudget: 4096, effort: 'max' };
+    draft.options[1] = { thinking: 'enabled', thinkingBudget: 4096, effort: 'minimal' };
+    expect(fromDraft(draft).modelOptions).toEqual({ 'claude-b': { thinking: 'enabled', effort: 'minimal' } });
   });
 });

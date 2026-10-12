@@ -1,16 +1,27 @@
 import { omitEmptySecret } from '$lib/components/SecretField.svelte';
 import { matchText, type Option } from '$lib/filter';
-import type { Family } from '$lib/types';
+import type { Family, ModelOptions } from '$lib/types';
+
+export type OptionsDraft = {
+  thinking: string;
+  thinkingBudget: number | string;
+  effort: string;
+};
 
 export type FamilyDraft = {
   id: string;
   protocol: string;
   baseUrl: string;
   models: string[];
+  options: OptionsDraft[];
   key: string;
   clear: boolean;
   keySet: boolean;
 };
+
+export function blankOptions(): OptionsDraft {
+  return { thinking: '', thinkingBudget: '', effort: '' };
+}
 
 export function blankFamily(): FamilyDraft {
   return {
@@ -18,18 +29,29 @@ export function blankFamily(): FamilyDraft {
     protocol: 'anthropic',
     baseUrl: '',
     models: [''],
+    options: [blankOptions()],
     key: '',
     clear: false,
     keySet: false
   };
 }
 
+function toOptionsDraft(options: ModelOptions | undefined): OptionsDraft {
+  return {
+    thinking: options?.thinking ?? '',
+    thinkingBudget: options?.thinkingBudget || '',
+    effort: options?.effort ?? ''
+  };
+}
+
 export function toDraft(family: Family): FamilyDraft {
+  const models = family.models.length ? [...family.models] : [''];
   return {
     id: family.id,
     protocol: family.protocol || 'anthropic',
     baseUrl: family.baseUrl,
-    models: family.models.length ? [...family.models] : [''],
+    models,
+    options: models.map((model) => toOptionsDraft(family.modelOptions?.[model])),
     key: '',
     clear: false,
     keySet: family.keySet
@@ -41,18 +63,72 @@ export function keepKey(family: Family) {
     id: family.id,
     protocol: family.protocol,
     baseUrl: family.baseUrl,
-    models: family.models
+    models: family.models,
+    modelOptions: family.modelOptions ?? {}
   };
 }
 
 export function fromDraft(draft: FamilyDraft) {
+  const models: string[] = [];
+  const modelOptions: Record<string, ModelOptions> = {};
+  draft.models.forEach((raw, index) => {
+    const model = raw.trim();
+    if (!model) return;
+    models.push(model);
+    const options = cleanOptions(draft.protocol, draft.options[index] ?? blankOptions());
+    if (options) modelOptions[model] = options;
+  });
   return {
     id: draft.id.trim(),
     protocol: draft.protocol,
     baseUrl: draft.baseUrl.trim(),
-    models: draft.models.map((model) => model.trim()).filter(Boolean),
+    models,
+    modelOptions,
     ...omitEmptySecret('apiKey', draft.key, draft.clear)
   };
+}
+
+export type Choice = { value: string; label: string };
+
+/** Thinking values the protocol takes. Adaptive is anthropic only (RFC-079). */
+export function thinkingChoices(protocol: string): Choice[] {
+  const choices = [
+    { value: '', label: 'Provider default' },
+    { value: 'enabled', label: 'On' },
+    { value: 'disabled', label: 'Off' }
+  ];
+  return protocol === 'openai' ? choices : [...choices, { value: 'adaptive', label: 'Adaptive' }];
+}
+
+const efforts: Record<string, string[]> = {
+  anthropic: ['low', 'medium', 'high', 'xhigh', 'max'],
+  openai: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
+};
+
+export function effortChoices(protocol: string): Choice[] {
+  const list = efforts[protocol === 'openai' ? 'openai' : 'anthropic'];
+  return [{ value: '', label: 'Provider default' }, ...list.map((value) => ({ value, label: value }))];
+}
+
+/** A budget applies only to thinking On on the anthropic protocol. */
+export function usesBudget(protocol: string, thinking: string) {
+  return protocol !== 'openai' && thinking === 'enabled';
+}
+
+/** The settings the protocol takes, or null when none is set. */
+export function cleanOptions(protocol: string, draft: OptionsDraft): ModelOptions | null {
+  const out: ModelOptions = {};
+  if (thinkingChoices(protocol).some((choice) => choice.value === draft.thinking && choice.value !== '')) {
+    out.thinking = draft.thinking;
+  }
+  const budget = Number(draft.thinkingBudget);
+  if (out.thinking && usesBudget(protocol, out.thinking) && Number.isFinite(budget) && budget > 0) {
+    out.thinkingBudget = budget;
+  }
+  if (effortChoices(protocol).some((choice) => choice.value === draft.effort && choice.value !== '')) {
+    out.effort = draft.effort;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 export function protocolLabel(protocol: string) {

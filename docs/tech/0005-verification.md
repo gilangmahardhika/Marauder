@@ -145,6 +145,14 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
 | `TestReviewMaxTokens` | Every reviewer request carries `MaxTokens` 32,768 (RFC-075) |
 | `TestAnthropicReviewMaxTokens` | The Anthropic client sends a request with `max_tokens` 32,768 to the server for any model, instead of the SDK's "streaming is required" refusal |
+| `TestNoModelOptionsSendsNothing` | With no model settings, the anthropic and openai request bodies have no `thinking`, `output_config`, or `reasoning_effort` (RFC-079) |
+| `TestSaveLLMModelOptions` | `adaptive` on openai, a budget under 1,024 or over 32,768, an unknown effort, and an option for a model the family does not list are refused with field `modelOptions` |
+| `TestLLMSettingsModelOptions` | `modelOptions` saves and reads back through `PUT` and `GET /api/settings/llm`, a bad value is `422` on `modelOptions`, and no key is returned |
+| `TestAnthropicThinking` | `enabled` sends `budget_tokens` and raises `max_tokens` by it. `adaptive` and `output_config.effort` appear in the body |
+| `TestAnthropicReplaysThinking` | Signed thinking blocks from a reply come first in the next assistant message for the same model, and are left out for another model |
+| `TestOpenAIEffortAndThinking` | The body has `reasoning_effort` and `thinking: {"type": ...}` |
+| `TestOpenAIReplaysReasoningContent` | `reasoning_content` from a reply goes back on the assistant message for the same model only |
+| `TestRoutedProviderModelOptions` | A request sent to the fallback carries the fallback model's settings, and one to the primary carries the primary's |
 | `TestReviewRetriesCutReply` | One `max_tokens` reply, then `read_diff` and `recommend_approve`, reaches `human_review` on the route's model, with three reviewer `model_call` events, the first stopped at `max_tokens` |
 | `TestReviewCutTwiceFails` | Cut replies on the model and the fallback store `failed`, one `job_error` naming the token limit, and one "AI review: Not done" comment with the token-limit reason |
 | `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |
