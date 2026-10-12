@@ -2,7 +2,7 @@
   import { untrack } from 'svelte';
   import { pageSize } from '$lib/filter';
   import { between, count, duration, tokens } from '$lib/format';
-  import { outcomeLabel, outcomeTone, verdictLabel, type Block } from '$lib/trace';
+  import { outcomeLabel, outcomeTone, verdictLabel, verdictTone, type Block } from '$lib/trace';
   import { sentence } from '$lib/status';
   import Badge from '$lib/ui/Badge.svelte';
   import Icon from '$lib/ui/Icon.svelte';
@@ -55,9 +55,9 @@
       {#if block.problems > 0}<Badge tone="red">{block.problems} {block.problems === 1 ? 'problem' : 'problems'}</Badge>{/if}
       {#if attempt && block.review}
         {#if attempt.reviewVerdict}
-          <Badge tone={attempt.reviewVerdict === 'recommend_approve' ? 'green' : 'amber'}>{verdictLabel(attempt.reviewVerdict)}</Badge>
+          <Badge tone={verdictTone(attempt.reviewVerdict)}>{verdictLabel(attempt.reviewVerdict)}</Badge>
         {/if}
-        {#if attempt.reviewIndependent === false}<Badge>Not independent</Badge>{/if}
+        {#if attempt.reviewIndependent === false && attempt.reviewVerdict !== 'failed'}<Badge>Not independent</Badge>{/if}
       {:else if attempt && !block.continued}
         <Badge tone={outcomeTone(attempt)}>{outcomeLabel(attempt)}</Badge>
         {#if attempt.commitSha}<span class="font-mono text-xs text-muted" title={attempt.commitSha}>{attempt.commitSha.slice(0, 7)}</span>{/if}

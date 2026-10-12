@@ -114,6 +114,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-069 | A queued card runs with a real model up to a pull request |
 | REQ-070 | Solo approval |
 | REQ-071 | Approval shows on GitHub, and the card page shows the code changes |
+| REQ-072 | The pull request checks decide when the AI review gives no verdict |
 
 ## Requirements
 
@@ -187,8 +188,8 @@ Card status changes only through the harness transition function. The legal edge
 | `self_check` | `blocked` | Attempts exhausted, or the check could not be run. |
 | `pr_open` | `agent_review` | Reviewer route stored. Author model id stored. |
 | `agent_review` | `changes_requested` | Review body stored. Verdict `request_changes`, or a required CI check failed. |
-| `agent_review` | `human_review` | Review body stored. Verdict `recommend_approve`. Required CI green, or none required. |
-| `agent_review` | `blocked` | Reviewer call failed after retry and fallback. |
+| `agent_review` | `human_review` | Review body stored. Verdict `recommend_approve`, or the review gave no verdict (REQ-072). Required CI green, or none required. |
+| `agent_review` | `blocked` | The company GitHub account is not set up, so the checks cannot be read. |
 | `changes_requested` | `in_progress` | New attempt id. Same branch. Approval cleared. Attempts remain. |
 | `changes_requested` | `blocked` | Attempt cap reached. Reason `attempt_cap`. |
 | `human_review` | `changes_requested` | Approver requested changes. Approval cleared. |
@@ -449,8 +450,8 @@ The pull request runs the same local check on CI. Local exit 0 is not sufficient
 #### Acceptance
 
 - With required CI red, the card does not enter `human_review`.
-- With required CI green, and a reviewer verdict of `recommend_approve`, the card can enter `human_review`.
-- A repository with no required checks configured may enter `human_review` on local exit 0 plus the reviewer verdict, and the card records that CI was not required.
+- With required CI green, and a reviewer verdict of `recommend_approve` or no verdict (REQ-072), the card can enter `human_review`.
+- A repository with no required checks configured may enter `human_review` on local exit 0 plus the reviewer verdict, or no verdict (REQ-072), and the card records that CI was not required.
 
 ### REQ-027 The reviewer model sees a cold pack
 
@@ -470,7 +471,7 @@ The reviewer is a different role from the author. Its pack is the reviewer pack 
 
 - Each verdict maps to the state above in a test.
 - A review body with no parseable verdict leaves the card in `agent_review` and records a parse failure.
-- Repeated parse failure follows REQ-012 and then blocks.
+- Repeated parse failure follows REQ-012, and then the pull request checks decide the card (REQ-072).
 
 ### REQ-029 The reviewer model cannot approve, edit, or deploy
 
@@ -1008,6 +1009,17 @@ A new approval posts a comment on the card's pull request and a `success` commit
 - A pending `orchestrator/approval` status does not keep a card out of `human_review`.
 - A member reads the card's diff with per-file counts and hunks. A non-member gets `404`. A planted model key shows as `[redacted]`.
 
+### REQ-072 The pull request checks decide when the AI review gives no verdict
+
+A card whose pull request checks are green, or which has no checks, reaches `human_review` even when the AI review gives no verdict. That covers no routable review model, an unparseable verdict after the fallback model, a provider failure, and a review job that stopped. The attempt stores the review as `failed`, the pull request gets an "AI review: Not done" comment, and the card page shows that the AI review failed. A failed check still moves the card to `changes_requested`, and a `request_changes` verdict still sends it back. An empty check list counts as no checks only 2 minutes after the card entered `pr_open`, because GitHub needs time to register the runs (RFC-069).
+
+#### Acceptance
+
+- A review with no verdict and no checks reaches `human_review` with `ci_required = false` and posts one "AI review: Not done" comment.
+- A review with no verdict and a red check moves the card to `changes_requested` with a `ci` note.
+- Right after `pr_open`, an empty check list keeps the card in `agent_review`. After 2 minutes it reaches `human_review`.
+- A card left in `agent_review` without a verdict by a stopped review reaches `human_review` on a refresh once no job holds its lock.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1117,3 +1129,4 @@ Build and test in this order. A later step is not a reason to skip an earlier ga
 23. A queued card runs with a real model up to a pull request (REQ-069).
 24. Solo approval (REQ-070).
 25. Approval on GitHub and the Changes panel (REQ-071).
+26. Checks decide when the AI review gives no verdict (REQ-072).

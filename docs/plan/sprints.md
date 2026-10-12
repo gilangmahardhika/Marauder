@@ -439,7 +439,7 @@ Packages: `internal/runtime`, `internal/sandbox`, `internal/machine`, `internal/
 - `app.RefreshCard` stores the head, sends a moved `approved` card back to `human_review`, and finishes the CI wait.
 - `worker.Advancer` starts reviews and refreshes every tick. The card JSON fills `reviewedSha` and `reviewIndependent`.
 
-Done when: `TestExportLargeArchive`, `TestImplementGatesExistingCommit`, `TestImplementRepublishesPassedCommit`, `TestRunnerPathHasOnlyGitDir`, `TestImplementBlocksWhenEngineDown`, `TestLeavingBlockedClearsReason`, `TestCardRowsKeepCardProject`, `TestLegacyCardRoutesCheckRole`, `TestReviewerTools`, `TestReviewApproveNoCI`, `TestReviewRequestChanges`, `TestReviewPendingCIWaits`, `TestPassFinishesCIWait`, `TestPassFailedCIRequestsChanges`, `TestReviewParseFallback`, `TestReviewWithoutVerdictBlocks`, `TestRefreshStoresHeadSHA`, `TestApprovedHeadMovedReturnsToReview`, `TestAdvancerSchedulesReviewAndRefresh`, `TestCardShowsLatestReview`, `TestCardReachesApproved`.
+Done when: `TestExportLargeArchive`, `TestImplementGatesExistingCommit`, `TestImplementRepublishesPassedCommit`, `TestRunnerPathHasOnlyGitDir`, `TestImplementBlocksWhenEngineDown`, `TestLeavingBlockedClearsReason`, `TestCardRowsKeepCardProject`, `TestLegacyCardRoutesCheckRole`, `TestReviewerTools`, `TestReviewApproveNoCI`, `TestReviewRequestChanges`, `TestReviewPendingCIWaits`, `TestPassFinishesCIWait`, `TestPassFailedCIRequestsChanges`, `TestReviewParseFallback`, `TestReviewWithoutVerdictBlocks` (superseded in Sprint 33 by RFC-069), `TestRefreshStoresHeadSHA`, `TestApprovedHeadMovedReturnsToReview`, `TestAdvancerSchedulesReviewAndRefresh`, `TestCardShowsLatestReview`, `TestCardReachesApproved`.
 
 ## Sprint 29: Pull request text
 
@@ -492,3 +492,17 @@ Packages: `internal/trace`, `internal/board`, `internal/httpapi`, `internal/app`
 - The Trace page groups events into milestones and attempt blocks, writes each event as one line in words, cuts long text with Show all, hides binary output, and keeps the raw JSON one click away.
 
 Done when: `TestTraceOrderAndAttempts`, `TestJobErrorCapped`, and the `trace`, `TraceRow`, and `TraceBlock` Vitest cases.
+
+## Sprint 33: Checks decide when the AI review gives no verdict
+
+Goal: A card whose pull request checks are green, or which has none, reaches Waiting for review even when the AI review fails, and an empty check list is not trusted until GitHub had time to register its runs (RFC-069, REQ-072).
+
+Packages: `internal/app`, `internal/review`, `internal/board`, `internal/httpapi`, `migrations`, frontend card page and Trace page.
+
+- Migration `00017` lets `review_verdict` be `failed`.
+- `app.ReviewCard` records a review with no verdict as `failed`, posts "AI review: Not done", and applies the checks instead of blocking with `router_config`, `review_parse`, or `provider_error`. It reads the checks again after the model.
+- `app.settleChecks` waits `review.NoChecksWait` (2 minutes) after `board.PublishedAt` before an empty check list counts as none.
+- `app.RefreshCard` treats `failed` like `recommend_approve`, and finishes an `agent_review` card with no verdict when the card lock is free.
+- The card JSON adds `reviewVerdict`. The card page shows "AI review: Failed, no verdict", and the Trace review block shows the same badge.
+
+Done when: `TestReviewWithoutVerdictUsesChecks`, `TestReviewWithoutVerdictRedChecks`, `TestReviewWithoutVerdictWaitsForChecks`, `TestNoChecksWaitsToRegister`, `TestChecksInsideWaitDecide`, `TestRefreshFinishesStoppedReview`, `TestCardShowsLatestReview`, and the `TraceBlock` Vitest case for a failed review.

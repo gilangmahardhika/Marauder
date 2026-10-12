@@ -14,6 +14,7 @@ import (
 	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/providers/llm"
+	reviewpkg "orchestrator/backend/internal/review"
 	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/trace"
 	"orchestrator/backend/internal/worker"
@@ -453,11 +454,12 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if reviewers == nil {
 		reviewers = []intake.Reviewer{}
 	}
-	var reviewedSHA, reviewIndependent any
+	var reviewedSHA, reviewIndependent, reviewVerdict any
 	if card.PRURL != "" {
 		if review, err := board.LatestReview(r.Context(), s.DB, card.ID); err == nil && review.Verdict != "" {
 			reviewedSHA = nullString(review.ReviewedSHA)
-			if review.Independent.Valid {
+			reviewVerdict = review.Verdict
+			if review.Independent.Valid && review.Verdict != reviewpkg.VerdictFailed {
 				reviewIndependent = review.Independent.Bool
 			}
 		}
@@ -472,7 +474,8 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"attemptsUsed": card.AttemptsUsed, "maxAttempts": card.MaxAttempts,
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
 		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
-		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
+		"reviewVerdict": reviewVerdict,
+		"approvedSha":   nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,
 	}

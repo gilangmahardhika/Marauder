@@ -30,6 +30,7 @@ function card(id: string, partial: Partial<Card> = {}): Card {
     headSha: null,
     reviewedSha: null,
     reviewIndependent: null,
+    reviewVerdict: null,
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

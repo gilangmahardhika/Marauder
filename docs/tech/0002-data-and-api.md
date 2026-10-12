@@ -74,9 +74,9 @@ A successful body never includes `error`.
 | --- | --- | --- |
 | `turn_cap`, `token_cap`, `wall_cap` | A budget stopped the attempt | `ready` |
 | `attempt_cap` | `attemptsUsed` reached `maxAttempts` | `ready` |
-| `provider_error` | Primary and fallback both failed | `ready` |
-| `review_parse` | Two reviewer replies had no parseable verdict | `ready` |
-| `router_config` | The route for the needed task class has no model | `ready` |
+| `provider_error` | Primary and fallback both failed in the implement job | `ready` |
+| `review_parse` | Two reviewer replies had no parseable verdict. Since RFC-069 the review job records a `failed` verdict instead; older cards may still carry it | `ready` |
+| `router_config` | The route for the implement task class has no model. The review job records a `failed` verdict instead (RFC-069) | `ready` |
 | `github_config` | The company organization, bot login, or token is missing, or the project names no repo | `ready` |
 | `owner_github` | The card has no owner, or the owner is disabled, has no verified GitHub login, or has no token (RFC-054) | `ready` |
 | `sandbox_config` | Sandbox image missing or not pinned, or a check command fails parsing | `ready` |
@@ -179,7 +179,7 @@ CREATE TABLE attempts (
   review_model_id TEXT,
   review_prompt_hash TEXT,
   review_independent BOOLEAN,
-  review_verdict TEXT CHECK (review_verdict IN ('recommend_approve', 'request_changes')),
+  review_verdict TEXT CHECK (review_verdict IN ('recommend_approve', 'request_changes', 'failed')),
   reviewed_sha TEXT,
   ci_required BOOLEAN,
   started_at TEXT NOT NULL,
@@ -668,6 +668,7 @@ A project object is:
   "headSha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c",
   "reviewedSha": "9c1e5b7d0a4f2e6c8b3d1a7f5e9c2b4d6a8f0e1c",
   "reviewIndependent": true,
+  "reviewVerdict": "recommend_approve",
   "approvedSha": null,
   "deployedSha": null,
   "environment": "dev",
@@ -677,7 +678,7 @@ A project object is:
 }
 ```
 
-`reviewedSha` and `reviewIndependent` come from the latest attempt with a review verdict. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
+`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 

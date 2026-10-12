@@ -7,6 +7,7 @@
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
   import { cardTone, reasonLabel, statusLabel } from '$lib/status';
+  import { verdictLabel } from '$lib/trace';
   import type { Card, CardDiff, CardOwner, CardRequirement, CardRule } from '$lib/types';
   import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
@@ -235,6 +236,7 @@
           {#if card.localCheck}{@render item('Local check', card.localCheck, true)}{/if}
           {#if card.devCheck}{@render item('Dev check', card.devCheck, true)}{/if}
           {#if card.headSha}{@render item('Head SHA', card.headSha, true)}{/if}
+          {#if card.reviewVerdict}{@render item('AI review', verdictLabel(card.reviewVerdict), false, card.reviewVerdict === 'failed')}{/if}
           {#if card.reviewedSha}{@render item('Reviewed SHA', card.reviewedSha, true)}{/if}
           {#if card.reviewIndependent !== null}{@render item('Review independent', card.reviewIndependent ? 'yes' : 'no')}{/if}
           {#if card.approvedSha}{@render item('Approved SHA', card.approvedSha, true)}{/if}

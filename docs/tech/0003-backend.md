@@ -111,13 +111,13 @@ Jobs run in goroutines beside that project's loop. Implement and plan jobs are c
 
 Each pass, in order:
 
-1. Refresh head and CI. For cards in `agent_review` with a `recommend_approve` verdict, `human_review`, and `approved`, call `gh pr view` at most once every 30 seconds per card and store `head_sha`.
+1. Refresh head and CI. For cards in `agent_review` with a `recommend_approve` or `failed` verdict, `human_review`, and `approved`, call `gh pr view` at most once every 30 seconds per card and store `head_sha`. An `agent_review` card with no verdict whose card lock is free is recorded as a failed review first (RFC-069).
 2. A card in `approved` whose head moved goes to `human_review`, approval cleared.
 3. Promote `backlog -> ready` when requirements are accepted, dependencies are `done`, and the card has acceptance lines or is manual.
 4. A card in `changes_requested`, or in `in_progress` with no open attempt, whose `attempts_used >= max_attempts` goes to `blocked` with `attempt_cap`.
 5. Start a plan job when `draftPending` is set, or when an accepted requirement has no linked card. One plan job at a time.
 6. Start a review job for each `pr_open` card.
-7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. Every check on the pull request head counts as required (RFC-065). A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
+7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. Every check on the pull request head counts as required (RFC-065). An empty list counts as none only `review.NoChecksWait` (2 minutes) after the card's latest `local_checks` gate (RFC-069). A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
 8. Start a deploy job for a card in `approved` only when a Lead Developer member has requested deploy and that project's deploy lock is free. Reaching `approved` does not start deploy.
 9. Start a verify job for each `verifying` card.
 10. Start implement jobs while running implement jobs are under the cap: oldest first among `ready`, `changes_requested`, and `in_progress` with no open attempt, whose requirements are accepted, dependencies are `done`, and `attempts_used < max_attempts`.
@@ -177,7 +177,7 @@ Orchestrator-Attempt: <attempt id>
 Model: <model id>
 ```
 
-`verdict` accepts `recommend_approve` or `request_changes` only. Anything else is a parse failure. The second parse failure goes to the fallback model once. If that also fails to parse, the card blocks with `review_parse`.
+`verdict` accepts `recommend_approve` or `request_changes` only. Anything else is a parse failure. The second parse failure goes to the fallback model once. If that also fails to parse, the review is recorded as `failed` and the checks decide the card (RFC-069).
 
 The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt`, `maxTokensPerCard` summed across the card, or `maxWallMinutesPerAttempt`.
 
@@ -188,11 +188,11 @@ The loop ends when the model stops calling tools, or at `maxModelTurnsPerAttempt
 3. Call the model. Store `review_model_id`, `review_prompt_hash`, `review_independent`, `review_verdict`, and `reviewed_sha` on the reviewed attempt. Post one pull request comment with the company token: the verdict, its reason, the model, whether the review is independent, and the reviewed SHA (RFC-066). A failed comment appends `job_error` and does not change the card.
 4. `request_changes`: write a failure note with source `review` from the review body, then `agent_review -> changes_requested`. A breach of a rule or a skill checklist is a `request_changes` that names the rule or skill in the body.
 5. `recommend_approve`: read required checks with `gh pr view --json statusCheckRollup`. No required checks: `human_review` with `ciRequired: false` in the gate. All required pass: `human_review` with `ciRequired: true`. Any required failure: `changes_requested` with a `ci` note. Pending: stay in `agent_review` and let pass step 7 finish it.
-6. Provider failure after retry and fallback: block with `provider_error`.
+6. No verdict (no routable review model, a parse failure after the fallback, a provider failure after retry and fallback, or another error while the job's context is live): append `job_error`, store `review_verdict = 'failed'` and `reviewed_sha`, post an "AI review: Not done" comment, then apply the checks as in step 5 (RFC-069).
 
 A review never changes `attempts_used`.
 
-What runs today (RFC-065): `app.ReviewCard` reads the pull request and the diff from local `refs/heads/<baseBranch>` to the attempt's commit, capped at 64 KiB, before step 1, and leaves the card in `pr_open` with a `job_error` when either fails. A missing company organization or token blocks with `github_config` after the move to `agent_review`. The route `different-family-from-author` picks a model through `router.ReviewModel`. The reviewer loop runs at most 8 turns, and `comment_pr` posts with the company token. Every check on the head counts as required, except the harness's own `orchestrator/approval` status (RFC-068), and `ci_required` is stored on the attempt.
+What runs today (RFC-065): `app.ReviewCard` reads the pull request and the diff from local `refs/heads/<baseBranch>` to the attempt's commit, capped at 64 KiB, before step 1, and leaves the card in `pr_open` with a `job_error` when either fails. A missing company organization or token blocks with `github_config` after the move to `agent_review`. The route `different-family-from-author` picks a model through `router.ReviewModel`. The reviewer loop runs at most 8 turns, and `comment_pr` posts with the company token. Every check on the head counts as required, except the harness's own `orchestrator/approval` status (RFC-068), and `ci_required` is stored on the attempt. Since RFC-069 the job reads the pull request again after the model before it applies the checks, keeping the first read when that fails or the head moved. `app.settleChecks` leaves a card with an empty check list in `agent_review` until `review.NoChecksWait` has passed since `board.PublishedAt`, the time of the latest `local_checks` gate. `JobDeps.Now` is the clock for that wait. `app.RefreshCard` finishes an `agent_review` card with no verdict through `finishStoppedReview` when it can take the card lock.
 
 ### Deploy job
 

@@ -209,8 +209,16 @@ func TestCardShowsLatestReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := getAuth(t, srv, path, token).Body.String()
-	if !strings.Contains(body, `"reviewedSha":"`+headSHA+`"`) || !strings.Contains(body, `"reviewIndependent":false`) {
+	if !strings.Contains(body, `"reviewedSha":"`+headSHA+`"`) || !strings.Contains(body, `"reviewIndependent":false`) ||
+		!strings.Contains(body, `"reviewVerdict":"recommend_approve"`) {
 		t.Fatalf("reviewed card = %s", body)
+	}
+	if err := board.RecordReview(ctx, srv.DB, id, "", "", false, "failed", headSHA); err != nil {
+		t.Fatal(err)
+	}
+	body = getAuth(t, srv, path, token).Body.String()
+	if !strings.Contains(body, `"reviewVerdict":"failed"`) || !strings.Contains(body, `"reviewIndependent":null`) {
+		t.Fatalf("failed review card = %s", body)
 	}
 }
 

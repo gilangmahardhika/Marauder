@@ -4,10 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+	"time"
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/machine"
 )
+
+// VerdictFailed is the review_verdict of an attempt whose review gave no
+// verdict (RFC-069). The pull request checks still decide the card.
+const VerdictFailed = "failed"
+
+// NoChecksWait is how long after a card enters pr_open an empty check list
+// still counts as checks that have not registered yet (RFC-069).
+const NoChecksWait = 2 * time.Minute
 
 type Check struct {
 	Name  string

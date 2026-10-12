@@ -36,6 +36,8 @@ export type Card = {
   headSha: string | null;
   reviewedSha: string | null;
   reviewIndependent: boolean | null;
+  /** `failed` means the AI review gave no verdict and the pull request checks decided. */
+  reviewVerdict: 'recommend_approve' | 'request_changes' | 'failed' | null;
   approvedSha: string | null;
   deployedSha: string | null;
   environment: string;

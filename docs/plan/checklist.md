@@ -458,7 +458,7 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestPassFinishesCIWait`
 - [x] `TestPassFailedCIRequestsChanges`
 - [x] `TestReviewParseFallback`
-- [x] `TestReviewWithoutVerdictBlocks`
+- [x] `TestReviewWithoutVerdictBlocks` (superseded in Sprint 33 by RFC-069)
 - [x] `TestRefreshStoresHeadSHA`
 - [x] `TestApprovedHeadMovedReturnsToReview`
 - [x] `TestAdvancerSchedulesReviewAndRefresh`
@@ -517,3 +517,20 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TraceRow` Vitest cases
 - [x] `TraceBlock` Vitest cases
 - [x] The REQ-001 trace on `scbd-solid-web` shows Ready -> In progress before -> Blocked, 8 attempt blocks and a review block, and the 1.2 MB error hidden as binary output.
+
+## Sprint 33: Checks decide when the AI review gives no verdict
+
+- [x] Migration `00017` lets `review_verdict` be `failed`.
+- [x] A review with no verdict posts "AI review: Not done" and applies the checks instead of blocking.
+- [x] An empty check list waits 2 minutes after `pr_open` before it counts as no checks.
+- [x] A refresh finishes an `agent_review` card left without a verdict once the card lock is free.
+- [x] The card JSON has `reviewVerdict`, and the card page and Trace show a failed review.
+- [x] `TestReviewWithoutVerdictUsesChecks`
+- [x] `TestReviewWithoutVerdictRedChecks`
+- [x] `TestReviewWithoutVerdictWaitsForChecks`
+- [x] `TestNoChecksWaitsToRegister`
+- [x] `TestChecksInsideWaitDecide`
+- [x] `TestRefreshFinishesStoppedReview`
+- [x] `TestCardShowsLatestReview` with `reviewVerdict`
+- [x] `TraceBlock` Vitest case for a failed review
+- [x] Migration `00017` applies on the live board at startup.

@@ -243,6 +243,7 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	if setupErr != nil {
 		return BlockCard(ctx, db, card, "github_config", redact)
 	}
+	dir := settings.ProjectDir(deps.Data, projectID)
 	model, fallback, independent := reviewRoute(cfg, secrets, attempt.ModelID)
 	providerFor := func(model, fallback string) (providers.Provider, bool) {
 		if deps.Provider != nil {
@@ -255,10 +256,10 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	}
 	provider, ok := providerFor(model, fallback)
 	if !ok {
-		return BlockCard(ctx, db, card, "router_config", redact)
+		_ = jobError(ctx, db, card, attempt.AttemptID, "router_config: no review model is routable", redact)
+		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "No review model is configured", redact)
 	}
 
-	dir := settings.ProjectDir(deps.Data, projectID)
 	in := loop.ReviewInput{
 		DB: db, Card: card, AttemptID: attempt.AttemptID, Model: model, Provider: provider,
 		Diff:        diff,
@@ -280,13 +281,16 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 	switch {
 	case errors.Is(err, loop.ErrReviewParse):
 		_ = jobError(ctx, db, card, attempt.AttemptID, "the reviewer gave no valid verdict", redact)
-		return BlockCard(ctx, db, card, "review_parse", redact)
+		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "The reviewer gave no valid verdict", redact)
+	case err != nil && ctx.Err() != nil:
+		// RefreshCard finishes a review that stopped without a verdict.
+		return card, errors.New(trace.Redact(err.Error(), redact))
 	case errors.Is(err, ErrProvider):
 		_ = jobError(ctx, db, card, attempt.AttemptID, err.Error(), redact)
-		return BlockCard(ctx, db, card, "provider_error", redact)
+		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "The review model could not be reached", redact)
 	case err != nil:
 		_ = jobError(ctx, db, card, attempt.AttemptID, err.Error(), redact)
-		return card, errors.New(trace.Redact(err.Error(), redact))
+		return reviewFailed(ctx, db, deps, gh, dir, card, attempt.AttemptID, model, pr, "The review job failed", redact)
 	}
 
 	if err := board.RecordReview(ctx, db, attempt.AttemptID, model, result.PromptHash, independent, result.Verdict, pr.Head); err != nil {
@@ -309,10 +313,58 @@ func ReviewCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID
 		}
 		return move(ctx, db, card, "changes_requested", machine.Evidence{AttemptID: attempt.AttemptID}, redact)
 	}
-	if err := board.SetCIRequired(ctx, db, attempt.AttemptID, len(pr.Checks) > 0); err != nil {
+	return settleChecks(ctx, db, deps, card, attempt.AttemptID, freshChecks(ctx, gh, card.PRURL, pr), redact)
+}
+
+// reviewFailed records a review that gave no verdict, says so on the pull
+// request, and lets the pull request checks decide the card (RFC-069).
+func reviewFailed(ctx context.Context, db *sql.DB, deps JobDeps, gh githubReader, dir string, card board.Card,
+	attemptID, model string, pr pullRequest, why string, redact []string) (board.Card, error) {
+	if err := board.RecordReview(ctx, db, attemptID, model, "", false, review.VerdictFailed, pr.Head); err != nil {
 		return card, err
 	}
-	return review.ApplyCI(ctx, db, card, attempt.AttemptID, pr.Checks, redact)
+	if err := board.SetHeadSHA(ctx, db, card.ID, pr.Head); err != nil {
+		return card, err
+	}
+	if err := gh.comment(ctx, dir, card.PRURL, ReviewFailedComment(why, pr.Head)); err != nil {
+		_ = jobError(ctx, db, card, attemptID, "review comment: "+err.Error(), redact)
+	}
+	return settleChecks(ctx, db, deps, card, attemptID, freshChecks(ctx, gh, card.PRURL, pr), redact)
+}
+
+// freshChecks reads the pull request again after the review, so checks that
+// registered while the model ran count. A failed read or a moved head keeps
+// the checks of the first read.
+func freshChecks(ctx context.Context, gh githubReader, url string, pr pullRequest) []review.Check {
+	if fresh, err := gh.read(ctx, url); err == nil && fresh.Head == pr.Head {
+		return fresh.Checks
+	}
+	return pr.Checks
+}
+
+// settleChecks applies the pull request checks of an agent_review card. An
+// empty list within review.NoChecksWait of entering pr_open leaves the card
+// waiting, since the checks may not have registered yet.
+func settleChecks(ctx context.Context, db *sql.DB, deps JobDeps, card board.Card, attemptID string, checks []review.Check, redact []string) (board.Card, error) {
+	if len(checks) == 0 {
+		published, err := board.PublishedAt(ctx, db, card.ID)
+		if err != nil {
+			return card, err
+		}
+		if deps.now().Sub(published) < review.NoChecksWait {
+			return card, nil
+		}
+	}
+	if err := board.SetCIRequired(ctx, db, attemptID, len(checks) > 0); err != nil {
+		return card, err
+	}
+	return review.ApplyCI(ctx, db, card, attemptID, checks, redact)
+}
+
+// ReviewFailedComment is the pull request comment the bot posts when the AI
+// review gave no verdict (RFC-069).
+func ReviewFailedComment(why, sha string) string {
+	return fmt.Sprintf("**AI review: Not done**\n\n%s, so `%s` has no AI verdict. The card waits for the pull request checks, then a person reviews it in the orchestrator before merge.\n", why, shortSHA(sha))
 }
 
 // ReviewComment is the pull request comment the bot posts with the review
@@ -354,7 +406,9 @@ func writeReviewPack(ctx context.Context, dir, attemptID string, in loop.ReviewI
 // RefreshCard reads the pull request head and checks of a card past review
 // (0003 pass steps 1, 2, and 7). It stores head_sha, sends an approved card
 // whose head moved back to human_review, and finishes the CI wait of an
-// agent_review card whose review recommended approval.
+// agent_review card whose review recommended approval or gave no verdict.
+// A review that stopped without recording anything, and no longer holds the
+// card lock, is recorded as failed first (RFC-069).
 func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
@@ -366,8 +420,15 @@ func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardI
 	var attempt board.Review
 	switch card.Status {
 	case "agent_review":
-		if attempt, err = board.LatestReview(ctx, db, card.ID); err != nil || attempt.Verdict != "recommend_approve" {
+		if attempt, err = board.LatestReview(ctx, db, card.ID); err != nil || attempt.AttemptID == "" {
 			return card, err
+		}
+		switch attempt.Verdict {
+		case "recommend_approve", review.VerdictFailed:
+		case "":
+			return finishStoppedReview(ctx, db, deps, projectID, card, attempt.AttemptID)
+		default:
+			return card, nil
 		}
 	case "human_review", "approved":
 	default:
@@ -390,8 +451,40 @@ func RefreshCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardI
 	if card.Status != "agent_review" {
 		return card, nil
 	}
-	if err := board.SetCIRequired(ctx, db, attempt.AttemptID, len(pr.Checks) > 0); err != nil {
+	return settleChecks(ctx, db, deps, card, attempt.AttemptID, pr.Checks, redact)
+}
+
+// finishStoppedReview records the review of an agent_review card as failed
+// when no review job holds the card lock, then applies the checks.
+func finishStoppedReview(ctx context.Context, db *sql.DB, deps JobDeps, projectID string, card board.Card, attemptID string) (board.Card, error) {
+	holder, err := board.NewID("lok_")
+	if err != nil {
 		return card, err
 	}
-	return review.ApplyCI(ctx, db, card, attempt.AttemptID, pr.Checks, redact)
+	if err := board.AcquireLock(ctx, db, card.ID, holder); err != nil {
+		if errors.Is(err, board.ErrLocked) {
+			return card, nil
+		}
+		return card, err
+	}
+	defer board.ReleaseLock(context.WithoutCancel(ctx), db, card.ID, holder)
+	attempt, err := board.LatestReview(ctx, db, card.ID)
+	if err != nil || attempt.AttemptID != attemptID || attempt.Verdict != "" {
+		return card, err
+	}
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil || card.Status != "agent_review" {
+		return card, err
+	}
+	gh, err := newGitHubReader(ctx, db, deps, projectID)
+	if err != nil {
+		return card, err
+	}
+	redact := []string{gh.token}
+	pr, err := gh.read(ctx, card.PRURL)
+	if err != nil {
+		return card, errors.New(trace.Redact(err.Error(), redact))
+	}
+	_ = jobError(ctx, db, card, attemptID, "the review job stopped before a verdict", redact)
+	return reviewFailed(ctx, db, deps, gh, settings.ProjectDir(deps.Data, projectID), card, attemptID, "", pr,
+		"The review job stopped before a verdict", redact)
 }

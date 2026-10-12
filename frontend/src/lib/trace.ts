@@ -58,7 +58,8 @@ const outcomes: Record<string, string> = {
 
 const verdicts: Record<string, string> = {
   recommend_approve: 'Recommend approve',
-  request_changes: 'Request changes'
+  request_changes: 'Request changes',
+  failed: 'Failed, no verdict'
 };
 
 export function kindLabel(kind: string) {
@@ -71,6 +72,11 @@ export function toolLabel(name: string) {
 
 export function verdictLabel(verdict: string) {
   return verdicts[verdict] ?? sentence(verdict);
+}
+
+export function verdictTone(verdict: string): Tone {
+  if (verdict === 'recommend_approve') return 'green';
+  return verdict === 'failed' ? 'red' : 'amber';
 }
 
 /** An attempt with no end is still running. */

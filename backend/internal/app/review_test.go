@@ -10,7 +10,9 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/machine"
 	"orchestrator/backend/internal/providers/fake"
+	"orchestrator/backend/internal/review"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -24,10 +26,12 @@ const (
 )
 
 // reviewFixture is a card in pr_open with the commit its attempt checked.
+// now is the clock of the check wait; it starts past review.NoChecksWait.
 type reviewFixture struct {
 	jobFixture
 	card board.Card
 	sha  string
+	now  func() time.Time
 }
 
 func newReviewFixture(t *testing.T) reviewFixture {
@@ -42,7 +46,8 @@ func newReviewFixture(t *testing.T) reviewFixture {
 		t.Fatal(err)
 	}
 	f.calls.setPR(prJSON(sha, noChecks))
-	return reviewFixture{jobFixture: f, card: card, sha: sha}
+	later := func() time.Time { return time.Now().Add(review.NoChecksWait + time.Minute) }
+	return reviewFixture{jobFixture: f, card: card, sha: sha, now: later}
 }
 
 func prJSON(head, checks string) string {
@@ -56,7 +61,7 @@ func (f reviewFixture) deps(t *testing.T, script string) (app.JobDeps, *fake.Fak
 		t.Fatal(err)
 	}
 	return app.JobDeps{
-		Data: f.data, Key: tokenKey, Provider: provider,
+		Data: f.data, Key: tokenKey, Provider: provider, Now: f.now,
 		Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Exec: f.calls.run},
 	}, provider
 }
@@ -232,11 +237,124 @@ func TestReviewParseFallback(t *testing.T) {
 	}
 }
 
-func TestReviewWithoutVerdictBlocks(t *testing.T) {
+const noVerdictScript = `{"review":[{"text":"looks fine"},{"text":"still fine"}]}`
+
+func TestReviewWithoutVerdictUsesChecks(t *testing.T) {
 	f := newReviewFixture(t)
-	card := f.review(t, `{"review":[{"text":"looks fine"},{"text":"still fine"}]}`)
-	if card.Status != "blocked" || card.BlockedReason != "review_parse" {
-		t.Fatalf("no verdict = %s %s", card.Status, card.BlockedReason)
+	card := f.review(t, noVerdictScript)
+	if card.Status != "human_review" || card.HeadSHA != f.sha {
+		t.Fatalf("no verdict, no checks = %s head %s, want human_review", card.Status, card.HeadSHA)
+	}
+	r := latestReviewRow(t, f.db, card.ID)
+	if r.verdict != review.VerdictFailed || r.reviewed != f.sha || !r.ciRequired.Valid || r.ciRequired.Bool {
+		t.Fatalf("review = %+v, want failed at %s with ci_required false", r, f.sha)
+	}
+	comments := f.calls.body("comment")
+	if len(comments) != 1 || !strings.Contains(comments[0], "**AI review: Not done**") || !strings.Contains(comments[0], "`"+f.sha[:7]+"`") {
+		t.Fatalf("comments = %q", comments)
+	}
+	var errs int
+	if err := f.db.QueryRow(`
+		SELECT count(*) FROM events WHERE card_id = $1 AND kind = 'job_error' AND payload_json LIKE '%no valid verdict%'`, card.ID).Scan(&errs); err != nil {
+		t.Fatal(err)
+	}
+	if errs != 1 {
+		t.Fatalf("job_error events = %d", errs)
+	}
+}
+
+func TestReviewWithoutVerdictRedChecks(t *testing.T) {
+	f := newReviewFixture(t)
+	f.calls.setPR(prJSON(f.sha, `[{"name":"ci","status":"COMPLETED","conclusion":"FAILURE"}]`))
+	if card := f.review(t, noVerdictScript); card.Status != "changes_requested" {
+		t.Fatalf("no verdict, red checks = %s, want changes_requested", card.Status)
+	}
+	if n := countNotes(t, f.db, f.card.ID, "ci"); n != 1 {
+		t.Fatalf("ci notes = %d", n)
+	}
+}
+
+func TestReviewWithoutVerdictWaitsForChecks(t *testing.T) {
+	f := newReviewFixture(t)
+	f.calls.setPR(prJSON(f.sha, pendingChecks))
+	if card := f.review(t, noVerdictScript); card.Status != "agent_review" {
+		t.Fatalf("no verdict, pending checks = %s", card.Status)
+	}
+	f.calls.setPR(prJSON(f.sha, greenChecks))
+	if card := f.refresh(t); card.Status != "human_review" {
+		t.Fatalf("green checks = %s, want human_review", card.Status)
+	}
+}
+
+func TestNoChecksWaitsToRegister(t *testing.T) {
+	f := newReviewFixture(t)
+	f.now = time.Now
+	card := f.review(t, approveScript)
+	if card.Status != "agent_review" {
+		t.Fatalf("no checks right after the pull request = %s, want agent_review", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, card.ID); r.ciRequired.Valid {
+		t.Fatalf("ci_required = %v, want unset while waiting", r.ciRequired)
+	}
+	if card = f.refresh(t); card.Status != "agent_review" {
+		t.Fatalf("refresh inside the wait = %s", card.Status)
+	}
+	f.now = func() time.Time { return time.Now().Add(review.NoChecksWait) }
+	if card = f.refresh(t); card.Status != "human_review" {
+		t.Fatalf("refresh after the wait = %s, want human_review", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, card.ID); !r.ciRequired.Valid || r.ciRequired.Bool {
+		t.Fatalf("ci_required = %v, want false", r.ciRequired)
+	}
+}
+
+func TestChecksInsideWaitDecide(t *testing.T) {
+	f := newReviewFixture(t)
+	f.now = time.Now
+	f.calls.setPR(prJSON(f.sha, greenChecks))
+	if card := f.review(t, approveScript); card.Status != "human_review" {
+		t.Fatalf("green checks right after the pull request = %s, want human_review", card.Status)
+	}
+}
+
+func TestRefreshFinishesStoppedReview(t *testing.T) {
+	f := newReviewFixture(t)
+	ctx := context.Background()
+	tx, err := f.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest, err := board.LatestReview(ctx, tx, f.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := machine.Transition(ctx, tx, f.card, "agent_review", machine.Evidence{AttemptID: latest.AttemptID}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := board.AcquireLock(ctx, f.db, f.card.ID, "lok_running0001"); err != nil {
+		t.Fatal(err)
+	}
+	if card := f.refresh(t); card.Status != "agent_review" {
+		t.Fatalf("refresh while the review holds the lock = %s", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, f.card.ID); r.verdict != "" {
+		t.Fatalf("verdict = %q while the review runs", r.verdict)
+	}
+	if err := board.ReleaseLock(ctx, f.db, f.card.ID, "lok_running0001"); err != nil {
+		t.Fatal(err)
+	}
+	card := f.refresh(t)
+	if card.Status != "human_review" {
+		t.Fatalf("stopped review = %s, want human_review", card.Status)
+	}
+	if r := latestReviewRow(t, f.db, card.ID); r.verdict != review.VerdictFailed {
+		t.Fatalf("verdict = %q, want failed", r.verdict)
+	}
+	if comments := f.calls.body("comment"); len(comments) != 1 || !strings.Contains(comments[0], "stopped before a verdict") {
+		t.Fatalf("comments = %q", comments)
 	}
 }
 
@@ -276,6 +394,7 @@ func TestCardReachesApproved(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := app.JobDeps{Data: f.data, Key: tokenKey, Provider: provider,
+		Now:   func() time.Time { return time.Now().Add(review.NoChecksWait + time.Minute) },
 		Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Exec: f.calls.run}}
 	jobs := app.ImplementJobs(f.db, deps)
 	if status, err := jobs.Implement(ctx, "proj_default", f.card.ID); err != nil || status != "pr_open" {

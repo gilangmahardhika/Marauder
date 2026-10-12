@@ -68,3 +68,15 @@ test('a review block shows the verdict and that it was not independent', () => {
   expect(screen.getByText('Recommend approve')).toBeTruthy();
   expect(screen.getByText('Not independent')).toBeTruthy();
 });
+
+test('a review without a verdict says it failed', () => {
+  const failed = { ...attempt, reviewModelId: 'deepseek-flash', reviewVerdict: 'failed' };
+  const [item] = buildTimeline(
+    [{ id: 'r1', ts: '2026-10-12T04:25:55Z', attemptId: 'att_8', kind: 'model_call', payload: { role: 'reviewer', modelId: 'deepseek-flash', inputTokens: 209, outputTokens: 12 } }],
+    [failed]
+  );
+  if (item.type !== 'block') throw new Error('expected a block');
+  render(TraceBlock, { block: item });
+  expect(screen.getByText('Failed, no verdict')).toBeTruthy();
+  expect(screen.queryByText('Not independent')).toBeNull();
+});

@@ -52,6 +52,15 @@ type JobDeps struct {
 	Key      []byte
 	Tools    Tools
 	Provider providers.Provider
+	// Now is the clock of the review job's check wait; nil means time.Now.
+	Now func() time.Time
+}
+
+func (d JobDeps) now() time.Time {
+	if d.Now != nil {
+		return d.Now()
+	}
+	return time.Now()
 }
 
 // ImplementCard runs one implement job (RFC-063): preflight, one attempt of the

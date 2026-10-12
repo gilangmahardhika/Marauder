@@ -110,6 +110,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestTraceOrderAndAttempts` | Three events appended in the same second, with ids that sort the other way, come back in insert order. `attemptId` is left out when empty. `attempts` lists the attempt's `n`, model, tokens, outcome, commit, and end, with `reviewIndependent` null. The card under another project is `404` |
 | `TestJobErrorCapped` | A 1.5 MiB message with NUL bytes and invalid UTF-8 is stored under 10 KiB as valid UTF-8 without NUL, with its head, its tail (redacted), and the cut marker |
 | `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
+| `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
+| `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |
+| `TestReviewWithoutVerdictWaitsForChecks` | No verdict and pending checks stay in `agent_review`. Green checks on refresh: `human_review` |
+| `TestNoChecksWaitsToRegister` | No checks right after `pr_open` keeps `agent_review` with `ci_required` unset, through a refresh. After `NoChecksWait`: `human_review` with `ci_required = false` |
+| `TestChecksInsideWaitDecide` | Green checks inside the wait move the card to `human_review` |
+| `TestRefreshFinishesStoppedReview` | An `agent_review` card with no verdict stays while another holder has the lock. Once the lock is free, refresh records `failed` and reaches `human_review` |
 | `TestIngestRecordsCreator` | A web ingest stores the caller as `created_by` on new parsed rows. A second ingest by another user keeps the first. A CLI ingest stores null |
 | `TestCardOwnerFromRequirement` | `create_card` stores the requirements' creator as `owner_id`, and an `ownerId` argument is ignored |
 | `TestCreateCardMixedOwners` | `create_card` naming requirements from two creators is rejected and inserts no card |

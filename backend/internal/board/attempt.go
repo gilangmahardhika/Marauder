@@ -267,6 +267,22 @@ func SetCIRequired(ctx context.Context, q DBTX, attemptID string, required bool)
 	return err
 }
 
+// PublishedAt returns when the card last entered pr_open, the time of its
+// latest local_checks gate, or the zero time when it has none.
+func PublishedAt(ctx context.Context, q DBTX, cardID string) (time.Time, error) {
+	var at string
+	err := q.QueryRowContext(ctx, `
+		SELECT created_at FROM gates WHERE card_id = $1 AND name = 'local_checks'
+		ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Parse(time.RFC3339, at)
+}
+
 // SetHeadSHA stores the pull request head read from GitHub.
 func SetHeadSHA(ctx context.Context, q DBTX, cardID, sha string) error {
 	_, err := q.ExecContext(ctx, `UPDATE cards SET head_sha = $2 WHERE id = $1`, cardID, sha)
