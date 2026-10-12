@@ -439,6 +439,8 @@ The trace route reads `trace.ListSince`, which orders the card's events by `ts` 
 
 The trace stream route subscribes first, then reads the trace as the trace route does and sends it, then the hub snapshot. Its loop forwards hub frames, reads the card and `trace.ListSince` again every second and after `turn_end`, sends only events it has not sent, writes a ping comment every 15 seconds, and ends with `done` when `live` turns false or after 10 minutes. It has no 30-second handler timeout.
 
+The usage route calls `app.Usage(ctx, db, data, actor, from, to, now)` (RFC-089), which returns `ErrForbidden` unless `actor.Admin` and then calls `app.ReadUsage`. `app.UsageWindow` checks the days and returns `UsageRangeError{Field, Message}`, which the handler maps to `422` with that field. `ReadUsage` reads `board.UsageRows(ctx, db, from, toExclusive)`, one SQL query over `events` with `kind IN ('model_call', 'requirement_refined')` and `ts` in the range, left-joined to `attempts`, `cards`, `projects`, and `users` and grouped by day, project, model, task, and user, then names each model's family from `settings.Load(data)`. It reads no attempt token columns, which miss the reviewer and refine. `loop.modelCallPayload` writes the call's `taskClass`: the attempt's class in an implement session and `review` in the review loop.
+
 The implement and review loops write `model_call.text` and `tool_call.args` through `trace.Clip` with the job's secrets. `JobDeps.Secrets` carries the `databaseUrl` and `tokenKey` text from `secrets.json`; `serve` and `run-next` set it, and both jobs add it to the model keys and GitHub tokens they redact.
 
 ## CLI
@@ -449,6 +451,8 @@ Cobra commands are thin. Example flow for approve:
 2. Call `app.Approve(ctx, actor, cardID, sha)`.
 3. Print the returned status and the SHA.
 4. On error, print the message and exit `1`.
+
+`usage` has no actor: the operator who can run the binary can read the board, so it calls `app.ReadUsage`, then `app.GroupUsage(rows, by)`, and prints one line per group with calls, input, output, cached, and total, largest total first. `--by` is `llm`, `model` (the default), `project`, `user`, or `task`; anything else exits `1`.
 
 `users bootstrap` reads `ORCHESTRATOR_ADMIN_EMAIL` and `ORCHESTRATOR_ADMIN_PASSWORD`, refuses a short password, and inserts one admin only when `users` is empty.
 

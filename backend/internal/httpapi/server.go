@@ -88,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/settings/llm", s.llm)
 	mux.HandleFunc("/api/settings/llm/", s.llmTest)
 	mux.HandleFunc("/api/settings/router", s.routerSettings)
+	mux.HandleFunc("GET /api/usage", s.usage)
 	return s.wrap(mux)
 }
 

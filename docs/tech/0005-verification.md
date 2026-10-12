@@ -104,6 +104,13 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestReviewStreamsText` | A review job with a publisher sends each reviewer reply as `turn` with role `reviewer`, deltas, and `turn_end` after its event is stored (RFC-088) |
 | `TestTraceStreamFrames` | The trace stream replies `text/event-stream` with `no-store` and `X-Accel-Buffering: no`: a `trace` frame with the stored events, attempts, and `live`, then the hub's `turn` and text so far, then new deltas. After `turn_end` a `trace` frame has only the new `model_call`. A ping comment arrives. When the attempt ends, a `trace` frame with `live: false` and `done`, then the stream ends. A card that is not live gets `trace` and `done` at once. `TestTraceStreamReconnectAndShutdown` ends with `done` and `reconnect` after the time limit, and closing the hub ends an open stream (RFC-088) |
 | `TestTraceStreamOtherProcessEvents` | An event appended straight to the database while a stream is open, as a `run-next` process would, arrives in a `trace` frame without the events already sent (RFC-088) |
+| `TestUsageAggregates` | Implementer, reviewer, and refine calls on three cards in two projects and three models, read for October 1 to 3, sum to 6 calls and the right input, output, and cached tokens, with calls by day. A `tool_call` with tokens and calls a second before and after the range are left out, and grouping by model puts the largest total first (RFC-089) |
+| `TestUsageTaskClass` | A payload `taskClass` wins; an old implementer row takes the attempt's `implement_hard`; an old reviewer row is `review`; a refine is `refine_requirement`; a call with no attempt is `implement` |
+| `TestUsageUser` | Card calls count against the card owner and a refine against its `actor_id`, in the refine's project. A card with no owner groups as "No owner", and a user with no name by email |
+| `TestUsageFamily` | Each model takes its family and protocol from `config.yaml`; a model no family lists has neither and groups as "Unknown family" |
+| `TestModelCallTaskClass` | After an implement job and a review, every implementer `model_call` carries `taskClass` `implement` and every reviewer one `review` |
+| `TestUsageAdminOnly` | `/api/usage` without a bearer is `401`, for a Lead Developer who is not an admin is `403` even with a bad range, and for an admin is `200` with the call's model, task, and tokens and without its reply text |
+| `TestUsageRange` | No dates read the 30 days ending today with `rows: []`. `from` after `to`, 367 days, and a bad `from` are `422` on `from`; a bad `to` is `422` on `to`. 366 days is `200` |
 | `TestRefineFieldStreams` | A statement refine replies `text/event-stream` with `start` naming the model, at least two deltas that join to the text, then `done` with the text and no acceptance. One request with task class `refine_requirement`, 4,096 max tokens, and no tools. An accepted manual row is unchanged, and one `requirement_refined` event has the id, `field`, model, and tokens, and no text (RFC-086, RFC-087) |
 | `TestRefineFieldAcceptanceLines` | An acceptance refine drops list markers and blank lines in `done` and uses `RefineAcceptanceSystem`. 51 lines or no lines end with an `error` event and no `done` |
 | `TestRefineFieldRedactsSplitKey` | A model key split across two deltas never reaches the stream, whole or in part, and the text reads `[redacted]`. A provider error before text is `502` JSON and one after text is an `error` event, neither with the key |
@@ -313,6 +320,7 @@ After step 9, the runner runs the tool loop with the fake provider on two more c
 | `orchestrator run-next` when idle | Exit `0`, stdout contains `no card is ready` |
 | `orchestrator unblock card_x --reset-attempts` on a `turn_cap` card | Exit `0`, card `ready`, `attemptsUsed` 0 |
 | `orchestrator serve --data <repo>/.orchestrator` | Exit `1` before listen |
+| `orchestrator usage --from 2026-10-01 --to 2026-10-03 --by task` (`TestUsageCLI`) | Exit `0`, a heading with the range, then `implement 1 100 20 0 120` and `review 1 30 5 0 35`. `--by cost` exits non-zero naming `--by` |
 
 ## Frontend checks
 

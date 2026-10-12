@@ -126,6 +126,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-081 | Repeated prompt text is cached |
 | REQ-082 | The implementer runs allowlisted commands on a copy, and infrastructure failures keep the attempt |
 | REQ-083 | A member can refine a requirement with AI and compare it before applying |
+| REQ-084 | An admin sees token usage across projects |
 
 ## Requirements
 
@@ -1156,6 +1157,18 @@ On the new-requirement form and the edit page of a manual requirement, a member 
 - Apply puts the proposal in that field of the form, and nothing is saved until the member presses Save.
 - Saving a refined requirement clears its acceptance.
 - With no model on the `implement` route, the page says so and nothing is sent.
+
+### REQ-084 An admin sees token usage across projects
+
+An admin opens one Token usage page for the whole company. It counts the tokens of every stored model call, from the implementer, the reviewer, and requirement refine, over a chosen number of days. The admin filters and groups the usage by LLM, model, project, user, and task type, and sorts the groups by any column. A call counts against the card's owner, and a refine against the member who ran it (RFC-089).
+
+#### Acceptance
+
+- Only an admin sees the page and its data. Every other user gets no usage.
+- Implementer, reviewer, and refine calls are all counted, each under its own task type.
+- Filtering by LLM, model, project, user, or task type changes every total on the page.
+- The groups sort by name, calls, input, output, cached, or total, in either direction.
+- The page never shows a model's reply text or a secret.
 
 ## Non-goals
 

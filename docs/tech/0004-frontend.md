@@ -89,6 +89,7 @@ frontend/
   src/routes/cards/[id]/+page.svelte
   src/routes/cards/[id]/trace/+page.svelte
   src/routes/account/+page.svelte
+  src/routes/admin/usage/+page.svelte
   src/routes/admin/users/+page.svelte
   src/routes/admin/users/new/+page.svelte
   src/routes/admin/users/[id]/+page.svelte
@@ -232,6 +233,7 @@ frontend/
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
 | `/account` | Name, password, and the caller's GitHub settings |
+| `/admin/usage` | Token usage across every project (RFC-089) |
 | `/admin/users` | Admin user list |
 | `/admin/users/new` | Create a user |
 | `/admin/users/[id]` | Edit role, admin, disabled, and an optional password |
@@ -256,7 +258,7 @@ frontend/
 | `/settings/deploy` | Deploy and checks for the project |
 | `/settings/conventions` | The project's stacks, enabled skills, and the rules that apply |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
 
@@ -484,6 +486,19 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 `src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by name or email, labelled by name with the email and role as the detail line. Member rows show the name with the email under it. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository. Each row has "Settings", which selects the project and opens its Repository settings, and "Open board". The page shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage. Picking a repository fills the base branch with its default branch. The repository can only be picked from that list (RFC-060). Archived repositories are listed as disabled options. When the list cannot load, the picker stays empty and its error line says why. "Create project" is disabled until a repository is picked. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
 
+### Token usage
+
+`src/routes/admin/usage/+page.svelte` (RFC-089) calls `getUsage(from, to)` for the range and does the rest in the browser with the pure functions in `src/lib/usage.ts`. Every choice lives in the URL through `setParams`, and a default value leaves its parameter out:
+
+- **Range**: a `Segmented` for 7, 30 (the default), or 90 days (`?range=`). `rangeWindow` turns it into UTC days ending today, and a change reads the route again.
+- **Group by**: a `Segmented` for LLM, Model (the default), Project, User, or Task (`?by=`).
+- **Filters**: a `FilterSelect` each for LLM, Model, Project, User, and Task (`?llm= &model= &project= &user= &task=`), and "Clear filters" while any is set. The value is the family, model, project, or user id, or `-` for a call with none ("Unknown family", "No owner"). `usageOptions` lists each value with its total tokens, counting the rows the other filters keep, largest first.
+- **Totals**: a strip in the Trace page style with total tokens, input, output, cached input, calls, and cache share (cached over input plus cached, since providers count cached input apart). Total is input plus output.
+- **Tokens per day**: one CSS bar per day of the range, a day with no calls included, each with a `title`. The bars are `aria-hidden` and a visually hidden table gives the same numbers. No chart library.
+- **Table**: the groups with calls, input, output, cached, total, and share of the filtered total as a bar and a percent. The name and number headers are 44px buttons with `aria-sort`; a first click sorts numbers largest first and names A to Z, and a second click reverses (`?sort= &dir=`, default total, largest first). `ShowMore` after 50 groups.
+
+An empty range shows "No model calls in this range"; filters that keep nothing show "No calls match" with Clear filters. A `403` sets the live message from `error.message`.
+
 ### Company GitHub
 
 `src/routes/admin/github/+page.svelte`. GET and PUT `/api/settings/github`. Admin only. Fields: host, organization, token. "Test connection" calls `POST /api/settings/github/test`, and shows "Signed in as LOGIN. Sees N repositories in ORG (M private)." on success or `message` on `ok: false` in the Bot account panel footer, next to Save. A non-empty `hint` shows in a `warning` `Notice` in the Bot account panel. The saved bot login shows as read-only text.
@@ -659,6 +674,9 @@ npm run build
 | `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
 | `OwnerFilter` | Clicking an avatar adds its owner and clicking again removes it. Owners past the limit are in the "+n" checklist |
 | `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
+| `usage` lib | Groups by LLM, model, project, user, and task, with "Unknown family" and "No owner". Filters use `-` for a missing value. Options count the rows the other filters keep and keep a chosen value with none. Groups sort by any column either way, ties by name. Daily totals fill every day of the range. The summary's cache share is cached over all input read. `rangeWindow` ends today in UTC |
+| Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and the Model choices, and picking one sets `model`. `?by=user` regroups and Group by sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
+| Nav admin items | Token usage is the first Admin link for an admin and is absent for a member who is not one |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
 | `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |

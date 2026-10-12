@@ -15,6 +15,7 @@ import (
 	"orchestrator/backend/internal/board/boardtest"
 	"orchestrator/backend/internal/cli"
 	"orchestrator/backend/internal/httpapi"
+	"orchestrator/backend/internal/trace"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -391,4 +392,57 @@ func cliDirs(t *testing.T) (string, string, string) {
 		t.Fatal(err)
 	}
 	return repo, data, boardtest.IsolatedURL(t)
+}
+
+func TestUsageCLI(t *testing.T) {
+	repo, data, databaseURL := cliDirs(t)
+	db, err := board.Open(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	card, err := board.InsertCard(ctx, db, board.Card{Status: "human_review", Title: "card"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []map[string]any{
+		{"role": "implementer", "taskClass": "implement", "modelId": "model-a", "inputTokens": 100, "outputTokens": 20},
+		{"role": "reviewer", "taskClass": "review", "modelId": "model-b", "inputTokens": 30, "outputTokens": 5},
+	} {
+		if _, err := trace.Append(ctx, db, trace.Event{TS: "2026-10-02T10:00:00Z", CardID: card.ID, ProjectID: "proj_default", Kind: "model_call", Payload: p}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage := func(by string) (int, string, string) {
+		var stdout, stderr bytes.Buffer
+		code := cli.Execute(cli.Options{
+			Args:   []string{"usage", "--from", "2026-10-01", "--to", "2026-10-03", "--by", by, "--repo", repo, "--data", data},
+			Stdout: &stdout,
+			Stderr: &stderr,
+			Getenv: func(key string) string {
+				if key == "ORCHESTRATOR_DATABASE_URL" {
+					return databaseURL
+				}
+				return ""
+			},
+		})
+		return code, stdout.String(), stderr.String()
+	}
+	code, stdout, stderr := usage("task")
+	if code != 0 {
+		t.Fatalf("exit = %d stderr %q", code, stderr)
+	}
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	if len(lines) != 4 || !strings.Contains(lines[0], "2026-10-01 to 2026-10-03 by task") ||
+		strings.Join(strings.Fields(lines[2]), " ") != "implement 1 100 20 0 120" ||
+		strings.Join(strings.Fields(lines[3]), " ") != "review 1 30 5 0 35" {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if code, _, stderr := usage("cost"); code == 0 || !strings.Contains(stderr, "--by") {
+		t.Fatalf("--by cost exit = %d stderr %q", code, stderr)
+	}
 }

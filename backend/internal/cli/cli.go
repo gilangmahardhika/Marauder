@@ -9,6 +9,8 @@ import (
 	"io"
 	"os"
 	"strings"
+	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -219,6 +221,38 @@ func Execute(opts Options) int {
 			})
 		},
 	})
+	var usageFrom, usageTo, usageBy string
+	usage := &cobra.Command{
+		Use:   "usage",
+		Short: "token usage across projects, grouped one way",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
+				report, err := app.ReadUsage(ctx, db, paths.Data, usageFrom, usageTo, time.Now())
+				if err != nil {
+					return err
+				}
+				groups, err := app.GroupUsage(report.Rows, usageBy)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(opts.Stdout, "token usage %s to %s by %s\n", report.From, report.To, usageBy)
+				if len(groups) == 0 {
+					fmt.Fprintln(opts.Stdout, "no model calls in this range")
+					return nil
+				}
+				out := tabwriter.NewWriter(opts.Stdout, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(out, usageBy+"\tcalls\tinput\toutput\tcached\ttotal")
+				for _, g := range groups {
+					fmt.Fprintf(out, "%s\t%d\t%d\t%d\t%d\t%d\n", g.Key, g.Calls, g.InputTokens, g.OutputTokens, g.CachedInputTokens, g.Total())
+				}
+				return out.Flush()
+			})
+		},
+	}
+	usage.Flags().StringVar(&usageFrom, "from", "", "first day, YYYY-MM-DD (default: 30 days ending today)")
+	usage.Flags().StringVar(&usageTo, "to", "", "last day, YYYY-MM-DD (default: today)")
+	usage.Flags().StringVar(&usageBy, "by", "model", "llm, model, project, user, or task")
+	root.AddCommand(usage)
 	root.SetOut(opts.Stderr)
 	root.SetErr(opts.Stderr)
 	if opts.Args != nil {

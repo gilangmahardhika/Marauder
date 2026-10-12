@@ -845,3 +845,20 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestTraceStreamCap`
 - [x] `streamTrace`, Trace page, and `TerminalView` Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 53: Token usage across projects
+
+- [x] `events (kind, ts)` index and `taskClass` on `model_call`.
+- [x] `board.UsageRows` and `app.Usage` with the family from `config.yaml`.
+- [x] `GET /api/usage` (admin only) and `orchestrator usage`.
+- [x] `/admin/usage` with range, filters, Group by, sort, totals, and daily bars, and the Admin nav item.
+- [x] `TestUsageAggregates`
+- [x] `TestUsageTaskClass`
+- [x] `TestUsageUser`
+- [x] `TestUsageFamily`
+- [x] `TestUsageAdminOnly`
+- [x] `TestUsageRange`
+- [x] `TestModelCallTaskClass`
+- [x] `TestUsageCLI`
+- [x] `usage` lib, Token usage page, and nav Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

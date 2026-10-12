@@ -302,6 +302,8 @@ DROP TABLE requirements;
 
 `00001_init.sql` and `00002_intake_state.sql` stay as shipped. Do not edit them. Identity, tribes, and projects are later migrations, starting at `00003`. Those migrations add `project_id` and replace the global unique indexes above with `(project_id, branch)` and `(project_id, pr_url)`. Requirement and decision primary keys become `(project_id, id)`. `runs.trigger` gains `deploy`.
 
+`00023_events_kind_ts.sql` adds the index `events_kind_ts ON events (kind, ts)` so the usage read below does not scan every event. `events` stays insert-only (RFC-089).
+
 `00014_card_runs.sql` adds `runs.card_id TEXT REFERENCES cards(id) ON DELETE CASCADE` and the partial unique index `runs_open_card ON runs(card_id) WHERE card_id IS NOT NULL AND processed_at IS NULL`. A row with `card_id` asks for that one card. A card has at most one open row (RFC-061).
 
 `draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
@@ -332,7 +334,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | Kind | Payload fields |
 | --- | --- |
 | `route` | `taskClass`, `modelId`, `fallback`, `familyFlag`, `reason` |
-| `model_call` | `role`, `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens` (input read from the provider's prompt cache, not part of `inputTokens`, RFC-083), `stopReason`, and `text`, the model's reply text, when it wrote any (RFC-074). The prompt is not stored; `attempts.prompt_hash` and `review_prompt_hash` keep its hash |
+| `model_call` | `role`, `taskClass` (`implement`, `implement_hard`, or `review`, on rows written after RFC-089), `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens` (input read from the provider's prompt cache, not part of `inputTokens`, RFC-083), `stopReason`, and `text`, the model's reply text, when it wrote any (RFC-074). The prompt is not stored; `attempts.prompt_hash` and `review_prompt_hash` keep its hash |
 | `tool_call` | `name`, `ok`, `rejected`, `summary`, and `args` for the tools below (RFC-074) |
 | `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
@@ -626,6 +628,25 @@ PUT accepts `host`, `login`, optional `token`, and `clear`. The same host and to
 ```
 
 `name` is required on create, with the same rules as `PUT /api/me`. `PUT /api/users/{id}` accepts optional `name`, `role`, `admin`, `disabled`, and optional `password`. A `name` that is sent and empty is `422` on `name`. The response user object has no password and no token. Removing or disabling the last admin is `422`.
+
+`GET /api/usage?from=YYYY-MM-DD&to=YYYY-MM-DD` requires the admin flag (RFC-089). A non-admin is `403`, checked before the dates. `from` and `to` are UTC days, both inclusive. `to` defaults to today and `from` to 30 days ending at `to`. A day that is not `YYYY-MM-DD` is `422` on that field; `from` after `to`, or a range over 366 days, is `422` on `from`.
+
+```json
+{
+  "from": "2026-09-13",
+  "to": "2026-10-12",
+  "rows": [
+    {
+      "day": "2026-10-01", "projectId": "proj_default", "projectName": "Default",
+      "familyId": "anthropic-main", "protocol": "anthropic", "modelId": "claude-a",
+      "task": "implement", "userId": "user_0123456789ab", "userName": "Ada Lovelace", "userEmail": "ada@example.com",
+      "calls": 3, "inputTokens": 300, "outputTokens": 30, "cachedInputTokens": 100
+    }
+  ]
+}
+```
+
+Each row totals one day's `model_call` and `requirement_refined` events for one project, model, task, and user, across every project. `task` is `refine_requirement` for a refine, else the payload's `taskClass`, else `review` for role `reviewer`, else the attempt's `task_class`, else `implement`. `userId` is the card owner, or the refine's `actor_id`, and empty for a card with no owner. `familyId` and `protocol` come from the family in the service `config.yaml` that lists the model now, and are empty when none does. No reply text, prompt, or secret is returned.
 
 `GET /api/tribes` returns tribes the caller belongs to. An admin receives every tribe. `POST /api/tribes` with `{ "name": "Platform" }` requires admin.
 
@@ -1442,6 +1463,7 @@ The CLI calls the same `internal/app` functions, not the HTTP API. It prints the
 | `orchestrator request-changes --project ID CARD` | `POST /api/projects/{id}/cards/{card}/request-changes` |
 | `orchestrator reject --project ID CARD` | `POST /api/projects/{id}/cards/{card}/reject` |
 | `orchestrator unblock --project ID CARD [--reset-attempts]` | `POST /api/projects/{id}/cards/{card}/unblock` |
+| `orchestrator usage [--from DAY] [--to DAY] [--by llm\|model\|project\|user\|task]` | `GET /api/usage`, totalled by one dimension and sorted by total tokens. The operator runs it, so it has no admin check (RFC-089) |
 | `orchestrator serve` | Starts the API and one worker per project |
 
 Break-glass CLI commands that can read the service data directory attribute the actor from `--as EMAIL` when the command is a human gate. HTTP gates use the session user. The fixture may omit `--as` and use the fixture user.

@@ -41,6 +41,7 @@
       label: 'Admin',
       admin: true,
       items: [
+        { href: '/admin/usage', label: 'Token usage', icon: 'chart' },
         { href: '/admin/users', label: 'Users', icon: 'users' },
         { href: '/tribes', label: 'Tribes', icon: 'shield' },
         { href: '/admin/github', label: 'Company GitHub', icon: 'building' },

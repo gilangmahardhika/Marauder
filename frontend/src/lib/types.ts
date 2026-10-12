@@ -464,3 +464,27 @@ export type ProjectConventions = {
   }[];
   canEdit: boolean;
 };
+
+/**
+ * One day of model calls for one project, model, task type, and user (RFC-089). `familyId` is empty for a model no
+ * LLM family lists; `userId` is empty for a card with no owner. Total tokens are input plus output.
+ */
+export type UsageRow = {
+  day: string;
+  projectId: string;
+  projectName: string;
+  familyId: string;
+  protocol: string;
+  modelId: string;
+  task: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens: number;
+};
+
+/** `from` and `to` are inclusive YYYY-MM-DD days in UTC. */
+export type UsageResponse = { from: string; to: string; rows: UsageRow[] };

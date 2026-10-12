@@ -33,6 +33,7 @@ import type {
   TribeCandidate,
   TribeMember,
   TribeRecord,
+  UsageResponse,
 } from "$lib/types";
 
 const base = "http://127.0.0.1:8787";
@@ -283,6 +284,11 @@ export function removeMember(tribeId: string, userId: string) {
 
 export function getUsers() {
   return request<{ users: SessionUser[] }>("/api/users");
+}
+
+export function getUsage(from: string, to: string) {
+  const query = new URLSearchParams({ from, to });
+  return request<UsageResponse>(`/api/usage?${query}`);
 }
 
 export function createUser(body: {

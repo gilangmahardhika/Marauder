@@ -242,7 +242,7 @@ func (s *session) loop(ctx context.Context) error {
 		if modelID == "" {
 			modelID = s.in.Model
 		}
-		err = s.event(ctx, "model_call", modelCallPayload("implementer", modelID, resp, s.in.Secrets))
+		err = s.event(ctx, "model_call", modelCallPayload("implementer", s.in.TaskClass, modelID, resp, s.in.Secrets))
 		endTurn()
 		if err != nil {
 			return err

@@ -118,7 +118,7 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 		if modelID == "" {
 			modelID = in.Model
 		}
-		err = reviewEvent(ctx, in, "model_call", modelCallPayload("reviewer", modelID, resp, in.Secrets))
+		err = reviewEvent(ctx, in, "model_call", modelCallPayload("reviewer", "review", modelID, resp, in.Secrets))
 		endTurn()
 		if err != nil {
 			return result, err

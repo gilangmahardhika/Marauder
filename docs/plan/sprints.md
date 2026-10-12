@@ -762,3 +762,16 @@ Packages: `internal/live`, `internal/trace`, `internal/providers`, `internal/app
 - The Trace page reads the stream while live and polls only as a fallback. The terminal view shows the reply being written with a caret.
 
 Done when: `TestHubSnapshotAndSlowSubscriber`, `TestStreamRedactorEverySplit`, `TestRoutedStreamRestartAfterToken`, `TestLoopStreamsTurnText`, `TestReviewStreamsText`, `TestTraceStreamFrames`, `TestTraceStreamRedactsSplitSecret`, `TestTraceStreamOtherProcessEvents`, `TestTraceStreamRequiresMember`, `TestTraceStreamCap`, the `streamTrace`, Trace page, and `TerminalView` Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 53: Token usage across projects
+
+Goal: An admin sees the token usage of every stored model call across projects, and filters, groups, and sorts it by LLM, model, project, user, and task type (RFC-089, REQ-084).
+
+Packages: `migrations`, `internal/loop`, `internal/board`, `internal/app`, `internal/httpapi`, `internal/cli`, frontend `api.ts`, `usage.ts`, the admin Token usage page, and the layout nav.
+
+- An index on `events (kind, ts)`, and `taskClass` on new `model_call` events.
+- `board.UsageRows` totals `model_call` and `requirement_refined` events per day, project, model, task type, and user.
+- `app.Usage` checks the admin flag and the range and adds each model's family from `config.yaml`. `GET /api/usage` and `orchestrator usage` share it.
+- `/admin/usage` with the range, five filters, Group by, a sortable table, the totals, and a bar per day.
+
+Done when: `TestUsageAggregates`, `TestUsageTaskClass`, `TestUsageUser`, `TestUsageFamily`, `TestUsageAdminOnly`, `TestUsageRange`, `TestModelCallTaskClass`, `TestUsageCLI`, the `usage` lib, Token usage page, and nav Vitest cases, `npm run check`, the fixture, and the rest of the suite.

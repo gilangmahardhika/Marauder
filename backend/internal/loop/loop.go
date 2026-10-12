@@ -422,10 +422,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 }
 
 // modelCallPayload is one model_call event. text is the reply the model wrote
-// beside its tool calls, never the prompt.
-func modelCallPayload(role, modelID string, resp providers.Response, secrets []string) map[string]any {
+// beside its tool calls, never the prompt. taskClass is the request's class,
+// which the token usage page groups by (RFC-089).
+func modelCallPayload(role, taskClass, modelID string, resp providers.Response, secrets []string) map[string]any {
 	payload := map[string]any{
-		"role": role, "modelId": modelID, "stopReason": resp.StopReason,
+		"role": role, "taskClass": taskClass, "modelId": modelID, "stopReason": resp.StopReason,
 		"inputTokens": resp.InputTokens, "outputTokens": resp.OutputTokens, "cachedInputTokens": resp.CachedInputTokens,
 	}
 	if text := trace.Clip(resp.Text, secrets, trace.TextCap); strings.TrimSpace(text) != "" {
