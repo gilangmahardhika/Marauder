@@ -5,6 +5,7 @@ import {
   dimensionOptionsFor,
   filterUsage,
   groupUsage,
+  labelOf,
   none,
   rangeWindow,
   sortGroups,
@@ -25,6 +26,9 @@ function row(over: Partial<UsageRow>): UsageRow {
     userId: 'usr_ana',
     userName: 'Ana',
     userEmail: 'ana@example.com',
+    source: 'card',
+    cardId: 'card_ana',
+    cardTitle: 'Ana card',
     calls: 1,
     inputTokens: 100,
     outputTokens: 10,
@@ -36,11 +40,11 @@ function row(over: Partial<UsageRow>): UsageRow {
 const usageRows: UsageRow[] = [
   row({ calls: 3, inputTokens: 300, outputTokens: 30, cachedInputTokens: 100 }),
   row({ task: 'review', familyId: 'openai-main', protocol: 'openai', modelId: 'gpt-b', inputTokens: 50, outputTokens: 5 }),
-  row({ day: '2026-10-03', projectId: 'proj_gadget', projectName: 'Gadget', userId: 'usr_ben', userName: '', userEmail: 'ben@example.com', task: 'refine_requirement', inputTokens: 40, outputTokens: 4 }),
-  row({ day: '2026-10-03', familyId: '', protocol: '', modelId: 'retired', userId: '', userName: '', userEmail: '', inputTokens: 7, outputTokens: 1 })
+  row({ day: '2026-10-03', projectId: 'proj_gadget', projectName: 'Gadget', userId: 'usr_ben', userName: '', userEmail: 'ben@example.com', task: 'refine_requirement', source: 'intake', cardId: '', cardTitle: '', inputTokens: 40, outputTokens: 4 }),
+  row({ day: '2026-10-03', familyId: '', protocol: '', modelId: 'retired', userId: '', userName: '', userEmail: '', cardId: 'card_loose', cardTitle: 'Loose card', inputTokens: 7, outputTokens: 1 })
 ];
 
-const all: UsageFilter = { llm: '', model: '', project: '', user: '', task: '' };
+const all: UsageFilter = { llm: '', model: '', project: '', user: '', task: '', source: '', card: '' };
 
 describe('usage', () => {
   test('groups by each dimension with labels for missing values', () => {
@@ -52,6 +56,27 @@ describe('usage', () => {
     expect(byKey('project')).toEqual({ Default: 393, Gadget: 44 });
     const model = groupUsage(usageRows, 'model').find((group) => group.key === 'claude-a');
     expect(model).toMatchObject({ calls: 4, inputTokens: 340, outputTokens: 34, cachedInputTokens: 100, total: 374 });
+  });
+
+  test('groups by source and card, with refines as Intake', () => {
+    const byLabel = (by: Parameters<typeof groupUsage>[1]) =>
+      Object.fromEntries(groupUsage(usageRows, by).map((group) => [group.label, group.total]));
+    expect(byLabel('source')).toEqual({ Card: 393, Intake: 44 });
+    expect(byLabel('card')).toEqual({ 'Ana card': 385, Intake: 44, 'Loose card': 8 });
+    expect(groupUsage(usageRows, 'card').map((group) => group.key)).toEqual(['card_ana', none, 'card_loose']);
+    expect(labelOf(usageRows[2], 'card')).toBe('Intake');
+    expect(labelOf(usageRows[2], 'source')).toBe('Intake');
+    expect(labelOf({ ...usageRows[0], cardTitle: '' }, 'card')).toBe('card_ana');
+  });
+
+  test('filters and lists options by source and card', () => {
+    expect(filterUsage(usageRows, { ...all, source: 'intake' })).toEqual([usageRows[2]]);
+    expect(filterUsage(usageRows, { ...all, card: none })).toEqual([usageRows[2]]);
+    expect(filterUsage(usageRows, { ...all, card: 'card_ana' })).toHaveLength(2);
+    expect(filterUsage(usageRows, { ...all, source: 'card', card: none })).toEqual([]);
+    const cards = usageOptions(usageRows, all, 'card');
+    expect(cards.map((option) => option.value)).toEqual(['', 'card_ana', none, 'card_loose']);
+    expect(cards.map((option) => option.label)).toEqual(['All cards', 'Ana card · 385', 'Intake · 44', 'Loose card · 8']);
   });
 
   test('filters by every dimension, with the none value for a missing one', () => {

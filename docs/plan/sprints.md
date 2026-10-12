@@ -787,3 +787,15 @@ Packages: `internal/board`, `internal/tenancy`, `internal/app`, `internal/httpap
 - `UsageDashboard` serves `/admin/usage`, `/tribes/{id}/usage`, and `/account/usage`, with links from the tribe page, the account page, and the user menu.
 
 Done when: `TestUsageTribeScope`, `TestUsageSelfScope`, `TestTribeUsageAccess`, `TestMyUsage`, `TestUsageCLIScope`, the `usage` lib, tribe and account usage page, admin usage page, and menu Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 55: Token usage by source and card
+
+Goal: Every Token usage page filters and groups by source, Intake or Card, and by card (RFC-091, REQ-086).
+
+Packages: `internal/board`, `internal/app`, `internal/cli`, frontend `types.ts`, `usage.ts`, the `UsageDashboard` component, and the account usage page.
+
+- `board.UsageRows` groups by card too and returns the card id, its title, and the source.
+- `app.GroupUsage` and `orchestrator usage --by` take `source` and `card`.
+- The usage pages filter and group by Source and Card.
+
+Done when: `TestUsageSourceAndCard`, `TestUsageCLICard`, the existing usage tests, the `usage` lib, admin usage page, and account usage page Vitest cases, `npm run check`, the fixture, and the rest of the suite.

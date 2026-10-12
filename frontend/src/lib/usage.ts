@@ -2,12 +2,12 @@ import type { Option } from './filter';
 import { tokens } from './format';
 import type { UsageRow } from './types';
 
-export type Dimension = 'llm' | 'model' | 'project' | 'user' | 'task';
+export type Dimension = 'llm' | 'model' | 'project' | 'user' | 'task' | 'source' | 'card';
 export type SortKey = 'name' | 'calls' | 'input' | 'output' | 'cached' | 'total';
 export type SortDir = 'asc' | 'desc';
 export type UsageFilter = Record<Dimension, string>;
 
-export const dimensionValues = ['llm', 'model', 'project', 'user', 'task'] as const;
+export const dimensionValues = ['llm', 'model', 'project', 'user', 'task', 'source', 'card'] as const;
 export const sortValues = ['name', 'calls', 'input', 'output', 'cached', 'total'] as const;
 export const rangeValues = ['7', '30', '90'] as const;
 
@@ -16,7 +16,9 @@ export const dimensionOptions: Option<Dimension>[] = [
   { value: 'model', label: 'Model' },
   { value: 'project', label: 'Project' },
   { value: 'user', label: 'User' },
-  { value: 'task', label: 'Task' }
+  { value: 'task', label: 'Task' },
+  { value: 'source', label: 'Source' },
+  { value: 'card', label: 'Card' }
 ];
 
 export const rangeOptions: Option<(typeof rangeValues)[number]>[] = [
@@ -35,7 +37,9 @@ const allLabels: Record<Dimension, string> = {
   model: 'All models',
   project: 'All projects',
   user: 'All users',
-  task: 'All tasks'
+  task: 'All tasks',
+  source: 'All sources',
+  card: 'All cards'
 };
 
 const taskLabels: Record<string, string> = {
@@ -59,6 +63,10 @@ export function keyOf(row: UsageRow, by: Dimension) {
       return row.projectId || none;
     case 'user':
       return row.userId || none;
+    case 'source':
+      return row.source;
+    case 'card':
+      return row.cardId || none;
     default:
       return row.task;
   }
@@ -75,6 +83,10 @@ export function labelOf(row: UsageRow, by: Dimension) {
       return row.projectName || row.projectId || 'No project';
     case 'user':
       return row.userId ? row.userName || row.userEmail || row.userId : 'No owner';
+    case 'source':
+      return row.source === 'intake' ? 'Intake' : 'Card';
+    case 'card':
+      return row.cardId ? row.cardTitle || row.cardId : 'Intake';
     default:
       return taskLabels[row.task] ?? row.task;
   }

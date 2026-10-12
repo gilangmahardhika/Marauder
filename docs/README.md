@@ -43,6 +43,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0036-streaming-trace.md](rfc/0036-streaming-trace.md) | Decision `RFC-088`. While a card works, the Trace page holds one streamed connection that pushes stored events and the model's reply token by token |
 | [rfc/0037-token-usage.md](rfc/0037-token-usage.md) | Decision `RFC-089`. An admin-only Token usage page totals stored model calls across projects, by LLM, model, project, user, and task type |
 | [rfc/0038-scoped-token-usage.md](rfc/0038-scoped-token-usage.md) | Decision `RFC-090`. Token usage for one tribe, for its admins, and My token usage for each member |
+| [rfc/0039-usage-by-source-and-card.md](rfc/0039-usage-by-source-and-card.md) | Decision `RFC-091`. Token usage filters and groups by source, Intake or Card, and by card |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

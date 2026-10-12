@@ -466,8 +466,9 @@ export type ProjectConventions = {
 };
 
 /**
- * One day of model calls for one project, model, task type, and user (RFC-089). `familyId` is empty for a model no
- * LLM family lists; `userId` is empty for a card with no owner. Total tokens are input plus output.
+ * One day of model calls for one project, model, task type, user, source, and card (RFC-089, RFC-091). `familyId` is
+ * empty for a model no LLM family lists; `userId` is empty for a card with no owner. A refine has `source` `intake`
+ * and no card. Total tokens are input plus output.
  */
 export type UsageRow = {
   day: string;
@@ -480,6 +481,9 @@ export type UsageRow = {
   userId: string;
   userName: string;
   userEmail: string;
+  source: "intake" | "card";
+  cardId: string;
+  cardTitle: string;
   calls: number;
   inputTokens: number;
   outputTokens: number;

@@ -115,6 +115,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestUsageSelfScope` | Ben's scope has only his rows: his card's call and two refines, in projects of both tribes. Ana's calls and the card with no owner are left out; an unknown user reads nothing |
 | `TestTribeUsageAccess` | `/api/tribes/{id}/usage` without a bearer is `401`; a plain member of the tribe and a tribe admin of another tribe are `403`; an admin on a missing tribe is `404`; the tribe admin with a bad range is `422`; the tribe admin and an admin get only the tribe's project and no reply text |
 | `TestMyUsage` | `/api/me/usage` without a bearer is `401`. A member who is not an admin gets their owned card call and their refine, in two projects, every row theirs, with no other user's email and no reply text. A bad `to` is `422`. An admin with no calls of their own gets no rows |
+| `TestUsageSourceAndCard` | Refine rows have source `intake` and no card; card rows carry the card's id and title. By source, intake has 1 call and card 5; by card, the three cards stay apart by `title (id)` and the refine is "Intake" (RFC-091) |
 | `TestRefineFieldStreams` | A statement refine replies `text/event-stream` with `start` naming the model, at least two deltas that join to the text, then `done` with the text and no acceptance. One request with task class `refine_requirement`, 4,096 max tokens, and no tools. An accepted manual row is unchanged, and one `requirement_refined` event has the id, `field`, model, and tokens, and no text (RFC-086, RFC-087) |
 | `TestRefineFieldAcceptanceLines` | An acceptance refine drops list markers and blank lines in `done` and uses `RefineAcceptanceSystem`. 51 lines or no lines end with an `error` event and no `done` |
 | `TestRefineFieldRedactsSplitKey` | A model key split across two deltas never reaches the stream, whole or in part, and the text reads `[redacted]`. A provider error before text is `502` JSON and one after text is an `error` event, neither with the key |
@@ -325,6 +326,7 @@ After step 9, the runner runs the tool loop with the fake provider on two more c
 | `orchestrator unblock card_x --reset-attempts` on a `turn_cap` card | Exit `0`, card `ready`, `attemptsUsed` 0 |
 | `orchestrator serve --data <repo>/.orchestrator` | Exit `1` before listen |
 | `orchestrator usage --by project` with `--tribe tribe_gadget`, `--user usr_ana`, and both with the other tribe (`TestUsageCLIScope`) | Exit `0`. The company lists Gadget and Default; `--tribe` and `--user` list only Gadget; the other tribe with that user prints `no model calls in this range` |
+| `orchestrator usage --by source` and `--by card` (`TestUsageCLICard`) | Exit `0`. By source, `card 1 100` then `intake 1 40`; by card, `Export CSV (card_...) 1 100` then `Intake 1 40` |
 | `orchestrator usage --from 2026-10-01 --to 2026-10-03 --by task` (`TestUsageCLI`) | Exit `0`, a heading with the range, then `implement 1 100 20 0 120` and `review 1 30 5 0 35`. `--by cost` exits non-zero naming `--by` |
 
 ## Frontend checks

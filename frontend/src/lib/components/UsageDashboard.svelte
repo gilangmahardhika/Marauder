@@ -14,6 +14,7 @@
     dimensionValues,
     filterUsage,
     groupUsage,
+    none,
     rangeOptions,
     rangeValues,
     rangeWindow,
@@ -142,12 +143,12 @@
           />
         {/each}
         {#if filtered}
-          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button>
         {/if}
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No calls match" description="Change the filters to see more calls.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <dl class="flex flex-wrap gap-x-6 gap-y-2 rounded-panel border border-line bg-surface px-4 py-3 text-sm" aria-label="Totals">
@@ -230,7 +231,9 @@
           <tbody>
             {#each groups.slice(0, paging.limit) as group (group.key)}
               <tr class={tr}>
-                <td class="{td} font-medium text-ink"><span class="break-all">{group.label}</span></td>
+                <td class="{td} font-medium text-ink" title={by === 'card' && group.key !== none ? group.key : undefined}>
+                  <span class="break-all">{group.label}</span>
+                </td>
                 <td class="{td} text-right tabular-nums">{count(group.calls)}</td>
                 <td class="{td} text-right tabular-nums" title={count(group.inputTokens)}>{tokens(group.inputTokens)}</td>
                 <td class="{td} text-right tabular-nums" title={count(group.outputTokens)}>{tokens(group.outputTokens)}</td>

@@ -332,3 +332,54 @@ func TestUsageSelfScope(t *testing.T) {
 		t.Fatalf("unknown user rows = %+v", rows)
 	}
 }
+
+func TestUsageSourceAndCard(t *testing.T) {
+	db, data := usageBoard(t)
+	report := readUsage(t, db, data)
+	cards := map[string]string{}
+	rows, err := db.Query(`SELECT title, id FROM cards`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var title, id string
+		if err := rows.Scan(&title, &id); err != nil {
+			t.Fatal(err)
+		}
+		cards[title] = id
+	}
+	for _, r := range report.Rows {
+		switch r.Source {
+		case "intake":
+			if r.Task != "refine_requirement" || r.CardID != "" || r.CardTitle != "" {
+				t.Fatalf("intake row = %+v", r)
+			}
+		case "card":
+			if r.CardID == "" || cards[r.CardTitle] != r.CardID {
+				t.Fatalf("card row = %+v", r)
+			}
+		default:
+			t.Fatalf("source %q in %+v", r.Source, r)
+		}
+	}
+	sources := groupTotals(t, report.Rows, "source")
+	if len(sources) != 2 || sources["intake"].Calls != 1 || sources["card"].Calls != 5 {
+		t.Fatalf("by source = %+v", sources)
+	}
+	byCard := groupTotals(t, report.Rows, "card")
+	want := map[string]int64{
+		"Ana card (" + cards["Ana card"] + ")": 3,
+		"Ben card (" + cards["Ben card"] + ")": 1,
+		"No owner (" + cards["No owner"] + ")": 1,
+		"Intake":                               1,
+	}
+	if len(byCard) != len(want) {
+		t.Fatalf("by card = %+v", byCard)
+	}
+	for key, calls := range want {
+		if byCard[key].Calls != calls {
+			t.Fatalf("%s calls = %d, want %d (all %+v)", key, byCard[key].Calls, calls, byCard)
+		}
+	}
+}

@@ -495,8 +495,8 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 `src/routes/admin/usage/+page.svelte` (RFC-089) calls `getUsage(from, to)` for the range and does the rest in the browser with the pure functions in `src/lib/usage.ts`. Every choice lives in the URL through `setParams`, and a default value leaves its parameter out:
 
 - **Range**: a `Segmented` for 7, 30 (the default), or 90 days (`?range=`). `rangeWindow` turns it into UTC days ending today, and a change reads the route again.
-- **Group by**: a `Segmented` for LLM, Model (the default), Project, User, or Task (`?by=`).
-- **Filters**: a `FilterSelect` each for LLM, Model, Project, User, and Task (`?llm= &model= &project= &user= &task=`), and "Clear filters" while any is set. The value is the family, model, project, or user id, or `-` for a call with none ("Unknown family", "No owner"). `usageOptions` lists each value with its total tokens, counting the rows the other filters keep, largest first.
+- **Group by**: a `Segmented` for LLM, Model (the default), Project, User, Task, Source, or Card (`?by=`).
+- **Filters**: a `FilterSelect` each for LLM, Model, Project, User, Task, Source, and Card (`?llm= &model= &project= &user= &task= &source= &card=`), and "Clear filters" while any is set. The value is the family, model, project, user, or card id, `intake` or `card` for Source, or `-` for a call with none ("Unknown family", "No owner", and "Intake" for a refine under Card) (RFC-091). Grouped by card, each name cell has the card id as its `title`, since titles can repeat. `usageOptions` lists each value with its total tokens, counting the rows the other filters keep, largest first.
 - **Totals**: a strip in the Trace page style with total tokens, input, output, cached input, calls, and cache share (cached over input plus cached, since providers count cached input apart). Total is input plus output.
 - **Tokens per day**: one CSS bar per day of the range, a day with no calls included, each with a `title`. The bars are `aria-hidden` and a visually hidden table gives the same numbers. No chart library.
 - **Table**: the groups with calls, input, output, cached, total, and share of the filtered total as a bar and a percent. The name and number headers are 44px buttons with `aria-sort`; a first click sorts numbers largest first and names A to Z, and a second click reverses (`?sort= &dir=`, default total, largest first). `ShowMore` after 50 groups.
@@ -507,7 +507,7 @@ The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with prop
 
 - `/admin/usage` with `getUsage`.
 - `/tribes/[id]/usage` with `getTribeUsage(id, ...)`, titled "Token usage: {tribe}" from `getTribes()`, with all five dimensions and a "Back to tribe" link. The tribe page links to it with a "Token usage" button.
-- `/account/usage`, "My token usage", with `getMyUsage` and the dimensions LLM, model, project, and task, and an "Account" link. The account page links to it with a "Token usage" button, and the user menu and the mobile menu with "My token usage".
+- `/account/usage`, "My token usage", with `getMyUsage` and the dimensions LLM, model, project, task, source, and card, and an "Account" link. The account page links to it with a "Token usage" button, and the user menu and the mobile menu with "My token usage".
 
 ### Company GitHub
 
@@ -686,9 +686,11 @@ npm run build
 | `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
 | `usage` lib | Groups by LLM, model, project, user, and task, with "Unknown family" and "No owner". Filters use `-` for a missing value. Options count the rows the other filters keep and keep a chosen value with none. Groups sort by any column either way, ties by name. Daily totals fill every day of the range. The summary's cache share is cached over all input read. `rangeWindow` ends today in UTC |
 | Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and the Model choices, and picking one sets `model`. `?by=user` regroups and Group by sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
+| `usage` source and card | Source groups Card and Intake; Card groups by id with refines as "Intake" and falls back to the id without a title. `source=intake` and `card=-` keep only refines, and card options list each card once, largest first (RFC-091) |
+| Admin usage by card | `?by=card` lists Ana card, Intake, and Loose card with the card id as each title, Group by offers Source and Card, `?source=intake` narrows the total to the refine, and Clear filters drops `source` |
 | `usage` dimension choices | `dimensionOptionsFor` keeps the allowed dimensions in the usual order |
 | Tribe usage page | It reads `getTribeUsage` with the route's tribe id and 30 days, titles the page and the shell "Token usage: Gadget tribe", links back to the tribe, and offers the User filter |
-| Account usage page | It reads `getMyUsage`, has no User filter, and Group by offers LLM, Model, Project, and Task. `?by=user&user=...` is ignored: models group and every row counts |
+| Account usage page | It reads `getMyUsage`, has no User filter, and Group by offers LLM, Model, Project, Task, Source, and Card. `?by=user&user=...` is ignored: models group and every row counts |
 | User menu | Opening the menu shows "My token usage" linking to `/account/usage` for a member who is not an admin |
 | Nav admin items | Token usage is the first Admin link for an admin and is absent for a member who is not one |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |

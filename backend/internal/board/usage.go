@@ -5,8 +5,10 @@ import (
 	"database/sql"
 )
 
-// UsageRow is the token usage of one day, project, model, task type, and user
-// (RFC-089). UserID is empty for a card with no owner.
+// UsageRow is the token usage of one day, project, model, task type, user,
+// source, and card (RFC-089, RFC-091). UserID is empty for a card with no
+// owner. Source is intake for a refine and card otherwise; a refine has no
+// card.
 type UsageRow struct {
 	Day               string
 	ProjectID         string
@@ -16,6 +18,9 @@ type UsageRow struct {
 	UserID            string
 	UserName          string
 	UserEmail         string
+	Source            string
+	CardID            string
+	CardTitle         string
 	Calls             int64
 	InputTokens       int64
 	OutputTokens      int64
@@ -45,7 +50,9 @@ func UsageRows(ctx context.Context, db *sql.DB, from, to string, scope UsageScop
 					WHEN e.payload_json::jsonb->>'role' = 'reviewer' THEN 'review'
 					ELSE COALESCE(a.task_class, 'implement')
 				END AS task,
-				CASE WHEN e.kind = 'requirement_refined' THEN e.actor_id ELSE c.owner_id END AS user_id
+				CASE WHEN e.kind = 'requirement_refined' THEN e.actor_id ELSE c.owner_id END AS user_id,
+				CASE WHEN e.kind = 'requirement_refined' THEN 'intake' ELSE 'card' END AS source,
+				COALESCE(e.card_id, '') AS card_id, COALESCE(c.title, '') AS card_title
 			FROM events e
 			LEFT JOIN attempts a ON a.id = e.attempt_id
 			LEFT JOIN cards c ON c.id = e.card_id
@@ -53,6 +60,7 @@ func UsageRows(ctx context.Context, db *sql.DB, from, to string, scope UsageScop
 		)
 		SELECT calls.day, calls.project_id, COALESCE(pr.name, ''), COALESCE(calls.p->>'modelId', ''), calls.task,
 			COALESCE(calls.user_id, ''), COALESCE(u.name, ''), COALESCE(u.email, ''),
+			calls.source, calls.card_id, calls.card_title,
 			count(*),
 			COALESCE(SUM((calls.p->>'inputTokens')::bigint), 0),
 			COALESCE(SUM((calls.p->>'outputTokens')::bigint), 0),
@@ -61,8 +69,9 @@ func UsageRows(ctx context.Context, db *sql.DB, from, to string, scope UsageScop
 		LEFT JOIN projects pr ON pr.id = calls.project_id
 		LEFT JOIN users u ON u.id = calls.user_id
 		WHERE ($3 = '' OR pr.tribe_id = $3) AND ($4 = '' OR calls.user_id = $4)
-		GROUP BY calls.day, calls.project_id, pr.name, calls.p->>'modelId', calls.task, calls.user_id, u.name, u.email
-		ORDER BY calls.day, calls.project_id, calls.p->>'modelId', calls.task, calls.user_id`, from, to, scope.TribeID, scope.UserID)
+		GROUP BY calls.day, calls.project_id, pr.name, calls.p->>'modelId', calls.task, calls.user_id, u.name, u.email,
+			calls.source, calls.card_id, calls.card_title
+		ORDER BY calls.day, calls.project_id, calls.p->>'modelId', calls.task, calls.user_id, calls.source, calls.card_id`, from, to, scope.TribeID, scope.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +80,7 @@ func UsageRows(ctx context.Context, db *sql.DB, from, to string, scope UsageScop
 	for rows.Next() {
 		var r UsageRow
 		if err := rows.Scan(&r.Day, &r.ProjectID, &r.ProjectName, &r.ModelID, &r.Task,
-			&r.UserID, &r.UserName, &r.UserEmail, &r.Calls, &r.InputTokens, &r.OutputTokens, &r.CachedInputTokens); err != nil {
+			&r.UserID, &r.UserName, &r.UserEmail, &r.Source, &r.CardID, &r.CardTitle, &r.Calls, &r.InputTokens, &r.OutputTokens, &r.CachedInputTokens); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

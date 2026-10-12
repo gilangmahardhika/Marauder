@@ -4,7 +4,7 @@
   import type { Dimension } from '$lib/usage';
   import Button from '$lib/ui/Button.svelte';
 
-  const dimensions: Dimension[] = ['llm', 'model', 'project', 'task'];
+  const dimensions: Dimension[] = ['llm', 'model', 'project', 'task', 'source', 'card'];
 </script>
 
 <UsageDashboard

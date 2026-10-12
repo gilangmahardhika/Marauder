@@ -42,6 +42,9 @@ type UsageRow struct {
 	UserID            string `json:"userId"`
 	UserName          string `json:"userName"`
 	UserEmail         string `json:"userEmail"`
+	Source            string `json:"source"`
+	CardID            string `json:"cardId"`
+	CardTitle         string `json:"cardTitle"`
 	Calls             int64  `json:"calls"`
 	InputTokens       int64  `json:"inputTokens"`
 	OutputTokens      int64  `json:"outputTokens"`
@@ -140,6 +143,7 @@ func ReadUsage(ctx context.Context, db *sql.DB, data string, scope board.UsageSc
 		report.Rows = append(report.Rows, UsageRow{
 			Day: r.Day, ProjectID: r.ProjectID, ProjectName: r.ProjectName, FamilyID: family.ID, Protocol: family.Protocol,
 			ModelID: r.ModelID, Task: r.Task, UserID: r.UserID, UserName: r.UserName, UserEmail: r.UserEmail,
+			Source: r.Source, CardID: r.CardID, CardTitle: r.CardTitle,
 			Calls: r.Calls, InputTokens: r.InputTokens, OutputTokens: r.OutputTokens, CachedInputTokens: r.CachedInputTokens,
 		})
 	}
@@ -173,14 +177,21 @@ func GroupUsage(rows []UsageRow, by string) ([]UsageGroup, error) {
 				return "No owner"
 			}
 			return orUnknown(r.UserName, r.UserEmail)
+		case "source":
+			return r.Source
+		case "card":
+			if r.CardID == "" {
+				return "Intake"
+			}
+			return orUnknown(r.CardTitle, "Untitled") + " (" + r.CardID + ")"
 		default:
 			return r.Task
 		}
 	}
 	switch by {
-	case "llm", "model", "project", "user", "task":
+	case "llm", "model", "project", "user", "task", "source", "card":
 	default:
-		return nil, fmt.Errorf("--by must be one of llm, model, project, user, or task")
+		return nil, fmt.Errorf("--by must be one of llm, model, project, user, task, source, or card")
 	}
 	byKey := map[string]*UsageGroup{}
 	for _, r := range rows {

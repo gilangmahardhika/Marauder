@@ -517,3 +517,58 @@ func TestUsageCLIScope(t *testing.T) {
 		t.Fatalf("--tribe and --user = %q", out)
 	}
 }
+
+func TestUsageCLICard(t *testing.T) {
+	repo, data, databaseURL := cliDirs(t)
+	db, err := board.Open(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	card, err := board.InsertCard(ctx, db, board.Card{Status: "human_review", Title: "Export CSV"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []trace.Event{
+		{TS: "2026-10-02T10:00:00Z", CardID: card.ID, ProjectID: "proj_default", Kind: "model_call",
+			Payload: map[string]any{"role": "implementer", "taskClass": "implement", "modelId": "model-a", "inputTokens": 100}},
+		{TS: "2026-10-02T11:00:00Z", ProjectID: "proj_default", Kind: "requirement_refined",
+			Payload: map[string]any{"requirementId": "new", "modelId": "model-a", "inputTokens": 40}},
+	} {
+		if _, err := trace.Append(ctx, db, ev, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	usage := func(by string) []string {
+		var stdout, stderr bytes.Buffer
+		code := cli.Execute(cli.Options{
+			Args:   []string{"usage", "--from", "2026-10-01", "--to", "2026-10-03", "--by", by, "--repo", repo, "--data", data},
+			Stdout: &stdout,
+			Stderr: &stderr,
+			Getenv: func(key string) string {
+				if key == "ORCHESTRATOR_DATABASE_URL" {
+					return databaseURL
+				}
+				return ""
+			},
+		})
+		if code != 0 {
+			t.Fatalf("--by %s exit = %d stderr %q", by, code, stderr.String())
+		}
+		var got []string
+		for _, line := range strings.Split(strings.TrimSpace(stdout.String()), "\n")[1:] {
+			got = append(got, strings.Join(strings.Fields(line), " "))
+		}
+		return got
+	}
+	if got := usage("source"); len(got) != 3 || got[1] != "card 1 100 0 0 100" || got[2] != "intake 1 40 0 0 40" {
+		t.Fatalf("--by source = %q", got)
+	}
+	if got := usage("card"); len(got) != 3 || got[1] != "Export CSV ("+card.ID+") 1 100 0 0 100" || got[2] != "Intake 1 40 0 0 40" {
+		t.Fatalf("--by card = %q", got)
+	}
+}

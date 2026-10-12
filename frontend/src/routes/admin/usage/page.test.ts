@@ -35,6 +35,9 @@ function row(over: Partial<UsageRow>): UsageRow {
     userId: 'usr_ana',
     userName: 'Ana',
     userEmail: 'ana@example.com',
+    source: 'card',
+    cardId: 'card_ana',
+    cardTitle: 'Ana card',
     calls: 1,
     inputTokens: 100,
     outputTokens: 10,
@@ -46,8 +49,8 @@ function row(over: Partial<UsageRow>): UsageRow {
 const rows: UsageRow[] = [
   row({ calls: 3, inputTokens: 300, outputTokens: 30, cachedInputTokens: 100 }),
   row({ task: 'review', familyId: 'openai-main', protocol: 'openai', modelId: 'gpt-b', inputTokens: 50, outputTokens: 5 }),
-  row({ day: '2026-10-03', projectId: 'proj_gadget', projectName: 'Gadget', userId: 'usr_ben', userName: '', userEmail: 'ben@example.com', task: 'refine_requirement', inputTokens: 40, outputTokens: 4 }),
-  row({ day: '2026-10-03', familyId: '', protocol: '', modelId: 'retired', userId: '', userName: '', userEmail: '', inputTokens: 7, outputTokens: 1 })
+  row({ day: '2026-10-03', projectId: 'proj_gadget', projectName: 'Gadget', userId: 'usr_ben', userName: '', userEmail: 'ben@example.com', task: 'refine_requirement', source: 'intake', cardId: '', cardTitle: '', inputTokens: 40, outputTokens: 4 }),
+  row({ day: '2026-10-03', familyId: '', protocol: '', modelId: 'retired', userId: '', userName: '', userEmail: '', cardId: 'card_loose', cardTitle: 'Loose card', inputTokens: 7, outputTokens: 1 })
 ];
 
 function header(name: string) {
@@ -146,4 +149,24 @@ test('a member who is not an admin sees the refusal', async () => {
   render(UsagePage);
   await waitFor(() => expect(shell.message).toBe('forbidden'));
   expect(screen.queryByLabelText('Totals')).toBeNull();
+});
+
+test('groups by card and filters by source', async () => {
+  route.search = '?by=card';
+  const { unmount } = render(UsagePage);
+  expect(await groupNames('Token usage by card')).toEqual(['Ana card', 'Intake', 'Loose card']);
+  const table = screen.getByRole('table', { name: 'Token usage by card' });
+  const cells = within(table).getAllByRole('row').slice(1).map((tr) => within(tr).getAllByRole('cell')[0]);
+  expect(cells.map((cell) => cell.getAttribute('title'))).toEqual(['card_ana', null, 'card_loose']);
+  const groupBy = within(screen.getByRole('group', { name: 'Group by' }));
+  expect(groupBy.getByRole('button', { name: 'Source' })).toBeTruthy();
+  expect(groupBy.getByRole('button', { name: 'Card' })).toBeTruthy();
+  unmount();
+
+  route.search = '?source=intake';
+  render(UsagePage);
+  expect(await groupNames('Token usage by model')).toEqual(['claude-a']);
+  expect(within(screen.getByLabelText('Totals')).getByText('Total tokens').nextElementSibling?.textContent).toBe('44');
+  await fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+  expect(lastParams().has('source')).toBe(false);
 });

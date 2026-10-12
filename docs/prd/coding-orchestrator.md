@@ -128,6 +128,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-083 | A member can refine a requirement with AI and compare it before applying |
 | REQ-084 | An admin sees token usage across projects |
 | REQ-085 | A tribe admin sees their tribe's token usage, and a member sees their own |
+| REQ-086 | Token usage filters by source and card |
 
 ## Requirements
 
@@ -1182,6 +1183,16 @@ A tribe admin opens the Token usage page for their tribe and sees the calls of t
 - My token usage counts only the member's own calls, and never shows another user.
 - A call on a card counts in the card's project.
 - Neither page shows a model's reply text or a secret.
+
+### REQ-086 Token usage filters by source and card
+
+Every Token usage page filters and groups the usage by source, Intake for requirement refines and Card for the implement and review jobs on cards, and by card, so a person sees what intake costs next to card work and which card used the most (RFC-091).
+
+#### Acceptance
+
+- Source has two values: Intake and Card. Filtering by one changes every total on the page.
+- Card lists each card that made calls, by title, and refines as "Intake". Two cards with one title stay apart.
+- Source and Card are on the company, tribe, and My token usage pages.
 
 ## Non-goals
 

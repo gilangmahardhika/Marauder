@@ -875,3 +875,13 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestUsageCLIScope`
 - [x] `usage` lib, tribe and account usage page, admin usage page, and menu Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 55: Token usage by source and card
+
+- [x] Usage rows carry `source`, `cardId`, and `cardTitle`, grouped by card.
+- [x] `GroupUsage` and `orchestrator usage --by` take `source` and `card`.
+- [x] Source and Card filters and Group by on every usage page.
+- [x] `TestUsageSourceAndCard`
+- [x] `TestUsageCLICard`
+- [x] `usage` lib, admin usage page, and account usage page Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
