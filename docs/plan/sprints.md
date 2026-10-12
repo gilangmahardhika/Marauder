@@ -601,10 +601,11 @@ Goal: A reviewer that thinks at length before it answers still gets to give a ve
 Packages: `internal/providers`, `internal/providers/fake`, `internal/loop`, `internal/app`.
 
 - Reviewer requests set `MaxTokens` to 32,768. Other task classes keep 8,192.
+- The Anthropic client sets a request timeout sized to `MaxTokens`, so the SDK sends a 32,768-token request instead of refusing it as streaming-only.
 - A reviewer reply with no tool call that stopped at `max_tokens` or `length` is asked again once on the same model. A second one is `ErrReviewCut`, an `ErrReviewParse`, so the fallback and RFC-069 apply.
 - That failure's `job_error` and "AI review: Not done" comment name the token limit.
 
-Done when: `TestReviewMaxTokens`, `TestReviewRetriesCutReply`, `TestReviewCutTwiceFails`, and the rest of the review suite.
+Done when: `TestReviewMaxTokens`, `TestAnthropicReviewMaxTokens`, `TestReviewRetriesCutReply`, `TestReviewCutTwiceFails`, and the rest of the review suite.
 
 ## Sprint 41: Retry an AI review that gave no verdict
 
@@ -630,3 +631,15 @@ Packages: `internal/review`, `internal/app`, `internal/worker`.
 - The Advancer refreshes `changes_requested` cards, and `RefreshCard` calls `AtCap` for them, which releases cards already stuck.
 
 Done when: `TestCIRedQueuesRetry`, `TestCIRedAtCapBlocks`, `TestRefreshCapsChangesRequested`, `TestRequestChangesAtCapBlocks`, `TestAdvancerRefreshesChangesRequested`, and the rest of the review, gate, and worker suites.
+
+## Sprint 43: Terminal view on the Trace page
+
+Goal: A person watches a working card's trace as terminal output, with every reply and tool output in full, as it arrives (RFC-078, under REQ-076).
+
+Packages: frontend `lib/terminal.ts`, `TerminalView`, the Trace page. No backend change.
+
+- `terminal.terminalLines` turns each stored event into a head line and its full text, with a line where each attempt begins.
+- `TerminalView` renders them as a dark monospaced log that follows new output, folds text past 200 lines, renders the newest 300 events, and offers "Jump to latest".
+- The Trace page has a Structured and Terminal switch in `?view=terminal`, and polls every second in the terminal view while live.
+
+Done when: the `terminal`, `TerminalView`, and Trace page terminal view Vitest suites, `npm run check`, and the backend suite unchanged.

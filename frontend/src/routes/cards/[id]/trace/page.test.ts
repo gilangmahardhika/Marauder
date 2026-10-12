@@ -5,9 +5,13 @@ import { shell } from '$lib/shell.svelte';
 import type { TraceAttempt, TraceEvent, TraceResponse } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getTrace: vi.fn(), getCard: vi.fn() }));
+const route = vi.hoisted(() => ({ search: '' }));
 
 vi.mock('$app/stores', () => ({
-  page: readable({ params: { id: 'card_1' }, url: new URL('http://127.0.0.1:4173/cards/card_1/trace') })
+  page: {
+    subscribe: (run: (value: unknown) => void) =>
+      readable({ params: { id: 'card_1' }, url: new URL(`http://127.0.0.1:4173/cards/card_1/trace${route.search}`) }).subscribe(run)
+  }
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api', () => ({
@@ -67,6 +71,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
   shell.projectId = '';
+  route.search = '';
 });
 
 test('polls with since while live, merges new rows, and stops when the card is done', async () => {
@@ -105,4 +110,39 @@ test('does not poll a card that is not live', async () => {
   await vi.advanceTimersByTimeAsync(10000);
   expect(api.getTrace).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole('region', { name: 'Now running' })).toBeNull();
+});
+
+test('the terminal view renders the log and keeps the filters', async () => {
+  route.search = '?view=terminal&kind=tool_call';
+  api.getTrace.mockResolvedValue({ attempts: [{ ...attempt, endedAt: '2026-10-12T10:00:20Z', outcome: 'checks_passed' }], events: [first, second], live: false });
+  render(TracePage);
+  await vi.advanceTimersByTimeAsync(0);
+  const log = screen.getByRole('log', { name: 'Terminal output, oldest first' });
+  expect(log.textContent).toContain('$ read_file  src/login.ts');
+  expect(log.textContent).toContain('a\nb');
+  expect(log.textContent).not.toContain('I will read the login page.');
+  expect(screen.getByRole('button', { name: 'Terminal' }).getAttribute('aria-pressed')).toBe('true');
+});
+
+test('a live card polls every second in the terminal view and every 3 seconds otherwise', async () => {
+  api.getTrace.mockResolvedValue({ attempts: [attempt], events: [first], live: true });
+  route.search = '?view=terminal';
+  const terminal = render(TracePage);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api.getTrace).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(api.getTrace).toHaveBeenCalledTimes(2);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(api.getTrace).toHaveBeenCalledTimes(3);
+  terminal.unmount();
+
+  api.getTrace.mockClear();
+  route.search = '';
+  render(TracePage);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api.getTrace).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(api.getTrace).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(api.getTrace).toHaveBeenCalledTimes(2);
 });

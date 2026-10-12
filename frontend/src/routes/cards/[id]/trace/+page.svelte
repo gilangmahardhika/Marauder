@@ -2,6 +2,7 @@
   import { tick, untrack } from 'svelte';
   import { page } from '$app/stores';
   import { ApiError, getCard, getTrace, unreachable } from '$lib/api';
+  import TerminalView from '$lib/components/TerminalView.svelte';
   import TraceBlock from '$lib/components/TraceBlock.svelte';
   import TraceRow from '$lib/components/TraceRow.svelte';
   import { count, day, duration, stamp, tokens } from '$lib/format';
@@ -27,11 +28,14 @@
   import FilterSelect from '$lib/ui/FilterSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import SearchBox from '$lib/ui/SearchBox.svelte';
+  import Segmented from '$lib/ui/Segmented.svelte';
   import ShowMore from '$lib/ui/ShowMore.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
-  /** How often the page reads the trace again while the card works. */
-  const pollMs = 3000;
+  const views = [
+    { value: 'structured', label: 'Structured' },
+    { value: 'terminal', label: 'Terminal' }
+  ];
 
   let events = $state.raw<TraceEvent[]>([]);
   let attempts = $state.raw<TraceAttempt[]>([]);
@@ -50,6 +54,9 @@
   showShell(() => ({ title: 'Trace', message }));
 
   const params = $derived($page.url.searchParams);
+  const view = $derived(params.get('view') === 'terminal' ? 'terminal' : 'structured');
+  /** How often the page reads the trace again while the card works. */
+  const pollMs = $derived(view === 'terminal' ? 1000 : 3000);
   const kinds = $derived(kindOptions(events));
   const attemptChoices = $derived(attemptOptions(events, attempts));
   const filter = $derived({
@@ -144,7 +151,7 @@
       loaded = true;
       if (done.length > 0) message = done.map((attempt) => `Attempt ${attempt.n} ended: ${outcomeLabel(attempt)}`).join('. ');
       else if (!since) message = 'Trace';
-      if (since && follow && next.length > before.length) void showLatest();
+      if (since && follow && view === 'structured' && next.length > before.length) void showLatest();
       if (since && (done.length > 0 || wasLive !== live)) {
         void getCard(id)
           .then((body) => id === current && (card = body))
@@ -174,8 +181,9 @@
   $effect(() => {
     if (!live) return;
     const id = cardId;
+    const every = pollMs;
     now = Date.now();
-    const timer = setInterval(() => void load(id, events.at(-1)?.ts ?? ''), pollMs);
+    const timer = setInterval(() => void load(id, events.at(-1)?.ts ?? ''), every);
     const clock = setInterval(() => (now = Date.now()), 1000);
     return () => {
       clearInterval(timer);
@@ -265,6 +273,7 @@
         </div>
       </dl>
       <Toolbar>
+        <Segmented label="View" options={views} value={view} onchange={(next) => setParams({ view: next === 'terminal' ? 'terminal' : '' })} />
         <SearchBox label="Search events" value={filter.q} placeholder="Search events, tools, files, or errors" />
         <FilterSelect label="Kind" options={kinds} value={filter.kind} onchange={(kind) => setParams({ kind })} />
         {#if attemptChoices.length > 2}
@@ -281,6 +290,8 @@
         <EmptyState title="No events match" description="Change the search or filters to see more events.">
           <Button type="button" variant="secondary" onclick={() => setParams({ q: '', kind: '', attempt: '' })}>Clear filters</Button>
         </EmptyState>
+      {:else if view === 'terminal'}
+        <TerminalView events={shown} {attempts} bind:follow />
       {:else}
         <ol bind:this={list} class="flex flex-col gap-2" aria-label="Events, oldest first">
           {#each sections as section (section.key)}

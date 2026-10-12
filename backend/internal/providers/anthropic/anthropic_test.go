@@ -101,6 +101,23 @@ func TestAnthropicSendsTurns(t *testing.T) {
 	}
 }
 
+func TestAnthropicReviewMaxTokens(t *testing.T) {
+	var got map[string]any
+	var path, apiKey string
+	srv := messageServer(t, &got, &path, &apiKey)
+
+	for _, model := range []string{"deepseek-flash", "claude-opus-4-0"} {
+		got = nil
+		_, err := anthropic.New(srv.URL, key).Complete(context.Background(), providers.Request{Model: model, User: "review", MaxTokens: 32 << 10})
+		if err != nil {
+			t.Fatalf("%s: %v", model, err)
+		}
+		if got["max_tokens"] != float64(32<<10) {
+			t.Fatalf("%s: body = %v", model, got)
+		}
+	}
+}
+
 func TestAnthropicBaseURL(t *testing.T) {
 	var got map[string]any
 	var path, apiKey string

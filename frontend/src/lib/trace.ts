@@ -141,7 +141,7 @@ function evidence(text: string) {
 }
 
 /** What the tool was asked for, from `args`, in a few words. */
-function target(name: string, args: Record<string, unknown>) {
+export function target(name: string, args: Record<string, unknown>) {
   switch (name) {
     case 'list_files':
     case 'read_file':

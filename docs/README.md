@@ -35,6 +35,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0028-reviewer-reply-limit.md](rfc/0028-reviewer-reply-limit.md) | Decision `RFC-075`. Reviewer requests may reply with 32,768 tokens, a reply cut at the limit is asked again once, and the failure names the cause |
 | [rfc/0029-retry-ai-review.md](rfc/0029-retry-ai-review.md) | Decision `RFC-076`. A person may send an `agent_review` card whose AI review failed back to `pr_open`, so the review job runs again |
 | [rfc/0030-red-checks-retry.md](rfc/0030-red-checks-retry.md) | Decision `RFC-077`. A red check queues the next attempt or blocks with `attempt_cap`, and a sent-back card out of attempts blocks |
+| [rfc/0031-terminal-trace.md](rfc/0031-terminal-trace.md) | Decision `RFC-078`. The Trace page has a Terminal view that prints every stored event with its full text, follows new output, and polls every second while live |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

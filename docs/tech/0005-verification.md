@@ -144,6 +144,7 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardDiffRoute` | A member gets `200` with the head SHA, and `missing: true` without a clone. A non-member gets `404` |
 | `TestReviewWithoutVerdictUsesChecks` | A reviewer with no verdict and no checks reaches `human_review` with `review_verdict = 'failed'`, `ci_required = false`, one "AI review: Not done" comment, and one `job_error` (RFC-069) |
 | `TestReviewMaxTokens` | Every reviewer request carries `MaxTokens` 32,768 (RFC-075) |
+| `TestAnthropicReviewMaxTokens` | The Anthropic client sends a request with `max_tokens` 32,768 to the server for any model, instead of the SDK's "streaming is required" refusal |
 | `TestReviewRetriesCutReply` | One `max_tokens` reply, then `read_diff` and `recommend_approve`, reaches `human_review` on the route's model, with three reviewer `model_call` events, the first stopped at `max_tokens` |
 | `TestReviewCutTwiceFails` | Cut replies on the model and the fallback store `failed`, one `job_error` naming the token limit, and one "AI review: Not done" comment with the token-limit reason |
 | `TestReviewWithoutVerdictRedChecks` | No verdict and a red check: `changes_requested` with one `ci` note |

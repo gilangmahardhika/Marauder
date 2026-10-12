@@ -1063,13 +1063,14 @@ Before the next attempt of a card starts, a person who may run it can write inst
 
 ### REQ-076 A person follows an attempt live on the Trace page
 
-While a card works, its Trace page shows new events without a reload. Each model call also records the model's reply text, and each tool call records the arguments a person needs to follow it, such as the file path, the search text, the commit message, or the check command. Both are redacted and capped. This amends REQ-041: a model call event stores the five usage fields and the reply text (RFC-074).
+While a card works, its Trace page shows new events without a reload. Each model call also records the model's reply text, and each tool call records the arguments a person needs to follow it, such as the file path, the search text, the commit message, or the check command. Both are redacted and capped. This amends REQ-041: a model call event stores the five usage fields and the reply text (RFC-074). A Terminal view on the same page prints every stored event with its full text, oldest first, like terminal output (RFC-078).
 
 #### Acceptance
 
 - During an attempt, a new tool call appears on an open Trace page within a few seconds, and the page stops refreshing once the card stops working.
 - A read file row names the file, and an edit file row stores its size and not the file text.
 - A configured secret in the model's reply is stored as `[redacted]`.
+- In the Terminal view, a tool call shows its whole stored output under its command, and new output appears within about a second while the card works.
 
 ## Non-goals
 

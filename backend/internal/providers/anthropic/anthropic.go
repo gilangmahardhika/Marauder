@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	sdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -59,7 +60,7 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		}
 		params.Tools = append(params.Tools, sdk.ToolUnionParam{OfTool: &param})
 	}
-	msg, err := c.client.Messages.New(ctx, params)
+	msg, err := c.client.Messages.New(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
 	if err != nil {
 		return providers.Response{}, c.wrap(err)
 	}
@@ -83,6 +84,14 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 		}
 	}
 	return out, nil
+}
+
+// requestTimeout is the SDK's own estimate for a non-streaming reply of
+// maxTokens, at least 10 minutes. Without an explicit timeout the SDK refuses,
+// before sending, any request it estimates past 10 minutes, such as a reviewer
+// request with 32,768 tokens.
+func requestTimeout(maxTokens int) time.Duration {
+	return max(10*time.Minute, time.Duration(float64(time.Hour)*float64(maxTokens)/128000))
 }
 
 func messages(req providers.Request) []sdk.MessageParam {

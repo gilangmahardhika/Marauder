@@ -637,7 +637,9 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Reviewer requests set `MaxTokens` to 32,768.
 - [x] A reply cut at the limit with no tool call is asked again once, and a second one is `ErrReviewCut`.
 - [x] The `job_error` and the "AI review: Not done" comment name the token limit.
+- [x] The Anthropic client sends a 32,768-token request with a timeout sized to it, instead of the SDK refusing it as streaming-only.
 - [x] `TestReviewMaxTokens`
+- [x] `TestAnthropicReviewMaxTokens`
 - [x] `TestReviewRetriesCutReply`
 - [x] `TestReviewCutTwiceFails`
 - [x] The rest of the review suite still passes
@@ -671,3 +673,14 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestAdvancerRefreshesChangesRequested`
 - [x] The rest of the review, gate, and worker suites still pass
 - [x] The live server blocks the stuck card with `attempt_cap`, and Unblock is offered.
+
+## Sprint 43: Terminal view on the Trace page
+
+- [x] `terminal.terminalLines` prints each event kind with its full stored text, and marks each attempt.
+- [x] `TerminalView` follows new output, folds past 200 lines, renders 300 events at a time, and offers "Jump to latest".
+- [x] The Trace page's Structured and Terminal switch in `?view=terminal`, polling every second in the terminal view while live.
+- [x] `terminal` Vitest
+- [x] `TerminalView` Vitest
+- [x] Trace page terminal view Vitest
+- [x] `npm run check` and the full Vitest suite pass, and the backend suite still passes
+- [x] The live server runs the Sprint 43 build, and a real card's trace from its API renders in `TerminalView`, one line per event plus one per attempt.

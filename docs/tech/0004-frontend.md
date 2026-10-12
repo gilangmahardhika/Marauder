@@ -150,6 +150,7 @@ frontend/
   src/lib/board.ts
   src/lib/people.ts
   src/lib/trace.ts
+  src/lib/terminal.ts
   src/lib/format.ts
   src/lib/components/Live.svelte
   src/lib/components/SecretField.svelte
@@ -160,6 +161,7 @@ frontend/
   src/lib/components/TraceBlock.svelte
   src/lib/components/TraceRow.svelte
   src/lib/components/TraceText.svelte
+  src/lib/components/TerminalView.svelte
   src/lib/components/FamilyForm.svelte
   src/lib/components/RequirementForm.svelte
   src/lib/components/Markdown.svelte
@@ -181,6 +183,7 @@ frontend/
   src/lib/board.test.ts
   src/lib/people.test.ts
   src/lib/trace.test.ts
+  src/lib/terminal.test.ts
   src/lib/llm.test.ts
   src/lib/components/CardActions.test.ts
   src/lib/components/CardChanges.test.ts
@@ -188,6 +191,7 @@ frontend/
   src/lib/components/CardInstructions.test.ts
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
+  src/lib/components/TerminalView.test.ts
   src/lib/pager.svelte.test.ts
   src/routes/cards/[id]/trace/page.test.ts
   src/lib/components/IntakeActions.test.ts
@@ -422,6 +426,16 @@ The page reads as a timeline, oldest first:
 
 The toolbar searches the kind and its label, attempt id, the row's label and detail, and payload text, and filters by kind and attempt. The timeline renders 50 entries at a time.
 
+The toolbar's View switch (`Segmented`) picks Structured, the timeline above, or Terminal, kept in `?view=terminal` (RFC-078). The filters apply to both. The terminal view (`TerminalView`) is one `bg-ink` monospaced box with `role="log"`, `aria-label="Terminal output, oldest first"`, and `tabindex="0"`, at most 75% of the viewport high. `terminal.terminalLines` turns each event into a local clock time, a head line, and its text:
+
+- A model call: `model  role  modelId  1.5k in / 20 out  stop tool_use`, then the reply. Sky.
+- A tool call: `$ read_file  src/x.ts`, then the whole stored `summary`. A commit's head is its first line; `edit_file` adds "(N lines)"; `comment_pr` and `verdict` add the body; the two context tools list their items. A refused call adds `(refused)`. Failed and refused calls and a check not starting with `exit 0` are red, a passing check green.
+- A status change: `transition  from -> to  evidence`, amber, or red into `blocked`. A job error: `! job_error` and the whole message, red.
+- Any other kind: its name and `trace.describe` detail and text. An unknown kind shows its payload as JSON.
+- `--- attempt N  taskClass  modelId  ---`, muted, where another attempt's events begin.
+
+ANSI color codes and control characters are stripped before `cleanText`, with no length cap. Text past 200 lines (`foldLines`) shows "Show all N lines". The view renders the newest 300 entries (`pageEvents`), and "Show earlier events (N hidden)" adds 300. The view scrolls to the bottom when entries arrive while `follow` is on. Scrolling more than 24px above the bottom turns `follow` off and shows "Jump to latest". `follow` binds to the page's Follow latest checkbox. While `live` is true, the page polls every second in the terminal view and every 3 seconds in the structured view.
+
 ## Settings pages
 
 `SecretField.svelte` is used for the caller's GitHub token, the company GitHub token, each LLM key, and the deploy token.
@@ -629,6 +643,9 @@ npm run build
 | `trace` live | `mergeEvents` keeps one row per id, ordered by `ts` then `seq`. Tool rows show their `args` ("src/x.ts · 3 lines", "exit 0 · npm test", a commit's first line), and a model row shows its reply text (RFC-074) |
 | `pager` follow | When every entry was shown, `follow` grows the limit to the new total. When some were hidden, the limit stays |
 | Trace page poll | With fake timers: a live trace polls every 3 seconds with `since` set to the newest `ts`, merges the new rows, announces "Attempt 1 ended: Checks passed", and stops polling once `live` is false. A trace that is not live is read once and shows no Now running strip |
+| `terminal` lines | Each kind has its head, text, and tone. A failed or refused tool is red, a check is green only on `exit 0`, ANSI codes are stripped, an unknown kind shows JSON, an attempt line starts each attempt, and `clipLines` folds past 200 lines (RFC-078) |
+| `TerminalView` | Heads and output render in the log. Output past 200 lines shows "Show all N lines". Past 300 entries, "Show earlier events" pages in the rest. Scrolling up shows "Jump to latest", which scrolls to the bottom and hides again |
+| Trace page terminal view | With `?view=terminal` the log renders, the Kind filter applies, and Terminal is pressed. A live card polls every second in the terminal view and every 3 seconds in the structured view |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | `api` AI review mode | `addRequirement` sends `aiReviewMode` in the POST body, as the New requirement page does, and `setAIReviewMode` PUTs `{ aiReviewMode }` to `requirements/{id}/ai-review-mode` in the selected project (RFC-072) |
