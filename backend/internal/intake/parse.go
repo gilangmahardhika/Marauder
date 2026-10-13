@@ -24,6 +24,7 @@ type Requirement struct {
 	SourcePath string
 	SourceKind string
 	Hash       string
+	Mentions   []string
 }
 
 type Decision struct {
@@ -45,6 +46,10 @@ type section struct {
 	text     string
 	items    []string
 	children []*section
+	// mentions are the @slug mentions of the heading or text; itemMentions
+	// are those of each item (RFC-101).
+	mentions     []string
+	itemMentions [][]string
 }
 
 func Parse(repo, prdDir, rfcDir string) (Result, error) {
@@ -104,8 +109,9 @@ func parseFile(repo, path, sourceKind string) ([]Requirement, []Decision, bool, 
 			if id, kind, ok := headingID(n.heading); ok {
 				if kind == "REQ" {
 					sawReq = true
-					acceptance := acceptanceItems(n)
-					statement := statementBeforeAcceptance(n)
+					acceptance, acceptanceMentions := acceptanceItems(n)
+					statement, mentions := statementBeforeAcceptance(n)
+					mentions = addMentions(mentions, acceptanceMentions)
 					reqs = append(reqs, Requirement{
 						ID:         id,
 						Heading:    strings.TrimSpace(n.heading),
@@ -113,7 +119,8 @@ func parseFile(repo, path, sourceKind string) ([]Requirement, []Decision, bool, 
 						Acceptance: acceptance,
 						SourcePath: sourcePath,
 						SourceKind: sourceKind,
-						Hash:       hashParts(statement, acceptance),
+						Hash:       hashRequirement(statement, acceptance, mentions),
+						Mentions:   mentions,
 					})
 				} else {
 					statement := sectionText(n)
@@ -144,7 +151,7 @@ func parseSections(source []byte) *section {
 			for len(stack) > 1 && stack[len(stack)-1].level >= level {
 				stack = stack[:len(stack)-1]
 			}
-			child := &section{heading: plainText(source, heading), level: level}
+			child := &section{heading: plainText(source, heading), level: level, mentions: nodeMentions(source, heading)}
 			stack[len(stack)-1].children = append(stack[len(stack)-1].children, child)
 			stack = append(stack, child)
 			continue
@@ -152,22 +159,24 @@ func parseSections(source []byte) *section {
 		cur := stack[len(stack)-1]
 		switch block := n.(type) {
 		case *ast.List:
-			cur.children = append(cur.children, &section{items: listItems(source, block)})
+			items, mentions := listItems(source, block)
+			cur.children = append(cur.children, &section{items: items, itemMentions: mentions})
 		case *ast.FencedCodeBlock:
 			cur.children = append(cur.children, &section{text: codeText(source, block.Lines())})
 		case *ast.CodeBlock:
 			cur.children = append(cur.children, &section{text: codeText(source, block.Lines())})
 		default:
 			if text := plainText(source, n); text != "" {
-				cur.children = append(cur.children, &section{text: text})
+				cur.children = append(cur.children, &section{text: text, mentions: nodeMentions(source, n)})
 			}
 		}
 	}
 	return root
 }
 
-func statementBeforeAcceptance(n *section) string {
+func statementBeforeAcceptance(n *section) (string, []string) {
 	var parts []string
+	mentions := []string{}
 	var walk func(*section, bool) bool
 	walk = func(c *section, top bool) bool {
 		if !top && c.heading != "" {
@@ -178,11 +187,16 @@ func statementBeforeAcceptance(n *section) string {
 				return true
 			}
 			parts = append(parts, c.heading)
+			mentions = addMentions(mentions, c.mentions)
 		}
 		if len(c.items) > 0 {
 			parts = append(parts, c.items...)
+			for _, m := range c.itemMentions {
+				mentions = addMentions(mentions, m)
+			}
 		} else if c.text != "" {
 			parts = append(parts, c.text)
+			mentions = addMentions(mentions, c.mentions)
 		}
 		for _, child := range c.children {
 			if child.heading == "Acceptance" {
@@ -195,19 +209,23 @@ func statementBeforeAcceptance(n *section) string {
 		return true
 	}
 	walk(n, true)
-	return strings.TrimSpace(strings.Join(parts, "\n"))
+	return strings.TrimSpace(strings.Join(parts, "\n")), mentions
 }
 
-func acceptanceItems(n *section) []string {
+func acceptanceItems(n *section) ([]string, []string) {
 	found := findAcceptance(n)
 	if found == nil {
-		return []string{}
+		return []string{}, []string{}
 	}
 	var items []string
+	mentions := []string{}
 	var walk func(*section)
 	walk = func(c *section) {
 		if len(c.items) > 0 {
 			items = append(items, c.items...)
+			for _, m := range c.itemMentions {
+				mentions = addMentions(mentions, m)
+			}
 		}
 		for _, child := range c.children {
 			walk(child)
@@ -215,9 +233,9 @@ func acceptanceItems(n *section) []string {
 	}
 	walk(found)
 	if items == nil {
-		return []string{}
+		return []string{}, mentions
 	}
-	return items
+	return items, mentions
 }
 
 func findAcceptance(n *section) *section {
@@ -334,14 +352,16 @@ func plainText(source []byte, n ast.Node) string {
 	return strings.TrimSpace(b.String())
 }
 
-func listItems(source []byte, list *ast.List) []string {
+func listItems(source []byte, list *ast.List) ([]string, [][]string) {
 	var items []string
+	var mentions [][]string
 	for item := list.FirstChild(); item != nil; item = item.NextSibling() {
 		if text := plainText(source, item); text != "" {
 			items = append(items, text)
+			mentions = append(mentions, nodeMentions(source, item))
 		}
 	}
-	return items
+	return items, mentions
 }
 
 func codeText(source []byte, lines *text.Segments) string {

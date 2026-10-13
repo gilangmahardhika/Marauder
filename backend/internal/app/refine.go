@@ -80,10 +80,11 @@ type modelStreamer interface {
 // returns after. It writes no requirement, only a requirement_refined event
 // without text. provider, when set, replaces the routed provider in tests.
 //
-// When the project's tribe has MCP tools, the model may call them for at
-// most 3 turns and 3 calls, and the last turn asks for text (RFC-095). A turn
-// that ends in tool calls emits "reset", which clears its text, and each call
-// emits "tool" with the server and tool.
+// When the project's tribe has MCP tools, and the draft's mentions leave any
+// (RFC-102), the model may call them for at most 3 turns and 3 calls, and the
+// last turn asks for text (RFC-095). A turn that ends in tool calls emits
+// "reset", which clears its text, and each call emits "tool" with the server
+// and tool.
 func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorID string, in RefineInput, provider providers.Provider, tools RefineTools, emit func(kind string, payload any)) error {
 	if in.Field != "statement" && in.Field != "acceptance" {
 		return &intake.Invalid{Fields: map[string]string{"field": "Choose statement or acceptance to refine."}}
@@ -129,6 +130,7 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 		return err
 	}
 	redact = append(redact, MCPSecrets(conns)...)
+	conns, _, _ = ScopeMentions(conns, intake.MentionsOf(draft.Statement, draft.Acceptance))
 
 	modelID := route.Model
 	started := false

@@ -100,3 +100,19 @@ test('a PRD row has no refine button', async () => {
   expect(await screen.findByText('Edit this requirement in the repository.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: /with AI/ })).toBeNull();
 });
+
+test('a PRD row shows its stored mentions with their state', async () => {
+  api.getIntake.mockResolvedValue({
+    ...intake({ ...requirement, sourceKind: 'prd', sourcePath: 'docs/prd/one.md', mentions: ['tickets', 'docs', 'nothere'] }),
+    mcpServers: [
+      { slug: 'tickets', enabled: true, toolCount: 2 },
+      { slug: 'docs', enabled: false, toolCount: 1 }
+    ]
+  });
+  render(RequirementPage);
+  const list = await screen.findByRole('list', { name: 'MCP servers mentioned' });
+  expect(list.textContent).toContain('@tickets');
+  expect(list.textContent).toContain('@docs');
+  expect(screen.getByText('disabled: jobs will not call it')).toBeTruthy();
+  expect(screen.getByText('no server with this slug')).toBeTruthy();
+});

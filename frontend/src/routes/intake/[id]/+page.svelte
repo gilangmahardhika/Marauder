@@ -2,11 +2,12 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { ApiError, deleteRequirement, getIntake, streamRefine, unreachable, updateRequirement } from '$lib/api';
+  import MentionList from '$lib/components/MentionList.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
   import { fromLines, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { Intake, Requirement, Reviewer } from '$lib/types';
+  import type { Intake, MCPServerMention, Requirement, Reviewer } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -15,6 +16,7 @@
 
   let requirement = $state<Requirement | null>(null);
   let reviewerOptions = $state<Reviewer[]>([]);
+  let servers = $state<MCPServerMention[]>([]);
   let missing = $state(false);
   let statement = $state('');
   let acceptance = $state('');
@@ -31,6 +33,7 @@
     const found = intake.requirements.find((item) => item.id === requirementId) ?? null;
     requirement = found;
     reviewerOptions = intake.reviewerOptions;
+    servers = intake.mcpServers ?? [];
     missing = !found;
     if (found) {
       statement = found.statement;
@@ -101,6 +104,11 @@
           ? `It comes from ${requirement.sourcePath}. Change the file, then run Ingest.`
           : 'The planner drafted it. Accept it or replace it in the PRD.'}
       />
+      {#if (requirement.mentions ?? []).length > 0}
+        <Panel title="MCP servers" hint="Cards of this requirement offer only the servers it mentions.">
+          <MentionList mentions={requirement.mentions ?? []} {servers} />
+        </Panel>
+      {/if}
       <ReviewersPanel {requirement} options={reviewerOptions} onsaved={pick} onmessage={(text) => (message = text)} />
     </div>
   </Page>
@@ -122,6 +130,7 @@
             bind:statement
             bind:acceptance
             {fields}
+            {servers}
             refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId }, onEvent, signal)}
           />
           {#snippet footer()}

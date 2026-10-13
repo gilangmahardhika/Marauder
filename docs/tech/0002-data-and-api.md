@@ -347,6 +347,8 @@ ALTER TABLE tribe_mcp_servers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';
 
 `config_json` is `{"host","port","database","user","tlsMode","readOnlyLogin"}` for a `postgres` or `sqlserver` server and `{}` otherwise. It stays TEXT like the other JSON columns. The password is the secret `PASSWORD` in `secrets_ciphertext`, never in `config_json`. Down deletes the database servers, restores the old check, and drops the column.
 
+`00026_requirement_mentions.sql` adds `requirements.mentions_json TEXT NOT NULL DEFAULT '[]'` (RFC-101): the `@slug` mentions of the statement and acceptance lines, in order of first use, without repeats, at most 16. Ingest writes it for a parsed row and a manual add or edit for a manual row. A job reads it with the card's project and requirement ids to choose the card's MCP servers (RFC-102). Down drops the column.
+
 `00014_card_runs.sql` adds `runs.card_id TEXT REFERENCES cards(id) ON DELETE CASCADE` and the partial unique index `runs_open_card ON runs(card_id) WHERE card_id IS NOT NULL AND processed_at IS NULL`. A row with `card_id` asks for that one card. A card has at most one open row (RFC-061).
 
 `draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
@@ -391,7 +393,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 
-A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one.
+A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one. A `tool_call` named `mcp_context` adds `servers`, one `{ "id", "slug", "transport", "tools" }` object per offered server, with `host`, `database`, `image`, or `error` as RFC-094 and RFC-097 describe, and `scope`: `all`, `mentioned`, or `none` (RFC-102). `missing` lists the mentioned slugs that are not an enabled server of the tribe, and `reason` says why the scope is `none`. A scope of `none` writes the event with `servers: []`.
 
 `tool_call.args` holds what a person needs to follow the step (RFC-074):
 
@@ -1013,10 +1015,12 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
       "canSetSelfReview": true,
       "aiReviewMode": "continue",
       "reviewers": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
-      "linkedCards": []
+      "linkedCards": [],
+      "mentions": ["tickets"]
     }
   ],
   "reviewerOptions": [{ "id": "user_0123456789ab", "name": "Grace Hopper", "email": "grace@example.com", "githubLogin": "grace" }],
+  "mcpServers": [{ "slug": "tickets", "enabled": true, "toolCount": 2 }],
   "decisions": [
     {
       "id": "RFC-001",
@@ -1032,6 +1036,8 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 `POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
 `canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070), and the same caller may change `aiReviewMode`, which is `continue` or `manual` (RFC-072). `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
+
+`mentions` are the row's stored `@slug` mentions (RFC-101). A mention is `@` at the start of the text or after whitespace or one of `( [ { " ' , ; :`, then `[a-z][a-z0-9]{1,15}`, then the end, whitespace, one of `) ] } " ' , ; : ! ?`, or a `.` not followed by a letter or digit. It is read from the markdown tree of the statement and each acceptance line, outside inline code, code blocks, links, autolinks, and raw HTML. A slug the tribe does not have is kept. `mcpServers` lists every server of the project's tribe, enabled or not, by slug, with `enabled` and the number of allowlisted tools, `[]` when there are none. It never carries a URL, image, argv, connection, or secret name, so any member may read it. The content hash of a requirement adds its mentions when there are any, so a row with no mention keeps its hash.
 
 `PUT /api/projects/{projectId}/requirements/{id}/reviewers` replaces the reviewers of one requirement, parsed or manual, and returns the intake shape.
 
@@ -1086,7 +1092,7 @@ event: done
 data: {"text":"The export has one row per card.\nEach row lists the card id.","acceptance":["The export has one row per card.","Each row lists the card id."],"modelId":"claude-sonnet"}
 ```
 
-When the project's tribe has an enabled MCP server with allowlisted tools, the model may call them (RFC-095). Each turn streams. A turn that ends in tool calls sends `event: reset` with `{}`, which clears the text so far, then one `event: tool` with `{"server":"tickets","tool":"lookup"}` per call. The request allows at most 3 turns and 3 calls, and the last turn, or the turn after the third call, sends tool choice `none`. Each call appends a project `tool_call` event with no card: `name`, `ok`, `rejected`, `bytes`, `sha256`, and `args` with the server, the tool, and each argument's size, never the result text. `requirement_refined` adds the tokens of every turn.
+When the project's tribe has an enabled MCP server with allowlisted tools, the model may call them (RFC-095). When the draft's statement or acceptance mentions servers, only the enabled ones it names are offered, and a draft whose mentions name no enabled server gets no tools (RFC-102). Each turn streams. A turn that ends in tool calls sends `event: reset` with `{}`, which clears the text so far, then one `event: tool` with `{"server":"tickets","tool":"lookup"}` per call. The request allows at most 3 turns and 3 calls, and the last turn, or the turn after the third call, sends tool choice `none`. Each call appends a project `tool_call` event with no card: `name`, `ok`, `rejected`, `bytes`, `sha256`, and `args` with the server, the tool, and each argument's size, never the result text. `requirement_refined` adds the tokens of every turn.
 
 `start` comes once, before the first `delta`, and names the model that answers, which may be the route's fallback. Each `delta` is a piece of redacted text in order. `done` has the whole text after the save rules; for `acceptance` it also has the lines, with blank lines and list markers dropped, and `text` is those lines joined by newlines. A provider failure after text has streamed, or finished text that fails the save rules (an empty statement, more than 50 lines, a line over 1,000 characters, no lines), ends the stream with `event: error` and `{"code":"provider_error","message":"..."}` instead of `done`. Closing the connection cancels the model request and any MCP call in progress. Model keys, `databaseUrl`, `tokenKey`, and MCP secrets never appear in any event.
 

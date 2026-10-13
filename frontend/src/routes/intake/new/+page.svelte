@@ -5,7 +5,7 @@
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import { canSetSelfReview, reviewerChoices, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { AIReviewMode, Reviewer } from '$lib/types';
+  import type { AIReviewMode, MCPServerMention, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
@@ -20,6 +20,7 @@
   let aiReviewMode = $state<AIReviewMode>('continue');
   let options = $state<Reviewer[]>([]);
   let known = $state<string[]>([]);
+  let servers = $state<MCPServerMention[]>([]);
   let fields = $state<Record<string, string>>({});
   let message = $state('New requirement');
   let busy = $state(false);
@@ -35,6 +36,7 @@
       .then((body) => {
         options = body.reviewerOptions;
         known = body.requirements.map((requirement) => requirement.id);
+        servers = body.mcpServers ?? [];
       })
       .catch(() => {
         options = [];
@@ -90,6 +92,7 @@
         bind:statement
         bind:acceptance
         {fields}
+        {servers}
         refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId: id.trim() }, onEvent, signal)}
       />
       <MultiSearchSelect

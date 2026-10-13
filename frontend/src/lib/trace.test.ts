@@ -110,6 +110,31 @@ group('describe', () => {
         servers: [{ slug: 'pg', transport: 'postgres', host: '10.0.0.5:5432', database: 'app', tools: [{ name: 'query', schemaSha256: '0123456789abcdef' }] }]
       }).text
     ).toBe('pg postgres 10.0.0.5:5432/app: query 0123456789ab');
+    expect(
+      words('tool_call', {
+        name: 'mcp_context',
+        ok: true,
+        summary: 'No MCP servers: no mentioned server is enabled in the tribe',
+        servers: [],
+        scope: 'none',
+        missing: ['docs', 'nothere'],
+        reason: 'no mentioned server is enabled in the tribe'
+      })
+    ).toMatchObject({
+      detail: 'No MCP servers: no mentioned server is enabled in the tribe',
+      tone: 'amber',
+      text: 'not a server: docs\nnot a server: nothere'
+    });
+    expect(
+      words('tool_call', {
+        name: 'mcp_context',
+        ok: true,
+        summary: '1 of 2 MCP servers, 1 tools',
+        scope: 'mentioned',
+        missing: [],
+        servers: [{ slug: 'tickets', transport: 'http', host: 'mcp.example.com', tools: [{ name: 'lookup', schemaSha256: 'abcdef0123456789' }] }]
+      })
+    ).toMatchObject({ detail: "1 of 2 MCP servers, 1 tools, from the requirements' mentions", tone: 'default' });
     expect(words('assertion_failed', { name: 'mcp_changed', server: 'tickets', tool: 'lookup' }).detail).toBe('MCP tool changed: tickets / lookup');
     const saved = (length: number) => describe({ id: 'e', ts: '', kind: 'instructions_saved', payload: { length } });
     expect(saved(1200)).toMatchObject({ label: 'Instructions saved', detail: '1,200 characters' });

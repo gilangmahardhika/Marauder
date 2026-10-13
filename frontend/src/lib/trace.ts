@@ -227,7 +227,17 @@ function describeTool(p: Record<string, unknown>): Described {
         })
         .join('\n');
       const failed = servers.some((server) => str(server.error) !== '');
-      return { label, detail: summary, meta: '', tone: failed ? 'amber' : 'default', text };
+      const missing = Array.isArray(p.missing) ? p.missing.map(str).filter(Boolean) : [];
+      const lines = [text, ...missing.map((slug) => `not a server: ${slug}`)].filter(Boolean).join('\n');
+      const scope = str(p.scope);
+      const detail =
+        scope === 'none'
+          ? `No MCP servers${str(p.reason) ? `: ${str(p.reason)}` : ''}`
+          : scope === 'mentioned'
+            ? `${summary}, from the requirements' mentions`
+            : summary;
+      const warn = failed || scope === 'none' || missing.length > 0;
+      return { label, detail, meta: '', tone: warn ? 'amber' : 'default', text: lines };
     }
     case 'linked_context': {
       const links = Array.isArray(p.links) ? p.links.map(record) : [];

@@ -163,3 +163,40 @@ func (s *session) callMCP(ctx context.Context, call providers.ToolCall) (string,
 	s.replyMCP++
 	return CallMCP(ctx, s.in.Extra, tool, call.Args, s.in.Secrets)
 }
+
+func mentionedServers(scope *MCPContext) []string {
+	if scope == nil || scope.Scope != "mentioned" {
+		return nil
+	}
+	return scope.Offered
+}
+
+// mcpContextEvent is the mcp_context tool_call payload (RFC-094, RFC-102).
+func mcpContextEvent(extra ExtraTools, scope *MCPContext, tools int) map[string]any {
+	servers := []map[string]any{}
+	if extra != nil {
+		servers = extra.Describe()
+	}
+	payload := map[string]any{
+		"name": "mcp_context", "ok": true, "rejected": false,
+		"summary": fmt.Sprintf("%d MCP servers, %d tools", len(servers), tools),
+		"servers": servers,
+	}
+	if scope == nil {
+		return payload
+	}
+	missing := scope.Missing
+	if missing == nil {
+		missing = []string{}
+	}
+	payload["scope"] = scope.Scope
+	payload["missing"] = missing
+	switch scope.Scope {
+	case "mentioned":
+		payload["summary"] = fmt.Sprintf("%d of %d MCP servers, %d tools", len(servers), scope.Total, tools)
+	case "none":
+		payload["summary"] = "No MCP servers: " + scope.Reason
+		payload["reason"] = scope.Reason
+	}
+	return payload
+}

@@ -142,6 +142,10 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		return card, err
 	}
 	redact = append(redact, MCPSecrets(mcpConns)...)
+	mcpConns, mcpScope, err := MCPScopeFor(ctx, db, projectID, card.RequirementIDs, mcpConns)
+	if err != nil {
+		return card, err
+	}
 
 	fixture := runtime.FixtureMode(project.RepoPath)
 	if card.LocalCheck == "" && projectCfg.Checks.Local != "" {
@@ -229,7 +233,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,
 			HistoryBudget: llm.Options(cfg, route.Model).HistoryBytes(), MaxTokensPerCard: tokenCap,
-			Extra: extra,
+			Extra: extra, MCP: &mcpScope,
 		})
 		if err != nil {
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)

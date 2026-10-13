@@ -14,6 +14,7 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 | Target repo files, diffs, PR comments, CI output, logs | Untrusted | Text inside a pack |
 | Model output | Untrusted | Tool name and arguments, which the harness then filters |
 | A tribe's MCP server settings | Trusted to name a URL, an image, an argv, a database host and login, and secrets, as saved by a tribe admin (RFC-092, RFC-097) | Which allowlisted tools the implementer and refine offer |
+| `@slug` mentions in requirement text, written by members or in the repository | Trusted only to narrow: a mention picks among the tribe's enabled, allowlisted servers and never adds a server, a tool, or a disabled server. A requirement edited since acceptance offers no MCP tools (RFC-101, RFC-102) | Which of the tribe's servers a card's attempt and a draft's refine offer |
 | MCP server responses and database rows | Untrusted | Text inside the untrusted markers after `MCP RESULT`, and the tool list only where its schema hash matches the allowlist |
 | MCP Registry entries | Untrusted | What the setup form is filled with, which the tribe admin reviews before saving. A registry description is never sent to a model (RFC-096) |
 | Featured MCP entries | Trusted as code: a fixed list compiled into the harness and reviewed with it. Registry data never sets `source` to `featured` | What the setup form is filled with. The URL still passes the check on save and at dial, and the admin still allowlists each tool (RFC-099) |
@@ -57,6 +58,9 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | An MCP reply is over 256 KiB, or a stdio line over 1 MiB | The call fails with a fixed reason; the stdio server is closed |
 | An MCP error carries server text | The model, events, and API get only a fixed reason such as `the server is unreachable` |
 | A stdio MCP server in fixture mode, or with no engine | Not started; `mcp_context` records `stdio servers need the container sandbox` |
+| A card's requirements mention servers, but none is an enabled server of the tribe, or a requirement's text changed since acceptance | No MCP server is opened and no MCP tool is offered. `mcp_context` records scope `none`, the `missing` slugs, and the reason (RFC-102) |
+| A requirement's mention would notify a GitHub user or team in the pull request body | The body wraps each mention in backticks (RFC-101) |
+| A member who is not a tribe admin reads the intake | The intake lists the tribe's servers by slug, enabled, and tool count only; the URL, image, argv, connection, and secret names stay on the admin routes (RFC-101) |
 | A stdio MCP argv names a shell or wrapper, or the image has no digest | `422` on save, and `sandbox.StdioArgv` refuses again before start |
 | A database connector names the board database, by any name that resolves to its address, with the same port and database name in any case; when the board is on this machine, any loopback or local interface address | The guarded dialer refuses before the socket opens, and the tool is not offered (RFC-097). The host check on save does not apply `netguard`: private and loopback hosts are allowed on purpose |
 | A database tool call tries to write, run two statements, or leave the transaction | Postgres: the session and the transaction are read-only, the extended protocol runs one statement, and every call ends with `ROLLBACK`. SQL Server: `CheckSelect` refuses anything but one `SELECT` or `WITH`, and the call runs in a transaction that always rolls back |
@@ -361,7 +365,7 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | Card lock holder equals this job | Before release |
 | Local base ref unchanged | End of implement job. Reason `base_moved` |
 | Export path is under `<data>/exports` and is not the worktree | Before the container starts |
-| Each allowlisted MCP tool's live schema hash equals its stored `schemaSha256` | When the attempt or refine opens the tribe's servers. `mcp_changed` with the server and tool; the tool is left out and the card is not blocked (RFC-094) |
+| Each allowlisted MCP tool's live schema hash equals its stored `schemaSha256` | When the attempt or refine opens the tribe's servers that its mentions keep (RFC-102). `mcp_changed` with the server and tool; the tool is left out and the card is not blocked (RFC-094) |
 
 `Reconcile` stays free of model calls. It may probe health under RFC-039.
 
@@ -523,6 +527,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestMCPCatalogFeatured` | Every featured URL passes the strict URL check, GitHub and Linear are read-only endpoints, and featured ids are unique (RFC-099) |
 | `TestMCPCatalogRegistrySlow` | A slow registry fails within the fetch budget, a failure is not fetched again for 30 seconds, and an abandoned request is not remembered (RFC-100) |
 | `TestMCPImagePull` | A flag or a reference with a space, upper case, or `;` runs no engine; fixture mode and no engine refuse; a failed pull returns the fixed text (RFC-098) |
+| `TestIntakeMCPServers` | A member's intake lists the tribe's slugs, enabled flags, and tool counts, and no URL, argv, image, config, or secret name (RFC-101) |
+| `TestImplementerMCPMentionMissing` | Mentions that name no enabled server open no server and offer no MCP tool (RFC-102) |
+| `TestImplementerMCPUnaccepted` | A requirement edited since acceptance offers no MCP tool to its card (RFC-102) |
 
 ## Operator duties
 
@@ -540,6 +547,7 @@ These stay outside the program.
 | Ask developers for fine-grained tokens limited to the company organization, with Contents and Pull requests write | Unattended jobs push with each owner's token (RFC-054) |
 | Review what dev checks reach | Dev check egress is open in v1 |
 | Give each database connector a login that can only read, scoped to the tables jobs may see | The harness enforces read-only per call, but a SQL Server login is the main guard, and rows it can read reach the model (RFC-097) |
+| Ask requirement authors to mention the MCP servers a requirement needs | A requirement with no mention gives its cards every enabled server of the tribe (RFC-102) |
 | Keep the board database on its own server, or at least its own database name | The connector refuses only the board's own address, port, and database |
 
 A production credential is still out of scope (NG-001). Hardening v1 does not add a safe place to put one. RFC-097 sets NG-001 aside for one case only: a read-only database login on a tribe's connector.

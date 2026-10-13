@@ -282,7 +282,7 @@ func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.DB == nil {
-		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "canAccept": false, "requirements": []any{}, "decisions": []any{}})
+		writeJSON(w, 200, map[string]any{"draftPending": false, "planError": nil, "canAccept": false, "requirements": []any{}, "decisions": []any{}, "mcpServers": []any{}})
 		return
 	}
 	s.writeIntake(w, r, projectID)

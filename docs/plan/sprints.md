@@ -893,3 +893,27 @@ Packages: `internal/mcpcatalog`, `internal/app`, `internal/httpapi`, frontend `a
 - The catalog page loads local entries and the registry apart, aborts a stale search, and shows Featured, Databases, and MCP Registry sections.
 
 Done when: `TestMCPCatalogBuiltins`, `TestMCPCatalogFeatured`, `TestMCPCatalogRegistrySlow`, `TestMCPCatalogEntryByName`, `TestMCPCatalogRegistryDown`, `TestMCPCatalogAccess`, the catalog page Vitest case, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 64: MCP mentions in requirements, harness
+
+Goal: A requirement's `@slug` mentions scope the MCP servers of its cards and its refine (RFC-101, RFC-102, REQ-089).
+
+Packages: migration `00026`, `internal/intake`, `internal/tenancy`, `internal/httpapi`, `internal/app`, `internal/contextpack`, `internal/loop`.
+
+- `intake.Mentions` reads mentions from the markdown tree; ingest and manual saves store them in `mentions_json`, and the hash adds them when there are any.
+- The intake response adds each requirement's `mentions` and the tribe's `mcpServers` as slug, enabled, and tool count.
+- `ImplementCard` and `RefineField` narrow the servers by mention, fail closed, and record the scope in `mcp_context`. The pull request body escapes mentions.
+
+Done when: `TestMentionGrammar`, `TestIngestMentions`, `TestHashUnchangedWithoutMentions`, `TestManualRequirementMentions`, `TestIntakeMCPServers`, `TestImplementerMCPMentions`, `TestImplementerMCPUnion`, `TestImplementerMCPMentionMissing`, `TestImplementerMCPUnaccepted`, `TestRefineMCPMentions`, `TestPRBodyMentionsEscaped`, the unchanged `TestImplementerMCPTools` and `TestMCPOtherTribe`, the fixture, and the rest of the suite.
+
+## Sprint 65: MCP mentions in requirements, pages
+
+Goal: A member picks a server after typing `@` and sees what each requirement mentions (RFC-101, REQ-089).
+
+Packages: frontend `types.ts`, `requirements.ts`, `MentionTextarea`, `RequirementForm`, `RequirementRow`, the intake pages, and `trace.ts`.
+
+- `MentionTextarea` lists the tribe's slugs on `@` and inserts the one picked.
+- The form shows each field's mentions as known, disabled, or unknown; the intake row and detail page list a requirement's mentions.
+- The trace shows the MCP scope and the mentions that did not resolve.
+
+Done when: the mention helper, `RequirementForm` autocomplete and chips, intake pages, and trace Vitest cases, `npm run check`, the fixture, and the rest of the suite.

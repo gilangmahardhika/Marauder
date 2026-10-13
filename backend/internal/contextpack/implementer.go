@@ -83,6 +83,14 @@ type Input struct {
 	Linked       []Linked
 	Conventions  []Convention
 	Secrets      []string
+	// MCPServers are the slugs the card's requirements mention and the job
+	// offers (RFC-102). They are validated slugs, so the line is trusted.
+	MCPServers []string
+}
+
+// MCPServersLine is the card line that names the mentioned servers.
+func MCPServersLine(slugs []string) string {
+	return "This card's requirements name these MCP servers: " + strings.Join(slugs, ", ") + "."
 }
 
 func SystemHash() string {
@@ -110,18 +118,17 @@ func BuildImplementer(in Input) (system, user, systemHash string, err error) {
 	if len(untrusted) > sectionCap {
 		return "", "", "", fmt.Errorf("untrusted section exceeds %d bytes", sectionCap)
 	}
-	body := strings.Join([]string{
+	lines := []string{
 		"CARD",
 		"id: " + in.Card.ID,
 		"title: " + in.Card.Title,
 		"status: " + in.Card.Status,
 		"localCheck: " + in.Card.LocalCheck,
-		"",
-		MarkerStart,
-		untrusted,
-		MarkerEnd,
-		"",
-	}, "\n")
+	}
+	if len(in.MCPServers) > 0 {
+		lines = append(lines, MCPServersLine(in.MCPServers))
+	}
+	body := strings.Join(append(lines, "", MarkerStart, untrusted, MarkerEnd, ""), "\n")
 	return ImplementerSystem, trace.Redact(body, in.Secrets), SystemHash(), nil
 }
 

@@ -588,9 +588,14 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	if err != nil {
 		return nil, err
 	}
+	servers, err := app.ProjectMCPMentions(r.Context(), db, projectID)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := db.QueryContext(r.Context(), `
 		SELECT q.id, q.source_kind, q.source_path, q.heading, q.statement, q.acceptance_json,
-			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, ''), q.self_review, q.ai_review_mode
+			q.accepted_at IS NOT NULL, u.email, COALESCE(q.created_by, ''), q.self_review, q.ai_review_mode,
+			q.mentions_json
 		FROM requirements q LEFT JOIN users u ON u.id = q.created_by
 		WHERE q.project_id = $1 ORDER BY q.id`, projectID)
 	if err != nil {
@@ -600,17 +605,22 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	reqs := []any{}
 	canSetSelfReview := intake.CanSetSelfReview(user.Role, user.Admin)
 	for rows.Next() {
-		var id, kind, path, heading, statement, acceptance, creatorID, reviewMode string
+		var id, kind, path, heading, statement, acceptance, creatorID, reviewMode, mentionsJSON string
 		var accepted, selfReview bool
 		var createdBy sql.NullString
 		if err := rows.Scan(&id, &kind, &path, &heading, &statement, &acceptance, &accepted, &createdBy, &creatorID,
-			&selfReview, &reviewMode); err != nil {
+			&selfReview, &reviewMode, &mentionsJSON); err != nil {
 			return nil, err
 		}
 		var lines []string
 		_ = json.Unmarshal([]byte(acceptance), &lines)
 		if lines == nil {
 			lines = []string{}
+		}
+		var mentions []string
+		_ = json.Unmarshal([]byte(mentionsJSON), &mentions)
+		if mentions == nil {
+			mentions = []string{}
 		}
 		named := reviewers[id]
 		if named == nil {
@@ -625,6 +635,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 			"selfReview":       selfReview,
 			"canSetSelfReview": canSetSelfReview,
 			"aiReviewMode":     reviewMode,
+			"mentions":         mentions,
 		})
 	}
 	decisions := []any{}
@@ -647,6 +658,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 	return map[string]any{
 		"draftPending": draft, "planError": plan, "canAccept": canAccept(user.Role),
 		"requirements": reqs, "decisions": decisions, "reviewerOptions": options,
+		"mcpServers": servers,
 	}, nil
 }
 

@@ -281,3 +281,151 @@ func TestMCPStdioInFixture(t *testing.T) {
 		t.Fatalf("mcp_context = %v", ctxEvents)
 	}
 }
+
+// seedSlugMCP serves a lookup tool on the tribe_default server slug.
+func seedSlugMCP(t *testing.T, f jobFixture, slug string, enabled bool) *mcptest.Server {
+	t.Helper()
+	srv := mcptest.New([]mcp.Tool{{Name: "lookup", Schema: lookupSchem}})
+	t.Cleanup(srv.Close)
+	_, _, err := app.CreateMCPServer(context.Background(), f.db, mcpAdmin(t, f), tokenKey, mcpDialer, "tribe_default", app.MCPServerInput{
+		Slug: slug, Transport: "http", URL: srv.URL + "/mcp", Enabled: &enabled,
+		Tools: []tenancy.MCPTool{{Name: "lookup", Description: "Find by id.", Schema: lookupSchem}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return srv
+}
+
+func setMentions(t *testing.T, f jobFixture, id, mentions string) {
+	t.Helper()
+	if _, err := f.db.Exec(`UPDATE requirements SET mentions_json = $1 WHERE project_id = 'proj_default' AND id = $2`, mentions, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mcpTools(tools []string) []string {
+	var out []string
+	for _, name := range tools {
+		if strings.HasPrefix(name, "mcp_") {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func TestImplementerMCPMentions(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	seedMCP(t, f, "tribe_default")
+	docs := seedSlugMCP(t, f, "docs", true)
+	setMentions(t, f, "REQ-001", `["tickets"]`)
+	provider, card := f.runMCP(t, mcpCommitScript, nil)
+	if card.Status != "pr_open" {
+		t.Fatalf("card = %s", card.Status)
+	}
+	first := provider.Prompts()[0]
+	if got := mcpTools(first.Tools); strings.Join(got, ",") != "mcp_tickets_lookup" {
+		t.Fatalf("mcp tools = %v", got)
+	}
+	if len(docs.Headers) != 0 {
+		t.Fatal("an unmentioned server was opened")
+	}
+	line := contextpack.MCPServersLine([]string{"tickets"})
+	if line != "This card's requirements name these MCP servers: tickets." {
+		t.Fatalf("line = %q", line)
+	}
+	at := strings.Index(first.User, line)
+	if at < 0 || at > strings.Index(first.User, contextpack.MarkerStart) || first.System != contextpack.ImplementerSystem {
+		t.Fatalf("prompt = %q", first.User)
+	}
+	var systemHash string
+	if err := f.db.QueryRow(`SELECT system_hash FROM attempts WHERE card_id = $1`, card.ID).Scan(&systemHash); err != nil || systemHash != contextpack.SystemHash() {
+		t.Fatalf("system hash = %q (%v)", systemHash, err)
+	}
+	ctxEvents := named(cardEvents(t, f, "tool_call"), "mcp_context")
+	if len(ctxEvents) != 1 || ctxEvents[0]["scope"] != "mentioned" || ctxEvents[0]["summary"] != "1 of 2 MCP servers, 1 tools" {
+		t.Fatalf("mcp_context = %v", ctxEvents)
+	}
+	servers, _ := ctxEvents[0]["servers"].([]any)
+	if len(servers) != 1 || servers[0].(map[string]any)["slug"] != "tickets" || servers[0].(map[string]any)["id"] == "" {
+		t.Fatalf("servers = %v", servers)
+	}
+}
+
+func TestImplementerMCPUnion(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	seedMCP(t, f, "tribe_default")
+	seedSlugMCP(t, f, "docs", true)
+	wiki := seedSlugMCP(t, f, "wiki", true)
+	acceptedReq(t, f.db, "REQ-002", creatorOf(t, f.db, "REQ-001"))
+	acceptedReq(t, f.db, "REQ-003", creatorOf(t, f.db, "REQ-001"))
+	setMentions(t, f, "REQ-001", `["tickets"]`)
+	setMentions(t, f, "REQ-002", `["docs","tickets"]`)
+	if _, err := f.db.Exec(`UPDATE cards SET requirement_ids_json = '["REQ-001","REQ-002","REQ-003"]' WHERE id = $1`, f.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	provider, _ := f.runMCP(t, mcpCommitScript, nil)
+	first := provider.Prompts()[0]
+	if got := mcpTools(first.Tools); strings.Join(got, ",") != "mcp_docs_lookup,mcp_tickets_lookup" {
+		t.Fatalf("mcp tools = %v", got)
+	}
+	if len(wiki.Headers) != 0 {
+		t.Fatal("an unmentioned server was opened")
+	}
+	if !strings.Contains(first.User, contextpack.MCPServersLine([]string{"docs", "tickets"})) {
+		t.Fatalf("prompt = %q", first.User)
+	}
+	ctxEvents := named(cardEvents(t, f, "tool_call"), "mcp_context")
+	if len(ctxEvents) != 1 || ctxEvents[0]["summary"] != "2 of 3 MCP servers, 2 tools" {
+		t.Fatalf("mcp_context = %v", ctxEvents)
+	}
+}
+
+func TestImplementerMCPMentionMissing(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	tickets := seedMCP(t, f, "tribe_default")
+	docs := seedSlugMCP(t, f, "docs", false)
+	setMentions(t, f, "REQ-001", `["docs","nothere"]`)
+	provider, card := f.runMCP(t, commitScript, nil)
+	if card.Status != "pr_open" {
+		t.Fatalf("card = %s", card.Status)
+	}
+	first := provider.Prompts()[0]
+	if got := mcpTools(first.Tools); len(got) != 0 || strings.Contains(first.User, "name these MCP servers") {
+		t.Fatalf("mcp tools = %v", got)
+	}
+	if len(tickets.Headers) != 0 || len(docs.Headers) != 0 {
+		t.Fatal("a server was opened")
+	}
+	ctxEvents := named(cardEvents(t, f, "tool_call"), "mcp_context")
+	if len(ctxEvents) != 1 || ctxEvents[0]["scope"] != "none" || ctxEvents[0]["reason"] == nil {
+		t.Fatalf("mcp_context = %v", ctxEvents)
+	}
+	missing, _ := json.Marshal(ctxEvents[0]["missing"])
+	servers, _ := ctxEvents[0]["servers"].([]any)
+	if string(missing) != `["docs","nothere"]` || servers == nil || len(servers) != 0 {
+		t.Fatalf("mcp_context = %v", ctxEvents)
+	}
+}
+
+func TestImplementerMCPUnaccepted(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	tickets := seedMCP(t, f, "tribe_default")
+	if _, err := f.db.Exec(`UPDATE requirements SET accepted_at = NULL, accepted_by = NULL WHERE project_id = 'proj_default' AND id = 'REQ-001'`); err != nil {
+		t.Fatal(err)
+	}
+	provider, _ := f.runMCP(t, commitScript, nil)
+	if got := mcpTools(provider.Prompts()[0].Tools); len(got) != 0 {
+		t.Fatalf("mcp tools = %v", got)
+	}
+	if len(tickets.Headers) != 0 {
+		t.Fatal("a server was opened")
+	}
+	ctxEvents := named(cardEvents(t, f, "tool_call"), "mcp_context")
+	if len(ctxEvents) != 1 || ctxEvents[0]["scope"] != "none" {
+		t.Fatalf("mcp_context = %v", ctxEvents)
+	}
+	if reason, _ := ctxEvents[0]["reason"].(string); !strings.Contains(reason, "REQ-001") {
+		t.Fatalf("reason = %q", reason)
+	}
+}

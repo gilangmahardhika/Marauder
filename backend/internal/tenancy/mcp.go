@@ -176,6 +176,37 @@ func ProjectMCPServers(ctx context.Context, db *sql.DB, key []byte, projectID st
 	return loadMCP(ctx, db, key, `s.enabled AND s.tribe_id = (SELECT tribe_id FROM projects WHERE id = $1)`, projectID)
 }
 
+// MCPMention is what a project member may see of a tribe server to mention
+// it in a requirement (RFC-101): no transport, host or secret.
+type MCPMention struct {
+	Slug      string `json:"slug"`
+	Enabled   bool   `json:"enabled"`
+	ToolCount int    `json:"toolCount"`
+}
+
+// ProjectMCPMentions lists every server of the project's tribe, enabled or
+// not, in slug order. It is unchecked: the caller already sees the project.
+func ProjectMCPMentions(ctx context.Context, db *sql.DB, projectID string) ([]MCPMention, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT s.slug, s.enabled, COUNT(t.name)
+		FROM tribe_mcp_servers s LEFT JOIN tribe_mcp_tools t ON t.server_id = s.id
+		WHERE s.tribe_id = (SELECT tribe_id FROM projects WHERE id = $1)
+		GROUP BY s.id, s.slug, s.enabled ORDER BY s.slug`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []MCPMention{}
+	for rows.Next() {
+		var m MCPMention
+		if err := rows.Scan(&m.Slug, &m.Enabled, &m.ToolCount); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func loadMCP(ctx context.Context, db *sql.DB, key []byte, where string, args ...any) ([]MCPConn, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT s.id, s.tribe_id, s.slug, s.transport, s.url, s.image, s.argv_json, s.config_json, s.enabled,

@@ -131,6 +131,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-086 | Token usage filters by source and card |
 | REQ-087 | A tribe admin gives the implementer and refine read-only tools from the tribe's MCP servers |
 | REQ-088 | A tribe admin adds MCP servers from a catalog, including read-only Postgres and SQL Server connectors |
+| REQ-089 | A requirement names the MCP servers its cards may use |
 
 ## Requirements
 
@@ -1220,6 +1221,19 @@ A tribe admin picks an MCP server from a catalog, a featured remote server, the 
 - A database connector reaches any host, private and loopback included, except the board database.
 - A database connector runs one read-only statement per call and returns at most 200 rows. The password is never returned and is redacted from every event.
 - A stdio registry server is pulled and pinned by digest before it is saved.
+
+### REQ-089 MCP mentions in requirements
+
+A member writing a requirement names the tribe's MCP servers it needs with `@slug`, picked from a list of the tribe's servers. The implementer of its cards, and refine of its text, offer only those servers. A requirement that names none keeps every enabled server (RFC-101, RFC-102).
+
+#### Acceptance
+
+- Typing `@` in the statement or an acceptance line lists the tribe's server slugs. Each mention shows under the field, with a warning for an unknown or disabled server.
+- An email, an npm scope, a decorator, or text in code is not a mention.
+- A card whose requirements mention servers offers only the enabled ones they name. A card whose requirements mention none offers every enabled server.
+- A mention that names no enabled server, or a requirement edited since acceptance, offers no MCP tools, and the trace says why.
+- A member sees only the tribe's slugs, whether each is enabled, and its tool count.
+- A mention in the pull request body does not notify anyone on GitHub.
 
 ## Non-goals
 

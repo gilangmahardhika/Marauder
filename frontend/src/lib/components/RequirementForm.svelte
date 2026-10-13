@@ -2,12 +2,14 @@
   import type { Snippet } from 'svelte';
   import AcceptanceList from '$lib/components/AcceptanceList.svelte';
   import Markdown from '$lib/components/Markdown.svelte';
+  import MentionList from '$lib/components/MentionList.svelte';
   import RefinePanel from '$lib/components/RefinePanel.svelte';
-  import { acceptanceChecks, fromLines } from '$lib/requirements';
-  import type { RefineField, RefineStream } from '$lib/types';
+  import { acceptanceChecks, fromLines, mentions } from '$lib/requirements';
+  import type { MCPServerMention, RefineField, RefineStream } from '$lib/types';
   import { labelClass } from '$lib/ui/control';
   import Field from '$lib/ui/Field.svelte';
   import Icon from '$lib/ui/Icon.svelte';
+  import MentionTextarea from '$lib/ui/MentionTextarea.svelte';
   import Segmented from '$lib/ui/Segmented.svelte';
 
   let {
@@ -16,7 +18,8 @@
     acceptance = $bindable(''),
     idLocked = false,
     fields = {},
-    refine
+    refine,
+    servers = []
   }: {
     id?: string;
     statement?: string;
@@ -25,10 +28,14 @@
     fields?: Record<string, string>;
     /** Streams the implement model's new text for one field (RFC-087). Without it the form has no refine buttons. */
     refine?: RefineStream;
+    /** The tribe's MCP servers that a statement or acceptance line may mention (RFC-101). */
+    servers?: MCPServerMention[];
   } = $props();
 
   let view = $state('write');
   const checks = $derived(acceptanceChecks(acceptance));
+  const statementMentions = $derived(mentions(statement));
+  const acceptanceMentions = $derived(mentions(acceptance));
   let open = $state({ statement: false, acceptance: false });
 
   function apply(field: RefineField, text: string) {
@@ -59,18 +66,18 @@
   <div class="flex flex-col gap-5">
     {#if view === 'write'}
       <div class="flex flex-col gap-2">
-        <Field
+        <MentionTextarea
           label="Statement"
           id="requirement-statement"
-          type="textarea"
-          width="full"
           rows={8}
           grow
           hint="Markdown works: headings, lists, code, bold, italic, and links."
           error={fields.statement}
           labelAction={refine ? statementAction : undefined}
+          {servers}
           bind:value={statement}
         />
+        <MentionList mentions={statementMentions} {servers} />
         {#if refine && open.statement}
           <div id="refine-statement-panel">
             <RefinePanel field="statement" {statement} {acceptance} stream={refine} onapply={(text) => apply('statement', text)} />
@@ -78,18 +85,18 @@
         {/if}
       </div>
       <div class="flex flex-col gap-2">
-        <Field
+        <MentionTextarea
           label="Acceptance"
           id="requirement-acceptance"
-          type="textarea"
-          width="full"
           rows={6}
           grow
           hint="One check per line. If you paste a markdown list, only its items are saved. Markdown works inside a line: code, bold, italic, and links."
           error={fields.acceptance}
           labelAction={refine ? acceptanceAction : undefined}
+          {servers}
           bind:value={acceptance}
         />
+        <MentionList mentions={acceptanceMentions} {servers} />
         {#if refine && open.acceptance}
           <div id="refine-acceptance-panel">
             <RefinePanel field="acceptance" {statement} {acceptance} stream={refine} onapply={(text) => apply('acceptance', text)} />

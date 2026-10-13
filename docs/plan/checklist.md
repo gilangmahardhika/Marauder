@@ -986,3 +986,32 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestMCPCatalogAccess`
 - [x] Catalog page Vitest: featured and built-in before the registry, abort on typing, registry notice
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 64: MCP mentions in requirements, harness
+
+- [x] Mentions are read from the markdown tree and stored with ingested and manual requirements.
+- [x] The intake response lists each requirement's mentions and the tribe's slugs.
+- [x] Jobs and refine offer only mentioned servers, fail closed, and record the scope; the pull request body escapes mentions.
+- [x] `TestMentionGrammar`
+- [x] `TestIngestMentions`
+- [x] `TestHashUnchangedWithoutMentions`
+- [x] `TestManualRequirementMentions`
+- [x] `TestIntakeMCPServers`
+- [x] `TestImplementerMCPMentions`
+- [x] `TestImplementerMCPUnion`
+- [x] `TestImplementerMCPMentionMissing`
+- [x] `TestImplementerMCPUnaccepted`
+- [x] `TestRefineMCPMentions`
+- [x] `TestPRBodyMentionsEscaped`
+- [x] `TestImplementerMCPTools` and `TestMCPOtherTribe` pass unchanged
+- [x] The fixture and the full backend suite pass
+
+## Sprint 65: MCP mentions in requirements, pages
+
+- [x] Typing `@` in a requirement field lists the tribe's slugs and inserts the one picked.
+- [x] Mentions show under each field, on the intake row, and on the detail page; the trace shows the scope.
+- [x] Mention helper Vitest
+- [x] `RequirementForm` autocomplete and chips Vitest
+- [x] Intake pages Vitest: mentions on the detail page, servers passed to the new requirement form
+- [x] Trace Vitest: scope `none` and missing mentions
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

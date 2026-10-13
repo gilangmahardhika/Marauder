@@ -193,6 +193,21 @@ type Input struct {
 	Live live.Publisher
 	// Extra is the tribe's MCP tools for this attempt; nil offers none (RFC-094).
 	Extra ExtraTools
+	// MCP is how the job scoped the tribe's servers (RFC-102); nil records
+	// no scope.
+	MCP *MCPContext
+}
+
+// MCPContext is the scope of an attempt's MCP servers (RFC-102). Scope is
+// all, mentioned, or none. Offered are the mentioned slugs the job kept,
+// Missing those that are not an enabled server, and Total the tribe's
+// enabled servers.
+type MCPContext struct {
+	Scope   string
+	Offered []string
+	Missing []string
+	Reason  string
+	Total   int
 }
 
 // Result is how the attempt ended. Outcome is empty for a new commit,
@@ -300,6 +315,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		Linked:       linked,
 		Conventions:  convs,
 		Secrets:      in.Secrets,
+		MCPServers:   mentionedServers(in.MCP),
 	})
 	if err != nil {
 		return Result{}, err
@@ -330,13 +346,8 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	for _, tool := range session.tools {
 		session.allowed[tool.Name] = tool
 	}
-	if in.Extra != nil {
-		servers := in.Extra.Describe()
-		if err := session.event(ctx, "tool_call", map[string]any{
-			"name": "mcp_context", "ok": true, "rejected": false,
-			"summary": fmt.Sprintf("%d MCP servers, %d tools", len(servers), len(session.tools)-len(ImplementerTools())),
-			"servers": servers,
-		}); err != nil {
+	if in.Extra != nil || (in.MCP != nil && in.MCP.Scope == "none") {
+		if err := session.event(ctx, "tool_call", mcpContextEvent(in.Extra, in.MCP, len(session.tools)-len(ImplementerTools()))); err != nil {
 			return Result{}, err
 		}
 	}

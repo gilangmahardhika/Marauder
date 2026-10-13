@@ -99,6 +99,31 @@ func TestPRBodyMarkdownStatement(t *testing.T) {
 	}
 }
 
+func TestPRBodyMentionsEscaped(t *testing.T) {
+	body := app.PRBody(app.PRInput{
+		CardID: "card_1", CardTitle: "REQ-001",
+		Requirements: []app.PRRequirement{{
+			ID:         "REQ-001",
+			Statement:  "Read the ticket from @tickets (and @docs), mail a@b.co, keep `@code` and ``a ` @twice``.\n\n```\n@fenced\n```",
+			Acceptance: []string{"Docs come from @docs."},
+		}},
+		CommitMessage: "Export CSV",
+		CommitSHA:     "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+	})
+	for _, want := range []string{
+		"Read the ticket from `@tickets` (and `@docs`), mail a@b.co, keep `@code` and ``a ` @twice``.",
+		"```\n@fenced\n```",
+		"- [ ] Docs come from `@docs`.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "``@tickets``") || strings.Contains(body, "`@fenced`") {
+		t.Fatalf("a mention was wrapped twice or inside code:\n%s", body)
+	}
+}
+
 func TestPRBodyKeepsHumanText(t *testing.T) {
 	first := vcs.MergeBody("", "## Summary\n\nfirst")
 	edited := "Note from a person.\n\n" + first + "\n\nScreenshots below."

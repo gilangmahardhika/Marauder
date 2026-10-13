@@ -168,6 +168,35 @@ func TestRefineMCPLoop(t *testing.T) {
 	}
 }
 
+func TestRefineMCPMentions(t *testing.T) {
+	cases := []struct {
+		statement  string
+		acceptance []string
+		tools      string
+	}{
+		{"Export the board.", nil, "mcp_tickets_lookup"},
+		{"Export the board named in @tickets.", nil, "mcp_tickets_lookup"},
+		{"Export the board.", []string{"Columns match @tickets."}, "mcp_tickets_lookup"},
+		{"Export the board named in @docs.", nil, ""},
+		{"Export the board named in `@tickets`, see @docs.", nil, ""},
+	}
+	for _, tc := range cases {
+		srv, provider, dev, _ := refineServer(t, refineRouter, refineReply)
+		mcpSrv := refineMCP(t, srv, true)
+		refineStream(t, srv, dev, map[string]any{"field": "statement", "statement": tc.statement, "acceptance": tc.acceptance})
+		prompts := provider.Prompts()
+		if len(prompts) != 1 || strings.Join(prompts[0].Tools, ",") != tc.tools {
+			t.Fatalf("%q: prompts = %+v", tc.statement, prompts)
+		}
+		if !strings.Contains(prompts[0].System, "Keep each @name exactly as written.") {
+			t.Fatalf("system = %q", prompts[0].System)
+		}
+		if tc.tools == "" && len(mcpSrv.Headers) != 0 {
+			t.Fatalf("%q: an unmentioned server was opened", tc.statement)
+		}
+	}
+}
+
 func TestRefineMCPResetEvent(t *testing.T) {
 	script := `{"refine_requirement":[
 		{"tool":"mcp_tickets_lookup","id":"T-1","say":"Checking the ticket for who asked for the export and which columns the report needs."},

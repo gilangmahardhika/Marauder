@@ -138,6 +138,45 @@ func TestIngestKeepsManual(t *testing.T) {
 	}
 }
 
+func TestIngestMentions(t *testing.T) {
+	db := boardtest.Open(t)
+	repo := t.TempDir()
+	data := t.TempDir()
+	ctx := context.Background()
+	prd := filepath.Join(repo, "docs", "prd", "one.md")
+	writeFile(t, filepath.Join(data, "config.yaml"), "operatorLogin: ada\n")
+	writeFile(t, prd, "### REQ-001 Tickets\n\nLook up the ticket with @tickets.\n\n#### Acceptance\n\n- The docs come from @docs.\n- Mail ada@example.com.\n")
+	if _, err := app.Ingest(ctx, db, "proj_default", "", repo, data); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedMentions(t, db, "REQ-001"); got != `["tickets","docs"]` {
+		t.Fatalf("mentions = %s", got)
+	}
+	if err := app.Accept(ctx, db, "proj_default", data, []string{"REQ-001"}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, prd, "### REQ-001 Tickets\n\nLook up the ticket with `@tickets`.\n\n#### Acceptance\n\n- The docs come from @docs.\n- Mail ada@example.com.\n")
+	if _, err := app.Ingest(ctx, db, "proj_default", "", repo, data); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedMentions(t, db, "REQ-001"); got != `["docs"]` {
+		t.Fatalf("mentions after backticks = %s", got)
+	}
+	if requirementAccepted(t, db, "REQ-001", "ada") {
+		t.Fatal("wrapping a mention in backticks kept acceptance")
+	}
+}
+
+func storedMentions(t *testing.T, db *sql.DB, id string) string {
+	t.Helper()
+	var got string
+	if err := db.QueryRow(`SELECT mentions_json FROM requirements WHERE project_id = 'proj_default' AND id = $1`, id).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
 func writeFile(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

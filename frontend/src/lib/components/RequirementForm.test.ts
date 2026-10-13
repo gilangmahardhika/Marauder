@@ -142,3 +142,58 @@ test('an edit after asking is flagged, and Preview hides the refine icons', asyn
   await fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
   expect(screen.queryByRole('button', { name: /with AI/ })).toBeNull();
 });
+
+const mcpServers = [
+  { slug: 'tickets', enabled: true, toolCount: 2 },
+  { slug: 'docs', enabled: false, toolCount: 1 }
+];
+
+async function typeAt(area: HTMLTextAreaElement, text: string) {
+  area.value = text;
+  area.setSelectionRange(text.length, text.length);
+  await fireEvent.input(area);
+}
+
+test('typing @ opens the server list, arrows move, Enter inserts, and Escape closes', async () => {
+  render(RequirementForm, { statement: '', acceptance: '', servers: mcpServers });
+  const statement = screen.getByLabelText('Statement') as HTMLTextAreaElement;
+  expect(screen.getAllByText(/Type @ to name an MCP server\./)).toHaveLength(2);
+  expect(statement.getAttribute('aria-expanded')).toBe('false');
+
+  await typeAt(statement, 'Use @');
+  const list = screen.getByRole('listbox', { name: 'MCP servers' });
+  expect(within(list).getAllByRole('option')).toHaveLength(2);
+  expect(statement.getAttribute('aria-expanded')).toBe('true');
+  expect(statement.getAttribute('aria-autocomplete')).toBe('list');
+  expect(statement.getAttribute('aria-activedescendant')).toBe('requirement-statement-mention-0');
+  await fireEvent.keyDown(statement, { key: 'ArrowDown' });
+  expect(statement.getAttribute('aria-activedescendant')).toBe('requirement-statement-mention-1');
+
+  await typeAt(statement, 'Use @ti');
+  expect(within(screen.getByRole('listbox')).getAllByRole('option').map((option) => option.textContent)).toEqual([
+    expect.stringContaining('tickets')
+  ]);
+  await fireEvent.keyDown(statement, { key: 'Enter' });
+  expect(statement.value).toBe('Use @tickets ');
+  expect(screen.queryByRole('listbox')).toBeNull();
+
+  await typeAt(statement, 'Use @tickets and @');
+  expect(screen.getByRole('listbox')).toBeTruthy();
+  await fireEvent.keyDown(statement, { key: 'Escape' });
+  expect(screen.queryByRole('listbox')).toBeNull();
+});
+
+test('with no server the list says so', async () => {
+  render(RequirementForm, { statement: '', acceptance: '' });
+  await typeAt(screen.getByLabelText('Statement') as HTMLTextAreaElement, '@');
+  expect(within(screen.getByRole('listbox')).getByText('No MCP servers in this tribe.')).toBeTruthy();
+});
+
+test('chips show a known server, a disabled one, and an unknown slug under their field', () => {
+  render(RequirementForm, { statement: 'Read @tickets and @docs.', acceptance: '- Check @nothere', servers: mcpServers });
+  const [statementList, acceptanceList] = screen.getAllByRole('list', { name: 'MCP servers mentioned' });
+  expect(statementList.textContent).toContain('@tickets');
+  expect(within(statementList).getByText('disabled: jobs will not call it')).toBeTruthy();
+  expect(within(acceptanceList).getByText('no server with this slug')).toBeTruthy();
+  expect(within(statementList).queryByText('no server with this slug')).toBeNull();
+});

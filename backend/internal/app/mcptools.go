@@ -59,6 +59,16 @@ func LoadProjectMCP(ctx context.Context, db *sql.DB, key []byte, projectID strin
 	return tenancy.ProjectMCPServers(ctx, db, key, projectID)
 }
 
+// MCPMention is the slug, state and tool count of a tribe server, for the
+// intake mention list.
+type MCPMention = tenancy.MCPMention
+
+// ProjectMCPMentions lists the servers of the project's tribe that a
+// requirement may mention.
+func ProjectMCPMentions(ctx context.Context, db *sql.DB, projectID string) ([]MCPMention, error) {
+	return tenancy.ProjectMCPMentions(ctx, db, projectID)
+}
+
 // OpenMCPToolset connects to each server and offers each allowlisted tool
 // whose schema hash still matches. A changed tool is left out with an
 // assertion_failed mcp_changed event. A server that cannot be reached offers
@@ -70,7 +80,7 @@ func OpenMCPToolset(ctx context.Context, db *sql.DB, d MCPDialer, conns []MCPCon
 	}
 	set := &MCPToolset{routes: map[string]mcpRoute{}}
 	for _, conn := range conns {
-		desc := map[string]any{"slug": conn.Slug, "transport": conn.Transport}
+		desc := map[string]any{"id": conn.ID, "slug": conn.Slug, "transport": conn.Transport}
 		switch {
 		case conn.Transport == "http":
 			if u, err := url.Parse(conn.URL); err == nil {

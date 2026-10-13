@@ -125,6 +125,11 @@ func Add(ctx context.Context, db *sql.DB, projectID, userID, id string, draft Dr
 	if err != nil {
 		return "", err
 	}
+	mentions := MentionsOf(clean.Statement, clean.Acceptance)
+	mentionsJSON, err := json.Marshal(mentions)
+	if err != nil {
+		return "", err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -148,11 +153,11 @@ func Add(ctx context.Context, db *sql.DB, projectID, userID, id string, draft Dr
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO requirements (
 			id, source_kind, source_path, heading, statement,
-			acceptance_json, non_goals_json, content_hash, project_id, created_by, self_review, ai_review_mode
-		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6, $7, $8)
+			acceptance_json, non_goals_json, content_hash, project_id, created_by, self_review, ai_review_mode, mentions_json
+		) VALUES ($1, 'manual', '', $1, $2, $3, '[]', $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (project_id, id) DO NOTHING`,
-		id, clean.Statement, string(encoded), hashParts(clean.Statement, clean.Acceptance), projectID, userID, clean.SelfReview,
-		clean.AIReviewMode,
+		id, clean.Statement, string(encoded), hashRequirement(clean.Statement, clean.Acceptance, mentions), projectID, userID, clean.SelfReview,
+		clean.AIReviewMode, string(mentionsJSON),
 	)
 	if err != nil {
 		return "", err
@@ -176,6 +181,11 @@ func Update(ctx context.Context, db *sql.DB, projectID, id string, draft Draft) 
 	if err != nil {
 		return err
 	}
+	mentions := MentionsOf(clean.Statement, clean.Acceptance)
+	mentionsJSON, err := json.Marshal(mentions)
+	if err != nil {
+		return err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -190,9 +200,10 @@ func Update(ctx context.Context, db *sql.DB, projectID, id string, draft Draft) 
 			acceptance_json = $2,
 			accepted_at = CASE WHEN content_hash = $3 THEN accepted_at ELSE NULL END,
 			accepted_by = CASE WHEN content_hash = $3 THEN accepted_by ELSE NULL END,
-			content_hash = $3
+			content_hash = $3,
+			mentions_json = $6
 		WHERE project_id = $4 AND id = $5`,
-		clean.Statement, string(encoded), hashParts(clean.Statement, clean.Acceptance), projectID, id,
+		clean.Statement, string(encoded), hashRequirement(clean.Statement, clean.Acceptance, mentions), projectID, id, string(mentionsJSON),
 	)
 	if err != nil {
 		return err

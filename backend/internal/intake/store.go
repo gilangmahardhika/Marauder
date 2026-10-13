@@ -30,11 +30,19 @@ func Apply(ctx context.Context, db *sql.DB, projectID, actorID string, result Re
 		if err != nil {
 			return nil, err
 		}
+		mentions := req.Mentions
+		if mentions == nil {
+			mentions = []string{}
+		}
+		mentionsJSON, err := json.Marshal(mentions)
+		if err != nil {
+			return nil, err
+		}
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO requirements (
 				id, source_kind, source_path, heading, statement,
-				acceptance_json, non_goals_json, content_hash, project_id, created_by
-			) VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, $8, $9)
+				acceptance_json, non_goals_json, content_hash, project_id, created_by, mentions_json
+			) VALUES ($1, $2, $3, $4, $5, $6, '[]', $7, $8, $9, $10)
 			ON CONFLICT (project_id, id) DO UPDATE SET
 				created_by = COALESCE(requirements.created_by, EXCLUDED.created_by),
 				source_kind = EXCLUDED.source_kind,
@@ -44,6 +52,7 @@ func Apply(ctx context.Context, db *sql.DB, projectID, actorID string, result Re
 				acceptance_json = EXCLUDED.acceptance_json,
 				non_goals_json = EXCLUDED.non_goals_json,
 				content_hash = EXCLUDED.content_hash,
+				mentions_json = EXCLUDED.mentions_json,
 				accepted_at = CASE
 					WHEN requirements.content_hash IS NOT DISTINCT FROM EXCLUDED.content_hash THEN requirements.accepted_at
 					ELSE NULL
@@ -54,7 +63,7 @@ func Apply(ctx context.Context, db *sql.DB, projectID, actorID string, result Re
 				END
 			WHERE requirements.source_kind <> 'manual'`,
 			req.ID, req.SourceKind, req.SourcePath, req.Heading, req.Statement, string(encoded), req.Hash, projectID,
-			nullable(actorID),
+			nullable(actorID), string(mentionsJSON),
 		)
 		if err != nil {
 			return nil, err

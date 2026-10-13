@@ -21,6 +21,7 @@ type intakeRequirement struct {
 	Accepted    bool     `json:"accepted"`
 	CreatedBy   *string  `json:"createdBy"`
 	LinkedCards []string `json:"linkedCards"`
+	Mentions    []string `json:"mentions"`
 }
 
 type intakeReply struct {
@@ -201,6 +202,80 @@ func TestAcceptanceLineMarkers(t *testing.T) {
 	over := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-003", "statement": "x", "acceptance": []string{strings.Repeat("a", 1001)}})
 	if over.Code != 422 || !strings.Contains(over.Body.String(), "Keep each acceptance line to 1000 characters or fewer.") {
 		t.Fatalf("1001 characters = %d %s", over.Code, over.Body.String())
+	}
+}
+
+func TestManualRequirementMentions(t *testing.T) {
+	srv, dev, lead := manualServer(t)
+	path := "/api/projects/proj_default/requirements"
+	added := postJSON(t, srv, path, dev, map[string]any{
+		"id": "REQ-001", "statement": "Look up the ticket in @tickets, mail ada@example.com.",
+		"acceptance": []string{"Docs come from @docs.", "`@raw` stays code."},
+	})
+	if added.Code != 200 {
+		t.Fatalf("add = %d %s", added.Code, added.Body.String())
+	}
+	if got := find(t, added.Body.Bytes(), "REQ-001").Mentions; !reflect.DeepEqual(got, []string{"tickets", "docs"}) {
+		t.Fatalf("mentions = %q", got)
+	}
+	if rec := postJSON(t, srv, "/api/projects/proj_default/accept", lead, map[string]any{"requirementIds": []string{"REQ-001"}}); rec.Code != 200 {
+		t.Fatalf("accept = %d %s", rec.Code, rec.Body.String())
+	}
+
+	edited := putJSON(t, srv, path+"/REQ-001", dev, map[string]any{
+		"statement":  "Look up the ticket in @tickets, mail ada@example.com.",
+		"acceptance": []string{"Docs come from `@docs`.", "`@raw` stays code."},
+	})
+	if edited.Code != 200 {
+		t.Fatalf("edit = %d %s", edited.Code, edited.Body.String())
+	}
+	got := find(t, edited.Body.Bytes(), "REQ-001")
+	if !reflect.DeepEqual(got.Mentions, []string{"tickets"}) || got.Accepted {
+		t.Fatalf("after dropping @docs = %+v", got)
+	}
+
+	plain := postJSON(t, srv, path, dev, map[string]any{"id": "REQ-002", "statement": "No mention."})
+	if got := find(t, plain.Body.Bytes(), "REQ-002").Mentions; got == nil || len(got) != 0 {
+		t.Fatalf("plain mentions = %v, want []", got)
+	}
+}
+
+func TestIntakeMCPServers(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	for _, stmt := range []string{
+		`INSERT INTO tribes (id, name, created_at) VALUES ('tribe_gadget', 'Gadget tribe', '2026-10-01T00:00:00Z')`,
+		`INSERT INTO tribe_mcp_servers (id, tribe_id, slug, transport, url, enabled, secret_names_json, secrets_ciphertext, created_at, updated_at)
+		 VALUES ('mcp_a', 'tribe_default', 'tickets', 'http', 'https://tickets.internal.example/mcp', true, '["Authorization"]', 'cipher-tickets', 'x', 'x'),
+		        ('mcp_b', 'tribe_default', 'docs', 'http', 'https://docs.internal.example/mcp', false, '[]', '', 'x', 'x'),
+		        ('mcp_c', 'tribe_gadget', 'gadget', 'http', 'https://gadget.example/mcp', true, '[]', '', 'x', 'x')`,
+		`INSERT INTO tribe_mcp_tools (server_id, name, description, schema_json, schema_sha256)
+		 VALUES ('mcp_a', 'lookup', '', '{}', 'h1'), ('mcp_a', 'search', '', '{}', 'h2')`,
+	} {
+		if _, err := srv.DB.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rec := getAuth(t, srv, "/api/projects/proj_default/intake", dev)
+	if rec.Code != 200 {
+		t.Fatalf("intake = %d %s", rec.Code, rec.Body.String())
+	}
+	var reply struct {
+		MCPServers []map[string]any `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &reply); err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]any{
+		{"slug": "docs", "enabled": false, "toolCount": float64(0)},
+		{"slug": "tickets", "enabled": true, "toolCount": float64(2)},
+	}
+	if !reflect.DeepEqual(reply.MCPServers, want) {
+		t.Fatalf("mcpServers = %v", reply.MCPServers)
+	}
+	for _, leak := range []string{"internal.example", "cipher-tickets", "Authorization", "mcp_a", "gadget"} {
+		if strings.Contains(rec.Body.String(), leak) {
+			t.Fatalf("intake reply holds %q: %s", leak, rec.Body.String())
+		}
 	}
 }
 

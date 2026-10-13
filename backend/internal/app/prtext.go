@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/trace"
 )
@@ -123,7 +124,8 @@ func PRBody(in PRInput) string {
 	b.WriteString("## Summary\n\n")
 	b.WriteString(untrustedText(subject))
 	if body != "" {
-		b.WriteString("\n\n" + untrustedText(body))
+		b.WriteString("\n\n")
+		b.WriteString(untrustedText(body))
 	}
 	b.WriteString("\n\n")
 
@@ -132,17 +134,18 @@ func PRBody(in PRInput) string {
 		if len(in.Requirements) > 1 {
 			heading += "s"
 		}
-		b.WriteString(heading + "\n\n")
+		b.WriteString(heading)
+		b.WriteString("\n\n")
 		for _, req := range in.Requirements {
 			statement := strings.TrimSpace(req.Statement)
 			if statement == "" {
 				statement = "(not found in this project)"
 			}
-			fmt.Fprintf(&b, "**%s**\n\n%s\n\n", req.ID, untrustedText(closeFences(statement)))
+			fmt.Fprintf(&b, "**%s**\n\n%s\n\n", req.ID, untrustedText(escapeMentions(closeFences(statement))))
 			if len(req.Acceptance) > 0 {
 				b.WriteString("Acceptance criteria:\n")
 				for _, line := range req.Acceptance {
-					fmt.Fprintf(&b, "- [ ] %s\n", untrustedText(oneLine(line)))
+					fmt.Fprintf(&b, "- [ ] %s\n", untrustedText(escapeMentions(oneLine(line))))
 				}
 				b.WriteString("\n")
 			}
@@ -248,6 +251,87 @@ func closeFences(s string) string {
 		return s
 	}
 	return s + "\n" + open
+}
+
+// escapeMentions wraps each @slug mention outside code in backticks, so the
+// pull request never notifies a GitHub user or team (RFC-101).
+func escapeMentions(s string) string {
+	lines := strings.Split(s, "\n")
+	open := ""
+	for i, line := range lines {
+		if m := fenceLine.FindStringSubmatch(line); m != nil {
+			mark, rest := m[1], m[2]
+			switch {
+			case open == "":
+				if mark[0] != '`' || !strings.Contains(rest, "`") {
+					open = mark
+				}
+			case mark[0] == open[0] && len(mark) >= len(open) && strings.TrimSpace(rest) == "":
+				open = ""
+			}
+			continue
+		}
+		if open == "" {
+			lines[i] = escapeLineMentions(line)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// escapeLineMentions wraps mentions in the parts of one line that are not
+// inline code.
+func escapeLineMentions(line string) string {
+	var b strings.Builder
+	plain := 0
+	flush := func(end int) {
+		text := line[plain:end]
+		last := 0
+		for _, span := range intake.FindMentions(text) {
+			b.WriteString(text[last:span[0]])
+			b.WriteString("`" + text[span[0]:span[1]] + "`")
+			last = span[1]
+		}
+		b.WriteString(text[last:])
+	}
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		run := i
+		for i < len(line) && line[i] == '`' {
+			i++
+		}
+		ticks := line[run:i]
+		end := closingTicks(line, i, ticks)
+		if end < 0 {
+			continue
+		}
+		flush(run)
+		b.WriteString(line[run:end])
+		plain, i = end, end
+	}
+	flush(len(line))
+	return b.String()
+}
+
+// closingTicks is the end of the backtick run that closes a code span opened
+// by ticks, or -1.
+func closingTicks(line string, from int, ticks string) int {
+	for i := from; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		run := i
+		for i < len(line) && line[i] == '`' {
+			i++
+		}
+		if i-run == len(ticks) {
+			return i
+		}
+	}
+	return -1
 }
 
 func codeText(s string) string {

@@ -131,6 +131,16 @@
               </ul>
             {/if}
           </dd>
+          {#if (requirement.mentions ?? []).length > 0}
+            <dt class="text-muted">MCP servers</dt>
+            <dd>
+              <ul class="flex flex-wrap gap-1.5" aria-label={`MCP servers of ${requirement.id}`}>
+                {#each requirement.mentions ?? [] as slug (slug)}
+                  <li><Badge><span class="font-mono">@{slug}</span></Badge></li>
+                {/each}
+              </ul>
+            </dd>
+          {/if}
           <dt class="text-muted">Cards</dt>
           <dd>
             {#if requirement.linkedCards.length === 0}

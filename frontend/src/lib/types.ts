@@ -169,6 +169,15 @@ export type Requirement = {
   canSetSelfReview: boolean;
   /** What an AI request for changes does on this requirement's cards (RFC-072). */
   aiReviewMode: AIReviewMode;
+  /** The tribe MCP servers the requirement names with @slug (RFC-101). */
+  mentions?: string[];
+};
+
+/** A tribe MCP server as a project member sees it, to mention it (RFC-101). */
+export type MCPServerMention = {
+  slug: string;
+  enabled: boolean;
+  toolCount: number;
 };
 
 export type AIReviewMode = "continue" | "manual";
@@ -226,6 +235,7 @@ export type Intake = {
   requirements: Requirement[];
   decisions: Decision[];
   reviewerOptions: Reviewer[];
+  mcpServers?: MCPServerMention[];
 };
 
 export type SessionUser = {
