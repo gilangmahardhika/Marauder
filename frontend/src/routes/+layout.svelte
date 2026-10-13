@@ -1,13 +1,14 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import type { Snippet } from 'svelte';
-  import { closeSession, getMe, getProjects } from '$lib/api';
+  import { closeSession, getMe, getProjects, getTribes } from '$lib/api';
   import Live from '$lib/components/Live.svelte';
   import { displayName } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
   import { session } from '$lib/session';
   import { shell } from '$lib/shell.svelte';
-  import type { ProjectRecord } from '$lib/types';
+  import type { ProjectRecord, TribeRecord } from '$lib/types';
   import Icon from '$lib/ui/Icon.svelte';
   import Menu from '$lib/ui/Menu.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
@@ -16,6 +17,8 @@
 
   let { children }: { children: Snippet } = $props();
   let projects = $state<ProjectRecord[]>([]);
+  let tribes = $state<TribeRecord[]>([]);
+  let tribeId = $state('');
   let selected = $state('');
   let mobile = $state(false);
 
@@ -60,10 +63,12 @@
       : [...groups.filter((group) => !group.admin), ...(shell.tribeAdminOf.length > 0 ? [tribeGroup] : [])]
   );
 
-  const login = $derived($page.url.pathname === '/login');
-  const projectName = $derived(projects.find((project) => project.id === selected)?.name ?? 'No project');
+  const bare = $derived($page.url.pathname === '/login' || $page.url.pathname === '/choose-tribe');
+  const tribeProjects = $derived(projects.filter((project) => project.tribeId === tribeId));
+  const tribeName = $derived(tribes.find((tribe) => tribe.id === tribeId)?.name ?? 'No tribe');
+  const projectName = $derived(tribeProjects.find((project) => project.id === selected)?.name ?? 'No project');
   const projectOptions = $derived(
-    projects.map((project) => ({ value: project.id, label: project.name, detail: project.repo }))
+    tribeProjects.map((project) => ({ value: project.id, label: project.name, detail: project.repo }))
   );
 
   function active(href: string) {
@@ -89,8 +94,9 @@
 
   $effect(() => {
     shell.projectId = session.project();
-    if ($page.url.pathname === '/login') return;
+    if (bare) return;
     selected = session.project();
+    tribeId = session.tribe();
     void getMe()
       .then((me) => {
         shell.admin = me.admin;
@@ -103,12 +109,21 @@
         shell.admin = false;
         shell.tribeAdminOf = [];
       });
-    void getProjects()
-      .then((body) => {
-        projects = body.projects;
-        if (session.project() === '' && body.projects[0]) {
-          session.setProject(body.projects[0].id);
-          selected = body.projects[0].id;
+    void Promise.all([getTribes(), getProjects()])
+      .then(([tribeBody, projectBody]) => {
+        tribes = tribeBody.tribes;
+        projects = projectBody.projects;
+        if (tribeId !== '' && !tribes.some((tribe) => tribe.id === tribeId)) {
+          session.setTribe('');
+          session.setProject('');
+          shell.projectId = '';
+          void goto('/choose-tribe');
+          return;
+        }
+        const own = projects.filter((project) => project.tribeId === tribeId);
+        if (!own.some((project) => project.id === session.project())) {
+          session.setProject(own[0]?.id ?? '');
+          selected = session.project();
         }
         shell.projectId = session.project();
       })
@@ -123,7 +138,7 @@
 </svelte:head>
 
 <a class="skip" href="#main">Skip to content</a>
-{#if login}
+{#if bare}
   <main id="main">{@render children()}</main>
 {:else}
   <div class="min-h-screen bg-ground text-ink lg:pl-60">
@@ -133,6 +148,7 @@
         <a href="/" class="font-semibold">Marauder</a>
       </div>
       <div class="px-3">
+        {@render tribeRow()}
         <SearchSelect
           label="Project"
           id="project-switch"
@@ -185,6 +201,7 @@
               <Icon name="close" class="size-5" />
             </button>
           </div>
+          {@render tribeRow()}
           <SearchSelect
             label="Project"
             id="project-switch-mobile"
@@ -228,7 +245,7 @@
         </button>
         <p class="flex min-w-0 items-center gap-2 text-[13px]">
           <span class="font-semibold text-ink lg:hidden">Marauder</span>
-          <span class="hidden text-muted lg:inline">Project</span>
+          <span class="hidden truncate text-muted lg:inline">{tribeName}</span>
           <span class="hidden text-line-strong lg:inline" aria-hidden="true">/</span>
           <span class="hidden truncate font-medium text-ink lg:inline">{projectName}</span>
         </p>
@@ -240,3 +257,10 @@
     </div>
   </div>
 {/if}
+
+{#snippet tribeRow()}
+  <div class="mb-1 flex items-center justify-between gap-2">
+    <span class="min-w-0 truncate pl-1 text-xs font-medium text-muted" title={tribeName}>{tribeName}</span>
+    <a href="/choose-tribe" class="inline-flex min-h-11 shrink-0 items-center px-1 text-xs font-medium text-accent hover:underline">Switch tribe</a>
+  </div>
+{/snippet}

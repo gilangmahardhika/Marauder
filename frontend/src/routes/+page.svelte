@@ -5,6 +5,7 @@
   import BoardCard from '$lib/components/BoardCard.svelte';
   import OwnerFilter from '$lib/components/OwnerFilter.svelte';
   import { setParams } from '$lib/params';
+  import { session } from '$lib/session';
   import { shell, showShell } from '$lib/shell.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
@@ -135,7 +136,14 @@
       >
     </span>
   {/snippet}
-  {#if unavailable}
+  {#if shell.projectId === '' && session.project() === ''}
+    <EmptyState
+      title="This tribe has no projects yet."
+      description="An admin or a tribe admin adds projects. Switch tribe in the sidebar to work in another one."
+      href="/projects"
+      link="Projects"
+    />
+  {:else if unavailable}
     <EmptyState
       title="That project is not available."
       description="You are not a member of its tribe. Pick another project in the sidebar, or ask an admin to add you."

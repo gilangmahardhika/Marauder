@@ -17,7 +17,7 @@
   let links = $state<string[]>([]);
   let repos = $state<CompanyRepo[] | null>(null);
   let reposError = $state('');
-  let tribeId = $state('');
+  let tribeId = $state(session.tribe());
   let name = $state('');
   let repo = $state('');
   let baseBranch = $state('main');

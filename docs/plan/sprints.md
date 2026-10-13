@@ -917,3 +917,16 @@ Packages: frontend `types.ts`, `requirements.ts`, `MentionTextarea`, `Requiremen
 - The trace shows the MCP scope and the mentions that did not resolve.
 
 Done when: the mention helper, `RequirementForm` autocomplete and chips, intake pages, and trace Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 66: Tribe selector after sign-in
+
+Goal: A person who belongs to many tribes picks the tribe to work in after every sign-in, and the project switcher lists only that tribe's projects.
+
+Packages: frontend `session.ts`, `+layout.ts`, `+layout.svelte`, `/login`, the new `/choose-tribe`, and the board page.
+
+- Sign-in goes to `/choose-tribe`, which lists the caller's tribes with their project counts. Picking one stores it with its first project and opens the board.
+- A project route with no stored tribe redirects to `/choose-tribe`. Account, admin, tribe, and project pages do not need a tribe.
+- The sidebar shows the tribe with "Switch tribe", the switcher lists only the tribe's projects, and the top bar reads `Tribe / Project`.
+- The Projects page lists only the active tribe's projects, for a company admin too, without a tribe filter; New project starts on the active tribe.
+
+Done when: the tribe selector, layout tribe scope, layout load, and projects by tribe Vitest cases, `npm run check`, the fixture, and the rest of the suite.

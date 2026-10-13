@@ -1015,3 +1015,15 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Intake pages Vitest: mentions on the detail page, servers passed to the new requirement form
 - [x] Trace Vitest: scope `none` and missing mentions
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 66: Tribe selector after sign-in
+
+- [x] Sign-in goes to `/choose-tribe`, and picking a tribe stores it with its first project and opens the board.
+- [x] A project route with no stored tribe redirects to `/choose-tribe`.
+- [x] The switcher lists only the selected tribe's projects, with "Switch tribe" and `Tribe / Project` in the top bar.
+- [x] Tribe selector Vitest
+- [x] Layout tribe scope Vitest
+- [x] Layout load and sign-in destination Vitest
+- [x] The Projects page lists only the active tribe's projects, for an admin too, and New project starts on the active tribe.
+- [x] Projects by tribe Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

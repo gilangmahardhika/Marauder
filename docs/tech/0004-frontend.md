@@ -82,6 +82,7 @@ frontend/
   src/routes/+layout.ts
   src/routes/+layout.svelte
   src/routes/login/+page.svelte
+  src/routes/choose-tribe/+page.svelte
   src/routes/+page.svelte                      board
   src/routes/intake/+page.svelte
   src/routes/intake/new/+page.svelte
@@ -213,6 +214,12 @@ frontend/
   src/lib/textdiff.test.ts
   src/routes/intake/[id]/page.test.ts
   src/routes/intake/new/page.test.ts
+  src/routes/choose-tribe/page.test.ts
+  src/routes/layout.test.ts
+  src/routes/layout-load.test.ts
+  src/routes/login/page.test.ts
+  src/routes/projects/page.test.ts
+  src/routes/projects/new/page.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
   src/lib/ui/MultiSearchSelect.test.ts
@@ -225,13 +232,14 @@ frontend/
 
 ## Session and routes
 
-`src/lib/session.ts` reads and writes `sessionStorage` keys `orchestrator.bearer` and `orchestrator.project`. It stores the bearer and the selected project id. It does not store GitHub tokens, passwords, model keys, `tokenKey`, or the deploy token.
+`src/lib/session.ts` reads and writes `sessionStorage` keys `orchestrator.bearer`, `orchestrator.tribe`, and `orchestrator.project`. It stores the bearer, the selected tribe id, and the selected project id. Clearing the session removes all three. It does not store GitHub tokens, passwords, model keys, `tokenKey`, or the deploy token.
 
-`src/routes/+layout.ts` loads in the browser. When the path is not `/login` and no bearer is stored, it `redirect`s to `/login`.
+`src/routes/+layout.ts` loads in the browser. When the path is not `/login` and no bearer is stored, it `redirect`s to `/login`. When a bearer is stored but no tribe is, a project route (`/`, `/intake`, `/cards`, `/settings`, and the pages under them) `redirect`s to `/choose-tribe`. Account, admin, tribe, and project pages open without a tribe, so an admin on a new install can create one.
 
 | Path | Page |
 | --- | --- |
 | `/login` | Email and password |
+| `/choose-tribe` | Pick the tribe to work in, after every sign-in |
 | `/` | Board for the selected project |
 | `/intake` | Ingest and accept for the selected project |
 | `/intake/new` | Add a requirement by hand |
@@ -259,16 +267,16 @@ frontend/
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
 | `/tribes/[id]/usage` | Token usage of the tribe's projects (RFC-090) |
-| `/projects` | Projects for the caller's tribes |
+| `/projects` | Projects of the active tribe |
 | `/projects/new` | Create a project |
 | `/settings/repository` | Project repository, base branch, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
 | `/settings/deploy` | Deploy and checks for the project |
 | `/settings/conventions` | The project's stacks, enabled skills, and the rules that apply |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-The sidebar shows a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current project and the live status line. The page title and page actions sit in the body, in the `Page` header.
+The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the live status line. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -316,7 +324,7 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 | --- | --- | --- | --- |
 | Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` avatars (comma list of user ids, `none` for no owner), `blocked=1` Blocked only | No |
 | Intake | See Intake | `tab`, `status`, `source` | Yes |
-| Projects | Name, repository, base branch, tribe name | `tribe`, shown when there is more than one tribe | No |
+| Projects | Name, repository, base branch | None; the list is the active tribe's projects | No |
 | Tribes | Name | None | No |
 | Tribe members | Name, email | `role` | Yes |
 | Users | Name, email | `role`, `access` All, Admins, Active, or Disabled with counts | Yes |
@@ -331,7 +339,9 @@ Router, Company GitHub, Linked projects, and Account have no toolbar. Their list
 
 ## Login
 
-`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
+`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/choose-tribe')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
+
+`src/routes/choose-tribe/+page.svelte` opens after every sign-in, even for a member of one tribe, without the sidebar. It lists the tribes from `GET /api/tribes` (an admin gets every tribe) as buttons at least 44px tall, each with its name and "N projects" counted from `GET /api/projects`, and marks the stored tribe as current. Picking a tribe stores its id and the id of its first project, or an empty project when it has none, and loads `/`. With no tribe it says "You are not in a tribe yet. Ask an admin to add you.", and an admin also gets a "Create a tribe" link to `/tribes/new`. A ghost "Sign out" button ends the session. A failed load shows the API error in the live region.
 
 ## Board
 
@@ -494,7 +504,7 @@ GitHub fieldset: host, login, token. The help text says this is the caller's own
 
 `src/routes/admin/users/+page.svelte` lists users. Each row shows the name with the email under it, or the email alone when unnamed. Create is `/admin/users/new` (name, email, password, role, admin) and calls `POST /api/users`. The name is required. Edit is `/admin/users/[id]` with a Name panel and calls `PUT /api/users/{id}`. It sends `name` unless the field is blank and the user never had one, so changing the role of an unnamed user still saves. A `403` sets the live message from `error.message`.
 
-`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by name or email, labelled by name with the email and role as the detail line. Member rows show the name with the email under it. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists projects from `GET /api/projects` with their repository. Each row has "Settings", which selects the project and opens its Repository settings, and "Open board". The page shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage. Picking a repository fills the base branch with its default branch. The repository can only be picked from that list (RFC-060). Archived repositories are listed as disabled options. When the list cannot load, the picker stays empty and its error line says why. "Create project" is disabled until a repository is picked. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
+`src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by name or email, labelled by name with the email and role as the detail line. Member rows show the name with the email under it. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists the active tribe's projects: those from `GET /api/projects` whose `tribeId` is the stored tribe. This holds for a company admin too, who receives every project from the API. The description reads "Projects in {tribe}. Switch tribe in the sidebar to see another tribe's projects." With no active tribe the page says "Choose a tribe to see its projects." with a link to `/choose-tribe`, and an active tribe with no project says "No projects in this tribe yet." Each row shows the name and repository. Each row has "Settings", which selects the project and opens its Repository settings, and "Open board". The page shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage, and starts on the active tribe when the user can manage it, else on the first of them. Picking a repository fills the base branch with its default branch. The repository can only be picked from that list (RFC-060). Archived repositories are listed as disabled options. When the list cannot load, the picker stays empty and its error line says why. "Create project" is disabled until a repository is picked. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
 
 ### Tribe MCP servers
 
@@ -700,6 +710,10 @@ npm run build
 | `RequirementForm` | Statement has 8 rows and Acceptance 6, both growing. Preview shows the formatted heading and bold text, Write brings the textarea back, acceptance previews as a checklist of formatted lines with the list markers dropped and its error kept, a pasted document previews only its list items and counts the lines left out, and an empty statement or acceptance has nothing to preview |
 | `requirements` mentions | `mentions` keeps `@tickets` and `(@db)`, drops `a@b.co`, `@scope/pkg`, `@pytest.fixture`, `@Override`, and mentions in backticks and fences, keeps first-use order without repeats, and allows a trailing `.`. `mentionAt` finds the `@` and query before the caret, and is null after a space or inside an email |
 | `RequirementForm` mentions | Typing `@ti` opens a listbox with `tickets`, ArrowDown moves `aria-activedescendant`, Enter inserts `@tickets `, and Escape closes the list. With no server the list says so. Chips show a known server, a disabled one with its warning, and an unknown slug with its warning |
+| Tribe selector | `/choose-tribe` lists two tribes with their project counts. Picking one stores the tribe and its first project and loads `/`; a tribe with no project stores an empty project. With no tribes a member reads "Ask an admin", and an admin also gets "Create a tribe" |
+| Layout tribe scope | The switcher lists only the selected tribe's projects, "Switch tribe" links to `/choose-tribe`, a stored project from another tribe is replaced by the tribe's first project, and a stored tribe the API no longer returns sends the browser to `/choose-tribe` |
+| Projects by tribe | An admin with the active tribe `tribe_a` sees only `tribe_a`'s projects and no Tribe filter. With no active tribe the page links to `/choose-tribe`, and an empty tribe says "No projects in this tribe yet." New project starts its tribe select on the active tribe |
+| Layout load | With a bearer and no tribe, `/` and `/intake` redirect to `/choose-tribe`, `/admin/users` and `/tribes/new` do not, and no bearer still redirects to `/login`. Signing in goes to `/choose-tribe` |
 | Intake pages mentions | `/intake/[id]` shows a parsed row's stored mentions, and `/intake/new` passes `mcpServers` to the form so typing `@` lists them |
 | `RequirementForm` refine | Without `refine` there are no icons. Each field has its own 44px icon, and opening one does not open the other. Apply on the statement changes only the statement, and Apply on acceptance changes only the acceptance lines. An edit after asking is flagged, Discard keeps the text, and Preview hides the icons |
 | `RefinePanel` | Refine sends the field, the trimmed draft, and the guidance. Deltas appear in order in the live region, done shows the comparison, and Apply calls back with the text. Stop aborts the signal and changes nothing. An error event or a rejected request shows the message and Try again asks again. A blank statement sends nothing. `reset` empties the text and `tool` shows "Looking up tickets / lookup" until the next delta (RFC-095) |
