@@ -288,7 +288,9 @@ func escapeLineMentions(line string) string {
 		last := 0
 		for _, span := range intake.FindMentions(text) {
 			b.WriteString(text[last:span[0]])
-			b.WriteString("`" + text[span[0]:span[1]] + "`")
+			b.WriteString("`")
+			b.WriteString(text[span[0]:span[1]])
+			b.WriteString("`")
 			last = span[1]
 		}
 		b.WriteString(text[last:])
