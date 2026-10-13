@@ -885,3 +885,104 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestUsageCLICard`
 - [x] `usage` lib, admin usage page, and account usage page Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 56: Tribe MCP servers, settings
+
+- [x] `tribe_mcp_servers` and `tribe_mcp_tools` store servers, sealed secrets, and the allowlist.
+- [x] `netguard` and `mcp.DialHTTP` refuse internal addresses and cap responses.
+- [x] Tribe MCP routes and pages, checked like the other tribe routes.
+- [x] `TestMCPServerSecretsNeverReturned`
+- [x] `TestMCPServerAccess`
+- [x] `TestMCPSlugAndToolNames`
+- [x] `TestMCPNameCollision`
+- [x] `TestNetguardRefusesPrivate`
+- [x] `TestNetguardRedirectAndProxy`
+- [x] `TestMCPHTTPListAndCall`
+- [x] `TestMCPResultCap`
+- [x] `TestMCPDiscoverNoBody`
+- [x] Tribe MCP pages Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 57: MCP tools in the implementer loop
+
+- [x] Frozen `mcp_` tools after the constant list, with caps and wrapped, redacted results.
+- [x] `ImplementCard` loads the tribe's servers once per attempt and records `mcp_context`.
+- [x] `TestImplementerMCPTools`
+- [x] `TestMCPResultWrappedAndStripped`
+- [x] `TestMCPHeaderRedacted`
+- [x] `TestMCPCallCap`
+- [x] `TestMCPToolListChanged`
+- [x] `TestMCPCannotMoveCard`
+- [x] `TestMCPNoLiveFrame`
+- [x] `TestMCPOtherTribe`
+- [x] `TestAnthropicSchemaExtraFields`
+- [x] Updated `TestImplementerTools` and `TestPromptMarkers`
+- [x] Trace Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 58: Stdio MCP servers in the sandbox
+
+- [x] `execx.Start` and `sandbox.StartArgv` run a stdio server with no network and remove it on close.
+- [x] `TestStdioNoNetworkNoArgvSecret`
+- [x] `TestStdioRefusesShell`
+- [x] `TestStdioContainerRemoved`
+- [x] `TestStdioFixtureRefused`
+- [x] `TestStdioListAndCall`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 59: Refine with MCP tools
+
+- [x] Refine runs at most 3 turns and 3 calls with the tribe's tools, and the last turn has none.
+- [x] `TestRefineNoServersNoTools`
+- [x] `TestRefineMCPLoop`
+- [x] `TestRefineMCPResetEvent`
+- [x] `TestRefineLastTurnNoTools`
+- [x] `TestRefineMCPCancel`
+- [x] `RefinePanel` reset Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 60: Database connectors
+
+- [x] `postgres` and `sqlserver` transports with `config_json` and a write-only password.
+- [x] `dbtools` read-only tools with a row cap that refuse the board database.
+- [x] `TestDBConfigValidation`
+- [x] `TestPostgresToolReadOnly`
+- [x] `TestPostgresSingleStatement`
+- [x] `TestPostgresRowCap`
+- [x] `TestDBConnectorRefusesBoard`
+- [x] `TestDBPasswordRedacted`
+- [x] `TestImplementerDBTools`
+- [x] `TestSQLServerStatementCheck`
+- [x] `TestSQLServerLive` (runs when `ORCH_TEST_MSSQL` is set)
+- [x] The fixture and the full backend suite pass
+
+## Sprint 61: MCP catalog API and image pull
+
+- [x] The catalog lists built-in entries and the MCP Registry, cached, with a notice when the registry is down.
+- [x] An image pull returns the image pinned by digest.
+- [x] `TestMCPCatalogBuiltins`
+- [x] `TestMCPCatalogRegistry`
+- [x] `TestMCPCatalogRegistryDown`
+- [x] `TestMCPCatalogAccess`
+- [x] `TestMCPImagePull`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 62: MCP catalog page
+
+- [x] `/tribes/{id}/mcp/catalog` searches the catalog and opens a filled form.
+- [x] The form has database fields, image pull, and discovery after a create.
+- [x] Catalog page, database form, registry prefill, image pull, and auto-discover Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 63: Featured MCP servers and a catalog that answers at once
+
+- [x] The catalog route takes `source`, and featured entries resolve by id.
+- [x] The registry fetch is apart, bounded, and remembers failures; Set up reads a registry entry by exact name.
+- [x] `TestMCPCatalogBuiltins`
+- [x] `TestMCPCatalogFeatured`
+- [x] `TestMCPCatalogRegistrySlow`
+- [x] `TestMCPCatalogEntryByName`
+- [x] `TestMCPCatalogRegistryDown`
+- [x] `TestMCPCatalogAccess`
+- [x] Catalog page Vitest: featured and built-in before the registry, abort on typing, registry notice
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

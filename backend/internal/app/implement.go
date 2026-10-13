@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,6 +61,8 @@ type JobDeps struct {
 	Now func() time.Time
 	// Live, when set, gets the reply text of each model call as it is written.
 	Live live.Publisher
+	// MCP opens the tribe's MCP servers (RFC-093).
+	MCP MCPDialer
 }
 
 func (d JobDeps) now() time.Time {
@@ -134,6 +137,12 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	}
 	redact = append(redact, owner.Token)
 
+	mcpConns, err := LoadProjectMCP(ctx, db, deps.Key, projectID)
+	if err != nil {
+		return card, err
+	}
+	redact = append(redact, MCPSecrets(mcpConns)...)
+
 	fixture := runtime.FixtureMode(project.RepoPath)
 	if card.LocalCheck == "" && projectCfg.Checks.Local != "" {
 		if err := board.SetLocalCheck(ctx, db, card.ID, projectCfg.Checks.Local); err != nil {
@@ -193,6 +202,26 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		if tokenCap == 0 {
 			tokenCap = settings.DefaultTokensPerCard
 		}
+		dialer := deps.MCP
+		if dialer.Stdio == nil {
+			dialer.Stdio = StdioOpener(engine, fixture, card.ID, deps.Tools)
+		}
+		if !fixture && slices.ContainsFunc(mcpConns, func(c MCPConn) bool { return c.Transport == "stdio" }) {
+			run := deps.Tools.Exec
+			if run == nil {
+				run = execx.Command
+			}
+			_ = sandbox.SweepMCP(ctx, engine, card.ID, run)
+		}
+		toolset, err := OpenMCPToolset(attemptCtx, db, dialer, mcpConns, MCPScope{ProjectID: projectID, CardID: card.ID}, redact)
+		if err != nil {
+			return card, err
+		}
+		defer toolset.Close()
+		var extra loop.ExtraTools
+		if toolset != nil {
+			extra = toolset
+		}
 		result, err := loop.Run(attemptCtx, loop.Input{
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
 			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
@@ -200,6 +229,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,
 			HistoryBudget: llm.Options(cfg, route.Model).HistoryBytes(), MaxTokensPerCard: tokenCap,
+			Extra: extra,
 		})
 		if err != nil {
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)

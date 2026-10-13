@@ -81,6 +81,36 @@ group('describe', () => {
   });
 
   it('says how long saved instructions are, or that they were cleared', () => {
+    expect(words('tool_call', { name: 'mcp_tickets_lookup', ok: true, summary: 'UNTRUSTED START\nMCP RESULT tickets/lookup\nT-1', bytes: 1200, args: { server: 'tickets', tool: 'lookup' } })).toMatchObject({
+      label: 'MCP: tickets / lookup',
+      detail: '1,200 bytes',
+      tone: 'default'
+    });
+    expect(
+      words('tool_call', {
+        name: 'mcp_context',
+        ok: true,
+        summary: '2 MCP servers, 1 tools',
+        servers: [
+          { slug: 'tickets', transport: 'http', host: 'mcp.example.com', tools: [{ name: 'lookup', schemaSha256: 'abcdef0123456789' }] },
+          { slug: 'docs', transport: 'stdio', image: 'ghcr.io/acme/docs@sha256:aa', tools: [], error: 'server unreachable' }
+        ]
+      })
+    ).toMatchObject({
+      label: 'MCP servers',
+      detail: '2 MCP servers, 1 tools',
+      tone: 'amber',
+      text: 'tickets http mcp.example.com: lookup abcdef012345\ndocs stdio ghcr.io/acme/docs@sha256:aa: server unreachable'
+    });
+    expect(
+      words('tool_call', {
+        name: 'mcp_context',
+        ok: true,
+        summary: '1 MCP servers, 1 tools',
+        servers: [{ slug: 'pg', transport: 'postgres', host: '10.0.0.5:5432', database: 'app', tools: [{ name: 'query', schemaSha256: '0123456789abcdef' }] }]
+      }).text
+    ).toBe('pg postgres 10.0.0.5:5432/app: query 0123456789ab');
+    expect(words('assertion_failed', { name: 'mcp_changed', server: 'tickets', tool: 'lookup' }).detail).toBe('MCP tool changed: tickets / lookup');
     const saved = (length: number) => describe({ id: 'e', ts: '', kind: 'instructions_saved', payload: { length } });
     expect(saved(1200)).toMatchObject({ label: 'Instructions saved', detail: '1,200 characters' });
     expect(saved(0).detail).toBe('Cleared');

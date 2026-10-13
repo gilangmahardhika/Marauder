@@ -28,6 +28,7 @@
   let modelId = $state('');
   let error = $state('');
   let note = $state('');
+  let calling = $state('');
   let asked = $state({ sent: '', before: '' });
   let result = $state({ text: '', modelId: '' });
   let controller: AbortController | null = null;
@@ -58,12 +59,17 @@
     };
     text = '';
     modelId = '';
+    calling = '';
     phase = 'streaming';
     let ended = false;
     const onEvent = (event: RefineEvent) => {
       if (controller !== mine) return;
       if (event.kind === 'start') modelId = event.modelId;
-      else if (event.kind === 'delta') text += event.text;
+      else if (event.kind === 'delta') {
+        text += event.text;
+        calling = '';
+      } else if (event.kind === 'reset') text = '';
+      else if (event.kind === 'tool') calling = `${event.server} / ${event.tool}`;
       else if (event.kind === 'done') {
         ended = true;
         result = { text: event.text, modelId: event.modelId };
@@ -129,7 +135,9 @@
   {/if}
 
   {#if phase === 'streaming'}
-    <p class="text-xs text-muted">{modelId ? `Writing with ${modelId}` : 'Waiting for the implement model…'}</p>
+    <p class="text-xs text-muted" role="status">
+      {calling ? `Looking up ${calling}` : modelId ? `Writing with ${modelId}` : 'Waiting for the implement model…'}
+    </p>
     <div
       class="min-h-16 rounded-control border border-line bg-surface px-3 py-2.5 text-sm whitespace-pre-wrap text-ink"
       aria-label={`Refined ${name} so far`}

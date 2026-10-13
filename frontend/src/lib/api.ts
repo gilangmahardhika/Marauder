@@ -13,6 +13,12 @@ import type {
   DeploySettings,
   Intake,
   LLMSettings,
+  MCPCatalogEntry,
+  MCPCatalogPage,
+  MCPCatalogSource,
+  MCPDiscover,
+  MCPServer,
+  MCPServerInput,
   ProjectConventions,
   ProjectLink,
   ProjectLinks,
@@ -279,6 +285,65 @@ export function getTribeCandidates(tribeId: string) {
 export function removeMember(tribeId: string, userId: string) {
   return request<void>(`/api/tribes/${tribeId}/members/${userId}`, {
     method: "DELETE",
+  });
+}
+
+export function getMCPServers(tribeId: string) {
+  return request<{ servers: MCPServer[] }>(`/api/tribes/${encodeURIComponent(tribeId)}/mcp-servers`);
+}
+
+export function createMCPServer(tribeId: string, body: MCPServerInput) {
+  return request<MCPServer>(`/api/tribes/${encodeURIComponent(tribeId)}/mcp-servers`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function putMCPServer(tribeId: string, serverId: string, body: MCPServerInput) {
+  return request<MCPServer>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/mcp-servers/${encodeURIComponent(serverId)}`,
+    { method: "PUT", body: JSON.stringify(body) },
+  );
+}
+
+export function deleteMCPServer(tribeId: string, serverId: string) {
+  return request<void>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/mcp-servers/${encodeURIComponent(serverId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export function discoverMCPTools(tribeId: string, serverId: string) {
+  return request<MCPDiscover>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/mcp-servers/${encodeURIComponent(serverId)}/discover`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function getMCPCatalog(
+  tribeId: string,
+  source: MCPCatalogSource,
+  q: string,
+  cursor = "",
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ source });
+  if (q) params.set("q", q);
+  if (cursor) params.set("cursor", cursor);
+  return request<MCPCatalogPage>(`/api/tribes/${encodeURIComponent(tribeId)}/mcp-catalog?${params}`, { signal });
+}
+
+export async function getMCPCatalogEntry(tribeId: string, id: string): Promise<MCPCatalogEntry | null> {
+  const page = await request<MCPCatalogPage>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/mcp-catalog?id=${encodeURIComponent(id)}`,
+  );
+  return page.entries[0] ?? null;
+}
+
+export function pullMCPImage(tribeId: string, image: string) {
+  return request<{ image: string }>(`/api/tribes/${encodeURIComponent(tribeId)}/mcp-images/pull`, {
+    method: "POST",
+    body: JSON.stringify({ image }),
   });
 }
 

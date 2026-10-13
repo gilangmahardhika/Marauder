@@ -2,10 +2,25 @@ package providers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 )
+
+// ToolNamePattern is the tool name both providers accept.
+var ToolNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// CheckTools refuses a request whose tool name a provider would reject.
+func CheckTools(tools []Tool) error {
+	for _, tool := range tools {
+		if !ToolNamePattern.MatchString(tool.Name) {
+			return fmt.Errorf("tool name %q is not 1 to 64 letters, digits, '_', or '-'", tool.Name)
+		}
+	}
+	return nil
+}
 
 // Tool is one function the model may call. Parameters is a JSON schema object.
 type Tool struct {
@@ -52,13 +67,16 @@ type Reasoning struct {
 }
 
 type Request struct {
-	Model     string
-	System    string
-	User      string
-	Turns     []Turn
-	Tools     []Tool
-	TaskClass string
-	MaxTokens int
+	Model  string
+	System string
+	User   string
+	Turns  []Turn
+	Tools  []Tool
+	// ToolChoice "none" keeps the tools listed but asks for a text answer.
+	// Empty lets the model choose.
+	ToolChoice string
+	TaskClass  string
+	MaxTokens  int
 	// Thinking, ThinkingBudget, and Effort are the model's settings (RFC-079).
 	// Empty values send nothing.
 	Thinking       string

@@ -437,7 +437,7 @@ func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request
 	}
 	err := app.RefineField(r.Context(), s.Data, s.DB, projectID, user.ID, app.RefineInput{
 		Field: body.Field, RequirementID: body.RequirementID, Statement: body.Statement, Acceptance: body.Acceptance, Instructions: body.Instructions,
-	}, s.RefineProvider, emit)
+	}, s.RefineProvider, app.RefineTools{Key: s.TokenKey, MCP: s.MCP, Secrets: s.Secrets}, emit)
 	if err == nil || r.Context().Err() != nil {
 		return
 	}

@@ -141,6 +141,7 @@
 >
   {#snippet actions()}
     <Button href={`/tribes/${$page.params.id}/usage`}>Token usage</Button>
+    <Button href={`/tribes/${$page.params.id}/mcp`}>MCP servers</Button>
     <Button href="/tribes">All tribes</Button>
   {/snippet}
   <div class="flex flex-col gap-6">

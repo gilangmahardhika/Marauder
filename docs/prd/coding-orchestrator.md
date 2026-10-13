@@ -129,6 +129,8 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-084 | An admin sees token usage across projects |
 | REQ-085 | A tribe admin sees their tribe's token usage, and a member sees their own |
 | REQ-086 | Token usage filters by source and card |
+| REQ-087 | A tribe admin gives the implementer and refine read-only tools from the tribe's MCP servers |
+| REQ-088 | A tribe admin adds MCP servers from a catalog, including read-only Postgres and SQL Server connectors |
 
 ## Requirements
 
@@ -1193,6 +1195,31 @@ Every Token usage page filters and groups the usage by source, Intake for requir
 - Source has two values: Intake and Card. Filtering by one changes every total on the page.
 - Card lists each card that made calls, by title, and refines as "Intake". Two cards with one title stay apart.
 - Source and Card are on the company, tribe, and My token usage pages.
+
+### REQ-087 Tribe MCP servers
+
+A tribe admin registers the tribe's Model Context Protocol servers, over HTTPS or as a stdio server in the sandbox image, and allowlists their read-only tools. The implementer and requirement refine of the tribe's projects can call those tools, and their results are data (RFC-092 to RFC-095).
+
+#### Acceptance
+
+- A company admin and the tribe's admins manage the tribe's servers. Other members, and admins of another tribe, cannot see them.
+- Header and environment secrets are never returned by the API and are redacted from every event.
+- Only allowlisted tools whose schema has not changed are offered, as `mcp_<server>_<tool>`.
+- An HTTP server on a private, loopback, or metadata address is refused. A stdio server has no network.
+- An MCP result cannot move a card, pass a check, or add a tool.
+- A tribe with no server sends the same implementer and refine requests as before.
+
+### REQ-088 MCP catalog and database connectors
+
+A tribe admin picks an MCP server from a catalog, a featured remote server, the built-in Postgres and SQL Server connectors, or a search of the official MCP Registry, fills in its credentials, and saves it. The implementer and refine read the tribe's databases through read-only tools (RFC-096 to RFC-100).
+
+#### Acceptance
+
+- The catalog lists featured servers and Postgres and SQL Server at once, then registry servers when the registry answers. A server the sandbox cannot run is listed with the reason and cannot be set up.
+- When the registry is slow or cannot be reached, the featured and built-in entries still show, and typing a new query stops the previous search.
+- A database connector reaches any host, private and loopback included, except the board database.
+- A database connector runs one read-only statement per call and returns at most 200 rows. The password is never returned and is redacted from every event.
+- A stdio registry server is pulled and pinned by digest before it is saved.
 
 ## Non-goals
 

@@ -97,3 +97,29 @@ test('a rejected request shows its message and an empty statement sends nothing'
   await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toContain('implement route'));
 });
+
+test('reset clears the text of a turn that called MCP tools, and tool names the lookup', async () => {
+  const fake = controlled();
+  const onapply = vi.fn();
+  render(RefinePanel, { ...props, stream: fake.stream, onapply });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  await fake.send({ kind: 'start', modelId: 'model-a' });
+  await fake.send({ kind: 'delta', text: 'Let me check the ticket.' });
+  const live = screen.getByRole('region', { name: 'Refined statement so far' });
+  expect(live.textContent).toBe('Let me check the ticket.');
+
+  await fake.send({ kind: 'reset' });
+  await fake.send({ kind: 'tool', server: 'tickets', tool: 'lookup' });
+  expect(live.textContent).toBe('');
+  expect(screen.getByText('Looking up tickets / lookup')).toBeTruthy();
+
+  await fake.send({ kind: 'delta', text: 'Members export the board.' });
+  expect(live.textContent).toBe('Members export the board.');
+  expect(screen.getByText('Writing with model-a')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+
+  await fake.send({ kind: 'done', text: 'Members export the board.', modelId: 'model-a' });
+  fake.state.end?.();
+  await fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+  expect(onapply).toHaveBeenCalledWith('Members export the board.');
+});

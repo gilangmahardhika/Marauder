@@ -48,6 +48,13 @@ type session struct {
 	todos []todoItem
 	// commands counts the run_command calls that ran in this attempt.
 	commands int
+	// tools is the attempt's profile: the constant list, then the tribe's
+	// MCP tools, frozen when the attempt starts (RFC-094).
+	tools   []providers.Tool
+	allowed map[string]providers.Tool
+	// mcpCalls counts MCP calls in the attempt, replyMCP in the current reply.
+	mcpCalls int
+	replyMCP int
 }
 
 // readOnly are the tools that change nothing, so the calls of one reply that
@@ -229,7 +236,7 @@ func (s *session) loop(ctx context.Context) error {
 		turns := withNote(withTodos(s.history(), s.todos), s.in.MaxTurns-turn, s.in.MaxTurns)
 		resp, endTurn, err := complete(ctx, s.in.Provider, providers.Request{
 			Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
-			Tools: ImplementerTools(), TaskClass: s.in.TaskClass,
+			Tools: s.profile(), TaskClass: s.in.TaskClass,
 		}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets)
 		if err != nil {
 			return err
@@ -267,6 +274,7 @@ func (s *session) loop(ctx context.Context) error {
 			}
 			calls[i] = call
 		}
+		s.replyMCP = 0
 		for i, res := range s.runCalls(ctx, calls) {
 			call := calls[i]
 			summary, rejected, callErr := res.summary, res.rejected, res.err
@@ -278,6 +286,11 @@ func (s *session) loop(ctx context.Context) error {
 			}
 			if args := toolArgs(call, s.card.LocalCheck, s.in.Secrets); len(args) > 0 {
 				payload["args"] = args
+			}
+			if IsMCP(call.Name) && !rejected {
+				for key, value := range MCPEventFields(summary, s.in.Secrets) {
+					payload[key] = value
+				}
 			}
 			if err := s.event(ctx, "tool_call", payload); err != nil {
 				return err
@@ -366,7 +379,7 @@ func (s *session) runCalls(ctx context.Context, calls []providers.ToolCall) []ca
 // dispatch runs one tool call. A result that reports a failure starts with
 // providers.ErrorPrefix. rejected marks a tool outside the profile.
 func (s *session) dispatch(ctx context.Context, call providers.ToolCall) (string, bool, error) {
-	if !allowedTool(call.Name) {
+	if !s.allowedName(call.Name) {
 		return providers.ErrorPrefix + "not in profile", true, nil
 	}
 	if call.BadArgs != "" {
@@ -440,8 +453,28 @@ func (s *session) run(ctx context.Context, call providers.ToolCall) (string, err
 		s.committed = true
 		return "committed", nil
 	default:
+		if IsMCP(call.Name) {
+			return s.callMCP(ctx, call)
+		}
 		return "", errors.New("not in profile")
 	}
+}
+
+// profile is the attempt's tool list. A session built without Run has the
+// constant list.
+func (s *session) profile() []providers.Tool {
+	if s.tools == nil {
+		return ImplementerTools()
+	}
+	return s.tools
+}
+
+func (s *session) allowedName(name string) bool {
+	if s.allowed == nil {
+		return allowedTool(name)
+	}
+	_, ok := s.allowed[name]
+	return ok
 }
 
 // localCheck runs the card's check on a copy of the worktree. An exit of 0

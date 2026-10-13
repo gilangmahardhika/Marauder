@@ -41,6 +41,9 @@ func New(baseURL, key string) *Client {
 }
 
 func (c *Client) Complete(ctx context.Context, req providers.Request) (providers.Response, error) {
+	if err := providers.CheckTools(req.Tools); err != nil {
+		return providers.Response{}, err
+	}
 	params, maxTokens := newParams(req)
 	msg, err := c.client.Messages.New(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
 	if err != nil {
@@ -53,6 +56,9 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 // reply text as it arrives. The returned Response is the whole reply, as
 // Complete would return it.
 func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	if err := providers.CheckTools(req.Tools); err != nil {
+		return providers.Response{}, err
+	}
 	params, maxTokens := newParams(req)
 	stream := c.client.Messages.NewStreaming(ctx, params, option.WithRequestTimeout(requestTimeout(maxTokens)))
 	defer stream.Close()
@@ -113,6 +119,10 @@ func newParams(req providers.Request) (sdk.MessageNewParams, int) {
 			param.CacheControl = sdk.NewCacheControlEphemeralParam()
 		}
 		params.Tools = append(params.Tools, sdk.ToolUnionParam{OfTool: &param})
+	}
+	if req.ToolChoice == "none" && len(req.Tools) > 0 {
+		none := sdk.NewToolChoiceNoneParam()
+		params.ToolChoice = sdk.ToolChoiceUnionParam{OfNone: &none}
 	}
 	return params, maxTokens
 }
@@ -244,6 +254,16 @@ func inputSchema(params map[string]any) sdk.ToolInputSchemaParam {
 			if name, ok := item.(string); ok {
 				out.Required = append(out.Required, name)
 			}
+		}
+	}
+	for key, value := range params {
+		switch key {
+		case "type", "properties", "required":
+		default:
+			if out.ExtraFields == nil {
+				out.ExtraFields = map[string]any{}
+			}
+			out.ExtraFields[key] = value
 		}
 	}
 	return out

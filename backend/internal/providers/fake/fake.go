@@ -20,6 +20,8 @@ type Prompt struct {
 	MaxTokens int
 	Turns     []providers.Turn
 	Tools     []string
+	// ToolChoice is the request's tool choice.
+	ToolChoice string
 }
 
 type call struct {
@@ -140,7 +142,7 @@ func (f *Fake) cancel() {
 
 // pop records req and takes the next scripted turn of its task class.
 func (f *Fake) pop(req providers.Request) (turn, bool) {
-	prompt := Prompt{TaskClass: req.TaskClass, System: req.System, User: req.User, MaxTokens: req.MaxTokens, Turns: copyTurns(req.Turns)}
+	prompt := Prompt{TaskClass: req.TaskClass, System: req.System, User: req.User, MaxTokens: req.MaxTokens, Turns: copyTurns(req.Turns), ToolChoice: req.ToolChoice}
 	for _, tool := range req.Tools {
 		prompt.Tools = append(prompt.Tools, tool.Name)
 	}

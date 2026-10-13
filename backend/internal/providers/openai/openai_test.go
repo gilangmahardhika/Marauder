@@ -284,3 +284,34 @@ func TestOpenAIStream(t *testing.T) {
 		t.Fatalf("usage = %+v", resp)
 	}
 }
+
+func TestOpenAIRefusesBadToolName(t *testing.T) {
+	_, err := openai.New("http://127.0.0.1:1", "sk-test").Complete(context.Background(), providers.Request{
+		Model: "m", User: "hello", Tools: []providers.Tool{{Name: strings.Repeat("a", 65)}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "tool name") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestOpenAIToolChoiceNone(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"c","object":"chat.completion","created":1,"model":"m",
+			"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"done"}}],
+			"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer srv.Close()
+	_, err := openai.New(srv.URL, key).Complete(context.Background(), providers.Request{
+		Model: "m", User: "hello", Tools: []providers.Tool{{Name: "mcp_tickets_lookup"}}, ToolChoice: "none",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["tool_choice"] != "none" {
+		t.Fatalf("tool_choice = %v", got["tool_choice"])
+	}
+}

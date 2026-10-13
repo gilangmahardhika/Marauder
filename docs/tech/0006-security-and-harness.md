@@ -13,6 +13,10 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 | Loopback or cloud API after a live bearer | Trusted as that user, and only for the actions their role and membership allow | The gates in RFC-046 |
 | Target repo files, diffs, PR comments, CI output, logs | Untrusted | Text inside a pack |
 | Model output | Untrusted | Tool name and arguments, which the harness then filters |
+| A tribe's MCP server settings | Trusted to name a URL, an image, an argv, a database host and login, and secrets, as saved by a tribe admin (RFC-092, RFC-097) | Which allowlisted tools the implementer and refine offer |
+| MCP server responses and database rows | Untrusted | Text inside the untrusted markers after `MCP RESULT`, and the tool list only where its schema hash matches the allowlist |
+| MCP Registry entries | Untrusted | What the setup form is filled with, which the tribe admin reviews before saving. A registry description is never sent to a model (RFC-096) |
+| Featured MCP entries | Trusted as code: a fixed list compiled into the harness and reviewed with it. Registry data never sets `source` to `featured` | What the setup form is filled with. The URL still passes the check on save and at dial, and the admin still allowlists each tool (RFC-099) |
 | Check processes, local and dev | Untrusted code | Their own exit code and output, from inside the sandbox |
 | Fixture mode | Trusted only when the resolved repo ends with `/testdata/fixture-repo` | `sandbox` off, `http://127.0.0.1` for health and dev URL |
 
@@ -45,6 +49,24 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | Someone outside the project watches a card's live reply | The trace stream has the trace route's checks: a bearer in the header, membership of the project's tribe, and a card in that project. The bearer never goes in the URL. A stream ends after 10 minutes, so membership is checked again on reconnect (RFC-088) |
 | A member who is not an admin reads token usage | `GET /api/usage` is `403` before the dates are read. The response has counts, ids, names, and emails only: no reply text, prompt, key, or `databaseUrl`. The CLI twin is for the operator, who can already read the board (RFC-089) |
 | A tribe admin or a member reads usage beyond their scope | `/api/tribes/{id}/usage` is `403` unless the caller is an admin or a tribe admin of that tribe, and reads only that tribe's projects. `/api/me/usage` takes no user parameter: it reads the caller's own calls only. Neither returns reply text or a secret (RFC-090) |
+| An MCP URL is not https, or names or resolves to a loopback, private, link-local, CGNAT, metadata, unspecified, multicast, or IPv4-in-IPv6 address | `422` on save; at connect the guarded client refuses the dial, checked again on the socket, and the tool is not offered (RFC-093) |
+| An MCP server redirects, or a proxy variable is set | The client does not follow the redirect and ignores proxy variables |
+| An MCP server changes a tool's schema after it was allowlisted | The tool is left out of the attempt and `assertion_failed` `mcp_changed` is written. The card is not blocked |
+| An MCP result asks for a tool, a command, a commit, or a status | Nothing changes. The result sits inside the markers with marker lines dropped, the tool list was frozen at the start, and a result is never evidence (RFC-094) |
+| An MCP server sends a sampling, elicitation, or roots request | It gets method-not-found; the client declares no capabilities |
+| An MCP reply is over 256 KiB, or a stdio line over 1 MiB | The call fails with a fixed reason; the stdio server is closed |
+| An MCP error carries server text | The model, events, and API get only a fixed reason such as `the server is unreachable` |
+| A stdio MCP server in fixture mode, or with no engine | Not started; `mcp_context` records `stdio servers need the container sandbox` |
+| A stdio MCP argv names a shell or wrapper, or the image has no digest | `422` on save, and `sandbox.StdioArgv` refuses again before start |
+| A database connector names the board database, by any name that resolves to its address, with the same port and database name in any case; when the board is on this machine, any loopback or local interface address | The guarded dialer refuses before the socket opens, and the tool is not offered (RFC-097). The host check on save does not apply `netguard`: private and loopback hosts are allowed on purpose |
+| A database tool call tries to write, run two statements, or leave the transaction | Postgres: the session and the transaction are read-only, the extended protocol runs one statement, and every call ends with `ROLLBACK`. SQL Server: `CheckSelect` refuses anything but one `SELECT` or `WITH`, and the call runs in a transaction that always rolls back |
+| A SQL Server login that can write | SQL Server has no read-only transaction, so a function or a statement the check does not know could still write. The admin must confirm a read-only login (for example `db_datareader` only) before saving, and the check is a second guard, not the first |
+| A database password, or a database error that echoes it | The password is a write-only `PASSWORD` secret sealed under `tokenKey`, never in `config_json`, joins the job's redaction list, and is set after the DSN is parsed so no `.pgpass` or service file is read. An error is cut at 300 bytes and redacted |
+| A database result is large or slow | At most 200 rows, each cell cut at 1 KiB, then the 64 KiB history cap; a 5-second connect and a 15-second statement timeout |
+| The MCP Registry is down, slow, or returns a large or bad body | The featured and built-in entries come from `source=local`, which never calls the registry. The registry page has the fixed notice. The harness reads through a copy of the netguard transport, at most 512 KiB in 60 seconds, at most 4 fetches at once, and remembers a failure for 30 seconds; the browser never calls the registry (RFC-096, RFC-100) |
+| A person types quickly while the registry is slow | Each new query aborts the previous request, the abort cancels the registry fetch, and an abandoned fetch is neither cached nor remembered as a failure, so it frees its slot (RFC-100) |
+| A featured server offers write tools, or its URL moves | GitHub and Linear use their read-only endpoints, and only tools the admin allowlists are offered. A header value is a tribe-shared credential, never a card owner's token (RFC-054). A redirect is refused at dial, and `TestMCPCatalogFeatured` refuses a URL that fails the check (RFC-099) |
+| A pull is asked for a reference that is not an image name, in fixture mode, or with no engine | `422` on `image`, and no engine runs. A failed pull is the fixed `the engine could not pull the image`, never the engine's output. Jobs still run the pinned digest with `--pull=never` (RFC-098) |
 | Many viewers or a slow viewer hold up the agent | Publishing never blocks: a viewer that falls 256 frames behind is dropped with `resync`, and the server allows 16 viewers per card and 64 in all (RFC-088) |
 | Rules and skills exceed the 64 KiB section cap | The blocks that do not fit become `omitted` notes. The pack never exceeds its cap |
 | `create_card` names a skill the project has not enabled | No card is stored (RFC-056) |
@@ -158,7 +180,7 @@ Do not pass `os.Environ()` into `Env`. Build it.
 | Inside the container, dev check | Same, plus `DEV_URL` and `ORCH_SHA` | | |
 | Deploy and rollback | `PATH=/usr/bin:/bin`, `DEPLOY_TOKEN`, `DEV_URL`, `HOME` an empty dir under the data directory | 10 min | 1 MiB |
 
-Container env is passed with `--env NAME=value` flags. Tokens never appear in container env. On timeout or oversize, kill the process group (`Setpgid` at start, negative pid on kill). Store exit `124` for timeout and `125` for oversize. Those are failed checks, not passes.
+Container env is passed with `--env NAME=value` flags. Tokens never appear in container env. The one exception is a stdio MCP server's own environment secrets (RFC-093): the argv names them as `--env NAME`, the value sits only in the engine child's environment, and no harness, GitHub, deploy, or model secret is added. On timeout or oversize, kill the process group (`Setpgid` at start, negative pid on kill). Store exit `124` for timeout and `125` for oversize. Those are failed checks, not passes.
 
 ## Sandbox
 
@@ -339,6 +361,7 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | Card lock holder equals this job | Before release |
 | Local base ref unchanged | End of implement job. Reason `base_moved` |
 | Export path is under `<data>/exports` and is not the worktree | Before the container starts |
+| Each allowlisted MCP tool's live schema hash equals its stored `schemaSha256` | When the attempt or refine opens the tribe's servers. `mcp_changed` with the server and tool; the tool is left out and the card is not blocked (RFC-094) |
 
 `Reconcile` stays free of model calls. It may probe health under RFC-039.
 
@@ -367,6 +390,13 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | Secret minimum length | 8 |
 | `implementationCap` | 1 to 8 |
 | `maxAttempts` | 1 to 10 |
+| MCP servers per tribe, tools per server, secrets per server | 8, 32, 8 |
+| MCP tool schema and description | 8 KiB and 5 levels; 512 bytes |
+| MCP calls | 30 per attempt and 8 per reply; 3 per refine over at most 3 turns |
+| MCP call | 60 s, 4 KiB of arguments; a 30 s handshake and tool list per server |
+| MCP reply and stdio line | 256 KiB; 1 MiB per stdio line |
+| MCP result kept in the history | 64 KiB; 4 KiB in the `tool_call` event |
+| MCP HTTP connect and headers | 5 s to dial and finish TLS, 15 s for response headers |
 
 Router budgets still apply on top of this table.
 
@@ -485,6 +515,14 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestRunnerPathHasOnlyGitDir` | A job's `gh` child has `PATH` set to the git directory only, and no `PATH` when no git path is given (RFC-065) |
 | `TestReviewerTools` | The reviewer tools are `read_diff`, `comment_pr`, and `verdict`, with no `deploy` or `edit_file` |
 | `TestLegacyCardRoutesCheckRole` | `POST /api/cards/{id}/approve` is `403` for a Developer, `404` for a lead outside the project's tribe, and `200` for a lead member |
+| `TestDBConnectorRefusesBoard` | A connector to the board's address, port, and database, also through `localhost` with the name in upper case, is refused before the socket opens (RFC-097) |
+| `TestPostgresToolReadOnly` | Writes through `query`, including a `DELETE` inside `WITH` and `nextval`, are refused and change no row. `TestPostgresSingleStatement` refuses `SELECT 1; DROP TABLE` and `COMMIT; SET transaction_read_only = off` |
+| `TestSQLServerStatementCheck` | `INTO`, `EXEC`, `OPENROWSET`, `OPENQUERY`, writes, `WAITFOR`, `DECLARE`, and a second statement are refused; keywords inside strings, quoted names, and comments are not read as statements |
+| `TestDBPasswordRedacted` | A query that rebuilds the password reaches neither the model nor any event |
+| `TestMCPCatalogAccess` | The catalog and the pull are `403` for a member who is not a tribe admin and for a tribe admin of another tribe, and a bad `source` is `403` before `422` for a member (RFC-096, RFC-100) |
+| `TestMCPCatalogFeatured` | Every featured URL passes the strict URL check, GitHub and Linear are read-only endpoints, and featured ids are unique (RFC-099) |
+| `TestMCPCatalogRegistrySlow` | A slow registry fails within the fetch budget, a failure is not fetched again for 30 seconds, and an abandoned request is not remembered (RFC-100) |
+| `TestMCPImagePull` | A flag or a reference with a space, upper case, or `;` runs no engine; fixture mode and no engine refuse; a failed pull returns the fixed text (RFC-098) |
 
 ## Operator duties
 
@@ -501,5 +539,7 @@ These stay outside the program.
 | Keep `tokenKey` in the service secrets file | It decrypts every GitHub token |
 | Ask developers for fine-grained tokens limited to the company organization, with Contents and Pull requests write | Unattended jobs push with each owner's token (RFC-054) |
 | Review what dev checks reach | Dev check egress is open in v1 |
+| Give each database connector a login that can only read, scoped to the tables jobs may see | The harness enforces read-only per call, but a SQL Server login is the main guard, and rows it can read reach the model (RFC-097) |
+| Keep the board database on its own server, or at least its own database name | The connector refuses only the board's own address, port, and database |
 
-A production credential is still out of scope (NG-001). Hardening v1 does not add a safe place to put one.
+A production credential is still out of scope (NG-001). Hardening v1 does not add a safe place to put one. RFC-097 sets NG-001 aside for one case only: a read-only database login on a tribe's connector.

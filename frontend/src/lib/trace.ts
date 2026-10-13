@@ -35,6 +35,7 @@ const kinds: Record<string, string> = {
 const tools: Record<string, string> = {
   conventions_context: 'Rules and skills',
   linked_context: 'Linked projects',
+  mcp_context: 'MCP servers',
   list_files: 'List files',
   search_files: 'Search files',
   read_file: 'Read file',
@@ -74,7 +75,12 @@ export function kindLabel(kind: string) {
   return kinds[kind] ?? sentence(kind);
 }
 
+const mcpName = /^mcp_([a-z][a-z0-9]{1,15})_([A-Za-z0-9_-]{1,40})$/;
+
+/** `mcp_<slug>_<tool>` reads as "MCP: slug / tool". */
 export function toolLabel(name: string) {
+  const mcp = mcpName.exec(name);
+  if (mcp) return `MCP: ${mcp[1]} / ${mcp[2]}`;
   return tools[name] ?? sentence(name);
 }
 
@@ -210,6 +216,19 @@ function describeTool(p: Record<string, unknown>): Described {
       const text = items.map((item) => `${str(item.kind)} ${str(item.id)} v${str(item.version)} ${str(item.hash).slice(0, 12)}`).join('\n');
       return { label, detail: summary, meta: '', tone: 'default', text };
     }
+    case 'mcp_context': {
+      const servers = Array.isArray(p.servers) ? p.servers.map(record) : [];
+      const text = servers
+        .map((server) => {
+          const where = str(server.database) ? `${str(server.host)}/${str(server.database)}` : str(server.host) || str(server.image);
+          const listed = Array.isArray(server.tools) ? server.tools.map(record).map((tool) => `${str(tool.name)} ${str(tool.schemaSha256).slice(0, 12)}`) : [];
+          const error = str(server.error);
+          return `${str(server.slug)} ${str(server.transport)} ${where}: ${error || listed.join(', ') || 'no tools'}`;
+        })
+        .join('\n');
+      const failed = servers.some((server) => str(server.error) !== '');
+      return { label, detail: summary, meta: '', tone: failed ? 'amber' : 'default', text };
+    }
     case 'linked_context': {
       const links = Array.isArray(p.links) ? p.links.map(record) : [];
       return { label, detail: summary, meta: '', tone: 'default', text: links.map((link) => `${str(link.projectId)} ${str(link.sha)}`).join('\n') };
@@ -263,6 +282,9 @@ function describeTool(p: Record<string, unknown>): Described {
         text: str(args.body)
       };
     default:
+      if (mcpName.test(name)) {
+        return { label, detail: plural(num(p.bytes), 'byte', 'bytes'), meta: '', tone: 'default', text: summary };
+      }
       return { label, detail: firstLine(summary), meta: '', tone: 'default', text: lineCount(summary) > 1 || summary.length > 160 ? summary : '' };
   }
 }
@@ -332,6 +354,9 @@ export function describe(event: TraceEvent): Described {
       return { label: 'Settings changed', detail: [str(p.section), fields].filter(Boolean).join(': '), meta: '', tone: 'default', text: '' };
     }
     case 'assertion_failed':
+      if (p.name === 'mcp_changed') {
+        return { label: 'Harness assertion failed', detail: `MCP tool changed: ${str(p.server)} / ${str(p.tool)}`, meta: '', tone: 'red', text: '' };
+      }
       return { label: 'Harness assertion failed', detail: [str(p.name), str(p.detail)].filter(Boolean).join(': '), meta: '', tone: 'red', text: '' };
     case 'budget_stop':
       return { label: 'Budget stop', detail: '', meta: '', tone: 'red', text: '' };

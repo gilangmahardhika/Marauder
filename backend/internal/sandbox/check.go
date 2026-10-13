@@ -99,7 +99,19 @@ func containerArgv(engine, image, export string, check []string, local bool, dev
 	if local {
 		argv = append(argv, "--network=none")
 	}
-	argv = append(argv,
+	argv = append(argv, hardening()...)
+	argv = append(argv, "--mount", mount, "--workdir", "/work")
+	if !local {
+		argv = append(argv, "--env", "DEV_URL="+devURL, "--env", "ORCH_SHA="+sha)
+	}
+	argv = append(argv, image)
+	argv = append(argv, check...)
+	return argv, nil
+}
+
+// hardening is every container's limits, user, and environment.
+func hardening() []string {
+	return []string{
 		"--cap-drop=ALL",
 		"--security-opt=no-new-privileges",
 		"--pids-limit=256",
@@ -107,19 +119,11 @@ func containerArgv(engine, image, export string, check []string, local bool, dev
 		"--cpus=2",
 		"--read-only",
 		"--tmpfs", "/tmp:rw,nosuid,size=256m",
-		"--mount", mount,
-		"--workdir", "/work",
 		"--user", "65532:65532",
 		"--env", "CI=1",
 		"--env", "PATH=/usr/local/bin:/usr/bin:/bin",
 		"--env", "HOME=/tmp",
-	)
-	if !local {
-		argv = append(argv, "--env", "DEV_URL="+devURL, "--env", "ORCH_SHA="+sha)
 	}
-	argv = append(argv, image)
-	argv = append(argv, check...)
-	return argv, nil
 }
 
 // PinnedImage reports whether image ends in @sha256: and 64 lowercase hex characters.

@@ -412,3 +412,49 @@ func TestAnthropicStream(t *testing.T) {
 		t.Fatalf("usage = %+v", resp)
 	}
 }
+
+func TestAnthropicSchemaExtraFields(t *testing.T) {
+	var got map[string]any
+	var path, apiKey string
+	srv := messageServer(t, &got, &path, &apiKey)
+	client := anthropic.New(srv.URL, key)
+
+	_, err := client.Complete(context.Background(), providers.Request{
+		Model: "claude-test", User: "hello",
+		Tools: []providers.Tool{{Name: "mcp_tickets_lookup", Parameters: map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"id": map[string]any{"type": "string"}},
+			"required":             []any{"id"},
+			"additionalProperties": false,
+			"$defs":                map[string]any{"id": map[string]any{"type": "string"}},
+		}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := got["tools"].([]any)
+	schema := tools[0].(map[string]any)["input_schema"].(map[string]any)
+	if schema["additionalProperties"] != false || schema["$defs"] == nil || schema["type"] != "object" {
+		t.Fatalf("input_schema = %v", schema)
+	}
+
+	if got["tool_choice"] != nil {
+		t.Fatalf("tool_choice sent by default: %v", got["tool_choice"])
+	}
+	if _, err := client.Complete(context.Background(), providers.Request{
+		Model: "claude-test", User: "hello", Tools: []providers.Tool{{Name: "mcp_tickets_lookup"}}, ToolChoice: "none",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if choice, _ := got["tool_choice"].(map[string]any); choice["type"] != "none" {
+		t.Fatalf("tool_choice = %v", got["tool_choice"])
+	}
+
+	got = nil
+	_, err = client.Complete(context.Background(), providers.Request{
+		Model: "claude-test", User: "hello", Tools: []providers.Tool{{Name: "mcp_bad.name"}},
+	})
+	if err == nil || got != nil {
+		t.Fatalf("bad tool name sent: err %v body %v", err, got)
+	}
+}

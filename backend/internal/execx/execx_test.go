@@ -55,3 +55,23 @@ func TestOutputCap(t *testing.T) {
 		t.Fatalf("output = %d bytes, cap 64", len(res.Out))
 	}
 }
+
+func TestStartFrames(t *testing.T) {
+	p, err := execx.Start(context.Background(), execx.StartChild{Argv: []string{"/bin/cat"}, MaxFrame: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.WriteFrame([]byte("short")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := p.ReadFrame(); err != nil || string(got) != "short" {
+		t.Fatalf("frame = %q err %v", got, err)
+	}
+	if err := p.WriteFrame([]byte("much longer than eight")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.ReadFrame(); !errors.Is(err, execx.ErrFrame) {
+		t.Fatalf("long frame err = %v", err)
+	}
+}

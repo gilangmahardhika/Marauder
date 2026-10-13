@@ -21,7 +21,12 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/dbtools"
+	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/httpapi"
+	"orchestrator/backend/internal/mcpcatalog"
+	"orchestrator/backend/internal/runtime"
+	"orchestrator/backend/internal/sandbox"
 	"orchestrator/backend/internal/tenancy"
 	"orchestrator/backend/internal/worker"
 )
@@ -111,6 +116,18 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	srv.Data = paths.Data
 	srv.TokenKey = key
 	srv.Tools = jobTools()
+	srv.Secrets = secrets.jobSecrets()
+	guard, err := dbtools.BoardGuard(secrets.DatabaseURL)
+	if err != nil {
+		return scrub(err, secrets.DatabaseURL)
+	}
+	srv.MCP.Board = guard
+	if engine := discoverEngine(srv.Tools); engine != "" {
+		go func() { _ = sandbox.SweepMCP(context.Background(), engine, "discover", execx.Command) }()
+		srv.MCP.Stdio = app.StdioOpener(engine, false, "discover", srv.Tools)
+		srv.Images = app.ImagePuller{Engine: engine, Fixture: runtime.FixtureMode(paths.Repo), Run: srv.Tools.Exec}
+	}
+	srv.Catalog = mcpcatalog.New(mcpcatalog.DefaultRegistry, srv.MCP.Policy)
 	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
 		srv.Cloud = true
 		srv.AllowHosts = hostAllowlist(opts.getenv)
@@ -123,7 +140,7 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets(), Live: srv.Live})
+		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets(), Live: srv.Live, MCP: app.MCPDialer{Board: guard}})
 		worker.Run(ctx, db, paths.Data, 2*time.Second, jobs, func(format string, args ...any) {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})
@@ -171,6 +188,15 @@ func jobTools() app.Tools {
 		Podman: lookTool("podman", "/opt/podman/bin/podman", "/opt/homebrew/bin/podman", "/usr/local/bin/podman"),
 		Docker: lookTool("docker", "/usr/local/bin/docker", "/opt/homebrew/bin/docker"),
 	}
+}
+
+// discoverEngine runs stdio servers for tool discovery, which has no project:
+// podman when installed, else docker.
+func discoverEngine(tools app.Tools) string {
+	if tools.Podman != "" {
+		return tools.Podman
+	}
+	return tools.Docker
 }
 
 func bootstrapAdmin(opts Options, db *sql.DB) error {

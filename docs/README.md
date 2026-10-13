@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-083`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-088`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -44,6 +44,9 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0037-token-usage.md](rfc/0037-token-usage.md) | Decision `RFC-089`. An admin-only Token usage page totals stored model calls across projects, by LLM, model, project, user, and task type |
 | [rfc/0038-scoped-token-usage.md](rfc/0038-scoped-token-usage.md) | Decision `RFC-090`. Token usage for one tribe, for its admins, and My token usage for each member |
 | [rfc/0039-usage-by-source-and-card.md](rfc/0039-usage-by-source-and-card.md) | Decision `RFC-091`. Token usage filters and groups by source, Intake or Card, and by card |
+| [rfc/0040-tribe-mcp-servers.md](rfc/0040-tribe-mcp-servers.md) | Decisions `RFC-092` to `RFC-095`. A tribe admin registers MCP servers and allowlists read-only tools, reached over HTTPS through a network guard or over stdio in the sandbox, which the implementer and refine call as untrusted data |
+| [rfc/0041-mcp-catalog-and-database-connectors.md](rfc/0041-mcp-catalog-and-database-connectors.md) | Decisions `RFC-096` to `RFC-098`. A tribe admin adds MCP servers from a catalog of built-in read-only Postgres and SQL Server connectors and the official MCP Registry |
+| [rfc/0042-featured-mcp-and-fast-catalog.md](rfc/0042-featured-mcp-and-fast-catalog.md) | Decisions `RFC-099` and `RFC-100`. The catalog adds featured remote servers and lists known entries without waiting on the registry |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

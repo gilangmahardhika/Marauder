@@ -9,6 +9,7 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/live"
+	"orchestrator/backend/internal/mcpcatalog"
 	"orchestrator/backend/internal/providers"
 )
 
@@ -27,6 +28,15 @@ type Server struct {
 	// Live carries the model's reply text to trace streams; the implement
 	// and review jobs of the same process publish to it.
 	Live *live.Hub
+	// MCP opens a tribe's MCP servers for discovery and refine (RFC-093).
+	MCP app.MCPDialer
+	// Secrets are databaseUrl and tokenKey, redacted from refine text.
+	Secrets []string
+	// Catalog searches the MCP Registry (RFC-096); nil lists the built-in
+	// entries only.
+	Catalog *mcpcatalog.Catalog
+	// Images pulls and pins stdio server images (RFC-098).
+	Images app.ImagePuller
 }
 
 func New() *Server {
@@ -53,6 +63,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/tribes/{id}/members/{userId}", s.setTribeAdmin)
 	mux.HandleFunc("GET /api/tribes/{id}/candidates", s.tribeCandidates)
 	mux.HandleFunc("GET /api/tribes/{id}/usage", s.tribeUsage)
+	mux.HandleFunc("GET /api/tribes/{id}/mcp-servers", s.mcpServers)
+	mux.HandleFunc("POST /api/tribes/{id}/mcp-servers", s.createMCPServer)
+	mux.HandleFunc("PUT /api/tribes/{id}/mcp-servers/{serverId}", s.saveMCPServer)
+	mux.HandleFunc("DELETE /api/tribes/{id}/mcp-servers/{serverId}", s.deleteMCPServer)
+	mux.HandleFunc("POST /api/tribes/{id}/mcp-servers/{serverId}/discover", s.discoverMCPTools)
+	mux.HandleFunc("GET /api/tribes/{id}/mcp-catalog", s.mcpCatalog)
+	mux.HandleFunc("POST /api/tribes/{id}/mcp-images/pull", s.pullMCPImage)
 	mux.HandleFunc("GET /api/projects", s.projectCollection)
 	mux.HandleFunc("POST /api/projects", s.projectCollection)
 	mux.HandleFunc("/api/projects/{projectId}/cards", s.projectCards)

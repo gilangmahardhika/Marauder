@@ -10,7 +10,7 @@ import (
 func TestImplementerTools(t *testing.T) {
 	got := map[string]bool{}
 	for _, tool := range loop.ImplementerTools() {
-		if tool.Name == "deploy" || tool.Name == "verdict" {
+		if tool.Name == "deploy" || tool.Name == "verdict" || strings.HasPrefix(tool.Name, "mcp_") {
 			t.Fatalf("profile includes %s", tool.Name)
 		}
 		got[tool.Name] = true

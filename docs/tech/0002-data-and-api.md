@@ -304,6 +304,49 @@ DROP TABLE requirements;
 
 `00023_events_kind_ts.sql` adds the index `events_kind_ts ON events (kind, ts)` so the usage read below does not scan every event. `events` stays insert-only (RFC-089).
 
+`00024_tribe_mcp.sql` adds a tribe's MCP servers and each server's tool allowlist (RFC-092):
+
+```sql
+CREATE TABLE tribe_mcp_servers (
+  id TEXT PRIMARY KEY,
+  tribe_id TEXT NOT NULL REFERENCES tribes(id),
+  slug TEXT NOT NULL,
+  transport TEXT NOT NULL CHECK (transport IN ('http', 'stdio')),
+  url TEXT NOT NULL DEFAULT '',
+  image TEXT NOT NULL DEFAULT '',
+  argv_json TEXT NOT NULL DEFAULT '[]',
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  secret_names_json TEXT NOT NULL DEFAULT '[]',
+  secrets_ciphertext TEXT NOT NULL DEFAULT '',
+  updated_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (tribe_id, slug)
+);
+
+CREATE TABLE tribe_mcp_tools (
+  server_id TEXT NOT NULL REFERENCES tribe_mcp_servers(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  schema_json TEXT NOT NULL,
+  schema_sha256 TEXT NOT NULL,
+  PRIMARY KEY (server_id, name)
+);
+```
+
+Ids use the prefix `mcp_`. `secret_names_json` lists the header (http) or environment (stdio) names that hold a value, so a list never decrypts. `secrets_ciphertext` is one JSON object of name to value, sealed with AES-256-GCM under `tokenKey`. `schema_sha256` is the SHA-256 hex of the schema marshalled as JSON with sorted keys; a missing schema counts as `{"type":"object","properties":{}}`. A query reads a server only through its `tribe_id`, and a job reads the servers of its project's tribe.
+
+`00025_mcp_db.sql` adds the database connectors (RFC-097). It replaces the transport check and adds the connection:
+
+```sql
+ALTER TABLE tribe_mcp_servers DROP CONSTRAINT tribe_mcp_servers_transport_check;
+ALTER TABLE tribe_mcp_servers ADD CONSTRAINT tribe_mcp_servers_transport_check
+  CHECK (transport IN ('http', 'stdio', 'postgres', 'sqlserver'));
+ALTER TABLE tribe_mcp_servers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';
+```
+
+`config_json` is `{"host","port","database","user","tlsMode","readOnlyLogin"}` for a `postgres` or `sqlserver` server and `{}` otherwise. It stays TEXT like the other JSON columns. The password is the secret `PASSWORD` in `secrets_ciphertext`, never in `config_json`. Down deletes the database servers, restores the old check, and drops the column.
+
 `00014_card_runs.sql` adds `runs.card_id TEXT REFERENCES cards(id) ON DELETE CASCADE` and the partial unique index `runs_open_card ON runs(card_id) WHERE card_id IS NOT NULL AND processed_at IS NULL`. A row with `card_id` asks for that one card. A card has at most one open row (RFC-061).
 
 `draftPending` and `planError` live on the single row `intake_state.id = 1`, created by `00002_intake_state.sql`. `draft_pending` is true after ingest finds a PRD file with no `REQ-` heading. `plan_error` stays null until the planner records a failure.
@@ -669,6 +712,66 @@ Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of 
 
 `PUT /api/tribes/{id}/members/{userId}` with `{ "tribeAdmin": true }` sets or clears the flag and returns `204`. A user who is not a member is `404`. A tribe admin who is not an admin cannot clear their own flag (`422` on `tribeAdmin`).
 
+`GET /api/tribes/{id}/mcp-servers` lists the tribe's MCP servers (RFC-092), ordered by slug, under the rule above: `{ "servers": [server] }`. A server object is:
+
+```json
+{
+  "id": "mcp_0123456789ab",
+  "tribeId": "tribe_0123456789ab",
+  "slug": "tickets",
+  "transport": "http",
+  "url": "https://mcp.example.com/mcp",
+  "image": "",
+  "argv": [],
+  "config": null,
+  "enabled": true,
+  "secretsSet": ["Authorization"],
+  "tools": [{ "name": "lookup", "description": "Find a ticket by id.", "schema": { "type": "object" }, "schemaSha256": "..." }],
+  "updatedAt": "2026-10-13T00:00:00Z"
+}
+```
+
+`config` is null for `http` and `stdio`. A `postgres` or `sqlserver` server has `"config": { "host": "10.0.0.5", "port": 5432, "database": "app", "user": "reader", "tlsMode": "require", "readOnlyLogin": true }`, an empty `url`, `image`, and `argv`, and `secretsSet` of at most `["PASSWORD"]` (RFC-097).
+
+`POST /api/tribes/{id}/mcp-servers` creates one from `{ "slug", "transport", "url", "image", "argv", "config", "enabled", "secrets", "clear", "tools" }` and returns `201` with the server. `PUT /api/tribes/{id}/mcp-servers/{serverId}` takes the same body and returns `200`. A server of another tribe is `404`. Field errors are `422`:
+
+- `slug` matches `^[a-z][a-z0-9]{1,15}$` and is unique in the tribe. A tribe has at most 8 servers.
+- An `http` server's `url` is `https` with no user info, query, or fragment, and a host that is not a loopback, private, link-local, CGNAT, metadata, unspecified, or multicast address.
+- A `stdio` server's `image` is pinned by `@sha256:` and 64 hex characters. `argv` is 1 to 64 strings, at most 4 KiB, with a bare `argv[0]` that is not a shell or wrapper (RFC-084).
+- A `postgres` or `sqlserver` server has no `url`, `image`, or `argv`, and a `config` (RFC-097). Errors are keyed `config.<field>`: `config.host` is a DNS name or an IP, not a socket path or a list; `config.port` is 1 to 65535; `config.database` and `config.user` are 1 to 128 characters with no NUL or line break; `config.tlsMode` is `disable`, `require`, or `verify-full`; `config.readOnlyLogin` must be true ("confirm that this login can only read"). Its only secret name is `PASSWORD`. Any host is allowed here; the board refusal happens at dial.
+- `secrets` maps names to values. A header name matches `^[A-Za-z0-9-]{1,64}$` and is not one the client sets (`Host`, `Content-Type`, `Content-Length`, `Accept`, `Connection`, `Mcp-Session-Id`, `MCP-Protocol-Version`, `Transfer-Encoding`). An environment name matches `^[A-Za-z_][A-Za-z0-9_]{0,63}$` and is not `PATH`, `HOME`, `CI`, or `XDG_RUNTIME_DIR`. An empty value keeps the stored one; a new value is at least 8 characters. `clear` lists names to delete. A server has at most 8 secrets.
+- `tools` is the allowlist: at most 32, each `name` matching `^[A-Za-z0-9_-]{1,40}$` and listed once, a `description` of at most 512 bytes, and a `schema` that is a JSON object of type `object`, at most 8 KiB and 5 levels deep. `properties`, `patternProperties`, `$defs`, and `definitions` maps are not levels of their own. The server fills `schemaSha256`.
+
+A create, save, or delete appends `config_changed` with `{ "section": "mcp", "tribeId", "serverId", "fields": [...] }`, field names only. `DELETE /api/tribes/{id}/mcp-servers/{serverId}` returns `204` and drops the allowlist with it.
+
+`POST /api/tribes/{id}/mcp-servers/{serverId}/discover` connects with the saved settings and lists the server's tools: `{ "ok": true, "tools": [{ "name", "description", "schema", "schemaSha256", "valid" }] }`. `valid` is false for a name the allowlist cannot take, and a description is cut at 512 bytes. A failure is `200` with `{ "ok": false, "message": "the server is unreachable", "tools": [] }`; the message is one of the fixed reasons and never the server's response text. A stdio server is discovered with the podman engine, or docker when podman is not installed; with neither, the message is `stdio servers need the container sandbox`. A database server is discovered by connecting with its config and `PASSWORD`, and lists `describe_table`, `list_tables`, and `query`. Values in `secrets` are never returned by any route.
+
+`GET /api/tribes/{id}/mcp-catalog?source=&q=&cursor=` searches the catalog (RFC-096, RFC-100) under the same rule: `403`, then `404`. It returns `{ "entries": [entry], "nextCursor": "", "registryError": "..." }`. `source=local` returns the matching built-in and featured entries, never calls the registry, and has no `registryError`. `source=registry` returns one registry page for `q` and `cursor`. With no `source`, and no cursor, the local entries come first, then the registry page. Another `source` is `422` on `source`. `registryError` is present only when the registry could not be read, and is the fixed text `The MCP Registry could not be reached`; the built-in entries are still listed. `?id=` returns that one entry as `{ "entries": [entry], "nextCursor": "" }`, `404` when it is not found, and `502` with code `registry` when the registry could not be read. An entry is:
+
+```json
+{
+  "id": "builtin:postgres",
+  "source": "builtin",
+  "name": "postgres",
+  "title": "PostgreSQL",
+  "description": "Read-only SQL on a Postgres database. The harness connects itself, to any host but the board database.",
+  "websiteUrl": "",
+  "version": "",
+  "transport": "postgres",
+  "supported": true,
+  "argv": [],
+  "port": 5432,
+  "secrets": [{ "name": "PASSWORD", "description": "...", "required": false }],
+  "tools": [{ "name": "query", "description": "...", "schema": { "type": "object" } }]
+}
+```
+
+A registry entry's `id` is `registry:<name>@<version>` and its `source` is `registry`. An `http` entry has `url` and header `secrets`. A `stdio` entry has `image` (a tag, not yet pinned), `argv`, environment `secrets`, and `note` "Runs with no network". An entry that cannot be set up has `supported: false` and a `reason` (RFC-098). `tools` is filled only for built-in entries. A registry header whose name is not a valid header name is left out of `secrets`.
+
+A featured entry's `id` is `featured:<name>` and its `source` is `featured` (RFC-099). It is an `http` entry with `url`, `websiteUrl`, and zero or one header secret (`Authorization`, or `x-api-key` for Exa), with `required` true for GitHub, Linear, and Stripe. `?id=featured:<name>` and `?id=builtin:<name>` never call the registry. `?id=registry:<name>@<version>` is answered from a cached page, or else read by exact name from the registry (RFC-100).
+
+`POST /api/tribes/{id}/mcp-images/pull` with `{ "image": "ghcr.io/acme/server:1.0" }` pulls the image with the sandbox engine within 5 minutes and returns `{ "image": "ghcr.io/acme/server@sha256:..." }` (RFC-098). Errors are `422` on `image`: a reference that does not match the image pattern, fixture mode or no engine (`stdio servers need the container sandbox`), and a failed pull (`the engine could not pull the image`, never the engine's output).
+
 `GET /api/projects` returns projects whose tribe includes the caller. An admin receives every project, which does not grant card access. `POST /api/projects` requires an admin or a tribe admin of `tribeId`. Anyone else is `403`.
 
 ```json
@@ -983,7 +1086,9 @@ event: done
 data: {"text":"The export has one row per card.\nEach row lists the card id.","acceptance":["The export has one row per card.","Each row lists the card id."],"modelId":"claude-sonnet"}
 ```
 
-`start` comes once, before the first `delta`, and names the model that answers, which may be the route's fallback. Each `delta` is a piece of redacted text in order. `done` has the whole text after the save rules; for `acceptance` it also has the lines, with blank lines and list markers dropped, and `text` is those lines joined by newlines. A provider failure after text has streamed, or finished text that fails the save rules (an empty statement, more than 50 lines, a line over 1,000 characters, no lines), ends the stream with `event: error` and `{"code":"provider_error","message":"..."}` instead of `done`. Closing the connection cancels the model request. Model keys never appear in any event.
+When the project's tribe has an enabled MCP server with allowlisted tools, the model may call them (RFC-095). Each turn streams. A turn that ends in tool calls sends `event: reset` with `{}`, which clears the text so far, then one `event: tool` with `{"server":"tickets","tool":"lookup"}` per call. The request allows at most 3 turns and 3 calls, and the last turn, or the turn after the third call, sends tool choice `none`. Each call appends a project `tool_call` event with no card: `name`, `ok`, `rejected`, `bytes`, `sha256`, and `args` with the server, the tool, and each argument's size, never the result text. `requirement_refined` adds the tokens of every turn.
+
+`start` comes once, before the first `delta`, and names the model that answers, which may be the route's fallback. Each `delta` is a piece of redacted text in order. `done` has the whole text after the save rules; for `acceptance` it also has the lines, with blank lines and list markers dropped, and `text` is those lines joined by newlines. A provider failure after text has streamed, or finished text that fails the save rules (an empty statement, more than 50 lines, a line over 1,000 characters, no lines), ends the stream with `event: error` and `{"code":"provider_error","message":"..."}` instead of `done`. Closing the connection cancels the model request and any MCP call in progress. Model keys, `databaseUrl`, `tokenKey`, and MCP secrets never appear in any event.
 
 `DELETE /api/projects/{projectId}/requirements/{id}` removes a manual row and returns the intake shape. A row that is not manual, or a manual row that a card in that project lists in `requirementIds`, is `409`. An unknown id is `404`.
 

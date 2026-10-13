@@ -799,3 +799,97 @@ Packages: `internal/board`, `internal/app`, `internal/cli`, frontend `types.ts`,
 - The usage pages filter and group by Source and Card.
 
 Done when: `TestUsageSourceAndCard`, `TestUsageCLICard`, the existing usage tests, the `usage` lib, admin usage page, and account usage page Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 56: Tribe MCP servers, settings
+
+Goal: A tribe admin registers MCP servers, keeps their secrets write-only, and allowlists their tools (RFC-092, RFC-093, REQ-087).
+
+Packages: migration `00024`, `internal/tenancy`, `internal/netguard`, `internal/mcp`, `internal/app`, `internal/httpapi`, frontend `types.ts`, `api.ts`, and the tribe MCP pages.
+
+- `tribe_mcp_servers` and `tribe_mcp_tools` store a tribe's servers, the sealed secrets, and the allowlist.
+- `netguard` refuses internal addresses, proxies, and redirects. `mcp.DialHTTP` lists and calls tools with a 256 KiB cap.
+- `/api/tribes/{id}/mcp-servers` lists, creates, saves, deletes, and discovers, checked like the other tribe routes.
+- `/tribes/{id}/mcp` lists the servers, and `/tribes/{id}/mcp/{serverId}` edits one.
+
+Done when: `TestMCPServerSecretsNeverReturned`, `TestMCPServerAccess`, `TestMCPSlugAndToolNames`, `TestMCPNameCollision`, `TestNetguardRefusesPrivate`, `TestNetguardRedirectAndProxy`, `TestMCPHTTPListAndCall`, `TestMCPResultCap`, `TestMCPDiscoverNoBody`, the tribe MCP pages Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 57: MCP tools in the implementer loop
+
+Goal: The implementer calls the tribe's allowlisted tools as untrusted data (RFC-094, REQ-087).
+
+Packages: `internal/loop`, `internal/contextpack`, `internal/providers/anthropic`, `internal/app`, frontend `trace.ts`.
+
+- `loop.Input.Extra` adds frozen `mcp_` tools after the constant list, with call caps, wrapped and redacted results, and no live frame.
+- `ImplementCard` loads the tribe's servers once per attempt, checks schema hashes, redacts the secrets, and records `mcp_context`.
+- The Anthropic client keeps a tool schema's other top-level keys.
+
+Done when: `TestImplementerMCPTools`, `TestMCPResultWrappedAndStripped`, `TestMCPHeaderRedacted`, `TestMCPCallCap`, `TestMCPToolListChanged`, `TestMCPCannotMoveCard`, `TestMCPNoLiveFrame`, `TestMCPOtherTribe`, `TestAnthropicSchemaExtraFields`, the updated `TestImplementerTools` and `TestPromptMarkers`, the trace Vitest case, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 58: Stdio MCP servers in the sandbox
+
+Goal: A stdio server runs in its pinned image with no network for the length of an attempt (RFC-093, REQ-087).
+
+Packages: `internal/execx`, `internal/sandbox`, `internal/mcp`, `internal/app`.
+
+- `execx.Start` keeps a child's stdin and stdout open, with a frame cap and a process-group kill.
+- `sandbox.StartArgv` runs the server with `-i`, `--network=none`, a name and label, and removes the container on close.
+- `mcp.DialStdio` speaks line-delimited JSON-RPC.
+
+Done when: `TestStdioNoNetworkNoArgvSecret`, `TestStdioRefusesShell`, `TestStdioContainerRemoved`, `TestStdioFixtureRefused`, `TestStdioListAndCall`, the fixture, and the rest of the suite.
+
+## Sprint 59: Refine with MCP tools
+
+Goal: Requirement refine may look things up with the tribe's tools before it answers (RFC-095, REQ-087).
+
+Packages: `internal/providers`, `internal/app`, `internal/httpapi`, frontend `types.ts` and `RefinePanel`.
+
+- `providers.Request.ToolChoice` lets the last turn send `none`.
+- `RefineField` runs at most 3 turns and 3 calls when the tribe has a server, and streams `reset` and `tool` events.
+
+Done when: `TestRefineNoServersNoTools`, `TestRefineMCPLoop`, `TestRefineMCPResetEvent`, `TestRefineLastTurnNoTools`, `TestRefineMCPCancel`, the `RefinePanel` reset Vitest case, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 60: Database connectors
+
+Goal: A tribe reads its Postgres and SQL Server databases through read-only connectors in the harness (RFC-097, REQ-088).
+
+Packages: migration `00025`, `internal/dbtools`, `internal/tenancy`, `internal/app`.
+
+- `tribe_mcp_servers` takes the `postgres` and `sqlserver` transports and a `config_json` with host, port, database, user, and TLS mode.
+- `dbtools` offers `query`, `list_tables`, and `describe_table`, read-only, with a row cap, and refuses the board database.
+- `MCPDialer.Open` opens a connector, so jobs, refine, and discovery use it like any MCP server.
+
+Done when: `TestDBConfigValidation`, `TestPostgresToolReadOnly`, `TestPostgresSingleStatement`, `TestPostgresRowCap`, `TestDBConnectorRefusesBoard`, `TestDBPasswordRedacted`, `TestImplementerDBTools`, `TestSQLServerStatementCheck`, `TestSQLServerLive` when `ORCH_TEST_MSSQL` is set, the fixture, and the rest of the suite.
+
+## Sprint 61: MCP catalog API and image pull
+
+Goal: The harness lists the built-in connectors and searches the MCP Registry, and pins a stdio image by digest (RFC-096, RFC-098, REQ-088).
+
+Packages: `internal/mcpcatalog`, `internal/app`, `internal/httpapi`, `internal/cli`.
+
+- `GET /api/tribes/{id}/mcp-catalog` returns the built-in entries and registry entries, cached for 10 minutes, with a fixed notice when the registry is down.
+- `POST /api/tribes/{id}/mcp-images/pull` pulls an image and returns it pinned by digest.
+
+Done when: `TestMCPCatalogBuiltins`, `TestMCPCatalogRegistry`, `TestMCPCatalogRegistryDown`, `TestMCPCatalogAccess`, `TestMCPImagePull`, the fixture, and the rest of the suite.
+
+## Sprint 62: MCP catalog page
+
+Goal: A tribe admin sets up a server from the catalog by filling in its credentials (RFC-096, REQ-088).
+
+Packages: frontend `types.ts`, `api.ts`, `MCPServerForm`, and the tribe MCP pages.
+
+- `/tribes/{id}/mcp/catalog` searches the catalog, and `Set up` opens the form filled from the entry.
+- The form has the database fields, pulls and pins a stdio image, and discovers tools after a create.
+
+Done when: the catalog page, database form, registry prefill, image pull, and auto-discover Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 63: Featured MCP servers and a catalog that answers at once
+
+Goal: The catalog shows featured and built-in servers at once and searches the registry on its own (RFC-099, RFC-100, REQ-088).
+
+Packages: `internal/mcpcatalog`, `internal/app`, `internal/httpapi`, frontend `api.ts`, `types.ts`, and the catalog page.
+
+- `mcpcatalog.Featured`, `Local`, `Registry`, and `LocalEntry`; the `source` parameter on the catalog route.
+- The registry fetch has 60 seconds, remembers a failure for 30 seconds, runs at most 4 at once, and reads a registry entry by exact name for Set up.
+- The catalog page loads local entries and the registry apart, aborts a stale search, and shows Featured, Databases, and MCP Registry sections.
+
+Done when: `TestMCPCatalogBuiltins`, `TestMCPCatalogFeatured`, `TestMCPCatalogRegistrySlow`, `TestMCPCatalogEntryByName`, `TestMCPCatalogRegistryDown`, `TestMCPCatalogAccess`, the catalog page Vitest case, `npm run check`, the fixture, and the rest of the suite.

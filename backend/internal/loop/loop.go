@@ -191,6 +191,8 @@ type Input struct {
 	MaxTokensPerCard int
 	// Live, when set, gets each turn's reply text as the model writes it.
 	Live live.Publisher
+	// Extra is the tribe's MCP tools for this attempt; nil offers none (RFC-094).
+	Extra ExtraTools
 }
 
 // Result is how the attempt ended. Outcome is empty for a new commit,
@@ -322,6 +324,21 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		in: in, card: card, wt: wt, attemptID: attemptID,
 		system: system, user: user, linkedRoots: linkedRoots,
 		evicted: map[[2]int]bool{}, reads: map[string]readMark{},
+	}
+	session.tools = ProfileTools(ImplementerTools(), in.Extra)
+	session.allowed = map[string]providers.Tool{}
+	for _, tool := range session.tools {
+		session.allowed[tool.Name] = tool
+	}
+	if in.Extra != nil {
+		servers := in.Extra.Describe()
+		if err := session.event(ctx, "tool_call", map[string]any{
+			"name": "mcp_context", "ok": true, "rejected": false,
+			"summary": fmt.Sprintf("%d MCP servers, %d tools", len(servers), len(session.tools)-len(ImplementerTools())),
+			"servers": servers,
+		}); err != nil {
+			return Result{}, err
+		}
 	}
 	if err := session.event(ctx, "tool_call", map[string]any{
 		"name": "conventions_context", "ok": true, "rejected": false,
@@ -509,6 +526,10 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 		args["argv"] = shown
 	case "comment_pr", "verdict":
 		args["body"] = clip(strArg(call.Args, "body"))
+	default:
+		if IsMCP(call.Name) {
+			return MCPArgs(call.Name, call.Args)
+		}
 	}
 	return args
 }

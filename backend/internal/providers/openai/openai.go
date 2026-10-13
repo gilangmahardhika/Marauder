@@ -41,6 +41,9 @@ func New(baseURL, key string) *Client {
 }
 
 func (c *Client) Complete(ctx context.Context, req providers.Request) (providers.Response, error) {
+	if err := providers.CheckTools(req.Tools); err != nil {
+		return providers.Response{}, err
+	}
 	params, opts := newParams(req)
 	completion, err := c.client.Chat.Completions.New(ctx, params, opts...)
 	if err != nil {
@@ -60,6 +63,9 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 // reply text as it arrives. The returned Response is the whole reply, with the
 // usage of the final chunk.
 func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	if err := providers.CheckTools(req.Tools); err != nil {
+		return providers.Response{}, err
+	}
 	params, opts := newParams(req)
 	params.StreamOptions = sdk.ChatCompletionStreamOptionsParam{IncludeUsage: sdk.Bool(true)}
 	stream := c.client.Chat.Completions.NewStreaming(ctx, params, opts...)
@@ -109,6 +115,9 @@ func newParams(req providers.Request) (sdk.ChatCompletionNewParams, []option.Req
 			def.Description = sdk.String(tool.Description)
 		}
 		params.Tools = append(params.Tools, sdk.ChatCompletionFunctionTool(def))
+	}
+	if req.ToolChoice == "none" && len(req.Tools) > 0 {
+		params.ToolChoice = sdk.ChatCompletionToolChoiceOptionUnionParam{OfAuto: sdk.String("none")}
 	}
 	if req.Effort != "" {
 		params.ReasoningEffort = shared.ReasoningEffort(req.Effort)

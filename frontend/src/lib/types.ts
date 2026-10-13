@@ -193,10 +193,15 @@ export type RefineRequest = RequirementDraft & {
   instructions: string;
 };
 
-/** One server-sent event of a streamed refine. done.text is the whole new text; for acceptance it is the lines joined by newlines. */
+/**
+ * One server-sent event of a streamed refine. done.text is the whole new text; for acceptance it is the lines joined by newlines.
+ * reset clears the text so far, because that turn ended in MCP tool calls; tool names each call's server and tool.
+ */
 export type RefineEvent =
   | { kind: "start"; modelId: string }
   | { kind: "delta"; text: string }
+  | { kind: "reset" }
+  | { kind: "tool"; server: string; tool: string }
   | { kind: "done"; text: string; acceptance?: string[]; modelId: string }
   | { kind: "error"; code: string; message: string };
 
@@ -492,3 +497,95 @@ export type UsageRow = {
 
 /** `from` and `to` are inclusive YYYY-MM-DD days in UTC. */
 export type UsageResponse = { from: string; to: string; rows: UsageRow[] };
+
+/** One allowlisted tool of a tribe MCP server. `description` is the admin's text (RFC-092). */
+export type MCPTool = {
+  name: string;
+  description: string;
+  schema: Record<string, unknown>;
+  schemaSha256: string;
+};
+
+export type MCPTransport = "http" | "stdio" | "postgres" | "sqlserver";
+
+/** A database connector's connection (RFC-097). The password is a secret named PASSWORD, never part of it. */
+export type MCPDBConfig = {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  tlsMode: "disable" | "require" | "verify-full";
+  readOnlyLogin: boolean;
+};
+
+/**
+ * A tribe's MCP server (RFC-092, RFC-093, RFC-097). `secretsSet` names the headers (http), environment variables
+ * (stdio), or PASSWORD (a database) that hold a value; the values are never returned.
+ */
+export type MCPServer = {
+  id: string;
+  tribeId: string;
+  slug: string;
+  transport: MCPTransport;
+  url: string;
+  image: string;
+  argv: string[];
+  config: MCPDBConfig | null;
+  enabled: boolean;
+  secretsSet: string[];
+  tools: MCPTool[];
+  updatedAt: string;
+};
+
+/** A save. A `secrets` entry with an empty value keeps the stored value; `clear` deletes values. */
+export type MCPServerInput = {
+  slug: string;
+  transport: MCPTransport;
+  url: string;
+  image: string;
+  argv: string[];
+  config: MCPDBConfig | null;
+  enabled: boolean;
+  secrets: Record<string, string>;
+  clear: string[];
+  tools: { name: string; description: string; schema: Record<string, unknown> }[];
+};
+
+/** A tool the server lists. `valid` is false for a name the allowlist cannot take. */
+export type MCPDiscoveredTool = MCPTool & { valid: boolean };
+
+/** Discovery. `message` is a fixed reason when `ok` is false. */
+export type MCPDiscover = { ok: boolean; message?: string; tools: MCPDiscoveredTool[] };
+
+/** A secret a catalog entry needs: a header, an environment variable, or PASSWORD. */
+export type MCPCatalogSecret = { name: string; description: string; required: boolean };
+
+/**
+ * A server the admin can set up from the catalog (RFC-096, RFC-098, RFC-099). `supported` is false with a `reason`
+ * when the harness cannot run it. Built-in database entries carry their fixed `tools` and default `port`.
+ */
+export type MCPCatalogEntry = {
+  id: string;
+  source: "builtin" | "featured" | "registry";
+  name: string;
+  title: string;
+  description: string;
+  websiteUrl: string;
+  version: string;
+  transport: MCPTransport;
+  supported: boolean;
+  reason?: string;
+  note?: string;
+  url?: string;
+  image?: string;
+  argv: string[];
+  port?: number;
+  secrets: MCPCatalogSecret[];
+  tools: { name: string; description: string; schema: Record<string, unknown> }[];
+};
+
+/** One catalog page. `registryError` is a fixed notice when the registry could not be read. */
+export type MCPCatalogPage = { entries: MCPCatalogEntry[]; nextCursor: string; registryError?: string };
+
+/** `local` is the built-in and featured entries, answered at once; `registry` is one MCP Registry page (RFC-100). */
+export type MCPCatalogSource = "local" | "registry";
