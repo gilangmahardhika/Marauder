@@ -343,6 +343,73 @@ Rules that must remain true:
 
 Until Phase B lands, treat “agents in Podman” in runbooks as **Phase A**: every agent’s shell/check surface is Podman-isolated even though the loop is in-process.
 
+### Phase C — GitHub Actions–style runners (optional scale path)
+
+If operators should **register machines** the way self-hosted GitHub Actions runners do (install agent → heartbeat → claim jobs → capacity labels), that is a control-plane change, not only infra. v1 explicitly has no remote job broker (0001: no Temporal/Redis/NATS/Kafka) and pins work with a per-project `worker.lock` (RFC-048). A runner pool needs a superseding RFC before code moves.
+
+#### Do not create a second product repo
+
+| Repo | Keep? | Why |
+| --- | --- | --- |
+| **This orchestrator repo** | Yes — put the runner here | Same Go module, same `internal/app` / `machine.Transition` / sandbox argv / redaction. A fork that talks to the board over ad-hoc HTTP will drift and can break the harness invariant |
+| **New “agent runner” application repo** | No | Duplicates providers, packs, git/`gh`, and status rules |
+| **Optional infra repo** (Terraform/Ansible/Packer) | Yes, if you want | Only provision VMs, Podman, systemd units, images — no business logic |
+
+Shape inside this repo (after RFC):
+
+```text
+backend/cmd/orchestrator serve     # control plane: API, queue claim, Transition
+backend/cmd/orchestrator runner    # or: orchestrator serve --runner-only
+                                   # registers, heartbeats, runs claimed jobs
+```
+
+One binary, two modes. Shared packages stay under `internal/`.
+
+#### What changes in product (RFC must name)
+
+1. **Lease jobs in Postgres** (or an equivalent table the harness owns) instead of “whoever holds `worker.lock` runs every job for that project.” Card lock and deploy lock stay. Project affinity may remain for worktrees/deploy.
+2. **Runner identity:** register with a runner token; heartbeat; labels (`podman`, `cpu=16`, `tribe=…` or `project=…`).
+3. **Claim protocol:** `SELECT … FOR UPDATE SKIP LOCKED` on runnable `runs` / job rows — no Redis required if you keep “one Postgres” from 0001.
+4. **Who may Transition:** only code paths in the harness binary on the runner (same `machine` package), or a narrow job-results API that still calls `Transition` on the control plane. Models never write status.
+5. **Secrets:** runners get short-lived job credentials (owner GitHub, model key handle, sandbox image digest), not the service `databaseUrl` in cleartext on every box if you can avoid it. Prefer: runner DSN scoped / IAM + decrypt only what the job needs.
+6. **Worktree placement:** either sticky runners per project (simpler, closer to today) or remote worktree/cache volumes (harder; avoid NFS into Podman).
+
+#### What you do in infra (runner fleet)
+
+Same capacity numbers as earlier; change **how** hosts join:
+
+```text
+┌─────────────┐     register / heartbeat / claim      ┌──────────────────┐
+│ API + DB    │ ◄───────────────────────────────────► │ runner host 1..N │
+│ (serve)     │     job lease, settings snapshot        │ orchestrator       │
+└─────────────┘                                         │ runner + Podman   │
+                                                        └──────────────────┘
+```
+
+Per runner host:
+
+1. VM or bare metal sized from the capacity tables (e.g. 24 vCPU / 48 GiB for ~16 jobs).
+2. Service user, rootless Podman, pre-pulled `@sha256:` images.
+3. systemd (or equivalent) unit: `orchestrator runner --url https://orch.example --token-file …`.
+4. Local disk for worktrees/exports (sticky project labels) or ephemeral scratch if the RFC defines fetch-per-job.
+5. Egress to API, Postgres (if direct), LLM providers, GitHub; no public inbound except admin SSH/ssm.
+6. Autoscaling group optional: scale on queue depth / idle runners, like GHA larger runners — still just more units of the same binary.
+
+Control plane infra adds:
+
+- Runner registration admin UI or CLI (`orchestrator runners …`).
+- Metrics: connected runners, busy slots, claim latency, stale leases.
+- Lease reaper: lost heartbeat → release job, Reconcile-equivalent cancel.
+
+#### When to stay on Phase A sharding instead
+
+Use fixed project→host maps (section “How to shard projects today”) if:
+
+- one team operates fewer than ~3 agent hosts, and
+- you do not need self-service “add a machine with a token.”
+
+Move to Phase C when hosts churn, tribes bring their own capacity, or you want GHA-like labels without editing a runbook map.
+
 ---
 
 ## Rollout
@@ -373,6 +440,13 @@ Until Phase B lands, treat “agents in Podman” in runbooks as **Phase A**: ev
 1. Write RFC: job runtime boundary, credential minting, network policy, who may call Transition.
 2. Implement behind a settings flag; keep Phase A path for fixture and small installs.
 3. Add verification tests named in 0005/0006 for the new boundary.
+
+### 5. Optional Phase C (GHA-style runners)
+
+1. Write RFC superseding the “no job bus / lock holder runs all project jobs” assumption where needed; keep card lock, deploy lock, and Transition rules.
+2. Add runner register/heartbeat/claim (Postgres leases) and `orchestrator runner` mode in this repo.
+3. Provision runner VMs from an infra repo or packer image; point them at the control plane with a runner token.
+4. Keep Phase A sharding as the small-fleet path.
 
 ---
 
@@ -427,3 +501,4 @@ Prefer metrics from the harness (job start/end, sandbox exit, transition counts)
 | 50 agents | ~64 vCPU / ~96 GiB agent capacity (often 3–4 hosts) + stronger Postgres |
 | Isolation today | Phase A: in-process agent loop, Podman sandboxes |
 | Isolation next | Phase B: per-job Podman runtime via new RFC |
+| GHA-like runners | Phase C: same repo (`orchestrator runner`); optional infra-only second repo; needs RFC + Postgres job leases |
