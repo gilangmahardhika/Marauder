@@ -93,3 +93,14 @@ test('others see a read-only line only when the mode is manual', () => {
   render(ReviewersPanel, { requirement: req(), options: [], onsaved: noop, onmessage: noop });
   expect(screen.queryByText(/a person reviews before another attempt/)).toBeNull();
 });
+
+test('the editable panel says unverified members are asked after they verify', () => {
+  render(ReviewersPanel, {
+    requirement: req({ canEditReviewers: true }),
+    options: [{ id: 'usr_hendro', name: 'Hendro', email: 'hendro@example.com', githubLogin: '' }],
+    onsaved: noop,
+    onmessage: noop
+  });
+  expect(screen.getByText(/Someone without a verified GitHub login is asked to review on GitHub after they verify\./)).toBeTruthy();
+  expect(screen.getByRole('combobox', { name: 'Reviewers' }).getAttribute('placeholder')).toBe('Search by name, login, or email');
+});

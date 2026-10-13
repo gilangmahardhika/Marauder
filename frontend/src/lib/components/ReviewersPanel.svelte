@@ -73,7 +73,7 @@
 <Panel
   title="Reviewers"
   hint={requirement.canEditReviewers
-    ? 'GitHub asks these people to review each pull request for this requirement. The list shows tribe members with a verified GitHub login.'
+    ? 'GitHub asks these people to review each pull request for this requirement. Someone without a verified GitHub login is asked to review on GitHub after they verify.'
     : 'Only the person who brought this requirement in, or a Lead Developer, can change its reviewers.'}
   footer={editable ? saveBar : undefined}
 >
@@ -83,7 +83,7 @@
       id="requirement-reviewers"
       width="lg"
       options={choices}
-      placeholder={choices.length === 0 ? 'No verified tribe members yet' : 'Search by name, login, or email'}
+      placeholder={choices.length === 0 ? 'No other tribe members yet' : 'Search by name, login, or email'}
       max={15}
       {error}
       bind:values

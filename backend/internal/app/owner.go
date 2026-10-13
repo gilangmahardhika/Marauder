@@ -185,6 +185,45 @@ func CardReviewers(ctx context.Context, db *sql.DB, card board.Card, host, botLo
 	return out, nil
 }
 
+// CardWaitingReviewers are the reviewers named on the card's requirements who
+// have no verified GitHub login on host, by name or else email, without the
+// owner, disabled users, and users who left the project's tribe (RFC-103).
+func CardWaitingReviewers(ctx context.Context, db *sql.DB, card board.Card, host string) ([]string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, reqID := range card.RequirementIDs {
+		rows, err := db.QueryContext(ctx, `
+			SELECT u.id, COALESCE(NULLIF(u.name, ''), u.email) FROM requirement_reviewers rr
+			JOIN users u ON u.id = rr.user_id AND u.disabled = false
+			JOIN projects p ON p.id = rr.project_id
+			JOIN tribe_members m ON m.tribe_id = p.tribe_id AND m.user_id = rr.user_id
+			LEFT JOIN user_github g ON g.user_id = rr.user_id
+			WHERE rr.project_id = $1 AND rr.requirement_id = $2 AND rr.user_id <> $3
+				AND NOT COALESCE(g.verified_at IS NOT NULL AND g.login <> '' AND lower(g.host) = lower($4), false)`,
+			card.ProjectID, reqID, card.OwnerID, host)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id, label string
+			if err := rows.Scan(&id, &label); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+			out = append(out, label)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, err
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
 // CardSelfReview reports whether every requirement the card lists, in the
 // card's project, has Self review on (RFC-070). A card that lists none, or
 // lists a requirement that is missing, is not self-reviewed.
@@ -377,22 +416,29 @@ func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, projec
 	return url, nil
 }
 
-// requestReviewers asks GitHub for the card's reviewers. A failure is an
-// event, never a status change.
+// requestReviewers asks GitHub for the card's reviewers with a verified login
+// and records the others as waiting. A failure is an event, never a status
+// change.
 func requestReviewers(ctx context.Context, db *sql.DB, gh ghcli.Runner, acct company.Account, project tenancy.Project, card board.Card, token, prURL string, secrets []string) error {
 	logins, err := CardReviewers(ctx, db, card, acct.Host, acct.BotLogin)
 	if err != nil {
 		return err
 	}
-	if len(logins) == 0 {
+	waiting, err := CardWaitingReviewers(ctx, db, card, acct.Host)
+	if err != nil {
+		return err
+	}
+	if len(logins) == 0 && len(waiting) == 0 {
 		return nil
 	}
-	payload := map[string]any{"reviewers": logins, "ok": true}
+	payload := map[string]any{"reviewers": logins, "waiting": waiting, "ok": true}
 	match := pullURL.FindStringSubmatch(prURL)
-	if match == nil {
+	switch {
+	case len(logins) == 0:
+	case match == nil:
 		payload["ok"] = false
 		payload["message"] = "pull request url has no number"
-	} else {
+	default:
 		args := []string{"-X", "POST", "repos/" + acct.Org + "/" + project.Repo + "/pulls/" + match[1] + "/requested_reviewers"}
 		for _, login := range logins {
 			args = append(args, "-f", "reviewers[]="+login)

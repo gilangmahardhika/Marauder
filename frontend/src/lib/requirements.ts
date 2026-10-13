@@ -59,7 +59,7 @@ export function reviewerChoices(
     out.push({
       value: reviewer.id,
       label: displayName(reviewer),
-      detail: [reviewer.githubLogin, reviewer.email].filter(Boolean).join(' · ')
+      detail: [reviewer.githubLogin || 'No verified GitHub login', reviewer.email].filter(Boolean).join(' · ')
     });
   }
   return out;

@@ -88,8 +88,9 @@ func SetAIReviewMode(ctx context.Context, db *sql.DB, projectID, id, mode string
 }
 
 // SetReviewers replaces the reviewers of one requirement on projectID. Each
-// reviewer must be an enabled member of the project's tribe with a verified
-// GitHub login, and not the row's creator, who owns the pull request.
+// reviewer must be an enabled member of the project's tribe, and not the
+// row's creator, who owns the pull request. A reviewer needs no verified
+// GitHub login until GitHub is asked for the review (RFC-103).
 func SetReviewers(ctx context.Context, db *sql.DB, projectID, id, actorID, role string, userIDs []string) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -129,7 +130,6 @@ func SetReviewers(ctx context.Context, db *sql.DB, projectID, id, actorID, role 
 		err := tx.QueryRowContext(ctx, `
 			SELECT EXISTS (
 				SELECT 1 FROM users u
-				JOIN user_github g ON g.user_id = u.id AND g.verified_at IS NOT NULL AND g.login <> ''
 				JOIN tribe_members m ON m.user_id = u.id
 				JOIN projects p ON p.tribe_id = m.tribe_id AND p.id = $2
 				WHERE u.id = $1 AND u.disabled = false)`, userID, projectID).Scan(&ok)
@@ -137,7 +137,7 @@ func SetReviewers(ctx context.Context, db *sql.DB, projectID, id, actorID, role 
 			return err
 		}
 		if !ok {
-			return &Invalid{Fields: map[string]string{"userIds": "Each reviewer must be a member of this tribe with a verified GitHub login."}}
+			return &Invalid{Fields: map[string]string{"userIds": "Each reviewer must be a member of this tribe."}}
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -181,15 +181,16 @@ func Reviewers(ctx context.Context, db *sql.DB, projectID string) (map[string][]
 	return out, rows.Err()
 }
 
-// ReviewerOptions are the enabled members of the project's tribe with a
-// verified GitHub login.
+// ReviewerOptions are the enabled members of the project's tribe. A member
+// without a verified GitHub login has an empty GitHubLogin (RFC-103).
 func ReviewerOptions(ctx context.Context, db *sql.DB, projectID string) ([]Reviewer, error) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT u.id, u.name, u.email, g.login
+		SELECT u.id, u.name, u.email,
+			CASE WHEN g.verified_at IS NOT NULL THEN g.login ELSE '' END
 		FROM projects p
 		JOIN tribe_members m ON m.tribe_id = p.tribe_id
 		JOIN users u ON u.id = m.user_id AND u.disabled = false
-		JOIN user_github g ON g.user_id = u.id AND g.verified_at IS NOT NULL AND g.login <> ''
+		LEFT JOIN user_github g ON g.user_id = u.id
 		WHERE p.id = $1
 		ORDER BY u.email`, projectID)
 	if err != nil {

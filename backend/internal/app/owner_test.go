@@ -263,6 +263,14 @@ func TestRequestReviewers(t *testing.T) {
 			t.Fatalf("request names %s: %v", unwanted, request.Argv)
 		}
 	}
+	var asked string
+	if err := f.db.QueryRow(`
+		SELECT payload_json FROM events WHERE card_id = $1 AND kind = 'reviewers_requested'`, f.card.ID).Scan(&asked); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(asked, `"reviewers":["hopper"]`) || !strings.Contains(asked, `"waiting":["u@example.com"]`) {
+		t.Fatalf("payload = %s", asked)
+	}
 
 	failing := newPublishFixture(t)
 	bad := &recorder{fail: "requested_reviewers"}
@@ -279,6 +287,36 @@ func TestRequestReviewers(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(payload, `"ok":false`) || strings.Contains(payload, ownerToken) {
+		t.Fatalf("payload = %s", payload)
+	}
+}
+
+func TestRequestReviewersOnlyWaiting(t *testing.T) {
+	f := newPublishFixture(t)
+	if _, err := f.db.Exec(`
+		DELETE FROM requirement_reviewers
+		WHERE user_id IN (SELECT user_id FROM user_github WHERE verified_at IS NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	card, err := app.Publish(context.Background(), f.db, f.card.ID, f.input(rec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Status != "pr_open" {
+		t.Fatalf("status = %s", card.Status)
+	}
+	for _, call := range rec.all() {
+		if strings.Contains(strings.Join(call.Argv, " "), "requested_reviewers") {
+			t.Fatalf("reviewer request with no verified reviewer: %v", call.Argv)
+		}
+	}
+	var payload string
+	if err := f.db.QueryRow(`
+		SELECT payload_json FROM events WHERE card_id = $1 AND kind = 'reviewers_requested'`, card.ID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(payload, `"reviewers":[]`) || !strings.Contains(payload, `"waiting":["u@example.com"]`) || !strings.Contains(payload, `"ok":true`) {
 		t.Fatalf("payload = %s", payload)
 	}
 }

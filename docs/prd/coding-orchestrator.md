@@ -132,6 +132,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-087 | A tribe admin gives the implementer and refine read-only tools from the tribe's MCP servers |
 | REQ-088 | A tribe admin adds MCP servers from a catalog, including read-only Postgres and SQL Server connectors |
 | REQ-089 | A requirement names the MCP servers its cards may use |
+| REQ-090 | A requirement names reviewers before they verify GitHub |
 
 ## Requirements
 
@@ -865,12 +866,12 @@ A card's commits use the owner's verified GitHub login as the author and committ
 
 ### REQ-058 The requirement's creator picks pull request reviewers
 
-The member who brought a requirement in, or a Lead Developer member, names reviewers for it on the Intake page. Reviewers are tribe members with a verified GitHub login. When a card's pull request is open, the worker requests the union of its requirements' reviewers on GitHub, without the owner and the company bot. A failed request writes an event and does not change the card (RFC-054). The board and the card page show that union as the card's reviewers.
+The member who brought a requirement in, or a Lead Developer member, names reviewers for it on the Intake page. Reviewers are tribe members; one without a verified GitHub login is asked on GitHub after they verify (REQ-090). When a card's pull request is open, the worker requests the union of its requirements' reviewers on GitHub, without the owner and the company bot. A failed request writes an event and does not change the card (RFC-054). The board and the card page show that union as the card's reviewers.
 
 #### Acceptance
 
 - The creator can set reviewers on a parsed or a manual requirement. Another Developer member is rejected.
-- A reviewer who is not a tribe member with a verified login is rejected.
+- A reviewer who is not a tribe member is rejected (REQ-090).
 - The reviewer request on the pull request excludes the owner and the bot.
 - A failed reviewer request leaves the card status unchanged.
 - The card JSON lists the reviewers of its requirements, without the owner, and only from the card's project.
@@ -1234,6 +1235,17 @@ A member writing a requirement names the tribe's MCP servers it needs with `@slu
 - A mention that names no enabled server, or a requirement edited since acceptance, offers no MCP tools, and the trace says why.
 - A member sees only the tribe's slugs, whether each is enabled, and its tool count.
 - A mention in the pull request body does not notify anyone on GitHub.
+
+### REQ-090 Reviewers before GitHub verification
+
+The creator of a requirement, or a Lead Developer member, names any enabled member of the tribe as a reviewer, with or without a verified GitHub login. GitHub is asked for a reviewer's review once they have a verified login, and the trace lists the reviewers still waiting (RFC-103).
+
+#### Acceptance
+
+- The reviewer picker lists every enabled tribe member except the creator, and labels one without a verified login "No verified GitHub login".
+- Saving an unverified member as a reviewer succeeds. A non-member, a disabled user, or the creator is rejected.
+- The reviewer request on the pull request names only verified logins, and the `reviewers_requested` event lists the others as waiting.
+- A reviewer who verifies later is asked on the next push.
 
 ## Non-goals
 

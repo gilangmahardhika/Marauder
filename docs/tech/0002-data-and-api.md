@@ -388,7 +388,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `config_changed` | `section`, `fields` |
 | `requirement_refined` | `requirementId` (`new` on the new-requirement form), `field` (`statement` or `acceptance`, RFC-087), `modelId`, `inputTokens`, `outputTokens`, `cachedInputTokens`. No requirement or refined text. The row has the project and the actor, and no card (RFC-086) |
 | `assertion_failed` | `name`, `detail` |
-| `reviewers_requested` | `reviewers` (GitHub logins), `ok`, and `message` when `ok` is false (RFC-054) |
+| `reviewers_requested` | `reviewers` (GitHub logins), `waiting` (the name, else the email, of each named reviewer without a verified login, RFC-103), `ok`, and `message` when `ok` is false (RFC-054) |
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
@@ -1035,7 +1035,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 
 `POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
-`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070), and the same caller may change `aiReviewMode`, which is `continue` or `manual` (RFC-072). `reviewerOptions` are the members of the project's tribe with a verified GitHub login who are not disabled. The client leaves out the row's creator.
+`canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070), and the same caller may change `aiReviewMode`, which is `continue` or `manual` (RFC-072). `reviewerOptions` are the members of the project's tribe who are not disabled, with `githubLogin` empty for a member without a verified login (RFC-103). The client leaves out the row's creator.
 
 `mentions` are the row's stored `@slug` mentions (RFC-101). A mention is `@` at the start of the text or after whitespace or one of `( [ { " ' , ; :`, then `[a-z][a-z0-9]{1,15}`, then the end, whitespace, one of `) ] } " ' , ; : ! ?`, or a `.` not followed by a letter or digit. It is read from the markdown tree of the statement and each acceptance line, outside inline code, code blocks, links, autolinks, and raw HTML. A slug the tribe does not have is kept. `mcpServers` lists every server of the project's tribe, enabled or not, by slug, with `enabled` and the number of allowlisted tools, `[]` when there are none. It never carries a URL, image, argv, connection, or secret name, so any member may read it. The content hash of a requirement adds its mentions when there are any, so a row with no mention keeps its hash.
 
@@ -1045,7 +1045,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 { "userIds": ["user_0123456789ab"] }
 ```
 
-Allowed for the row's creator or a Lead Developer member. Anyone else is `403`, and a non-member is `404`. An unknown id is `404`. A user id that is not a tribe member with a verified login, or is the row's creator, is `422` on `userIds`. At most 15 reviewers.
+Allowed for the row's creator or a Lead Developer member. Anyone else is `403`, and a non-member is `404`. An unknown id is `404`. A user id that is not an enabled tribe member, or is the row's creator, is `422` on `userIds`. At most 15 reviewers.
 
 `PUT /api/projects/{projectId}/requirements/{id}/self-review` turns Self review on or off for one requirement, parsed or manual, and returns the intake shape (RFC-070).
 

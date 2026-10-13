@@ -1027,3 +1027,12 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] The Projects page lists only the active tribe's projects, for an admin too, and New project starts on the active tribe.
 - [x] Projects by tribe Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 67: Reviewers before GitHub verification
+
+- [x] `SetReviewers` accepts an enabled tribe member without a verified login, and `reviewerOptions` lists them.
+- [x] The reviewer request asks GitHub only for verified logins, and `reviewers_requested` lists the others as `waiting`.
+- [x] The picker labels an unverified member and explains when GitHub asks them; the trace shows who is waiting.
+- [x] `TestReviewersSetByCreator`, `TestReviewerOptionsUnverified`, `TestRequestReviewers`, `TestRequestReviewersOnlyWaiting`
+- [x] Reviewer picker, `ReviewersPanel`, and trace Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass

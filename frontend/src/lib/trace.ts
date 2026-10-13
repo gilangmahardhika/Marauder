@@ -336,10 +336,13 @@ export function describe(event: TraceEvent): Described {
     }
     case 'reviewers_requested': {
       const reviewers = Array.isArray(p.reviewers) ? p.reviewers.map(str) : [];
+      const waiting = Array.isArray(p.waiting) ? p.waiting.map(str) : [];
       const ok = p.ok !== false;
+      const asked = reviewers.map((login) => `@${login}`).join(', ');
+      const pending = waiting.length > 0 ? `waiting for GitHub: ${waiting.join(', ')}` : '';
       return {
-        label: 'Reviewers requested',
-        detail: ok ? reviewers.map((login) => `@${login}`).join(', ') : firstLine(str(p.message)),
+        label: reviewers.length === 0 && waiting.length > 0 ? 'Reviewers waiting' : 'Reviewers requested',
+        detail: ok ? [asked, pending].filter(Boolean).join('; ') : firstLine(str(p.message)),
         meta: '',
         tone: ok ? 'default' : 'amber',
         text: ok ? '' : str(p.message)

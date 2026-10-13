@@ -100,11 +100,12 @@
         id="requirement-reviewers"
         width="lg"
         options={choices}
-        placeholder={choices.length === 0 ? 'No verified tribe members yet' : 'Search by name, login, or email'}
+        placeholder={choices.length === 0 ? 'No other tribe members yet' : 'Search by name, login, or email'}
         max={15}
         error={fields.userIds}
         bind:values={reviewers}
       />
+      <p class="text-xs text-muted">Someone without a verified GitHub login is asked to review on GitHub after they verify.</p>
       {#if mayChooseSelfReview}
         <Checkbox
           id="requirement-self-review"

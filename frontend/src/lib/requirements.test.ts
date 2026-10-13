@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mentionAt, mentionChoices, mentionState, mentions } from './requirements';
+import { mentionAt, mentionChoices, mentionState, mentions, reviewerChoices } from './requirements';
 
 const servers = [
   { slug: 'tickets', enabled: true, toolCount: 2 },
@@ -51,5 +51,19 @@ describe('mentionChoices and mentionState', () => {
     expect(mentionState('tickets', servers)).toBe('known');
     expect(mentionState('docs', servers)).toBe('disabled');
     expect(mentionState('nothere', servers)).toBe('unknown');
+  });
+});
+
+describe('reviewerChoices', () => {
+  it('labels a member without a verified login and leaves out the creator', () => {
+    const options = [
+      { id: 'usr_1', name: 'Grace Hopper', email: 'grace@example.com', githubLogin: 'grace' },
+      { id: 'usr_2', name: 'Hendro', email: 'hendro@example.com', githubLogin: '' },
+      { id: 'usr_3', name: 'Ada', email: 'ada@example.com', githubLogin: 'ada' }
+    ];
+    expect(reviewerChoices(options, 'ada@example.com')).toEqual([
+      { value: 'usr_1', label: 'Grace Hopper', detail: 'grace · grace@example.com' },
+      { value: 'usr_2', label: 'Hendro', detail: 'No verified GitHub login · hendro@example.com' }
+    ]);
   });
 });

@@ -99,14 +99,16 @@ func TestReviewersSetByCreator(t *testing.T) {
 
 	ada := loginToken(t, srv, "ada@example.com", "password-long-1")
 	for name, ids := range map[string][]string{
-		"creator":    {creator.ID},
-		"unverified": {plain.ID},
-		"outsider":   {outsider.ID},
-		"unknown":    {"usr_missing"},
+		"creator":  {creator.ID},
+		"outsider": {outsider.ID},
+		"unknown":  {"usr_missing"},
 	} {
 		if rec := putJSON(t, srv, path, ada, map[string]any{"userIds": ids}); rec.Code != 422 {
 			t.Fatalf("%s = %d %s", name, rec.Code, rec.Body.String())
 		}
+	}
+	if rec := putJSON(t, srv, path, ada, map[string]any{"userIds": []string{plain.ID}}); rec.Code != 200 {
+		t.Fatalf("unverified member = %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := putJSON(t, srv, path, ada, map[string]any{"userIds": []string{grace.ID, grace.ID}}); rec.Code != 200 {
 		t.Fatalf("creator = %d %s", rec.Code, rec.Body.String())
@@ -133,6 +135,53 @@ func TestReviewersSetByCreator(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("reviewers = %d after the lead cleared them", n)
+	}
+}
+
+func TestReviewerOptionsUnverified(t *testing.T) {
+	srv := accountServer(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	creator := seedUser(t, srv, "ada@example.com", "password-long-1", "developer", false)
+	plain := seedUser(t, srv, "plain@example.com", "password-long-2", "developer", false)
+	gone := seedUser(t, srv, "gone@example.com", "password-long-3", "developer", false)
+	outsider := seedUser(t, srv, "out@example.com", "password-long-4", "developer", false)
+	grace := verifiedMember(t, srv, admin, "grace@example.com", "grace", 21)
+	for _, user := range []app.User{creator, plain, gone} {
+		if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", user.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := srv.DB.Exec(`UPDATE users SET disabled = true WHERE id = $1`, gone.ID); err != nil {
+		t.Fatal(err)
+	}
+	rec := getAuth(t, srv, "/api/projects/proj_default/intake", loginToken(t, srv, "ada@example.com", "password-long-1"))
+	if rec.Code != 200 {
+		t.Fatalf("intake = %d %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		ReviewerOptions []struct {
+			ID          string `json:"id"`
+			GitHubLogin string `json:"githubLogin"`
+		} `json:"reviewerOptions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	logins := map[string]string{}
+	for _, option := range body.ReviewerOptions {
+		logins[option.ID] = option.GitHubLogin
+	}
+	if login, ok := logins[plain.ID]; !ok || login != "" {
+		t.Fatalf("unverified member option = %q %v in %s", login, ok, rec.Body.String())
+	}
+	if logins[grace.ID] != "grace" {
+		t.Fatalf("verified member option = %q", logins[grace.ID])
+	}
+	for name, id := range map[string]string{"disabled": gone.ID, "outsider": outsider.ID} {
+		if _, ok := logins[id]; ok {
+			t.Fatalf("reviewerOptions lists the %s user: %s", name, rec.Body.String())
+		}
 	}
 }
 

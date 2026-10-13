@@ -930,3 +930,15 @@ Packages: frontend `session.ts`, `+layout.ts`, `+layout.svelte`, `/login`, the n
 - The Projects page lists only the active tribe's projects, for a company admin too, without a tribe filter; New project starts on the active tribe.
 
 Done when: the tribe selector, layout tribe scope, layout load, and projects by tribe Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 67: Reviewers before GitHub verification
+
+Goal: A requirement names any tribe member as a reviewer, and GitHub is asked once they verify (RFC-103, REQ-090).
+
+Packages: `internal/intake`, `internal/app`, frontend `requirements.ts`, `ReviewersPanel`, `/intake/new`, and `trace.ts`.
+
+- `SetReviewers` accepts any enabled tribe member except the creator, and `reviewerOptions` lists them with an empty `githubLogin` when unverified.
+- The reviewer request asks GitHub only for verified logins, and `reviewers_requested` lists the others as `waiting`.
+- The picker labels an unverified member "No verified GitHub login" and says they are asked after they verify; the trace shows who is waiting.
+
+Done when: `TestReviewersSetByCreator`, `TestReviewerOptionsUnverified`, `TestRequestReviewers`, `TestRequestReviewersOnlyWaiting`, the reviewer picker, `ReviewersPanel`, and trace Vitest cases, `npm run check`, the fixture, and the rest of the suite.

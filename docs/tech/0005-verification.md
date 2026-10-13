@@ -303,7 +303,8 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardDetail` | The single card returns `requirements` from its own project only, `rules` labelled `global` and by stack, and `skills[].useWhen`. The board list has no `requirements` or `rules`. Unblock returns the same detail fields |
 | `TestCardDetailNotes` | The single card returns `notes` newest first with source, text, and `attemptN`, `0` for an approver note. A note stored under another project is left out. The board list has no `notes` |
 | `TestCardPeopleNames` | The card route returns `owner.name` and `reviewers[].name`. A reviewer without a name has `"name": ""` (RFC-058) |
-| `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer, an unverified reviewer, or the creator is `422` |
+| `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer or the creator is `422`, and an unverified tribe member is accepted (RFC-103) |
+| `TestReviewerOptionsUnverified` | The intake's `reviewerOptions` lists an enabled member without a verified login with an empty `githubLogin`, and leaves out a disabled member and a non-member (RFC-103) |
 | `TestConventionCatalogAdminOnly` | Every signed-in user reads `/api/conventions`. A Lead Developer who is not an admin gets `403` on create, update, and delete. An admin save appends `config_changed` with section `conventions` (RFC-055) |
 | `TestConventionRevisions` | Editing a rule increments its version, changes its hash, and keeps the old text in `convention_revisions`. A save with the same text keeps the version |
 | `TestDetectStacks` | A repo with `go.mod`, and a `web/package.json` that depends on `@sveltejs/kit` and `typescript`, is detected as Go, TypeScript, and SvelteKit. `node_modules` and a symlinked directory are not walked |
@@ -346,7 +347,8 @@ These use `testdata/fixture-repo`, a git repository with one file and a check sc
 | `TestCap` | The third counted attempt failing on a card with `max_attempts` 3 ends `blocked` and opens no other attempt |
 | `TestCommitIdentity` | Commits use the `runtime.Git.Author` they are given and carry the three trailers |
 | `TestCommitIdentityOwner` | A commit on an owned card has the owner's verified login and `<id>+<login>@users.noreply.github.com` as author and committer (RFC-054) |
-| `TestRequestReviewers` | The reviewer request names the union of the card's requirement reviewers without the owner, the bot, or an unverified user. A failed request writes `reviewers_requested` with `ok: false` and the card status is unchanged |
+| `TestRequestReviewers` | The reviewer request names the union of the card's requirement reviewers without the owner, the bot, or an unverified user. An unverified reviewer is listed in `waiting`. A failed request writes `reviewers_requested` with `ok: false` and the card status is unchanged |
+| `TestRequestReviewersOnlyWaiting` | A card whose only reviewer has no verified login makes no GitHub call and writes `reviewers_requested` with empty `reviewers` and that reviewer in `waiting` (RFC-103) |
 | `TestReconcileDeploy` | Kill after the `deploy` event and before `health`. Restart probes or rolls back and does not exec deploy again first |
 | `TestReconcileCommit` | Kill after a commit and before the gating check. Restart runs the check without a model call and makes no second commit |
 

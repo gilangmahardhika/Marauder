@@ -75,6 +75,15 @@ group('describe', () => {
     });
     expect(words('job_error', { message: 'git exit 125: pax\u0000\u0000header\nmore' })).toMatchObject({ label: 'Error', detail: 'git exit 125: paxheader', tone: 'red' });
     expect(words('reviewers_requested', { reviewers: ['a', 'b'], ok: true }).detail).toBe('@a, @b');
+    expect(words('reviewers_requested', { reviewers: ['a'], waiting: ['Hendro'], ok: true })).toMatchObject({
+      label: 'Reviewers requested',
+      detail: '@a; waiting for GitHub: Hendro'
+    });
+    expect(words('reviewers_requested', { reviewers: [], waiting: ['Hendro', 'x@example.com'], ok: true })).toMatchObject({
+      label: 'Reviewers waiting',
+      detail: 'waiting for GitHub: Hendro, x@example.com',
+      tone: 'default'
+    });
     expect(words('health', { passed: false, rollbackExit: 0 }).tone).toBe('red');
     expect(words('verify', { exitCode: 0 }).detail).toBe('exit 0');
     expect(words('budget_stop', {}).tone).toBe('red');
