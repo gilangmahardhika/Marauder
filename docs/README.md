@@ -58,6 +58,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [tech/0006-security-and-harness.md](tech/0006-security-and-harness.md) | Security controls and harness assertions |
 | [plan/sprints.md](plan/sprints.md) | Sprints, each with a goal, tasks, and the tests that close it |
 | [plan/checklist.md](plan/checklist.md) | Status of each sprint task and named test |
+| [plan/deployment-multi-agent-podman.md](plan/deployment-multi-agent-podman.md) | Fleet topology and capacity for 20–50 parallel agents with Podman isolation |
 | [ai-coding-orchestrator.md](ai-coding-orchestrator.md) | One-page overview and the original brief |
 
 ## When two documents disagree
