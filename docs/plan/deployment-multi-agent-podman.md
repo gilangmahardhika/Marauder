@@ -347,6 +347,8 @@ Until Phase B lands, treat “agents in Podman” in runbooks as **Phase A**: ev
 
 If operators should **register machines** the way self-hosted GitHub Actions runners do (install agent → heartbeat → claim jobs → capacity labels), that is a control-plane change, not only infra. v1 explicitly has no remote job broker (0001: no Temporal/Redis/NATS/Kafka) and pins work with a per-project `worker.lock` (RFC-048). A runner pool needs a superseding RFC before code moves.
 
+**Implementation plan (no code):** [implementation-gha-style-runners.md](implementation-gha-style-runners.md) — install script (not runner-as-container), Idle/Busy/Offline status, queue→idle claim, phased delivery.
+
 #### Do not create a second product repo
 
 | Repo | Keep? | Why |
