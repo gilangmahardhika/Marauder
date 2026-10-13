@@ -133,6 +133,9 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-088 | A tribe admin adds MCP servers from a catalog, including read-only Postgres and SQL Server connectors |
 | REQ-089 | A requirement names the MCP servers its cards may use |
 | REQ-090 | A requirement names reviewers before they verify GitHub |
+| REQ-091 | The sidebar groups the active tribe's pages and the active project's pages |
+| REQ-092 | A tribe sets the conventions of its projects, and a project switches each on or off |
+| REQ-093 | A person changes the skills, rules, and MCP servers of one card |
 
 ## Requirements
 
@@ -693,7 +696,8 @@ A Lead Developer member, a tribe admin of the project's tribe, or a company admi
 | Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
 | Project repository | Repo in the company organization, base branch | Lead Developer member, tribe admin, or admin |
 | Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member, tribe admin, or admin |
-| Project conventions | Stacks added by hand, enabled skills | Lead Developer member, tribe admin, or admin |
+| Tribe conventions | Stacks and skills for every project of the tribe, company rules switched off (REQ-092) | Tribe admin or admin |
+| Project conventions | Each stack, skill, and rule switched on or off over the tribe (REQ-092) | Lead Developer member, tribe admin, or admin |
 | LLM | Families, each with protocol, base URL, model ids, and an API key. One list for the company | Admin |
 | Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
 | Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member, tribe admin, or admin |
@@ -889,7 +893,7 @@ The company has one catalog of coding rules. A rule is global (naming, database 
 
 ### REQ-060 A project's stacks are detected, and a Lead Developer may add more
 
-Each Sync detects the project's stacks from the clone's marker files and dependencies, two directory levels deep, without following links. A Lead Developer member, a tribe admin, or an admin may add stacks by hand (REQ-065). A Sync replaces the detected stacks and keeps the added ones. The rules for a card are the global rules plus the rules of the project's stacks (RFC-055).
+Each Sync detects the project's stacks from the clone's marker files and dependencies, two directory levels deep, without following links. A Lead Developer member, a tribe admin, or an admin may add stacks by hand (REQ-065). A Sync replaces the detected stacks and keeps the added ones. The rules for a card are the global rules plus the rules of the project's stacks (RFC-055), with the tribe, project, and card choices of REQ-092 and REQ-093 applied.
 
 #### Acceptance
 
@@ -899,7 +903,7 @@ Each Sync detects the project's stacks from the clone's marker files and depende
 
 ### REQ-061 A project enables integration skills, and the planner attaches them to cards
 
-An admin writes a skill: a slug, when to use it, and a body with steps, configuration, security rules, and a test checklist. A Lead Developer member, a tribe admin, or an admin enables skills for a project (REQ-065). The planner sees the enabled skills and may attach them to a card with `skillIds`. A skill that is not enabled for the project fails the tool call (RFC-056).
+An admin writes a skill: a slug, when to use it, and a body with steps, configuration, security rules, and a test checklist. A Lead Developer member, a tribe admin, or an admin enables skills for a project (REQ-065). The planner sees the enabled skills and may attach them to a card with `skillIds`. A skill that is not enabled for the project fails the tool call (RFC-056). A tribe may enable skills for all its projects, and a person may change one card's skills (REQ-092, REQ-093).
 
 #### Acceptance
 
@@ -1246,6 +1250,39 @@ The creator of a requirement, or a Lead Developer member, names any enabled memb
 - Saving an unverified member as a reviewer succeeds. A non-member, a disabled user, or the creator is rejected.
 - The reviewer request on the pull request names only verified logins, and the `reviewers_requested` event lists the others as waiting.
 - A reviewer who verifies later is asked on the next push.
+
+### REQ-091 Tribe and Project sections in the sidebar
+
+The sidebar names the active tribe and the active project. The Tribe section lists Projects and Conventions for every member, and MCP servers and Members for a tribe admin or an admin. The Project section lists Repository, Linked projects, Deploy, and Conventions of the selected project, and hides when no project is selected.
+
+#### Acceptance
+
+- The section headings show the tribe name and the project name.
+- A member who cannot manage the tribe sees no MCP servers or Members link.
+- On an MCP server page, MCP servers is the current link, not Members.
+
+### REQ-092 Layered conventions
+
+A tribe admin or an admin picks stacks and skills for every project of the tribe and switches company rules off for the tribe. A Lead Developer member, a tribe admin, or an admin switches each stack, skill, and rule on or off for one project, over the tribe. Every item shows where it comes from (RFC-104).
+
+#### Acceptance
+
+- A skill the tribe enables reaches every project of the tribe, and a project can switch it off.
+- A rule the tribe switches off leaves its projects' packs, and a project can switch it back on.
+- A disabled catalog item never applies.
+- A member reads the tribe's conventions and cannot save them.
+- Skills enabled and stacks added by hand before this change stay in place.
+
+### REQ-093 Card context
+
+A person who may run a card attaches or detaches its skills and rules, and detaches its MCP servers. A Lead Developer member, a tribe admin, or an admin also attaches an enabled server of the tribe. The next attempt reads the change, and the trace records it (RFC-105).
+
+#### Acceptance
+
+- A Developer attaches a skill and detaches an MCP server; attaching a server as a Developer is rejected.
+- The next attempt's pack carries an attached skill and leaves out a detached rule.
+- An attached server is offered with its allowlisted tools, a detached one is not, and a requirement edited since acceptance still offers none.
+- A `done` card's context does not change, and the card status never changes.
 
 ## Non-goals
 

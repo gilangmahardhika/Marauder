@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/conventions"
 )
@@ -35,8 +36,8 @@ type cardNote struct {
 const cardNoteLimit = 10
 
 // cardDetail is the single-card body: the board fields plus the card's
-// requirements, the rules its packs carry, and its newest failure notes. The
-// board list leaves these out.
+// requirements, the rules its packs carry, its newest failure notes, and its
+// context (RFC-105). The board list leaves these out.
 func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 	body := s.cardBody(r, card)
 	reqs, err := cardRequirements(r.Context(), s.DB, card.ProjectID, card.RequirementIDs)
@@ -65,6 +66,9 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 		instructions = text
 	}
 	body["instructions"] = instructions
+	if view, err := app.CardContextFor(r.Context(), s.DB, card); err == nil {
+		body["context"] = view
+	}
 	return body
 }
 

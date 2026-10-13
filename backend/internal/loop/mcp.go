@@ -165,7 +165,7 @@ func (s *session) callMCP(ctx context.Context, call providers.ToolCall) (string,
 }
 
 func mentionedServers(scope *MCPContext) []string {
-	if scope == nil || scope.Scope != "mentioned" {
+	if scope == nil || (scope.Scope != "mentioned" && scope.Scope != "card") {
 		return nil
 	}
 	return scope.Offered
@@ -191,12 +191,23 @@ func mcpContextEvent(extra ExtraTools, scope *MCPContext, tools int) map[string]
 	}
 	payload["scope"] = scope.Scope
 	payload["missing"] = missing
+	if len(scope.Attached) > 0 || len(scope.Detached) > 0 {
+		payload["attached"] = nonNilSlugs(scope.Attached)
+		payload["detached"] = nonNilSlugs(scope.Detached)
+	}
 	switch scope.Scope {
-	case "mentioned":
+	case "mentioned", "card":
 		payload["summary"] = fmt.Sprintf("%d of %d MCP servers, %d tools", len(servers), scope.Total, tools)
 	case "none":
 		payload["summary"] = "No MCP servers: " + scope.Reason
 		payload["reason"] = scope.Reason
 	}
 	return payload
+}
+
+func nonNilSlugs(slugs []string) []string {
+	if slugs == nil {
+		return []string{}
+	}
+	return slugs
 }

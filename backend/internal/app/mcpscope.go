@@ -5,15 +5,19 @@ import (
 	"database/sql"
 	"encoding/json"
 	"slices"
+	"strings"
 
+	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/loop"
 )
 
 // MCPScopeFor keeps the enabled servers a card's requirements allow
 // (RFC-102): every server when none mentions one, the mentioned servers
 // otherwise, and none when no mention names an enabled server or a
-// requirement is not accepted. conns are the tribe's enabled servers.
-func MCPScopeFor(ctx context.Context, db *sql.DB, projectID string, requirementIDs []string, conns []MCPConn) ([]MCPConn, loop.MCPContext, error) {
+// requirement is not accepted. Then the card's context adds the servers it
+// attached and drops the ones it detached (RFC-105). conns are the tribe's
+// enabled servers.
+func MCPScopeFor(ctx context.Context, db *sql.DB, projectID, cardID string, requirementIDs []string, conns []MCPConn) ([]MCPConn, loop.MCPContext, error) {
 	var mentions []string
 	unaccepted := ""
 	if len(requirementIDs) > 0 {
@@ -61,7 +65,53 @@ func MCPScopeFor(ctx context.Context, db *sql.DB, projectID string, requirementI
 			Reason: unaccepted + " changed since it was accepted",
 		}, nil
 	}
-	return ScopeMentions(conns, mentions)
+	kept, scope, err := ScopeMentions(conns, mentions)
+	if err != nil || cardID == "" {
+		return kept, scope, err
+	}
+	set, err := conventions.CardContext(ctx, db, projectID, cardID)
+	if err != nil {
+		return nil, loop.MCPContext{}, err
+	}
+	kept, scope = applyCardMCP(conns, kept, scope, set.MCPAttach, set.MCPDetach)
+	return kept, scope, nil
+}
+
+// applyCardMCP adds the attached servers that are among conns and drops the
+// detached ones. The scope becomes card when that changed the set.
+func applyCardMCP(conns, kept []MCPConn, scope loop.MCPContext, attach, detach []string) ([]MCPConn, loop.MCPContext) {
+	in := func(list []MCPConn, id string) bool {
+		return slices.ContainsFunc(list, func(c MCPConn) bool { return c.ID == id })
+	}
+	var next []MCPConn
+	for _, conn := range kept {
+		if slices.Contains(detach, conn.ID) {
+			scope.Detached = append(scope.Detached, conn.Slug)
+			continue
+		}
+		next = append(next, conn)
+	}
+	for _, conn := range conns {
+		if slices.Contains(attach, conn.ID) && !in(kept, conn.ID) {
+			scope.Attached = append(scope.Attached, conn.Slug)
+			next = append(next, conn)
+		}
+	}
+	if len(scope.Attached) == 0 && len(scope.Detached) == 0 {
+		return kept, scope
+	}
+	slices.SortFunc(next, func(a, b MCPConn) int { return strings.Compare(a.Slug, b.Slug) })
+	scope.Offered = nil
+	for _, conn := range next {
+		scope.Offered = append(scope.Offered, conn.Slug)
+	}
+	if len(next) == 0 {
+		scope.Scope = "none"
+		scope.Reason = "the card detached every server"
+		return nil, scope
+	}
+	scope.Scope, scope.Reason = "card", ""
+	return next, scope
 }
 
 // ScopeMentions keeps the conns that mentions name, or every conn when

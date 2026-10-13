@@ -48,3 +48,5 @@ Consequences: `skills`, `project_skills`, and `card_skills` are new tables. The 
 Requirements: REQ-016, REQ-017, REQ-061, REQ-062.
 
 Superseded in part by RFC-059 in [0013-project-settings-admins.md](0013-project-settings-admins.md). A company admin, a tribe admin of the project's tribe, or a Lead Developer member may add stacks by hand and enable skills for a project.
+
+Superseded in part by RFC-104 and RFC-105 in [0045-layered-conventions-and-card-context.md](0045-layered-conventions-and-card-context.md). A tribe sets stacks, skills, and rules switched off for its projects, a project switches each on or off over its tribe, and a person changes one card's skills and rules.

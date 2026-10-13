@@ -29,7 +29,8 @@ const kinds: Record<string, string> = {
   config_changed: 'Settings changed',
   assertion_failed: 'Harness assertion',
   stacks_detected: 'Stacks detected',
-  instructions_saved: 'Instructions saved'
+  instructions_saved: 'Instructions saved',
+  context_changed: 'Context changed'
 };
 
 const tools: Record<string, string> = {
@@ -228,14 +229,25 @@ function describeTool(p: Record<string, unknown>): Described {
         .join('\n');
       const failed = servers.some((server) => str(server.error) !== '');
       const missing = Array.isArray(p.missing) ? p.missing.map(str).filter(Boolean) : [];
-      const lines = [text, ...missing.map((slug) => `not a server: ${slug}`)].filter(Boolean).join('\n');
+      const attached = Array.isArray(p.attached) ? p.attached.map(str).filter(Boolean) : [];
+      const detached = Array.isArray(p.detached) ? p.detached.map(str).filter(Boolean) : [];
+      const lines = [
+        text,
+        ...missing.map((slug) => `not a server: ${slug}`),
+        attached.length > 0 ? `attached on the card: ${attached.join(', ')}` : '',
+        detached.length > 0 ? `detached on the card: ${detached.join(', ')}` : ''
+      ]
+        .filter(Boolean)
+        .join('\n');
       const scope = str(p.scope);
       const detail =
         scope === 'none'
           ? `No MCP servers${str(p.reason) ? `: ${str(p.reason)}` : ''}`
           : scope === 'mentioned'
             ? `${summary}, from the requirements' mentions`
-            : summary;
+            : scope === 'card'
+              ? `${summary}, changed on the card`
+              : summary;
       const warn = failed || scope === 'none' || missing.length > 0;
       return { label, detail, meta: '', tone: warn ? 'amber' : 'default', text: lines };
     }
@@ -373,6 +385,11 @@ export function describe(event: TraceEvent): Described {
       return { label: 'Harness assertion failed', detail: [str(p.name), str(p.detail)].filter(Boolean).join(': '), meta: '', tone: 'red', text: '' };
     case 'budget_stop':
       return { label: 'Budget stop', detail: '', meta: '', tone: 'red', text: '' };
+    case 'context_changed': {
+      const what = ({ skill: 'skill', rule: 'rule', mcp: 'MCP server' } as Record<string, string>)[str(p.kind)] ?? str(p.kind);
+      const verb = ({ attach: 'Attached', detach: 'Detached', inherit: 'Restored' } as Record<string, string>)[str(p.mode)] ?? str(p.mode);
+      return { label: 'Context changed', detail: `${verb} ${what} ${str(p.itemId)}`.trim(), meta: '', tone: 'default', text: '' };
+    }
     case 'instructions_saved': {
       const length = num(p.length);
       return {

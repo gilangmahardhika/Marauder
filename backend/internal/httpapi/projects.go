@@ -207,6 +207,10 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user, _ := app.CurrentUser(r.Context())
+	if action == "context" {
+		s.cardContext(w, r, user, projectID, id)
+		return
+	}
 	if !actionAllowed(user.Role, action) {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
@@ -274,6 +278,30 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.cardRoute(w, r, id, action)
+}
+
+// cardContext handles PUT .../cards/{id}/context (RFC-105). SetCardContext
+// checks the roles, since a tribe admin may change it whatever their role.
+func (s *Server) cardContext(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	if r.Method != http.MethodPut {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	var body struct {
+		Kind   string `json:"kind"`
+		ItemID string `json:"itemId"`
+		Mode   string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	next, err := app.SetCardContext(r.Context(), s.DB, user, projectID, id, body.Kind, body.ItemID, body.Mode)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
 }
 
 func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {

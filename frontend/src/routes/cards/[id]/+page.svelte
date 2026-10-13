@@ -3,15 +3,15 @@
   import { ApiError, getCard, getCardDiff, unreachable } from '$lib/api';
   import CardActions from '$lib/components/CardActions.svelte';
   import CardChanges from '$lib/components/CardChanges.svelte';
+  import CardContext from '$lib/components/CardContext.svelte';
   import CardInstructions from '$lib/components/CardInstructions.svelte';
   import CardNotes from '$lib/components/CardNotes.svelte';
-  import { categoryLabel } from '$lib/conventions';
   import { plainText } from '$lib/markdown';
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
   import { cardTone, reasonLabel, statusLabel } from '$lib/status';
   import { verdictLabel } from '$lib/trace';
-  import type { Card, CardDiff, CardOwner, CardRequirement, CardRule } from '$lib/types';
+  import type { Card, CardDiff, CardOwner, CardRequirement } from '$lib/types';
   import Avatar from '$lib/ui/Avatar.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -75,19 +75,6 @@
   function linkable(url: string) {
     return url.startsWith('https://github.com/') || url.startsWith('http://127.0.0.1');
   }
-
-  /** Rules in API order, grouped by label: global first, then each stack. */
-  function groupRules(rules: CardRule[]) {
-    const groups: { label: string; rules: CardRule[] }[] = [];
-    for (const rule of rules) {
-      const last = groups[groups.length - 1];
-      if (last && last.label === rule.label) last.rules.push(rule);
-      else groups.push({ label: rule.label, rules: [rule] });
-    }
-    return groups;
-  }
-
-  const ruleGroups = $derived(groupRules(card?.rules ?? []));
 
   /** The heading without the requirement id it often starts with. */
   function headingText(requirement: CardRequirement) {
@@ -186,44 +173,9 @@
           </ul>
         {/if}
       </Panel>
-      <Panel title="Rules" hint="Coding rules the implementer and reviewer follow for this project.">
-        {#if ruleGroups.length === 0}
-          <p class="text-sm text-muted">No rules apply to this project yet.</p>
-        {:else}
-          {#each ruleGroups as group (group.label)}
-            <div>
-              <h3 class="text-xs font-semibold uppercase tracking-wider text-muted">
-                {group.label === 'global' ? 'Global' : group.label}
-              </h3>
-              <ul class="mt-2 flex flex-col gap-2">
-                {#each group.rules as rule (rule.id)}
-                  <li class="flex items-center justify-between gap-3 text-sm text-ink">
-                    <span class="min-w-0">{rule.title}</span>
-                    <Badge>{categoryLabel(rule.category)}</Badge>
-                  </li>
-                {/each}
-              </ul>
-            </div>
-          {/each}
-        {/if}
-        {#snippet footer()}
-          <Button href="/settings/conventions">Project conventions</Button>
-        {/snippet}
-      </Panel>
-      <Panel title="Skills" hint="Integration procedures attached to this card.">
-        {#if card.skills.length === 0}
-          <p class="text-sm text-muted">No skills attached.</p>
-        {:else}
-          <ul class="flex flex-col gap-3">
-            {#each card.skills as skill (skill.id)}
-              <li>
-                <span class="block text-sm font-medium text-ink">{skill.title}</span>
-                {#if skill.useWhen}<span class="mt-0.5 line-clamp-2 text-sm text-muted">{skill.useWhen}</span>{/if}
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </Panel>
+      {#if card.context}
+        <CardContext bind:card />
+      {/if}
       <Panel title="Details">
         <dl class="grid gap-x-10 gap-y-5 sm:grid-cols-2">
           {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}

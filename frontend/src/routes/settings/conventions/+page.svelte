@@ -1,27 +1,49 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getConventions, getProjectConventions, putProjectConventions, unreachable } from '$lib/api';
-  import { categories, categoryLabel, categoryOptions, filterRules } from '$lib/conventions';
-  import { pickParam } from '$lib/filter';
+  import {
+    categories,
+    categoryLabel,
+    categoryOptions,
+    copyChoices,
+    emptyChoices,
+    layerRows,
+    setLayerChoice,
+    type LayerChoice,
+    type LayerRow
+  } from '$lib/conventions';
+  import { matchText, pickParam } from '$lib/filter';
   import { setParams } from '$lib/params';
+  import { session } from '$lib/session';
   import { shell, showShell } from '$lib/shell.svelte';
-  import type { ConventionCatalog, ProjectConventions } from '$lib/types';
+  import type { ConventionCatalog, ConventionChoices, ProjectConventions } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import FilterSelect from '$lib/ui/FilterSelect.svelte';
-  import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
   import SearchBox from '$lib/ui/SearchBox.svelte';
+  import SearchSelect from '$lib/ui/SearchSelect.svelte';
+  import Segmented from '$lib/ui/Segmented.svelte';
   import Table from '$lib/ui/Table.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
-  let view = $state<ProjectConventions>({ stacks: [], skillIds: [], rules: [], canEdit: true });
+  type Kind = keyof ConventionChoices;
+
+  let view = $state<ProjectConventions>({
+    tribe: { stackIds: [], skillIds: [], rulesOff: [] },
+    choices: emptyChoices(),
+    detectedStackIds: [],
+    stacks: [],
+    skills: [],
+    rules: [],
+    canEdit: true
+  });
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
-  let manual = $state<string[]>([]);
-  let skillIds = $state<string[]>([]);
+  let draft = $state<ConventionChoices>(emptyChoices());
+  let adding = $state<Record<Kind, string>>({ stacks: '', skills: '', rules: '' });
   let loaded = $state(false);
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
@@ -30,30 +52,54 @@
   showShell(() => ({ title: 'Conventions', message }));
 
   const locked = $derived(!view.canEdit);
-  const detected = $derived(view.stacks.filter((stack) => stack.source === 'detected'));
-  const stackOptions = $derived(
-    catalog.stacks
-      .filter((stack) => !stack.disabled && !detected.some((item) => item.id === stack.id))
-      .map((stack) => ({ value: stack.id, label: stack.name }))
-  );
-  const skillOptions = $derived(
-    catalog.skills
-      .filter((skill) => !skill.disabled)
-      .map((skill) => ({ value: skill.id, label: skill.title, detail: skill.slug }))
-  );
+  const tribeId = $derived(shell.projectId ? session.tribe() : '');
+  const rows = $derived(layerRows(catalog, view, draft));
 
   const params = $derived($page.url.searchParams);
-  const ruleFilter = $derived({
-    q: params.get('q') ?? '',
-    category: pickParam(params.get('category'), ['', ...categories.map((item) => item.value)], ''),
-    applies: ''
+  const ruleQuery = $derived(params.get('q') ?? '');
+  const ruleCategory = $derived(pickParam(params.get('category'), ['', ...categories.map((item) => item.value)], ''));
+  const shownRules = $derived(
+    rows.rules.filter(
+      (rule) => (ruleCategory === '' || rule.category === ruleCategory) && matchText([rule.label, rule.detail], ruleQuery)
+    )
+  );
+
+  const addOptions = $derived({
+    stacks: catalog.stacks
+      .filter((stack) => !stack.disabled && !rows.stacks.some((item) => item.id === stack.id))
+      .map((stack) => ({ value: stack.id, label: stack.name })),
+    skills: catalog.skills
+      .filter((skill) => !skill.disabled && !rows.skills.some((item) => item.id === skill.id))
+      .map((skill) => ({ value: skill.id, label: skill.title, detail: skill.slug })),
+    rules: catalog.rules
+      .filter((rule) => !rule.disabled && !rows.rules.some((item) => item.id === rule.id))
+      .map((rule) => ({ value: rule.id, label: rule.title, detail: categoryLabel(rule.category) }))
   });
-  const rules = $derived(filterRules(view.rules, ruleFilter));
 
   function apply(next: ProjectConventions) {
     view = next;
-    manual = next.stacks.filter((stack) => stack.source === 'manual').map((stack) => stack.id);
-    skillIds = [...next.skillIds];
+    draft = copyChoices(next.choices);
+  }
+
+  function choose(kind: Kind, id: string, choice: LayerChoice) {
+    draft = { ...draft, [kind]: setLayerChoice(draft[kind], id, choice) };
+  }
+
+  function add(kind: Kind, id: string) {
+    adding = { ...adding, [kind]: '' };
+    if (id) choose(kind, id, 'on');
+  }
+
+  function choiceOptions(item: LayerRow) {
+    return [
+      { value: 'inherit', label: item.inheritedOn ? 'Inherit (on)' : 'Inherit (off)' },
+      { value: 'on', label: 'On' },
+      { value: 'off', label: 'Off' }
+    ];
+  }
+
+  function fieldError(kind: Kind) {
+    return fields[`${kind}.on`] ?? fields[`${kind}.off`] ?? '';
   }
 
   $effect(() => {
@@ -76,7 +122,7 @@
     fields = {};
     message = 'Saving conventions';
     try {
-      apply(await putProjectConventions({ manualStackIds: manual, skillIds }));
+      apply(await putProjectConventions(draft));
       message = 'Conventions saved';
     } catch (error) {
       fields = error instanceof ApiError ? error.fields : {};
@@ -89,93 +135,43 @@
 
 <Page
   title="Conventions"
-  description="The company rules this project's cards follow, and the integration skills the planner may attach to them."
+  description="This project starts from its tribe's conventions. Switch a stack, skill, or rule on or off here, or inherit it from the tribe."
 >
+  {#snippet actions()}
+    {#if tribeId}
+      <Button href={`/tribes/${tribeId}/conventions`}>Tribe conventions</Button>
+    {/if}
+  {/snippet}
   <form onsubmit={save}>
     <div class="flex flex-col gap-6">
-      <Panel title="Stacks" hint="Sync detects stacks from the repository. Add a stack by hand when the repository has no files for it yet.">
-        <div class="flex flex-col gap-5">
-          <div class="flex flex-col gap-1.5">
-            <p class="text-[13px] font-medium text-ink">Detected on Sync</p>
-            {#if detected.length > 0}
-              <div class="flex flex-wrap gap-2">
-                {#each detected as stack (stack.id)}
-                  <Badge tone="sky">{stack.name}</Badge>
-                {/each}
-              </div>
-            {:else}
-              <p class="text-sm text-muted">{loaded ? 'None yet. Sync the repository to detect its stacks.' : ''}</p>
-            {/if}
-          </div>
-          <MultiSearchSelect
-            label="Added by hand"
-            id="manual-stacks"
-            width="lg"
-            max={30}
-            placeholder={stackOptions.length === 0 ? 'No other stacks in the catalog' : 'Search stacks'}
-            options={stackOptions}
-            bind:values={manual}
-            disabled={locked}
-            error={fields.manualStackIds ?? ''}
-          />
-        </div>
+      <Panel title="Stacks" hint="Sync detects stacks from the repository. The tribe adds stacks for all its projects. A stack's rules apply while it is on.">
+        {@render layer('stacks', 'Stacks', rows.stacks, 'No stacks yet. Sync the repository, or add one.')}
       </Panel>
-      <Panel title="Skills" hint="The planner may attach only these skills to this project's cards.">
-        <MultiSearchSelect
-          label="Enabled skills"
-          id="enabled-skills"
-          width="lg"
-          max={30}
-          placeholder={skillOptions.length === 0 ? 'No skills in the catalog' : 'Search skills'}
-          options={skillOptions}
-          bind:values={skillIds}
-          disabled={locked}
-          error={fields.skillIds ?? ''}
-        />
+      <Panel title="Skills" hint="The planner may attach only skills that are on to this project's cards.">
+        {@render layer('skills', 'Skills', rows.skills, 'No skills are on. The tribe has none, or add one.')}
       </Panel>
-      <Panel title="Rules that apply" hint="Global rules and the rules of this project's stacks, as saved. An admin edits them.">
-        {#if view.rules.length === 0}
-          <p class="text-sm text-muted">{loaded ? 'No rules apply yet.' : ''}</p>
-        {:else}
-          <div class="flex flex-col gap-4">
+      <Panel title="Rules" hint="Global rules and the rules of the stacks that are on apply unless the tribe or the project switches them off. An admin edits the text.">
+        <div class="flex flex-col gap-4">
+          {#if rows.rules.length > 0}
             <Toolbar>
-              <SearchBox label="Search rules" value={ruleFilter.q} placeholder="Search rules" />
+              <SearchBox label="Search rules" value={ruleQuery} placeholder="Search rules" />
               <FilterSelect
                 label="Category"
                 options={categoryOptions}
-                value={ruleFilter.category}
+                value={ruleCategory}
                 onchange={(category) => setParams({ category })}
               />
             </Toolbar>
-            {#if rules.length === 0}
-              <div class="flex flex-wrap items-center gap-3">
-                <p class="text-sm text-muted">No rules match.</p>
-                <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
-              </div>
-            {:else}
-              <Table label="Rules that apply">
-                <thead>
-                  <tr class="border-b border-line bg-ground/50">
-                    <th class={th} scope="col">Rule</th>
-                    <th class={th} scope="col">From</th>
-                    <th class={th} scope="col">Category</th>
-                    <th class={th} scope="col">Version</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each rules as rule (rule.id)}
-                    <tr class={tr}>
-                      <td class="{td} font-medium text-ink">{rule.title}</td>
-                      <td class="{td} text-sm text-muted">{rule.scope === 'global' ? 'Global' : rule.stackName}</td>
-                      <td class={td}><Badge>{categoryLabel(rule.category)}</Badge></td>
-                      <td class="{td} text-sm text-muted">v{rule.version}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </Table>
-            {/if}
-          </div>
-        {/if}
+          {/if}
+          {#if rows.rules.length > 0 && shownRules.length === 0}
+            <div class="flex flex-wrap items-center gap-3">
+              <p class="text-sm text-muted">No rules match.</p>
+              <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
+            </div>
+          {:else}
+            {@render layer('rules', 'Rules', shownRules, 'No rules apply yet.')}
+          {/if}
+        </div>
       </Panel>
     </div>
     <SaveBar
@@ -183,7 +179,68 @@
       disabled={locked}
       note={locked
         ? 'Only a Lead Developer, a tribe admin, or an admin can change these settings.'
-        : 'Saved rules apply from the next attempt.'}
+        : "Saved conventions apply from each card's next attempt."}
     />
   </form>
 </Page>
+
+{#snippet layer(kind: Kind, label: string, items: LayerRow[], empty: string)}
+  <div class="flex flex-col gap-4">
+    {#if items.length === 0}
+      <p class="text-sm text-muted">{loaded ? empty : ''}</p>
+    {:else}
+      <Table {label}>
+        <thead>
+          <tr class="border-b border-line bg-ground/50">
+            <th class={th} scope="col">{kind === 'rules' ? 'Rule' : kind === 'skills' ? 'Skill' : 'Stack'}</th>
+            <th class={th} scope="col">From</th>
+            <th class={th} scope="col">This project</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each items as item (item.id)}
+            <tr class={tr}>
+              <td class={td}>
+                <span class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium {item.applies ? 'text-ink' : 'text-muted line-through'}">{item.label}</span>
+                  {#if item.category}<Badge>{categoryLabel(item.category)}</Badge>{/if}
+                </span>
+                {#if item.detail}<span class="block text-xs text-muted">{item.detail}</span>{/if}
+              </td>
+              <td class={td}>
+                {#if item.choice !== 'inherit'}
+                  <Badge tone="sky">Project</Badge>
+                {:else if item.inherited === 'Off at tribe'}
+                  <Badge tone="amber">Off at tribe</Badge>
+                {:else if item.inherited}
+                  <Badge>{item.inherited}</Badge>
+                {/if}
+              </td>
+              <td class={td}>
+                <Segmented
+                  label={`${item.label} for this project`}
+                  options={choiceOptions(item)}
+                  value={item.choice}
+                  disabled={locked}
+                  onchange={(choice) => choose(kind, item.id, choice as LayerChoice)}
+                />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </Table>
+    {/if}
+    {#if fieldError(kind)}<p class="text-sm text-red-800">{fieldError(kind)}</p>{/if}
+    {#if !locked}
+      <SearchSelect
+        label={`Add ${kind === 'rules' ? 'rule' : kind === 'skills' ? 'skill' : 'stack'}`}
+        id={`add-${kind}`}
+        width="lg"
+        placeholder={addOptions[kind].length === 0 ? 'Nothing else in the catalog' : `Add ${kind === 'rules' ? 'a rule' : kind === 'skills' ? 'a skill' : 'a stack'}`}
+        options={addOptions[kind]}
+        bind:value={adding[kind]}
+        onchange={(id) => add(kind, id)}
+      />
+    {/if}
+  </div>
+{/snippet}

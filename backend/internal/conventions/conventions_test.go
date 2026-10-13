@@ -9,9 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/pressly/goose/v3"
+
+	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/board/boardtest"
 	"orchestrator/backend/internal/conventions"
 	"orchestrator/backend/internal/identity"
+	"orchestrator/backend/migrations"
 )
 
 func user(t *testing.T, db *sql.DB, email, role string, admin bool) identity.User {
@@ -208,5 +212,128 @@ func TestDetectStacks(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "stk_django,stk_python" {
 		t.Fatalf("python detected %v", got)
+	}
+}
+
+func effective(t *testing.T, db *sql.DB) (stacks, rules, skills []string) {
+	t.Helper()
+	r, err := conventions.Effective(context.Background(), db, "proj_default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range r.Stacks {
+		stacks = append(stacks, s.ID+":"+s.Origin)
+	}
+	for _, x := range r.Rules {
+		rules = append(rules, x.ID+":"+x.Origin)
+	}
+	for _, k := range r.Skills {
+		skills = append(skills, k.ID+":"+k.Origin)
+	}
+	return stacks, rules, skills
+}
+
+func TestEffectiveConventions(t *testing.T) {
+	db := boardtest.Open(t)
+	ctx := context.Background()
+	admin := user(t, db, "admin@example.com", "product_owner", true)
+	goRule, _, err := conventions.SaveRule(ctx, db, admin, "", conventions.RuleInput{
+		Scope: "stack", StackID: "stk_go", Category: "style", Title: "Go errors", Body: "Wrap errors.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := conventions.ReplaceDetected(ctx, db, "proj_default", []string{"stk_react"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conventions.SaveTribe(ctx, db, admin, "tribe_default", conventions.TribeLayer{
+		StackIDs: []string{"stk_go"}, SkillIDs: []string{"skl_oauth2"}, RulesOff: []string{"rule_naming"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stacks, rules, skills := effective(t, db)
+	if strings.Join(stacks, ",") != "stk_go:tribe,stk_react:detected" {
+		t.Fatalf("tribe stacks = %v", stacks)
+	}
+	if strings.Join(rules, ",") != "rule_database:catalog,"+goRule.ID+":catalog" {
+		t.Fatalf("tribe rules = %v", rules)
+	}
+	if strings.Join(skills, ",") != "skl_oauth2:tribe" {
+		t.Fatalf("tribe skills = %v", skills)
+	}
+
+	if _, err := conventions.SaveProject(ctx, db, admin, "proj_default", conventions.Choices{
+		Stacks: conventions.OnOff{On: []string{"stk_python"}, Off: []string{"stk_react"}},
+		Skills: conventions.OnOff{Off: []string{"skl_oauth2"}},
+		Rules:  conventions.OnOff{On: []string{"rule_naming"}, Off: []string{"rule_database"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	stacks, rules, skills = effective(t, db)
+	if strings.Join(stacks, ",") != "stk_go:tribe,stk_python:project" {
+		t.Fatalf("project stacks = %v", stacks)
+	}
+	if strings.Join(rules, ",") != "rule_naming:project,"+goRule.ID+":catalog" {
+		t.Fatalf("project rules = %v", rules)
+	}
+	if len(skills) != 0 {
+		t.Fatalf("project skills = %v", skills)
+	}
+
+	if _, err := conventions.SaveProject(ctx, db, admin, "proj_default", conventions.Choices{
+		Skills: conventions.OnOff{On: []string{"skl_oauth2"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE stacks SET disabled = true WHERE id = 'stk_go'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE skills SET disabled = true WHERE id = 'skl_oauth2'`); err != nil {
+		t.Fatal(err)
+	}
+	stacks, rules, skills = effective(t, db)
+	if strings.Join(stacks, ",") != "stk_react:detected" || strings.Join(rules, ",") != "rule_database:catalog" || len(skills) != 0 {
+		t.Fatalf("after disabling: stacks %v rules %v skills %v", stacks, rules, skills)
+	}
+}
+
+func TestProjectConventionsMigration(t *testing.T) {
+	url := boardtest.IsolatedURL(t)
+	db, err := board.Open(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx := context.Background()
+	provider, err := goose.NewProvider(goose.DialectPostgres, db, migrations.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.UpTo(ctx, 26); err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO project_skills (project_id, skill_id, created_at) VALUES ('proj_default', 'skl_oauth2', 'then')`,
+		`INSERT INTO project_stacks (project_id, stack_id, source, created_at) VALUES ('proj_default', 'stk_django', 'manual', 'then')`,
+		`INSERT INTO project_stacks (project_id, stack_id, source, created_at) VALUES ('proj_default', 'stk_go', 'detected', 'then')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stacks, _, skills := effective(t, db)
+	if strings.Join(stacks, ",") != "stk_django:project,stk_go:detected" || strings.Join(skills, ",") != "skl_oauth2:project" {
+		t.Fatalf("after 00027: stacks %v skills %v", stacks, skills)
+	}
+	var manual int
+	if err := db.QueryRow(`SELECT count(*) FROM project_stacks WHERE source = 'manual'`).Scan(&manual); err != nil || manual != 0 {
+		t.Fatalf("manual project_stacks = %d %v", manual, err)
+	}
+	var table sql.NullString
+	if err := db.QueryRow(`SELECT to_regclass('project_skills')::text`).Scan(&table); err != nil || table.Valid {
+		t.Fatalf("project_skills still exists: %v %v", table, err)
 	}
 }

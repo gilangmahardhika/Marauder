@@ -110,9 +110,9 @@ frontend/
   src/routes/tribes/+page.svelte
   src/routes/tribes/new/+page.svelte
   src/routes/tribes/[id]/+page.svelte
+  src/routes/tribes/[id]/conventions/+page.svelte
   src/routes/projects/+page.svelte
   src/routes/projects/new/+page.svelte
-  src/routes/settings/+layout.svelte
   src/routes/settings/repository/+page.svelte
   src/routes/settings/links/+page.svelte
   src/routes/settings/deploy/+page.svelte
@@ -163,6 +163,7 @@ frontend/
   src/lib/components/CardChanges.svelte
   src/lib/components/CardNotes.svelte
   src/lib/components/CardInstructions.svelte
+  src/lib/components/CardContext.svelte
   src/lib/components/TraceBlock.svelte
   src/lib/components/TraceRow.svelte
   src/lib/components/TraceText.svelte
@@ -198,6 +199,9 @@ frontend/
   src/lib/components/CardChanges.test.ts
   src/lib/components/CardNotes.test.ts
   src/lib/components/CardInstructions.test.ts
+  src/lib/components/CardContext.test.ts
+  src/routes/tribes/[id]/conventions/page.test.ts
+  src/routes/settings/conventions/page.test.ts
   src/lib/components/TraceRow.test.ts
   src/lib/components/TraceBlock.test.ts
   src/lib/components/TerminalView.test.ts
@@ -267,14 +271,19 @@ frontend/
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
 | `/tribes/[id]/usage` | Token usage of the tribe's projects (RFC-090) |
+| `/tribes/[id]/mcp` | The tribe's MCP servers (RFC-092) |
+| `/tribes/[id]/mcp/catalog` | Add a server from the catalog (RFC-096) |
+| `/tribes/[id]/mcp/new` | Add a server by hand |
+| `/tribes/[id]/mcp/[serverId]` | Edit one server |
+| `/tribes/[id]/conventions` | The tribe's stacks, skills, and rules switched off (RFC-104) |
 | `/projects` | Projects of the active tribe |
 | `/projects/new` | Create a project |
 | `/settings/repository` | Project repository, base branch, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
 | `/settings/deploy` | Deploy and checks for the project |
-| `/settings/conventions` | The project's stacks, enabled skills, and the rules that apply |
+| `/settings/conventions` | The project's stacks, skills, and rules over its tribe (RFC-104) |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), Project (Projects, Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills). LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. A user who is not an admin but has a non-empty `tribeAdminOf` sees a Tribe group with the Tribes link (RFC-057). Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), "Tribe · {tribe name}" (Projects, MCP servers, Conventions, Members), "Project · {project name}" (Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}/mcp`, `/tribes/{tribe}/conventions`, and `/tribes/{tribe}`; MCP servers and Members show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the live status line. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
 
@@ -369,12 +378,11 @@ Above Notes, when `actions` includes `instructions`, `CardInstructions` shows an
 
 Above Next step, `CardNotes` shows a Notes panel when `notes` is not empty, with the hint "Newest first. The next attempt gets the newest note and the current instructions." Each note shows its source as a badge (AI review, Approver, Local check, CI checks, Dev check, No commit, or Instructions, and the raw source when unknown), its local time, and "attempt N" when `attemptN` is above 0. A `review`, `approver`, or `instructions` note renders with `Markdown` and headings from `h4`, and a blank `instructions` note reads "Instructions cleared". Any other note is check output and renders with `TraceText`. The notes the next attempt reads are open: the newest note that is not `instructions`, and the newest `instructions` note when it is not blank. When neither applies, the newest note is open. The rest wait behind "Show N earlier notes".
 
-Under Next step, the page has six panels in this order:
+Under Next step, the page has five panels in this order:
 
 - People: the owner and each reviewer with avatar, display name, email, and "GitHub @login" or "No verified GitHub login", labelled Owner or Reviewer. With no reviewers, a line says reviewers come from the card's requirements and links "Edit reviewers" to `/intake/{first requirement id}`.
 - Intake: each of `requirements` with its id, heading, the statement as a `plainText` excerpt clamped to three lines, and a Draft badge when not accepted. Each links to `/intake/{id}`.
-- Rules: `rules` grouped by `label`, Global first, each with its title and category badge. The footer links to `/settings/conventions`.
-- Skills: each skill's title and `useWhen`, clamped to two lines.
+- Context (`CardContext`, RFC-105): three lists from `context`, Rules, Skills, and MCP servers. Each row shows the item, an origin badge (Project, Planner, Scope, or Card), and, when `actions` has `context`, "Detach" for an inherited item that is on, "Remove" for one the card attached, and "Restore" for one the card detached. A rule row also shows its category, a skill row its `useWhen`, and a server row its tool count. With `context`, "Attach skill" and "Attach rule" `SearchSelect`s list the enabled catalog skills and rules the card does not carry, from `GET /api/conventions`. "Attach server" lists the tribe's enabled servers that are off, only when `actions` has `attach-mcp`. Each change calls `PUT .../cards/{id}/context` and replaces the card. The hint reads "Changes apply from the next attempt." The footer links to `/settings/conventions`.
 - Details: decision ids, risk, attempts used and max attempts, local check, dev check, branch, pull request link, head SHA, reviewed SHA, whether review was independent, "Approval: Self review: the owner approves alone" when `selfReview` is true (RFC-070), "After AI review: A person reviews" when `aiReviewMode` is `manual` (RFC-072), approved SHA, deployed SHA, failure reason, and blocked reason. Reasons read as words from `reasonLabel`, with unknown codes in sentence case. Omit a row when the value is null. Do not replace null with a fake SHA. When `blockedReason` is `owner_github`, a notice says the owner saves a token on the Account page and runs Test connection, then the card can be unblocked.
 - Changes (`CardChanges`, RFC-068): loads `GET /api/projects/{id}/cards/{card}/diff` once per card id and `headSha`. The header shows the file count and the total added and deleted lines. Each file is a button with `aria-expanded` that shows its path, `+a -d` or "binary", and opens its hunks. Added lines have a green background and a `+`, deleted lines a red background and a `-`, as text nodes in a monospace block that scrolls sideways. After 50 files, Show more reveals the rest. A cut diff shows "The diff is large, so it is cut", a missing commit shows "Commit {short} is not in the project clone yet.", and a card with no commit says there is nothing to show. The footer links "View these changes on GitHub" to `compareUrl` when it is set. A load error shows in the panel and does not hide the rest of the page.
 
@@ -597,9 +605,13 @@ The save result line includes "Applies to the next route decision."
 
 `src/routes/admin/skills/+page.svelte` lists skills from the same GET (RFC-056): title, slug, "use when", version. `SkillForm.svelte` has slug, title, "Use when", the procedure as a monospace textarea, and Disabled. New and edit pages follow the rule pages. Field errors come from the API `fields`. A `403` sets the live message.
 
+### Tribe conventions
+
+`src/routes/tribes/[id]/conventions/+page.svelte`. GET and PUT `/api/tribes/{id}/conventions`, and GET `/api/conventions` for the options (RFC-104). "Stacks for every project" and "Skills for every project" are `MultiSearchSelect`s of enabled stacks and skills, at most 30 each. A rules table lists every enabled rule with its title, Global or the stack name, category, and an On/Off `Segmented` control; Off adds it to `rulesOff`. Without `canEdit` the controls are disabled and the `SaveBar` is hidden. The `SaveBar` note says saved conventions apply to the tribe's projects from their next attempt.
+
 ### Project conventions
 
-`src/routes/settings/conventions/+page.svelte`. GET and PUT `/api/projects/{id}/settings/conventions`, and GET `/api/conventions` for the options. Detected stacks show as badges with a hint to Sync when there are none. "Added by hand" is a `MultiSearchSelect` of enabled stacks that are not detected. "Enabled skills" is a `MultiSearchSelect` of enabled skills, with the slug as the detail line. Both allow 30. A read-only table lists the rules that apply: title, Global or the stack name, category, version. The `SaveBar` note says saved rules apply from the next attempt. A disabled `MultiSearchSelect` shows its picks without remove buttons, or "None".
+`src/routes/settings/conventions/+page.svelte`. GET and PUT `/api/projects/{id}/settings/conventions`, and GET `/api/conventions` for the options. Stacks, Skills, and Rules are three tables. Each row is an item that applies or that the project switched, with an origin badge (Detected, Tribe, Catalog, or Project) and an Inherit/On/Off `Segmented` control that edits `choices`. "Add stack", "Add skill", and "Add rule" `SearchSelect`s add an enabled item as On. Each list allows 30. A link opens the tribe's conventions. The `SaveBar` note says saved rules apply from the next attempt. A disabled `MultiSearchSelect` shows its picks without remove buttons, or "None".
 
 ### Deploy and checks
 
@@ -711,6 +723,9 @@ npm run build
 | `requirements` mentions | `mentions` keeps `@tickets` and `(@db)`, drops `a@b.co`, `@scope/pkg`, `@pytest.fixture`, `@Override`, and mentions in backticks and fences, keeps first-use order without repeats, and allows a trailing `.`. `mentionAt` finds the `@` and query before the caret, and is null after a space or inside an email |
 | `RequirementForm` mentions | Typing `@ti` opens a listbox with `tickets`, ArrowDown moves `aria-activedescendant`, Enter inserts `@tickets `, and Escape closes the list. With no server the list says so. Chips show a known server, a disabled one with its warning, and an unknown slug with its warning |
 | Tribe selector | `/choose-tribe` lists two tribes with their project counts. Picking one stores the tribe and its first project and loads `/`; a tribe with no project stores an empty project. With no tribes a member reads "Ask an admin", and an admin also gets "Create a tribe" |
+| Tribe and Project sections | The sidebar headings read "Tribe · Alpha" and "Project · Shop". MCP servers and Members show only to a tribe manager, and Members is not current on `/tribes/{id}/mcp`. With no project the Project group is gone. The mobile menu shows the headings |
+| Layered conventions pages | The tribe page saves `stackIds`, `skillIds`, and `rulesOff`, and is read only without `canEdit`. The project page shows origins and saves on/off `choices` |
+| Card context | `CardContext` shows controls only with the `context` action, Detach and Attach call `setCardContext`, and Attach server shows only with `attach-mcp`. The trace renders `context_changed` and the `card` MCP scope |
 | Layout tribe scope | The switcher lists only the selected tribe's projects, "Switch tribe" links to `/choose-tribe`, a stored project from another tribe is replaced by the tribe's first project, and a stored tribe the API no longer returns sends the browser to `/choose-tribe` |
 | Projects by tribe | An admin with the active tribe `tribe_a` sees only `tribe_a`'s projects and no Tribe filter. With no active tribe the page links to `/choose-tribe`, and an empty tribe says "No projects in this tribe yet." New project starts its tribe select on the active tribe |
 | Layout load | With a bearer and no tribe, `/` and `/intake` redirect to `/choose-tribe`, `/admin/users` and `/tribes/new` do not, and no bearer still redirects to `/login`. Signing in goes to `/choose-tribe` |

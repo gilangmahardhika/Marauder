@@ -589,7 +589,8 @@ func SaveSkill(ctx context.Context, db *sql.DB, actor identity.User, id string, 
 }
 
 // Delete removes an item nothing names and disables one that is still named:
-// a stack named by a rule or a project, a skill named by a project or a card.
+// a stack named by a rule, a project, or a tribe, a skill named by a tribe, a
+// project, or a card, a rule named by any layer.
 // Revisions stay. It reports whether the row was removed.
 func Delete(ctx context.Context, db *sql.DB, actor identity.User, kind, id string) (bool, error) {
 	if !actor.Admin {
@@ -598,11 +599,11 @@ func Delete(ctx context.Context, db *sql.DB, actor identity.User, kind, id strin
 	var table, refs string
 	switch kind {
 	case "rule":
-		table, refs = "convention_rules", `SELECT 0`
+		table, refs = "convention_rules", layerRefs("rule")
 	case "stack":
-		table, refs = "stacks", `SELECT (SELECT count(*) FROM convention_rules WHERE stack_id = $1) + (SELECT count(*) FROM project_stacks WHERE stack_id = $1)`
+		table, refs = "stacks", `SELECT (SELECT count(*) FROM convention_rules WHERE stack_id = $1) + (SELECT count(*) FROM project_stacks WHERE stack_id = $1) + (`+layerRefs("stack")+`)`
 	case "skill":
-		table, refs = "skills", `SELECT (SELECT count(*) FROM project_skills WHERE skill_id = $1) + (SELECT count(*) FROM card_skills WHERE skill_id = $1)`
+		table, refs = "skills", `SELECT (SELECT count(*) FROM card_skills WHERE skill_id = $1) + (`+layerRefs("skill")+`)`
 	default:
 		return false, identity.ErrNotFound
 	}
@@ -620,12 +621,7 @@ func Delete(ctx context.Context, db *sql.DB, actor identity.User, kind, id strin
 		return false, err
 	}
 	var n int
-	if kind == "rule" {
-		err = tx.QueryRowContext(ctx, refs).Scan(&n)
-	} else {
-		err = tx.QueryRowContext(ctx, refs, id).Scan(&n)
-	}
-	if err != nil {
+	if err := tx.QueryRowContext(ctx, refs, id).Scan(&n); err != nil {
 		return false, err
 	}
 	deleted := n == 0
@@ -638,6 +634,13 @@ func Delete(ctx context.Context, db *sql.DB, actor identity.User, kind, id strin
 		return false, err
 	}
 	return deleted, tx.Commit()
+}
+
+// layerRefs counts the tribe, project, and card rows that name the item $1.
+func layerRefs(kind string) string {
+	return `SELECT (SELECT count(*) FROM tribe_conventions WHERE kind = '` + kind + `' AND item_id = $1) +
+		(SELECT count(*) FROM project_conventions WHERE kind = '` + kind + `' AND item_id = $1) +
+		(SELECT count(*) FROM card_context WHERE kind = '` + kind + `' AND item_id = $1)`
 }
 
 func trimAll(in []string) []string {

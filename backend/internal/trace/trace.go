@@ -29,6 +29,7 @@ var kinds = map[string]struct{}{
 	"stacks_detected":     {},
 	"job_error":           {},
 	"instructions_saved":  {},
+	"context_changed":     {},
 	"requirement_refined": {},
 }
 

@@ -29,7 +29,7 @@ func TestSyncKeepsManualStacks(t *testing.T) {
 	if _, err := f.db.Exec(`INSERT INTO tribe_members (tribe_id, user_id) VALUES ('tribe_default', $1)`, lead.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.SaveProjectConventions(ctx, f.db, lead, "proj_default", []string{"stk_django"}, nil); err != nil {
+	if _, err := app.SaveProjectConventions(ctx, f.db, lead, "proj_default", conventions.Choices{Stacks: conventions.OnOff{On: []string{"stk_django"}}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := conventions.ReplaceDetected(ctx, f.db, "proj_default", []string{"stk_python"}); err != nil {
@@ -61,9 +61,9 @@ func TestSyncKeepsManualStacks(t *testing.T) {
 	}
 	var got []string
 	for _, s := range project.Stacks {
-		got = append(got, s.ID+":"+s.Source)
+		got = append(got, s.ID+":"+s.Origin)
 	}
-	if strings.Join(got, ",") != "stk_django:manual,stk_go:detected,stk_react:detected" {
+	if strings.Join(got, ",") != "stk_django:project,stk_go:detected,stk_react:detected" {
 		t.Fatalf("stacks after sync: %v", got)
 	}
 	var payload string
@@ -91,7 +91,10 @@ func conventionsCard(t *testing.T, db *sql.DB) string {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.SaveProjectConventions(ctx, db, admin, "proj_default", []string{"stk_go"}, []string{"skl_oauth2"}); err != nil {
+	if _, err := app.SaveProjectConventions(ctx, db, admin, "proj_default", conventions.Choices{
+		Stacks: conventions.OnOff{On: []string{"stk_go"}},
+		Skills: conventions.OnOff{On: []string{"skl_oauth2"}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	card := insertReady(t, db, "true")
@@ -226,4 +229,69 @@ func TestConventionsCannotAddTool(t *testing.T) {
 	if got := reload(t, db, cardID); got.Status != "in_progress" {
 		t.Fatalf("status = %s", got.Status)
 	}
+}
+
+func TestPackUsesEffective(t *testing.T) {
+	db := boardtest.Open(t)
+	repo := openFixture(t)
+	data := dataDir(t)
+	ctx := context.Background()
+	admin, err := identity.Insert(ctx, db, "admin@example.com", "password-long-1", "lead_developer", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.SaveTribeConventions(ctx, db, admin, "tribe_default", conventions.TribeLayer{
+		SkillIDs: []string{"skl_oauth2"}, RulesOff: []string{"rule_naming"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO requirements (
+			id, source_kind, source_path, heading, statement, acceptance_json, non_goals_json, content_hash, accepted_at, accepted_by
+		) VALUES ('REQ-001', 'prd', 'docs/prd/a.md', 'REQ-001', 'Sign in', '[]', '[]', 'abc', '2026-01-01T00:00:00Z', 'ada')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.CreateCard(ctx, loop.CreateInput{
+		DB:   db,
+		Args: map[string]any{"title": "Sign in", "requirementIds": []any{"REQ-001"}, "skillIds": []any{"skl_oauth2"}},
+	}); err != nil {
+		t.Fatalf("create_card with a tribe skill: %v", err)
+	}
+
+	card := insertReady(t, db, "true")
+	if err := conventions.SetCardSkills(ctx, db, "proj_default", card.ID, []string{"skl_oauth2"}); err != nil {
+		t.Fatal(err)
+	}
+	runWithProvider(t, db, repo, data, card.ID, `{"implement":[{"text":"nothing to commit"}]}`)
+	defer cleanupWorktree(t, repo, data, card.ID)
+	if got := packItems(t, db, card.ID); got != "rule:rule_database,skill:skl_oauth2" {
+		t.Fatalf("items = %s", got)
+	}
+}
+
+// packItems lists the kind:id of each item in the card's latest
+// conventions_context event.
+func packItems(t *testing.T, db *sql.DB, cardID string) string {
+	t.Helper()
+	var payload string
+	if err := db.QueryRow(`
+		SELECT payload_json FROM events
+		WHERE card_id = $1 AND kind = 'tool_call' AND payload_json LIKE '%conventions_context%'
+		ORDER BY seq DESC LIMIT 1`, cardID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		Items []struct {
+			Kind string `json:"kind"`
+			ID   string `json:"id"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(payload), &body); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range body.Items {
+		got = append(got, it.Kind+":"+it.ID)
+	}
+	return strings.Join(got, ",")
 }

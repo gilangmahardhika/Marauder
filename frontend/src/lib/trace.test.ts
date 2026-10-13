@@ -150,6 +150,29 @@ group('describe', () => {
     expect(saved(0).detail).toBe('Cleared');
   });
 
+  it('shows a card context change and the servers the card changed', () => {
+    const changed = (kind: string, itemId: string, mode: string) => describe({ id: 'e', ts: '', kind: 'context_changed', payload: { kind, itemId, mode } });
+    expect(changed('skill', 'skl_oauth2', 'attach')).toMatchObject({ label: 'Context changed', detail: 'Attached skill skl_oauth2' });
+    expect(changed('mcp', 'mcp_tickets', 'detach').detail).toBe('Detached MCP server mcp_tickets');
+    expect(changed('rule', 'rule_naming', 'inherit').detail).toBe('Restored rule rule_naming');
+    expect(
+      words('tool_call', {
+        name: 'mcp_context',
+        ok: true,
+        summary: '1 of 2 MCP servers, 1 tools',
+        scope: 'card',
+        missing: [],
+        attached: ['wiki'],
+        detached: ['tickets'],
+        servers: [{ slug: 'wiki', transport: 'http', host: 'mcp.example.com', tools: [{ name: 'page', schemaSha256: 'abcdef0123456789' }] }]
+      })
+    ).toMatchObject({
+      detail: '1 of 2 MCP servers, 1 tools, changed on the card',
+      tone: 'default',
+      text: 'wiki http mcp.example.com: page abcdef012345\nattached on the card: wiki\ndetached on the card: tickets'
+    });
+  });
+
   it('shows what each tool was asked for and what the model said', () => {
     const tool = (name: string, args: unknown, summary = '') => words('tool_call', { name, ok: true, summary, args });
     expect(tool('read_file', { path: 'src/x.ts' }, 'a\nb\nc')).toMatchObject({ label: 'Read file', detail: 'src/x.ts · 3 lines' });

@@ -105,20 +105,17 @@ func (s *Server) projectConventions(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodPut {
 		user, _ := app.CurrentUser(r.Context())
-		var body struct {
-			ManualStackIDs []string `json:"manualStackIds"`
-			SkillIDs       []string `json:"skillIds"`
-		}
+		var body conventions.Choices
 		if json.NewDecoder(r.Body).Decode(&body) != nil {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		view, err := app.SaveProjectConventions(r.Context(), s.DB, user, projectID, body.ManualStackIDs, body.SkillIDs)
+		view, err := app.SaveProjectConventions(r.Context(), s.DB, user, projectID, body)
 		if err != nil {
 			writeAccountErr(w, err)
 			return
 		}
-		s.configChanged(r, projectID, "conventions", []string{"manualStackIds", "skillIds"})
+		s.configChanged(r, projectID, "conventions", []string{"stacks", "skills", "rules"})
 		view.CanEdit = canEdit
 		writeJSON(w, 200, view)
 		return
@@ -130,4 +127,36 @@ func (s *Server) projectConventions(w http.ResponseWriter, r *http.Request) {
 	}
 	view.CanEdit = canEdit
 	writeJSON(w, 200, view)
+}
+
+type tribeConventionsView struct {
+	conventions.TribeLayer
+	CanEdit bool `json:"canEdit"`
+}
+
+// tribeConventions handles GET and PUT /api/tribes/{id}/conventions (RFC-104).
+func (s *Server) tribeConventions(w http.ResponseWriter, r *http.Request) {
+	user, _ := app.CurrentUser(r.Context())
+	tribeID := r.PathValue("id")
+	if r.Method == http.MethodPut {
+		var body conventions.TribeLayer
+		if json.NewDecoder(r.Body).Decode(&body) != nil {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		layer, err := app.SaveTribeConventions(r.Context(), s.DB, user, tribeID, body)
+		if err != nil {
+			writeAccountErr(w, err)
+			return
+		}
+		s.configChanged(r, "", "tribe_conventions", []string{"stackIds", "skillIds", "rulesOff"})
+		writeJSON(w, 200, tribeConventionsView{TribeLayer: layer, CanEdit: true})
+		return
+	}
+	layer, canEdit, err := app.TribeConventions(r.Context(), s.DB, user, tribeID)
+	if err != nil {
+		writeAccountErr(w, err)
+		return
+	}
+	writeJSON(w, 200, tribeConventionsView{TribeLayer: layer, CanEdit: canEdit})
 }

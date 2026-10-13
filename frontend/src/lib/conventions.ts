@@ -1,5 +1,17 @@
 import { matchText, type Option } from './filter';
-import type { ConventionRule, RuleCategory, RuleInput, Skill, SkillInput, Stack, StackInput } from '$lib/types';
+import type {
+  ConventionCatalog,
+  ConventionChoices,
+  ConventionRule,
+  OnOff,
+  ProjectConventions,
+  RuleCategory,
+  RuleInput,
+  Skill,
+  SkillInput,
+  Stack,
+  StackInput
+} from '$lib/types';
 
 export const categories: { value: RuleCategory; label: string }[] = [
   { value: 'naming', label: 'Naming' },
@@ -137,4 +149,91 @@ export function filterSkills(skills: Skill[], filter: { q: string; state: SkillS
 export function editedBy(item: { updatedBy: string | null; updatedAt: string }) {
   const when = item.updatedAt.replace('T', ' ').replace(/:\d\dZ$/, ' UTC');
   return item.updatedBy ? `Last edited by ${item.updatedBy}, ${when}` : `Seeded by the release, ${when}`;
+}
+
+export type LayerChoice = 'inherit' | 'on' | 'off';
+
+/**
+ * One stack, skill, or rule on the project conventions page. `inherited` names where the item comes from without a
+ * project choice: Detected, Tribe, Catalog, Off at tribe, or empty when nothing brings it in (RFC-104).
+ */
+export type LayerRow = {
+  id: string;
+  label: string;
+  detail: string;
+  category: string;
+  inherited: string;
+  inheritedOn: boolean;
+  choice: LayerChoice;
+  applies: boolean;
+};
+
+export type LayerRows = { stacks: LayerRow[]; skills: LayerRow[]; rules: LayerRow[] };
+
+export function layerChoice(list: OnOff, id: string): LayerChoice {
+  if (list.on.includes(id)) return 'on';
+  if (list.off.includes(id)) return 'off';
+  return 'inherit';
+}
+
+/** Moves one id to the on list, the off list, or neither. */
+export function setLayerChoice(list: OnOff, id: string, choice: LayerChoice): OnOff {
+  const on = list.on.filter((item) => item !== id);
+  const off = list.off.filter((item) => item !== id);
+  if (choice === 'on') on.push(id);
+  if (choice === 'off') off.push(id);
+  return { on, off };
+}
+
+function row(id: string, label: string, detail: string, category: string, inherited: string, inheritedOn: boolean, choice: LayerChoice): LayerRow {
+  return { id, label, detail, category, inherited, inheritedOn, choice, applies: choice === 'on' || (choice === 'inherit' && inheritedOn) };
+}
+
+/**
+ * Resolves the page rows from the catalog, the tribe's layer, and the project's draft choices, in the order the
+ * server applies them. A row shows when something brings the item in or the project chose it.
+ */
+export function layerRows(catalog: ConventionCatalog, project: ProjectConventions, draft: ConventionChoices): LayerRows {
+  const stacks: LayerRow[] = [];
+  const names = new Map(catalog.stacks.map((stack) => [stack.id, stack.name]));
+  const enabledStacks = new Set(catalog.stacks.filter((stack) => !stack.disabled).map((stack) => stack.id));
+  for (const stack of catalog.stacks) {
+    if (stack.disabled) continue;
+    const inherited = project.tribe.stackIds.includes(stack.id) ? 'Tribe' : project.detectedStackIds.includes(stack.id) ? 'Detected' : '';
+    const choice = layerChoice(draft.stacks, stack.id);
+    if (inherited === '' && choice === 'inherit') continue;
+    stacks.push(row(stack.id, stack.name, '', '', inherited, inherited !== '', choice));
+  }
+  const applied = new Set(stacks.filter((item) => item.applies).map((item) => item.id));
+
+  const skills: LayerRow[] = [];
+  for (const skill of catalog.skills) {
+    if (skill.disabled) continue;
+    const inherited = project.tribe.skillIds.includes(skill.id) ? 'Tribe' : '';
+    const choice = layerChoice(draft.skills, skill.id);
+    if (inherited === '' && choice === 'inherit') continue;
+    skills.push(row(skill.id, skill.title, skill.slug, '', inherited, inherited !== '', choice));
+  }
+
+  const rules: LayerRow[] = [];
+  for (const rule of catalog.rules) {
+    if (rule.disabled || (rule.scope === 'stack' && !enabledStacks.has(rule.stackId))) continue;
+    const reaches = rule.scope === 'global' || applied.has(rule.stackId);
+    const offAtTribe = project.tribe.rulesOff.includes(rule.id);
+    const inherited = !reaches ? '' : offAtTribe ? 'Off at tribe' : 'Catalog';
+    const choice = layerChoice(draft.rules, rule.id);
+    if (inherited === '' && choice === 'inherit') continue;
+    const from = rule.scope === 'global' ? 'Global' : (names.get(rule.stackId) ?? '');
+    rules.push(row(rule.id, rule.title, from, rule.category, inherited, reaches && !offAtTribe, choice));
+  }
+  return { stacks, skills, rules };
+}
+
+export function emptyChoices(): ConventionChoices {
+  return { stacks: { on: [], off: [] }, skills: { on: [], off: [] }, rules: { on: [], off: [] } };
+}
+
+export function copyChoices(choices: ConventionChoices): ConventionChoices {
+  const copy = (list: OnOff): OnOff => ({ on: [...list.on], off: [...list.off] });
+  return { stacks: copy(choices.stacks), skills: copy(choices.skills), rules: copy(choices.rules) };
 }

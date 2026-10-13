@@ -13,6 +13,7 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/conventions"
+	"orchestrator/backend/internal/identity"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/providers/llm"
 	reviewpkg "orchestrator/backend/internal/review"
@@ -527,6 +528,16 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if card.Status != "done" && actionAllowed(role, "instructions") {
 		actions = append(actions, "instructions")
 	}
+	if user, ok := app.CurrentUser(r.Context()); ok && card.Status != "done" {
+		if rights, err := app.CardContextRightsFor(r.Context(), s.DB, user, card.ProjectID); err == nil {
+			if rights.Change {
+				actions = append(actions, "context")
+			}
+			if rights.AttachMCP {
+				actions = append(actions, "attach-mcp")
+			}
+		}
+	}
 	var owner any
 	if found, ok, err := app.OwnerOf(r.Context(), s.DB, card.OwnerID); err == nil && ok {
 		owner = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email, "githubLogin": nullString(found.GitHubLogin)}
@@ -734,7 +745,7 @@ func writeAppErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone),
 		errors.Is(err, app.ErrReviewNotFailed):
 		writeErr(w, 409, "conflict", err.Error())
-	case errors.Is(err, app.ErrOwnerApprove):
+	case errors.Is(err, app.ErrOwnerApprove), errors.Is(err, identity.ErrForbidden):
 		writeErr(w, 403, "forbidden", err.Error())
 	default:
 		writeErr(w, 500, "internal", err.Error())

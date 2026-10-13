@@ -1036,3 +1036,36 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestReviewersSetByCreator`, `TestReviewerOptionsUnverified`, `TestRequestReviewers`, `TestRequestReviewersOnlyWaiting`
 - [x] Reviewer picker, `ReviewersPanel`, and trace Vitest
 - [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 68: Tribe and Project sections
+
+- [x] The sidebar shows "Tribe · {name}" and "Project · {name}" groups with their links.
+- [x] MCP servers and Members show only to a tribe admin or an admin, and the Project group hides with no project.
+- [x] The settings sub-nav is removed, and the mobile menu shows the headings.
+- [x] Tribe and Project sections Vitest
+- [x] `npm run check` and the full Vitest suite pass
+
+## Sprint 69: Layered conventions
+
+- [x] Migration `00027` adds the tribe, project, and card layers and keeps existing skills and manual stacks.
+- [x] `conventions.Effective` resolves the layers with origins; the pack and `create_card` use it.
+- [x] Tribe conventions route and page; project conventions take on/off choices.
+- [x] `TestTribeConventionsSave`, `TestEffectiveConventions`, `TestProjectConventionsMigration`, `TestPackUsesEffective`
+- [x] Conventions pages Vitest
+- [x] `npm run check`, the fixture, and the full Vitest and backend suites pass
+
+## Sprint 70: Card context
+
+- [x] `PUT .../cards/{id}/context` with the `context` and `attach-mcp` actions and role checks.
+- [x] The pack and the MCP scope apply the card's context; `mcp_context` records `card`, `attached`, and `detached`.
+- [x] `context_changed` is appended and the card status never changes.
+- [x] `TestCardContextRoles`, `TestCardContextDone409`, `TestCardContextScoped`, `TestCardContextPack`, `TestMCPScopeCardAttach`, `TestCardContextDisabledServer`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 71: Card context panel
+
+- [x] The card page's Context panel lists rules, skills, and MCP servers with origins and controls from the actions.
+- [x] The trace shows `context_changed` and the `card` MCP scope.
+- [x] Card context Vitest
+- [x] `npm run check` and the full Vitest suite pass
+

@@ -70,6 +70,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tribes/{id}/mcp-servers/{serverId}/discover", s.discoverMCPTools)
 	mux.HandleFunc("GET /api/tribes/{id}/mcp-catalog", s.mcpCatalog)
 	mux.HandleFunc("POST /api/tribes/{id}/mcp-images/pull", s.pullMCPImage)
+	mux.HandleFunc("GET /api/tribes/{id}/conventions", s.tribeConventions)
+	mux.HandleFunc("PUT /api/tribes/{id}/conventions", s.tribeConventions)
 	mux.HandleFunc("GET /api/projects", s.projectCollection)
 	mux.HandleFunc("POST /api/projects", s.projectCollection)
 	mux.HandleFunc("/api/projects/{projectId}/cards", s.projectCards)

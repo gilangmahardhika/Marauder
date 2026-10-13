@@ -309,8 +309,18 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestConventionRevisions` | Editing a rule increments its version, changes its hash, and keeps the old text in `convention_revisions`. A save with the same text keeps the version |
 | `TestDetectStacks` | A repo with `go.mod`, and a `web/package.json` that depends on `@sveltejs/kit` and `typescript`, is detected as Go, TypeScript, and SvelteKit. `node_modules` and a symlinked directory are not walked |
 | `TestSyncKeepsManualStacks` | A Sync replaces detected stacks, keeps a stack added by hand, and appends `stacks_detected` |
-| `TestProjectConventionsLeadOnly` | A Lead Developer member saves manual stacks and enabled skills. A Developer member is `403`. An unknown or disabled id is `422` |
+| `TestProjectConventionsLeadOnly` | A Lead Developer member saves on and off choices for stacks, skills, and rules. A Developer member is `403`. An unknown or disabled id, or an id in both lists, is `422` |
 | `TestCreateCardSkills` | `create_card` with an enabled skill stores it in `card_skills` and the card JSON lists it. A skill not enabled for the project stores no card (RFC-056) |
+| `TestTribeConventionsSave` | A tribe member reads the tribe's conventions and gets `403` on save. A tribe admin saves stacks, skills, and rules switched off. Another tribe's member is `403`, an unknown tribe `404`, and a disabled id `422` (RFC-104) |
+| `TestEffectiveConventions` | A tribe skill reaches the project and a project `off` removes it. A tribe rule `off` removes a global rule and a project `on` brings it back. A tribe stack adds its rules. A disabled skill, rule, or stack never applies. Each item carries its origin (RFC-104) |
+| `TestProjectConventionsMigration` | After `00027`, a project's enabled skills and manual stacks are `on` rows, its detected stacks stay, and its effective set is unchanged (RFC-104) |
+| `TestPackUsesEffective` | An attempt's `conventions_context` lists a tribe skill attached by the planner, leaves out a rule the tribe switched off, and `create_card` accepts a skill the tribe enabled (RFC-104) |
+| `TestCardContextRoles` | A Developer attaches a skill, detaches a rule, and detaches a server; attaching a server is `403` for a Developer and allowed for a Lead Developer and a tribe admin. A Product Owner who is not an admin is `403`. The card JSON lists `context` and `attach-mcp` to match (RFC-105) |
+| `TestCardContextDone409` | A context change on a `done` card is `409`, and the card status never changes (RFC-105) |
+| `TestCardContextScoped` | A context change on a card of another project is `404`, and `card_context` rows carry the card's project (RFC-105) |
+| `TestCardContextPack` | After a card attaches a skill and detaches a rule, the next attempt's `conventions_context` has the skill and not the rule; `inherit` restores the rule (RFC-105) |
+| `TestMCPScopeCardAttach` | A card attach adds an enabled server beside the mentioned one, a detach removes a server from scope `all`, `mcp_context` has scope `card` with `attached` and `detached`, and a requirement edited since acceptance still gives `none` (RFC-105) |
+| `TestCardContextDisabledServer` | Attaching a disabled server, a server of another tribe, or a disabled skill is `422` (RFC-105) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

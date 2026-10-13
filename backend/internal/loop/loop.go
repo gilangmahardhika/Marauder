@@ -203,11 +203,13 @@ type Input struct {
 // Missing those that are not an enabled server, and Total the tribe's
 // enabled servers.
 type MCPContext struct {
-	Scope   string
-	Offered []string
-	Missing []string
-	Reason  string
-	Total   int
+	Scope    string
+	Offered  []string
+	Missing  []string
+	Attached []string
+	Detached []string
+	Reason   string
+	Total    int
 }
 
 // Result is how the attempt ended. Outcome is empty for a new commit,

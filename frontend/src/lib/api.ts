@@ -4,11 +4,13 @@ import type {
   AIReviewMode,
   Board,
   Card,
+  CardContextChange,
   CardDiff,
   CompanyGitHub,
   CompanyAccess,
   CompanyRepo,
   ConventionCatalog,
+  ConventionChoices,
   ConventionRule,
   DeploySettings,
   Intake,
@@ -37,6 +39,8 @@ import type {
   TraceResponse,
   TraceStreamEvent,
   TribeCandidate,
+  TribeConventions,
+  TribeLayer,
   TribeMember,
   TribeRecord,
   UsageResponse,
@@ -552,6 +556,13 @@ export function setInstructions(id: string, instructions: string) {
   });
 }
 
+export function setCardContext(id: string, change: CardContextChange) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/context`, {
+    method: "PUT",
+    body: JSON.stringify(change),
+  });
+}
+
 export function deployCard(id: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/deploy`, {
     method: "POST",
@@ -728,12 +739,25 @@ export function getProjectConventions() {
   return request<ProjectConventions>(`${projectPrefix()}/settings/conventions`);
 }
 
-export function putProjectConventions(body: {
-  manualStackIds: string[];
-  skillIds: string[];
-}) {
+export function putProjectConventions(body: ConventionChoices) {
   return request<ProjectConventions>(
     `${projectPrefix()}/settings/conventions`,
+    {
+      method: "PUT",
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function getTribeConventions(tribeId: string) {
+  return request<TribeConventions>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/conventions`,
+  );
+}
+
+export function putTribeConventions(tribeId: string, body: TribeLayer) {
+  return request<TribeConventions>(
+    `/api/tribes/${encodeURIComponent(tribeId)}/conventions`,
     {
       method: "PUT",
       body: JSON.stringify(body),

@@ -30,10 +30,10 @@ func TestCardDetail(t *testing.T) {
 		}
 	}
 	for _, stmt := range []string{
-		`INSERT INTO project_stacks (project_id, stack_id, source, created_at) VALUES ('proj_default', 'stk_go', 'manual', 'now')`,
+		`INSERT INTO project_conventions (project_id, kind, item_id, mode, created_at) VALUES ('proj_default', 'stack', 'stk_go', 'on', 'now')`,
 		`INSERT INTO convention_rules (id, scope, stack_id, category, title, body, content_hash, created_at, updated_at)
 			VALUES ('rule_go_errors', 'stack', 'stk_go', 'style', 'Wrap errors', 'b', 'h', 'now', 'now')`,
-		`INSERT INTO project_skills (project_id, skill_id, created_at) VALUES ('proj_default', 'skl_oauth2', 'now')`,
+		`INSERT INTO project_conventions (project_id, kind, item_id, mode, created_at) VALUES ('proj_default', 'skill', 'skl_oauth2', 'on', 'now')`,
 	} {
 		if _, err := srv.DB.Exec(stmt); err != nil {
 			t.Fatal(err)

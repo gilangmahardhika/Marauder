@@ -65,3 +65,5 @@ Narrowing by mention keeps a job's outside access to what its requirement asked 
 Sprint 64: `TestMentionGrammar`, `TestIngestMentions`, `TestHashUnchangedWithoutMentions`, `TestManualRequirementMentions`, `TestIntakeMCPServers`, `TestImplementerMCPMentions`, `TestImplementerMCPUnion`, `TestImplementerMCPMentionMissing`, `TestImplementerMCPUnaccepted`, `TestRefineMCPMentions`, `TestPRBodyMentionsEscaped`, and the unchanged `TestImplementerMCPTools` and `TestMCPOtherTribe`.
 
 Sprint 65: the mention helper, `RequirementForm` autocomplete and chips, intake pages, and trace Vitest cases.
+
+Superseded in part by RFC-105 in [0045-layered-conventions-and-card-context.md](0045-layered-conventions-and-card-context.md). A card attach adds an enabled server of the tribe over the mention scope, and a card detach removes one.

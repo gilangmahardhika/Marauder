@@ -83,27 +83,57 @@ func TestProjectConventionsLeadOnly(t *testing.T) {
 	devToken := loginToken(t, srv, "dev@example.com", "password-long-2")
 	path := "/api/projects/proj_default/settings/conventions"
 
-	saved := putJSON(t, srv, path, leadToken, map[string]any{"manualStackIds": []string{"stk_django"}, "skillIds": []string{"skl_oauth2"}})
+	choices := func(stacksOn, skillsOn, rulesOff []string) map[string]any {
+		return map[string]any{
+			"stacks": map[string]any{"on": stacksOn, "off": []string{}},
+			"skills": map[string]any{"on": skillsOn, "off": []string{}},
+			"rules":  map[string]any{"on": []string{}, "off": rulesOff},
+		}
+	}
+
+	saved := putJSON(t, srv, path, leadToken, choices([]string{"stk_django"}, []string{"skl_oauth2"}, []string{"rule_naming"}))
 	if saved.Code != 200 {
 		t.Fatalf("lead save = %d %s", saved.Code, saved.Body.String())
 	}
-	if !strings.Contains(saved.Body.String(), `{"id":"stk_django","name":"Django","source":"manual"}`) ||
-		!strings.Contains(saved.Body.String(), `"skillIds":["skl_oauth2"]`) {
+	var view struct {
+		Choices struct {
+			Rules struct {
+				Off []string `json:"off"`
+			} `json:"rules"`
+		} `json:"choices"`
+		Stacks []struct{ ID, Origin string } `json:"stacks"`
+		Skills []struct{ ID, Origin string } `json:"skills"`
+		Rules  []struct{ ID string }         `json:"rules"`
+	}
+	if err := json.Unmarshal(saved.Body.Bytes(), &view); err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Stacks) != 1 || view.Stacks[0].ID != "stk_django" || view.Stacks[0].Origin != "project" ||
+		len(view.Skills) != 1 || view.Skills[0].Origin != "project" || strings.Join(view.Choices.Rules.Off, ",") != "rule_naming" {
 		t.Fatalf("lead save body = %s", saved.Body.String())
 	}
-	if rec := putJSON(t, srv, path, devToken, map[string]any{"manualStackIds": []string{}, "skillIds": []string{}}); rec.Code != 403 {
+	for _, r := range view.Rules {
+		if r.ID == "rule_naming" {
+			t.Fatalf("rule switched off still applies: %s", saved.Body.String())
+		}
+	}
+	if rec := putJSON(t, srv, path, devToken, choices(nil, nil, nil)); rec.Code != 403 {
 		t.Fatalf("developer save = %d", rec.Code)
 	}
-	if rec := getAuth(t, srv, path, devToken); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"rule_naming"`) {
+	if rec := getAuth(t, srv, path, devToken); rec.Code != 200 || !strings.Contains(rec.Body.String(), `"rule_database"`) {
 		t.Fatalf("developer read = %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := putJSON(t, srv, path, leadToken, map[string]any{"manualStackIds": []string{"stk_nope"}}); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"manualStackIds"`) {
+	if rec := putJSON(t, srv, path, leadToken, choices([]string{"stk_nope"}, nil, nil)); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"stacks.on"`) {
 		t.Fatalf("unknown stack = %d %s", rec.Code, rec.Body.String())
+	}
+	both := map[string]any{"rules": map[string]any{"on": []string{"rule_naming"}, "off": []string{"rule_naming"}}}
+	if rec := putJSON(t, srv, path, leadToken, both); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"rules.off"`) {
+		t.Fatalf("both lists = %d %s", rec.Code, rec.Body.String())
 	}
 	if _, err := srv.DB.Exec(`UPDATE skills SET disabled = true WHERE id = 'skl_oauth2'`); err != nil {
 		t.Fatal(err)
 	}
-	if rec := putJSON(t, srv, path, leadToken, map[string]any{"skillIds": []string{"skl_oauth2"}}); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"skillIds"`) {
+	if rec := putJSON(t, srv, path, leadToken, choices(nil, []string{"skl_oauth2"}, nil)); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"skills.on"`) {
 		t.Fatalf("disabled skill = %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -130,7 +160,7 @@ func TestCreateCardSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	leadToken := loginToken(t, srv, "lead@example.com", "password-long-1")
-	if rec := putJSON(t, srv, "/api/projects/proj_default/settings/conventions", leadToken, map[string]any{"skillIds": []string{"skl_oauth2"}}); rec.Code != 200 {
+	if rec := putJSON(t, srv, "/api/projects/proj_default/settings/conventions", leadToken, map[string]any{"skills": map[string]any{"on": []string{"skl_oauth2"}}}); rec.Code != 200 {
 		t.Fatalf("enable = %d %s", rec.Code, rec.Body.String())
 	}
 
@@ -159,5 +189,53 @@ func TestCreateCardSkills(t *testing.T) {
 	view := getAuth(t, srv, "/api/projects/proj_default/cards/"+card.ID, leadToken)
 	if view.Code != 200 || !strings.Contains(view.Body.String(), `"skills":[{"id":"skl_oauth2","slug":"oauth2-integration","title":"OAuth 2.0 integration","useWhen":"A requirement adds sign-in`) {
 		t.Fatalf("card json = %d %s", view.Code, view.Body.String())
+	}
+}
+
+func TestTribeConventionsSave(t *testing.T) {
+	f := newTribeFixture(t)
+	path := "/api/tribes/" + f.tribe + "/conventions"
+	memberToken := loginToken(t, f.srv, "member@example.com", "password-long-3")
+	outsiderToken := loginToken(t, f.srv, "out@example.com", "password-long-4")
+	body := map[string]any{"stackIds": []string{"stk_go"}, "skillIds": []string{"skl_oauth2"}, "rulesOff": []string{"rule_naming"}}
+
+	read := getAuth(t, f.srv, path, memberToken)
+	if read.Code != 200 || !strings.Contains(read.Body.String(), `"canEdit":false`) || !strings.Contains(read.Body.String(), `"stackIds":[]`) {
+		t.Fatalf("member read = %d %s", read.Code, read.Body.String())
+	}
+	if rec := putJSON(t, f.srv, path, memberToken, body); rec.Code != 403 {
+		t.Fatalf("member save = %d", rec.Code)
+	}
+	if rec := getAuth(t, f.srv, path, outsiderToken); rec.Code != 403 {
+		t.Fatalf("outsider read = %d", rec.Code)
+	}
+	if rec := getAuth(t, f.srv, "/api/tribes/"+f.other+"/conventions", f.chiefToken); rec.Code != 403 {
+		t.Fatalf("other tribe read = %d", rec.Code)
+	}
+	if rec := putJSON(t, f.srv, "/api/tribes/"+f.other+"/conventions", f.chiefToken, body); rec.Code != 403 {
+		t.Fatalf("other tribe save = %d", rec.Code)
+	}
+	if rec := getAuth(t, f.srv, "/api/tribes/tribe_nope/conventions", f.adminToken); rec.Code != 404 {
+		t.Fatalf("unknown tribe = %d", rec.Code)
+	}
+
+	saved := putJSON(t, f.srv, path, f.chiefToken, body)
+	want := `{"stackIds":["stk_go"],"skillIds":["skl_oauth2"],"rulesOff":["rule_naming"],"canEdit":true}`
+	if saved.Code != 200 || strings.TrimSpace(saved.Body.String()) != want {
+		t.Fatalf("tribe admin save = %d %s", saved.Code, saved.Body.String())
+	}
+	if rec := getAuth(t, f.srv, path, memberToken); !strings.Contains(rec.Body.String(), `"rulesOff":["rule_naming"]`) {
+		t.Fatalf("member read after save = %s", rec.Body.String())
+	}
+	if _, err := f.srv.DB.Exec(`UPDATE skills SET disabled = true WHERE id = 'skl_oauth2'`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := putJSON(t, f.srv, path, f.adminToken, body); rec.Code != 422 || !strings.Contains(rec.Body.String(), `"skillIds"`) {
+		t.Fatalf("disabled skill = %d %s", rec.Code, rec.Body.String())
+	}
+	var payload string
+	if err := f.srv.DB.QueryRow(`
+		SELECT payload_json FROM events WHERE kind = 'config_changed' AND payload_json LIKE '%tribe_conventions%'`).Scan(&payload); err != nil {
+		t.Fatalf("config_changed: %v", err)
 	}
 }

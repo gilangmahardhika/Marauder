@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -103,5 +104,18 @@ func TestMCPCallCap(t *testing.T) {
 	out, _, _ := s.dispatch(context.Background(), providers.ToolCall{Name: "mcp_tickets_lookup", Args: args})
 	if !strings.Contains(out, "30 times") || extra.calls != MaxMCPCalls {
 		t.Fatalf("31st call = %q, server calls %d", out, extra.calls)
+	}
+}
+
+func TestMCPContextEventCard(t *testing.T) {
+	p := mcpContextEvent(nil, &MCPContext{Scope: "card", Offered: []string{"wiki"}, Attached: []string{"wiki"}, Total: 2}, 0)
+	if p["scope"] != "card" || fmt.Sprint(p["attached"]) != "[wiki]" || fmt.Sprint(p["detached"]) != "[]" {
+		t.Fatalf("payload = %v", p)
+	}
+	if got := mentionedServers(&MCPContext{Scope: "card", Offered: []string{"wiki"}}); fmt.Sprint(got) != "[wiki]" {
+		t.Fatalf("pack servers = %v", got)
+	}
+	if p := mcpContextEvent(nil, &MCPContext{Scope: "all"}, 0); p["attached"] != nil {
+		t.Fatalf("all payload = %v", p)
 	}
 }

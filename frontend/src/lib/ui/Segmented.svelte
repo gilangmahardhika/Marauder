@@ -5,8 +5,9 @@
     label,
     options,
     value,
+    disabled = false,
     onchange
-  }: { label: string; options: Option[]; value: string; onchange: (value: string) => void } = $props();
+  }: { label: string; options: Option[]; value: string; disabled?: boolean; onchange: (value: string) => void } = $props();
 </script>
 
 <div class="inline-flex overflow-hidden rounded-control border border-line bg-surface" role="group" aria-label={label}>
@@ -14,9 +15,10 @@
     <button
       type="button"
       aria-pressed={value === option.value}
-      class="min-h-11 px-3 text-sm whitespace-nowrap {index > 0 ? 'border-l border-line' : ''} {value === option.value
+      {disabled}
+      class="min-h-11 px-3 text-sm whitespace-nowrap disabled:cursor-not-allowed {index > 0 ? 'border-l border-line' : ''} {value === option.value
         ? 'bg-ground font-medium text-ink'
-        : 'text-muted hover:text-ink'}"
+        : 'text-muted hover:text-ink disabled:hover:text-muted'}"
       onclick={() => onchange(option.value)}
     >
       {option.label}

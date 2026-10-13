@@ -103,3 +103,5 @@ Sprint 57: `TestImplementerMCPTools`, `TestMCPResultWrappedAndStripped`, `TestMC
 Sprint 58: `TestStdioNoNetworkNoArgvSecret`, `TestStdioRefusesShell`, `TestStdioContainerRemoved`, `TestStdioFixtureRefused`, `TestStdioListAndCall`.
 
 Sprint 59: `TestRefineNoServersNoTools`, `TestRefineMCPLoop`, `TestRefineMCPResetEvent`, `TestRefineLastTurnNoTools`, `TestRefineMCPCancel`, and the `RefinePanel` reset Vitest case.
+
+Superseded in part by RFC-105 in [0045-layered-conventions-and-card-context.md](0045-layered-conventions-and-card-context.md). A Lead Developer member, a tribe admin, or an admin may attach an enabled server of the tribe to one card.

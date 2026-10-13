@@ -942,3 +942,51 @@ Packages: `internal/intake`, `internal/app`, frontend `requirements.ts`, `Review
 - The picker labels an unverified member "No verified GitHub login" and says they are asked after they verify; the trace shows who is waiting.
 
 Done when: `TestReviewersSetByCreator`, `TestReviewerOptionsUnverified`, `TestRequestReviewers`, `TestRequestReviewersOnlyWaiting`, the reviewer picker, `ReviewersPanel`, and trace Vitest cases, `npm run check`, the fixture, and the rest of the suite.
+
+## Sprint 68: Tribe and Project sections
+
+Goal: The sidebar groups the active tribe's pages and the active project's pages, and MCP servers sits under the tribe (REQ-091).
+
+Packages: frontend `+layout.svelte`, `icons.ts`, and the settings pages.
+
+- The groups are Workspace, "Tribe · {name}" (Projects, MCP servers, Conventions, Members), "Project · {name}" (Repository, Linked projects, Deploy, Conventions), and Admin.
+- MCP servers and Members show only to a tribe admin or an admin. The Project group hides with no project.
+- The settings sub-nav is removed, and the mobile menu shows the group headings.
+
+Done when: the Tribe and Project sections Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 69: Layered conventions
+
+Goal: A tribe sets the conventions of its projects, and a project switches each on or off (RFC-104, REQ-092).
+
+Packages: migration `00027`, `internal/conventions`, `internal/app`, `internal/httpapi`, frontend `/tribes/[id]/conventions` and `/settings/conventions`.
+
+- `tribe_conventions`, `project_conventions`, and `card_context` are new; enabled skills and manual stacks move to project `on` rows.
+- `conventions.Effective` resolves the layers with origins, and the pack and `create_card` use it.
+- `GET` and `PUT /api/tribes/{id}/conventions`; the project route takes on/off choices.
+
+Done when: `TestTribeConventionsSave`, `TestEffectiveConventions`, `TestProjectConventionsMigration`, `TestPackUsesEffective`, the updated `TestProjectConventionsLeadOnly` and `TestCreateCardSkills`, the conventions pages Vitest cases, the fixture, and the rest of the suite.
+
+## Sprint 70: Card context
+
+Goal: A person changes one card's skills, rules, and MCP servers for its next attempt (RFC-105, REQ-093).
+
+Packages: `internal/conventions`, `internal/app`, `internal/httpapi`, `internal/trace`.
+
+- `PUT /api/projects/{projectId}/cards/{id}/context` attaches, detaches, or inherits one item, with the `context` and `attach-mcp` actions.
+- `ForCard` and `MCPScopeFor` apply the card's rows; `mcp_context` records `card`, `attached`, and `detached`.
+- Each change appends `context_changed` and never moves the card.
+
+Done when: `TestCardContextRoles`, `TestCardContextDone409`, `TestCardContextScoped`, `TestCardContextPack`, `TestMCPScopeCardAttach`, `TestCardContextDisabledServer`, the fixture, and the rest of the suite.
+
+## Sprint 71: Card context panel
+
+Goal: The card page shows and changes the card's context (RFC-105, REQ-093).
+
+Packages: frontend `CardContext`, the card page, `api.ts`, `types.ts`, and `trace.ts`.
+
+- The Context panel lists rules, skills, and MCP servers with origins and Detach, Restore, and Attach controls from the card's actions.
+- The trace shows `context_changed` and the `card` MCP scope.
+
+Done when: the card context Vitest cases, `npm run check`, and the rest of the suite.
+

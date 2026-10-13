@@ -374,7 +374,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -392,8 +392,9 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `stacks_detected` | `stacks` (stack ids found by the last Sync) (RFC-055) |
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
+| `context_changed` | `kind` (`skill`, `rule`, or `mcp`), `itemId`, and `mode` (`attach`, `detach`, or `inherit`). The row's `actor_id` is the person who changed the card's context (RFC-105) |
 
-A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one. A `tool_call` named `mcp_context` adds `servers`, one `{ "id", "slug", "transport", "tools" }` object per offered server, with `host`, `database`, `image`, or `error` as RFC-094 and RFC-097 describe, and `scope`: `all`, `mentioned`, or `none` (RFC-102). `missing` lists the mentioned slugs that are not an enabled server of the tribe, and `reason` says why the scope is `none`. A scope of `none` writes the event with `servers: []`.
+A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one. A `tool_call` named `mcp_context` adds `servers`, one `{ "id", "slug", "transport", "tools" }` object per offered server, with `host`, `database`, `image`, or `error` as RFC-094 and RFC-097 describe, and `scope`: `all`, `mentioned`, `card`, or `none` (RFC-102, RFC-105). `attached` and `detached` list the slugs the card's context added and removed; the scope is `card` when they changed the set. `missing` lists the mentioned slugs that are not an enabled server of the tribe, and `reason` says why the scope is `none`. A scope of `none` writes the event with `servers: []`.
 
 `tool_call.args` holds what a person needs to follow the step (RFC-074):
 
@@ -613,6 +614,52 @@ CREATE TABLE card_skills (
 ```
 
 Ids use the prefixes `stk_`, `rule_`, and `skl_`. `detect_json` is `{ "files": [], "npmDeps": [], "pyDeps": [] }`. `content_hash` is the SHA-256 hex of the item's text fields joined by the byte `0x1e`: name and `detect_json` for a stack; scope, stack id, category, title, and body for a rule; slug, title, use when, and body for a skill. A revision stores the text the hash covers: `title` is the name, title, or slug, and `body` is `detect_json`, the rule body, or `use when:` plus the skill body. The migration seeds the stacks Go, TypeScript, SvelteKit, React, Python, and Django with their markers, the global rules "Naming" and "Database tables and columns", and the skill `oauth2-integration`, each at version 1 with a revision row.
+
+`00027_layered_conventions.sql` adds the tribe and card layers (RFC-104, RFC-105):
+
+```sql
+CREATE TABLE tribe_conventions (
+  tribe_id TEXT NOT NULL REFERENCES tribes(id),
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  added_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (tribe_id, kind, item_id),
+  CHECK ((kind IN ('stack', 'skill') AND mode = 'on') OR (kind = 'rule' AND mode = 'off'))
+);
+
+CREATE TABLE project_conventions (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  kind TEXT NOT NULL CHECK (kind IN ('stack', 'skill', 'rule')),
+  item_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('on', 'off')),
+  added_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, kind, item_id)
+);
+
+CREATE TABLE card_context (
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('skill', 'rule', 'mcp')),
+  item_id TEXT NOT NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('attach', 'detach')),
+  added_by TEXT REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, card_id, kind, item_id)
+);
+```
+
+The migration copies each `project_skills` row to a `skill` `on` row and each `manual` `project_stacks` row to a `stack` `on` row, deletes the manual rows, and drops `project_skills`. `project_stacks` then holds detected stacks only. `item_id` is a stack, skill, or rule id, or a `tribe_mcp_servers` id for `mcp`.
+
+A project's conventions resolve in Go (`conventions.Effective`):
+
+- Stacks: detected, plus the tribe's stacks, plus the project's `on`, minus the project's `off`. Origin `project`, then `tribe`, then `detected`.
+- Rules: the enabled global rules and the enabled rules of the project's stacks start `on` with origin `catalog`. A tribe `off` switches one off. A project row decides it over the tribe, with origin `project`; a project `on` adds a rule of a stack the project does not have.
+- Skills: the tribe's skills, plus the project's `on`, minus the project's `off`. Origin `project`, then `tribe`.
+- A card's rules are the project's, then its `card_context` rule rows. A card's skills are its `card_skills` rows (origin `planner`), plus its `attach` rows, minus its `detach` rows (origin `card`).
+- A disabled stack, rule, or skill never applies. A rule of a disabled stack never applies.
 
 ## Accounts and membership API
 
@@ -872,6 +919,8 @@ A project object is:
 }
 ```
 
+`context` is the card's context (RFC-105). `rules` and `skills` list every item the card's packs carry, plus each one the card detached, with `state` `on` or `off` and `origin`: `project` or `planner` for an inherited item, `card` for one the card's context set. `mcp` lists every server of the project's tribe as `{ "id", "slug", "enabled", "toolCount", "state", "origin" }`, where `state` is whether the next attempt opens it and `origin` is `scope` or `card`. `mcpScope` is the scope the next attempt would record. The board list does not return `context`.
+
 `requirements` lists the rows of `requirementIds` in the card's project, in the card's order. An id with no row in that project is left out. `rules` lists the rules the card's packs carry, as `conventions.ForCard` reads them (RFC-055): global rules first, then each stack's rules. `label` is `global` or the stack name. The rule body is not returned.
 
 `notes` lists the card's newest 10 `failure_notes` rows in the card's project, newest first, so the first note is the one the next attempt reads. `source` is the stored source. `attemptN` is the `n` of the attempt that wrote the note, or `0` when the note has no attempt in that project, such as an approver's note. The board list does not return `notes`.
@@ -1126,6 +1175,14 @@ Allowed for a Lead Developer, Senior Developer, QA Lead, or Product Owner member
 
 The server turns CRLF into LF and trims outer whitespace. Blank text clears the instructions. Text equal to the current instructions writes nothing. Otherwise it inserts a failure note with source `instructions`, or updates the instructions note written in the same second, and writes an `instructions_saved` event with the caller as actor and `{ "length": n }` as payload. More than 4000 characters is `422` with `fields.instructions` `Keep the instructions to 4000 characters or fewer.`. A `done` card is `409`. A card in another project is `404`. A method other than `PUT` is `405`. An attempt that already started keeps the prompt it started with.
 
+`PUT /api/projects/{projectId}/cards/{id}/context` changes one item of the card's context and returns the card object (RFC-105).
+
+```json
+{ "kind": "skill", "itemId": "skl_oauth2", "mode": "attach" }
+```
+
+`kind` is `skill`, `rule`, or `mcp`. `mode` is `attach`, `detach`, or `inherit`, which deletes the card's row. The roles that may run a card, a tribe admin of the project's tribe, and a company admin change skills and rules and detach a server; anyone else is `403`. Attaching a server also needs a Lead Developer member, a tribe admin of the project's tribe, or a company admin, else `403`. A skill or rule must be enabled in the catalog, and a server must be an enabled server of the project's tribe, else `422` with `fields.itemId`. A `done` card is `409`. A card in another project is `404`. It takes the card row lock, writes no status, and appends `context_changed`. The card object adds the action `context` for the roles that may change it, and `attach-mcp` for those who may attach a server, on any card that is not `done`.
+
 `POST /api/projects/{projectId}/cards/{id}/approve`
 
 ```json
@@ -1378,7 +1435,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 }
 ```
 
-`POST /api/conventions/rules` creates a rule and returns it with `201`. `PUT /api/conventions/rules/{id}` replaces its fields and returns it. The body is `scope`, `stackId`, `category`, `title`, `body`, and `disabled`. Stacks use `POST /api/conventions/stacks` and `PUT /api/conventions/stacks/{id}` with `name`, `detect`, and `disabled`. Skills use `POST /api/conventions/skills` and `PUT /api/conventions/skills/{id}` with `slug`, `title`, `useWhen`, `body`, and `disabled`. A PUT whose hashed fields are unchanged keeps the version. `DELETE /api/conventions/{rules|stacks|skills}/{id}` returns `204`: it deletes an item nothing names, and disables a stack that a rule or project names or a skill that a project or card names. An unknown id is `404`.
+`POST /api/conventions/rules` creates a rule and returns it with `201`. `PUT /api/conventions/rules/{id}` replaces its fields and returns it. The body is `scope`, `stackId`, `category`, `title`, `body`, and `disabled`. Stacks use `POST /api/conventions/stacks` and `PUT /api/conventions/stacks/{id}` with `name`, `detect`, and `disabled`. Skills use `POST /api/conventions/skills` and `PUT /api/conventions/skills/{id}` with `slug`, `title`, `useWhen`, `body`, and `disabled`. A PUT whose hashed fields are unchanged keeps the version. `DELETE /api/conventions/{rules|stacks|skills}/{id}` returns `204`: it deletes an item nothing names, and disables a stack that a rule, tribe, or project names, a skill that a tribe, project, or card names, or a rule that a tribe, project, or card names (RFC-104). An unknown id is `404`.
 
 | Field | Rule |
 | --- | --- |
@@ -1394,23 +1451,34 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `slug` | `^[a-z0-9][a-z0-9-]{1,59}$`, unique |
 | `useWhen` | 1 to 500 characters |
 
-`GET /api/projects/{projectId}/settings/conventions` is the project's stacks, enabled skills, and the rules that apply. Every member, and a company admin, may read it.
+`GET /api/tribes/{id}/conventions` is the tribe's conventions (RFC-104): `{ "stackIds": [], "skillIds": [], "rulesOff": [], "canEdit": true }`. A company admin or a member of the tribe may read it. Anyone else is `403`, and an unknown tribe is `404`. `PUT` takes the same body without `canEdit`, at most 30 ids in each list, and returns the GET body. Each id must name an enabled stack, skill, or rule, else `422` on that field. A company admin or a tribe admin of the tribe may save. A save appends `config_changed` with section `tribe_conventions`.
+
+`GET /api/projects/{projectId}/settings/conventions` is the project's conventions over its tribe (RFC-104). Every member, and a company admin, may read it.
 
 ```json
 {
+  "tribe": { "stackIds": ["stk_go"], "skillIds": ["skl_oauth2"], "rulesOff": [] },
+  "choices": {
+    "stacks": { "on": ["stk_django"], "off": [] },
+    "skills": { "on": [], "off": [] },
+    "rules": { "on": [], "off": ["rule_naming"] }
+  },
+  "detectedStackIds": ["stk_go"],
   "stacks": [
-    { "id": "stk_go", "name": "Go", "source": "detected" },
-    { "id": "stk_django", "name": "Django", "source": "manual" }
+    { "id": "stk_go", "name": "Go", "origin": "tribe" },
+    { "id": "stk_django", "name": "Django", "origin": "project" }
   ],
-  "skillIds": ["skl_oauth2"],
+  "skills": [{ "id": "skl_oauth2", "slug": "oauth2-integration", "title": "OAuth 2.0", "origin": "tribe" }],
   "rules": [
-    { "id": "rule_0123456789ab", "title": "Go names", "scope": "stack", "stackName": "Go", "category": "naming", "version": 2 }
+    { "id": "rule_0123456789ab", "title": "Go names", "scope": "stack", "stackName": "Go", "category": "naming", "version": 2, "origin": "catalog" }
   ],
   "canEdit": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/conventions` accepts `{ "manualStackIds": [], "skillIds": [] }`, at most 30 of each, and returns the GET body. Each id must name an enabled stack or skill, else `422` on that field. A manual id that is already detected stays detected. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`. A save appends `config_changed` with section `conventions` for the project.
+`stacks`, `skills`, and `rules` are what applies after both layers. `choices` are the project's own rows.
+
+`PUT /api/projects/{projectId}/settings/conventions` accepts `{ "stacks": { "on": [], "off": [] }, "skills": { "on": [], "off": [] }, "rules": { "on": [], "off": [] } }`, at most 30 ids in each list, and returns the GET body. Each id must name an enabled item of that kind, else `422` on the field, such as `skills.on`. An id in both lists of one kind is `422`. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`. A save appends `config_changed` with section `conventions` for the project.
 
 `GET /api/projects/{projectId}/settings/deploy`
 

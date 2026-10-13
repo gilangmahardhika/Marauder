@@ -20,6 +20,8 @@ export type Card = {
   notes?: CardNote[];
   /** Single card only. What every later attempt reads with the newest note (RFC-073). */
   instructions?: string | null;
+  /** Single card only. The rules, skills, and MCP servers the next attempt carries (RFC-105). */
+  context?: CardContext;
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -51,6 +53,29 @@ export type Card = {
   failureReason: string | null;
   blockedReason: string | null;
   updatedAt: string;
+};
+
+export type CardContextRule = EffectiveRule & { state: "on" | "off" };
+export type CardContextSkill = EffectiveSkill & { state: "on" | "off" };
+/** A server of the card's tribe: no transport, host, or secret (RFC-101). */
+export type CardContextServer = {
+  id: string;
+  slug: string;
+  enabled: boolean;
+  toolCount: number;
+  state: "on" | "off";
+  origin: "scope" | "card";
+};
+export type CardContext = {
+  rules: CardContextRule[];
+  skills: CardContextSkill[];
+  mcp: CardContextServer[];
+  mcpScope: "all" | "mentioned" | "card" | "none";
+};
+export type CardContextChange = {
+  kind: "skill" | "rule" | "mcp";
+  itemId: string;
+  mode: "attach" | "detach" | "inherit";
 };
 
 export type SkillRef = {
@@ -466,17 +491,42 @@ export type SkillInput = Pick<
   "slug" | "title" | "useWhen" | "body" | "disabled"
 >;
 
+/** The layer that put a convention in a set (RFC-104, RFC-105). */
+export type ConventionOrigin = "catalog" | "detected" | "tribe" | "project" | "planner" | "card";
+
+/** What a tribe sets for all its projects: stacks and skills on, rules off (RFC-104). */
+export type TribeLayer = { stackIds: string[]; skillIds: string[]; rulesOff: string[] };
+export type TribeConventions = TribeLayer & { canEdit: boolean };
+
+export type OnOff = { on: string[]; off: string[] };
+export type ConventionChoices = { stacks: OnOff; skills: OnOff; rules: OnOff };
+
+export type EffectiveRule = {
+  id: string;
+  title: string;
+  scope: "global" | "stack";
+  stackName: string;
+  category: RuleCategory;
+  version: number;
+  origin: ConventionOrigin;
+};
+
+export type EffectiveSkill = {
+  id: string;
+  slug: string;
+  title: string;
+  useWhen: string;
+  version: number;
+  origin: ConventionOrigin;
+};
+
 export type ProjectConventions = {
-  stacks: { id: string; name: string; source: "detected" | "manual" }[];
-  skillIds: string[];
-  rules: {
-    id: string;
-    title: string;
-    scope: "global" | "stack";
-    stackName: string;
-    category: RuleCategory;
-    version: number;
-  }[];
+  tribe: TribeLayer;
+  choices: ConventionChoices;
+  detectedStackIds: string[];
+  stacks: { id: string; name: string; origin: ConventionOrigin }[];
+  skills: EffectiveSkill[];
+  rules: EffectiveRule[];
   canEdit: boolean;
 };
 

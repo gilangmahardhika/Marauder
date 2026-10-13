@@ -7,10 +7,12 @@ import { session } from '$lib/session';
 import { shell } from '$lib/shell.svelte';
 
 const api = vi.hoisted(() => ({ getMe: vi.fn(), getProjects: vi.fn(), getTribes: vi.fn(), closeSession: vi.fn() }));
+const location = vi.hoisted(() => ({ path: '/' }));
 
 vi.mock('$app/stores', () => ({
   page: {
-    subscribe: (run: (value: unknown) => void) => readable({ params: {}, url: new URL('http://127.0.0.1:4173/') }).subscribe(run)
+    subscribe: (run: (value: unknown) => void) =>
+      readable({ params: {}, url: new URL(`http://127.0.0.1:4173${location.path}`) }).subscribe(run)
   }
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
@@ -20,8 +22,8 @@ import Layout from './+layout.svelte';
 
 const children = createRawSnippet(() => ({ render: () => '<p>page</p>' }));
 
-function me(admin: boolean) {
-  return { id: 'usr_1', name: 'Ana', email: 'ana@example.com', role: 'developer', admin, tribeAdminOf: [] };
+function me(admin: boolean, tribeAdminOf: string[] = []) {
+  return { id: 'usr_1', name: 'Ana', email: 'ana@example.com', role: 'developer', admin, tribeAdminOf };
 }
 
 beforeEach(() => {
@@ -31,6 +33,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   shell.admin = false;
+  shell.tribeAdminOf = [];
+  location.path = '/';
   sessionStorage.clear();
 });
 
@@ -102,4 +106,100 @@ test('a stored tribe the API no longer returns sends the browser to the tribe se
   await waitFor(() => expect(goto).toHaveBeenCalledWith('/choose-tribe'));
   expect(session.tribe()).toBe('');
   expect(session.project()).toBe('');
+});
+
+function sections() {
+  return screen.getAllByRole('navigation', { name: 'Sections' })[0];
+}
+
+function headings(nav: HTMLElement) {
+  return [...nav.querySelectorAll('p')].map((item) => item.textContent?.trim() ?? '');
+}
+
+test('the sidebar names the tribe and project sections and shows tribe pages to a tribe manager only', async () => {
+  session.setTribe('tribe_a');
+  session.setProject('proj_a1');
+  api.getMe.mockResolvedValue(me(false));
+  api.getTribes.mockResolvedValue({ tribes });
+  api.getProjects.mockResolvedValue({ projects });
+  const member = render(Layout, { children });
+  await waitFor(() => expect(headings(sections())).toContain('Tribe · Alpha'));
+  expect(headings(sections())).toEqual(['Workspace', 'Tribe · Alpha', 'Project · Shop']);
+  expect(sections().querySelector('a[href="/projects"]')).not.toBeNull();
+  expect(sections().querySelector('a[href="/tribes/tribe_a/conventions"]')).not.toBeNull();
+  expect(sections().querySelector('a[href="/settings/conventions"]')).not.toBeNull();
+  expect(sections().querySelector('a[href="/tribes/tribe_a/mcp"]')).toBeNull();
+  expect(sections().querySelector('a[href="/tribes/tribe_a"]')).toBeNull();
+  expect(sections().querySelector('a[href="/tribes"]')).toBeNull();
+  member.unmount();
+
+  api.getMe.mockResolvedValue(me(false, ['tribe_a']));
+  render(Layout, { children });
+  await waitFor(() => expect(sections().querySelector('a[href="/tribes/tribe_a/mcp"]')).not.toBeNull());
+  const tribeLinks = [...sections().querySelectorAll('a')].map((link) => link.textContent?.trim());
+  expect(tribeLinks).toEqual([
+    'Board',
+    'Intake',
+    'Projects',
+    'MCP servers',
+    'Conventions',
+    'Members',
+    'Repository',
+    'Linked projects',
+    'Deploy',
+    'Conventions'
+  ]);
+  expect(sections().querySelector('a[href="/tribes/tribe_a"]')?.textContent?.trim()).toBe('Members');
+});
+
+test('Members is current only on the tribe page itself', async () => {
+  session.setTribe('tribe_a');
+  session.setProject('proj_a1');
+  location.path = '/tribes/tribe_a/mcp';
+  api.getMe.mockResolvedValue(me(true));
+  api.getTribes.mockResolvedValue({ tribes });
+  api.getProjects.mockResolvedValue({ projects });
+  render(Layout, { children });
+  await waitFor(() => expect(sections().querySelector('a[href="/tribes/tribe_a/mcp"]')).not.toBeNull());
+  const current = [...sections().querySelectorAll('a[aria-current="page"]')].map((link) => link.getAttribute('href'));
+  expect(current).toEqual(['/tribes/tribe_a/mcp']);
+});
+
+test('the Members link is current on the tribe page and the admin Tribes link is not', async () => {
+  session.setTribe('tribe_a');
+  session.setProject('proj_a1');
+  location.path = '/tribes/tribe_a';
+  api.getMe.mockResolvedValue(me(true));
+  api.getTribes.mockResolvedValue({ tribes });
+  api.getProjects.mockResolvedValue({ projects });
+  render(Layout, { children });
+  await waitFor(() => expect(sections().querySelector('a[href="/tribes/tribe_a"]')).not.toBeNull());
+  const current = [...sections().querySelectorAll('a[aria-current="page"]')].map((link) => link.getAttribute('href'));
+  expect(current).toEqual(['/tribes/tribe_a']);
+});
+
+test('with no project the Project section is gone', async () => {
+  session.setTribe('tribe_c');
+  session.setProject('');
+  api.getMe.mockResolvedValue(me(false));
+  api.getTribes.mockResolvedValue({ tribes: [...tribes, { id: 'tribe_c', name: 'Gamma' }] });
+  api.getProjects.mockResolvedValue({ projects });
+  render(Layout, { children });
+  await waitFor(() => expect(headings(sections())).toContain('Tribe · Gamma'));
+  expect(headings(sections())).toEqual(['Workspace', 'Tribe · Gamma']);
+  expect(sections().querySelector('a[href="/settings/repository"]')).toBeNull();
+});
+
+test('the mobile menu shows the section headings', async () => {
+  session.setTribe('tribe_a');
+  session.setProject('proj_a1');
+  api.getMe.mockResolvedValue(me(false));
+  api.getTribes.mockResolvedValue({ tribes });
+  api.getProjects.mockResolvedValue({ projects });
+  render(Layout, { children });
+  await waitFor(() => expect(headings(sections())).toContain('Project · Shop'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
+  const navs = screen.getAllByRole('navigation', { name: 'Sections' });
+  expect(navs).toHaveLength(2);
+  expect(headings(navs[1])).toEqual(['Workspace', 'Tribe · Alpha', 'Project · Shop', 'Account']);
 });

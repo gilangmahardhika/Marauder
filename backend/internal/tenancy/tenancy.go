@@ -106,6 +106,30 @@ func ManageTribe(ctx context.Context, db *sql.DB, actor identity.User, tribeID s
 	return nil
 }
 
+// TribeVisible lets a company admin read any tribe, and a member read their
+// own. Anyone else gets identity.ErrForbidden; an admin asking for an unknown
+// tribe gets identity.ErrNotFound.
+func TribeVisible(ctx context.Context, db *sql.DB, actor identity.User, tribeID string) error {
+	var n int
+	if actor.Admin {
+		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM tribes WHERE id = $1`, tribeID).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return identity.ErrNotFound
+		}
+		return nil
+	}
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM tribe_members WHERE tribe_id = $1 AND user_id = $2`, tribeID, actor.ID).Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return identity.ErrForbidden
+	}
+	return nil
+}
+
 func CreateTribe(ctx context.Context, db *sql.DB, actor identity.User, name string) (Tribe, error) {
 	if !actor.Admin {
 		return Tribe{}, identity.ErrForbidden

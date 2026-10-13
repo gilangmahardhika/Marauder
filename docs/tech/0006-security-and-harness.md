@@ -15,6 +15,7 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 | Model output | Untrusted | Tool name and arguments, which the harness then filters |
 | A tribe's MCP server settings | Trusted to name a URL, an image, an argv, a database host and login, and secrets, as saved by a tribe admin (RFC-092, RFC-097) | Which allowlisted tools the implementer and refine offer |
 | `@slug` mentions in requirement text, written by members or in the repository | Trusted only to narrow: a mention picks among the tribe's enabled, allowlisted servers and never adds a server, a tool, or a disabled server. A requirement edited since acceptance offers no MCP tools (RFC-101, RFC-102) | Which of the tribe's servers a card's attempt and a draft's refine offer |
+| A card's context, set by a person (RFC-105) | Trusted as that person's choice: any role that may run the card adds or removes rule and skill text, which stays inside the untrusted markers and adds no tool. Adding an MCP server is trusted only from a Lead Developer member, a tribe admin of the project's tribe, or an admin, and only for an enabled server of that tribe | Which catalog rules and skills the next attempt reads, and which of the tribe's enabled servers it opens. Never a disabled server, a tool off the allowlist, or a server of another tribe |
 | MCP server responses and database rows | Untrusted | Text inside the untrusted markers after `MCP RESULT`, and the tool list only where its schema hash matches the allowlist |
 | MCP Registry entries | Untrusted | What the setup form is filled with, which the tribe admin reviews before saving. A registry description is never sent to a model (RFC-096) |
 | Featured MCP entries | Trusted as code: a fixed list compiled into the harness and reviewed with it. Registry data never sets `source` to `featured` | What the setup form is filled with. The URL still passes the check on save and at dial, and the admin still allowlists each tool (RFC-099) |
@@ -59,6 +60,8 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | An MCP error carries server text | The model, events, and API get only a fixed reason such as `the server is unreachable` |
 | A stdio MCP server in fixture mode, or with no engine | Not started; `mcp_context` records `stdio servers need the container sandbox` |
 | A card's requirements mention servers, but none is an enabled server of the tribe, or a requirement's text changed since acceptance | No MCP server is opened and no MCP tool is offered. `mcp_context` records scope `none`, the `missing` slugs, and the reason (RFC-102) |
+| A card attaches a server, but a requirement of the card changed since acceptance | No MCP server is opened. The acceptance check runs before the card step (RFC-105) |
+| A card attaches a server that is disabled or belongs to another tribe, or a Developer attaches any server | The change is refused, and no row is written (RFC-105) |
 | A requirement's mention would notify a GitHub user or team in the pull request body | The body wraps each mention in backticks (RFC-101) |
 | A member who is not a tribe admin reads the intake | The intake lists the tribe's servers by slug, enabled, and tool count only; the URL, image, argv, connection, and secret names stay on the admin routes (RFC-101) |
 | A stdio MCP argv names a shell or wrapper, or the image has no digest | `422` on save, and `sandbox.StdioArgv` refuses again before start |
@@ -530,6 +533,8 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestIntakeMCPServers` | A member's intake lists the tribe's slugs, enabled flags, and tool counts, and no URL, argv, image, config, or secret name (RFC-101) |
 | `TestImplementerMCPMentionMissing` | Mentions that name no enabled server open no server and offer no MCP tool (RFC-102) |
 | `TestImplementerMCPUnaccepted` | A requirement edited since acceptance offers no MCP tool to its card (RFC-102) |
+| `TestMCPScopeCardAttach` | A card attach widens the scope only to enabled servers of the tribe, and an unaccepted requirement still gives none (RFC-105) |
+| `TestCardContextRoles` | Only a Lead Developer, a tribe admin, or an admin attaches a server to a card (RFC-105) |
 
 ## Operator duties
 

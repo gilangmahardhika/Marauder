@@ -20,10 +20,12 @@ export type IconName =
   | 'rules'
   | 'skill'
   | 'alert'
-  | 'chart';
+  | 'chart'
+  | 'mcp';
 
 export const iconPaths: Record<IconName, string[]> = {
   alert: ['M12 3.5L21.5 20h-19z', 'M12 10v4.5', 'M12 17.5h.01'],
+  mcp: ['M9 3v5', 'M15 3v5', 'M7 8h10v3a5 5 0 01-10 0z', 'M12 16v5'],
   chart: ['M4 20h16', 'M6.5 20v-7', 'M11 20V6', 'M15.5 20v-10', 'M20 20V3.5'],
   rules: ['M9 6h11', 'M9 12h11', 'M9 18h11', 'M4.5 6h.01', 'M4.5 12h.01', 'M4.5 18h.01'],
   skill: ['M14.7 6.3a4 4 0 00-5.4 5.4L4 17v3h3l5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z'],
