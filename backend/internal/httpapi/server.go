@@ -10,7 +10,9 @@ import (
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/live"
 	"orchestrator/backend/internal/mcpcatalog"
+	"orchestrator/backend/internal/notify"
 	"orchestrator/backend/internal/providers"
+	"orchestrator/backend/internal/webpush"
 )
 
 type Server struct {
@@ -45,10 +47,17 @@ type Server struct {
 	RunnerReleases string
 	// Remote holds the per-lease state of remote implement jobs.
 	Remote *app.RemoteJobs
+	// Notify carries board changes and notifications to open streams
+	// (RFC-113); the listener started by serve publishes to it.
+	Notify *notify.Hub
+	// Push sends browser notifications, and PushKey is its VAPID public key;
+	// nil turns the push routes off.
+	Push    *webpush.Pusher
+	PushKey string
 }
 
 func New() *Server {
-	return &Server{AllowOrigin: "http://127.0.0.1:4173", Live: live.New()}
+	return &Server{AllowOrigin: "http://127.0.0.1:4173", Live: live.New(), Notify: notify.NewHub()}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -122,6 +131,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/runners", s.listRunners)
 	mux.HandleFunc("POST /api/runners/tokens", s.mintRunnerToken)
 	mux.HandleFunc("POST /api/runners/{id}/{action}", s.runnerAction)
+	mux.HandleFunc("GET /api/stream", s.stream)
+	mux.HandleFunc("GET /api/notifications", s.notifications)
+	mux.HandleFunc("POST /api/notifications/read", s.readNotifications)
+	mux.HandleFunc("GET /api/push/key", s.pushKey)
+	mux.HandleFunc("POST /api/push/subscriptions", s.savePush)
+	mux.HandleFunc("DELETE /api/push/subscriptions", s.deletePush)
+	mux.HandleFunc("POST /api/push/test", s.testPush)
 	s.runnerRoutes(mux)
 	return s.wrap(mux)
 }
@@ -268,6 +284,8 @@ func Actions(status, reason string, open bool, role string) (string, []string, a
 			return "stopped", []string{}, nil
 		}
 		group, actions, unblock = "stopped", []string{"unblock"}, to
+	case "wont_fix":
+		group, actions, unblock = "closed", []string{}, nil
 	default:
 		group, actions, unblock = "waiting", []string{}, nil
 	}

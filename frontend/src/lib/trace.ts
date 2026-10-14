@@ -24,6 +24,7 @@ const kinds: Record<string, string> = {
   gate: 'Gate',
   deploy: 'Deploy',
   merge: 'Squash and merge',
+  wont_fix: "Won't fix",
   health: 'Health check',
   verify: 'Dev check',
   budget_stop: 'Budget stop',
@@ -31,7 +32,8 @@ const kinds: Record<string, string> = {
   assertion_failed: 'Harness assertion',
   stacks_detected: 'Stacks detected',
   instructions_saved: 'Instructions saved',
-  context_changed: 'Context changed'
+  context_changed: 'Context changed',
+  review_failed: 'AI review gave no verdict'
 };
 
 const tools: Record<string, string> = {
@@ -365,6 +367,14 @@ export function describe(event: TraceEvent): Described {
       const exit = num(p.exitCode);
       return { label: 'Deploy', detail: [`exit ${exit}`, shortShas(str(p.requestedSha))].filter(Boolean).join(' · '), meta: '', tone: exit === 0 ? 'green' : 'red', text: '' };
     }
+    case 'wont_fix':
+      return {
+        label: "Won't fix",
+        detail: p.prClosed === true ? 'Pull request closed' : '',
+        meta: str(p.login) ? `@${str(p.login)}` : '',
+        tone: 'default',
+        text: str(p.reason)
+      };
     case 'health':
       return p.passed === true
         ? { label: 'Health check', detail: `Passed (${num(p.status)})`, meta: '', tone: 'green', text: '' }
@@ -373,6 +383,8 @@ export function describe(event: TraceEvent): Described {
       const exit = num(p.exitCode);
       return { label: 'Dev check', detail: `exit ${exit}`, meta: '', tone: exit === 0 ? 'green' : 'red', text: '' };
     }
+    case 'review_failed':
+      return { label: 'AI review gave no verdict', detail: shortShas(str(p.sha)), meta: '', tone: 'amber', text: '' };
     case 'route':
       return { label: 'Model route', detail: str(p.modelId), meta: str(p.taskClass), tone: 'default', text: '' };
     case 'config_changed': {

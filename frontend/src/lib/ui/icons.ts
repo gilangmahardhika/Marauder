@@ -23,10 +23,12 @@ export type IconName =
   | 'chart'
   | 'mcp'
   | 'server'
-  | 'copy';
+  | 'copy'
+  | 'bell';
 
 export const iconPaths: Record<IconName, string[]> = {
   copy: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],
+  bell: ['M6 16v-5a6 6 0 0112 0v5l1.5 2h-15z', 'M10 20.5a2 2 0 004 0'],
   alert: ['M12 3.5L21.5 20h-19z', 'M12 10v4.5', 'M12 17.5h.01'],
   server: ['M4 4h16v6H4z', 'M4 14h16v6H4z', 'M7.5 7h.01', 'M7.5 17h.01'],
   mcp: ['M9 3v5', 'M15 3v5', 'M7 8h10v3a5 5 0 01-10 0z', 'M12 16v5'],

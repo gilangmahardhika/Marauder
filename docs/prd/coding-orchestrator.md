@@ -137,6 +137,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-092 | A tribe sets the conventions of its projects, and a project switches each on or off |
 | REQ-093 | A person changes the skills, rules, and MCP servers of one card |
 | REQ-094 | An operator installs runners that claim implement jobs, and an admin sees each runner's status |
+| REQ-095 | People who must act on a card are notified, and open pages update without polling |
 
 ## Requirements
 
@@ -230,6 +231,8 @@ Card status changes only through the harness transition function. The legal edge
 | `verifying` | `blocked` | Dev check failed and the attempt cap is hit. |
 | `blocked` | `ready` | Operator released the card. Linked requirements accepted. Reason is not a deploy or health reason. |
 | `blocked` | `human_review` | Operator released a card blocked for `health`, `deploy_failed`, or `deploy_config`. Approval cleared. |
+| `blocked` | `wont_fix` | A Lead Developer, Product Owner, or the card owner closed the card with a reason. An open pull request was commented on and closed with that person's GitHub token. Blocked reason kept (RFC-112). |
+| `wont_fix` | `blocked` | The same people reopened the card. The kept blocked reason is restored (RFC-112). |
 | `done` | none | Terminal. A follow-up is a new card. |
 
 #### Acceptance
@@ -1298,6 +1301,19 @@ An admin mints a registration token, and an operator installs a runner on a mach
 - A runner that stops heartbeating goes offline, and its card's open attempt is cancelled and its run request queued again.
 - A remote attempt reaches `pr_open` through the same transitions and gates as a local one, and a runner cannot move a card.
 - No response to a runner carries `databaseUrl`, `tokenKey`, a model key, or the owner's GitHub token.
+
+### REQ-095 Push notifications
+
+The server pushes changes to open pages instead of the pages polling, and tells the people who must act on a card: reviewers when a card waits for review, the people who can ship an approved card, and the owner when the card is blocked, needs changes, or is finished. A notification shows in the app's bell and, for people who turned it on, as a browser notification even when the tab is closed (RFC-113).
+
+#### Acceptance
+
+- A status change written by any process reaches an open board and card page without a reload, with the viewer's own actions.
+- The board does not poll while its stream is open.
+- A card moved to `human_review` notifies its requirement reviewers, or the members who may approve when it has none, and never the person who moved it.
+- One event never notifies the same person twice, even with two `serve` processes.
+- A browser notification carries only a title, the card title and project name, and a link. It never carries a reason, note, code, log, or token.
+- A subscription endpoint that is not `https` on a known push service is refused, and the VAPID private key is never returned by the API.
 
 ## Non-goals
 

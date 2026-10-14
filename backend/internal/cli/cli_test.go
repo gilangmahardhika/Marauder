@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,10 @@ import (
 	"orchestrator/backend/internal/board/boardtest"
 	"orchestrator/backend/internal/cli"
 	"orchestrator/backend/internal/httpapi"
+	"orchestrator/backend/internal/identity"
+	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/trace"
+	"orchestrator/backend/internal/webpush"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -392,6 +396,91 @@ func cliDirs(t *testing.T) (string, string, string) {
 		t.Fatal(err)
 	}
 	return repo, data, boardtest.IsolatedURL(t)
+}
+
+func TestVAPIDKeySecret(t *testing.T) {
+	repo, data, databaseURL := cliDirs(t)
+	serve := func() {
+		t.Helper()
+		code := cli.Execute(cli.Options{
+			Args:   []string{"serve", "--repo", repo, "--data", data},
+			Stderr: io.Discard,
+			Getenv: func(key string) string {
+				if key == "ORCHESTRATOR_DATABASE_URL" {
+					return databaseURL
+				}
+				return ""
+			},
+			Open: func(string) error { return nil },
+		})
+		if code != 0 {
+			t.Fatalf("serve exit = %d", code)
+		}
+	}
+	vapid := func() string {
+		t.Helper()
+		_, secrets, err := settings.Load(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return secrets.VAPIDPrivateKey
+	}
+	serve()
+	first := vapid()
+	if _, err := webpush.ParseKey(first); err != nil {
+		t.Fatalf("vapidPrivateKey %q: %v", first, err)
+	}
+	serve()
+	if vapid() != first {
+		t.Fatal("serve replaced the VAPID key")
+	}
+	families := []settings.Family{{ID: "f", Protocol: "openai", BaseURL: "http://127.0.0.1:1", Models: []settings.Model{{ID: "m"}}}}
+	if _, err := settings.SaveLLM(data, families, nil); err != nil {
+		t.Fatal(err)
+	}
+	if vapid() != first {
+		t.Fatal("saving LLM settings dropped the VAPID key")
+	}
+
+	db, err := board.Open(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := board.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := identity.Insert(context.Background(), db, "dev@example.com", "password-long-1", "developer", false); err != nil {
+		t.Fatal(err)
+	}
+	key, _ := webpush.ParseKey(first)
+	srv := httpapi.New()
+	srv.DB = db
+	srv.Data = data
+	srv.Push = &webpush.Pusher{DB: db, Sender: &webpush.Sender{Key: key}}
+	srv.PushKey, _ = webpush.PublicKey(key)
+	login := httptest.NewRecorder()
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/session", strings.NewReader(`{"email":"dev@example.com","password":"password-long-1"}`))
+	loginReq.Host = "127.0.0.1:8787"
+	srv.Handler().ServeHTTP(login, loginReq)
+	var session struct {
+		Bearer string `json:"bearer"`
+	}
+	if err := json.Unmarshal(login.Body.Bytes(), &session); err != nil || session.Bearer == "" {
+		t.Fatalf("login = %d %s", login.Code, login.Body.String())
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/push/key", nil)
+	req.Host = "127.0.0.1:8787"
+	req.Header.Set("Authorization", "Bearer "+session.Bearer)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != 200 {
+		t.Fatalf("push key = %d %s", rec.Code, rec.Body.String())
+	}
+	if body["publicKey"] != srv.PushKey || len(body) != 2 || strings.Contains(rec.Body.String(), first) {
+		t.Fatalf("push key body = %s", rec.Body.String())
+	}
 }
 
 func TestUsageCLI(t *testing.T) {

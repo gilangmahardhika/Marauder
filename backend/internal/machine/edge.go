@@ -30,6 +30,8 @@ var edges = map[[2]string]struct{}{
 	{"verifying", "blocked"}:              {},
 	{"blocked", "ready"}:                  {},
 	{"blocked", "human_review"}:           {},
+	{"blocked", "wont_fix"}:               {},
+	{"wont_fix", "blocked"}:               {},
 }
 
 func Edges() map[[2]string]struct{} {

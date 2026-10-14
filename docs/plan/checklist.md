@@ -1141,3 +1141,47 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestSquashMerge`, `TestSquashMergeNoToken`, `TestSquashMergeRefused`, `TestDeployRefusedWhenOff`
 - [x] `CardActions` and Deploy settings Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 80: Sidebar ordered by priority
+
+- [x] Groups read Workspace, Project, Tribe, Admin, Company setup, with the most-used links first in each.
+- [x] Admin and Company setup show only to an admin.
+- [x] Layout Vitest
+- [x] `npm run check` and the full Vitest suite pass
+
+## Sprint 81: Won't fix for blocked cards
+
+- [x] `wont_fix` status (migration 30) with `blocked <-> wont_fix` edges that keep the blocked reason.
+- [x] Won't fix comments on and closes an open pull request with the caller's token before the card moves, for a Lead Developer, Product Owner, or the card owner.
+- [x] Reopen returns the card to Blocked; the next publish reopens its pull request.
+- [x] The board hides won't fix cards unless "Show won't fix" is on.
+- [x] `TestBlockedToWontFix`, `TestActionsWontFix`, `TestWontFixClosesPR`, `TestWontFixNoPR`
+- [x] `TestWontFixNoToken`, `TestWontFixClosedPR`, `TestWontFixRefused`, `TestReopen`, `TestEnsurePRReopens`
+- [x] `board`, `status`, and `CardActions` Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 82: Live board stream
+
+- [x] Migration 31 triggers and tables.
+- [x] `notify.Listener` with the `seq` cursor and overlap, started by `serve`.
+- [x] `GET /api/stream` with per-viewer `cards` frames and `board` frames.
+- [x] The board stops polling while the stream is open, and the card page updates live.
+- [x] `TestNotifyTriggers`, `TestNotifyCursor`, `TestStreamCards`
+- [x] `stream` and board Vitest
+
+## Sprint 83: Notifications and the bell
+
+- [x] Recipients per the RFC-113 table, one row per event and person.
+- [x] Notifications list and mark read, limited to projects the person sees.
+- [x] The bell, and `?project=` card links.
+- [x] `TestRecipients`, `TestStreamNotification`, `TestNotificationsRead`
+- [x] Bell and card page Vitest
+
+## Sprint 84: Browser push notifications
+
+- [x] Web Push encryption and VAPID with the standard library, through `netguard.Client`.
+- [x] VAPID private key only in `secrets.json`; push key and subscription routes.
+- [x] Service worker and the Account Notifications panel.
+- [x] `TestWebPushEncrypt`, `TestVAPIDJWT`, `TestPushEndpointGuard`, `TestPushGone`, `TestVAPIDKeySecret`
+- [x] Account notifications Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

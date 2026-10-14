@@ -519,6 +519,15 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 			actions = append(actions, "merge")
 		}
 	}
+	if app.CanCloseCard(role, userID, card) {
+		switch card.Status {
+		case "blocked":
+			actions = append(actions, "wont_fix")
+		case "wont_fix":
+			actions = append(actions, "reopen")
+		}
+	}
+	closed := card.Status == "done" || card.Status == "wont_fix"
 	reviewMode, err := app.CardAIReviewMode(r.Context(), s.DB, card)
 	if err != nil {
 		reviewMode = app.ReviewContinue
@@ -532,10 +541,10 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 			actions = append(actions, "run")
 		}
 	}
-	if card.Status != "done" && actionAllowed(role, "instructions") {
+	if !closed && actionAllowed(role, "instructions") {
 		actions = append(actions, "instructions")
 	}
-	if user, ok := app.CurrentUser(r.Context()); ok && card.Status != "done" {
+	if user, ok := app.CurrentUser(r.Context()); ok && !closed {
 		if rights, err := app.CardContextRightsFor(r.Context(), s.DB, user, card.ProjectID); err == nil {
 			if rights.Change {
 				actions = append(actions, "context")
@@ -748,7 +757,8 @@ func writeAppErr(w http.ResponseWriter, err error) {
 	case errors.Is(err, board.ErrNotFound), errors.Is(err, intake.ErrUnknownID):
 		writeErr(w, 404, "not_found", err.Error())
 	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock),
-		errors.Is(err, app.ErrDeployOff), errors.Is(err, app.ErrDeployOn), errors.Is(err, app.ErrMergeToken), errors.Is(err, app.ErrMergeRefused):
+		errors.Is(err, app.ErrDeployOff), errors.Is(err, app.ErrDeployOn), errors.Is(err, app.ErrMergeToken), errors.Is(err, app.ErrMergeRefused),
+		errors.Is(err, app.ErrCloseToken), errors.Is(err, app.ErrCloseRefused):
 		writeErr(w, 422, "validation", err.Error())
 	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone),
 		errors.Is(err, app.ErrReviewNotFailed):

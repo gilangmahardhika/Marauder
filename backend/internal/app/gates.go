@@ -131,7 +131,7 @@ func RequestChanges(ctx context.Context, db *sql.DB, cardID, reason string, cfg 
 		return card, err
 	}
 	defer tx.Rollback()
-	next, err := machine.Transition(ctx, tx, card, "changes_requested", machine.Evidence{Approver: cfg.Operator}, nil)
+	next, err := machine.Transition(ctx, tx, card, "changes_requested", machine.Evidence{Approver: cfg.Operator, ActorID: cfg.ActorID}, nil)
 	if err != nil {
 		if errors.Is(err, machine.ErrIllegal) || errors.Is(err, machine.ErrEvidence) {
 			_ = tx.Commit()
@@ -158,7 +158,7 @@ func Reject(ctx context.Context, db *sql.DB, cardID string, cfg GateConfig) (boa
 	if !canApprove(cfg) {
 		return card, ErrApprover
 	}
-	return transition(ctx, db, card, "blocked", machine.Evidence{Reason: "rejected", Approver: cfg.Operator})
+	return transition(ctx, db, card, "blocked", machine.Evidence{Reason: "rejected", Approver: cfg.Operator, ActorID: cfg.ActorID})
 }
 
 func Deploy(ctx context.Context, db *sql.DB, cardID, actorID string) (board.Card, error) {

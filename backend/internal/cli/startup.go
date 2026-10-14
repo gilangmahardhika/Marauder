@@ -19,15 +19,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/dbtools"
 	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/httpapi"
 	"orchestrator/backend/internal/mcpcatalog"
+	"orchestrator/backend/internal/netguard"
+	"orchestrator/backend/internal/notify"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/sandbox"
 	"orchestrator/backend/internal/tenancy"
+	"orchestrator/backend/internal/webpush"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -37,14 +42,19 @@ type resolvedPaths struct {
 }
 
 type secretFile struct {
-	DatabaseURL string            `json:"databaseUrl"`
-	TokenKey    string            `json:"tokenKey,omitempty"`
-	LLMKeys     map[string]string `json:"llmKeys"`
+	DatabaseURL     string            `json:"databaseUrl"`
+	TokenKey        string            `json:"tokenKey,omitempty"`
+	VAPIDPrivateKey string            `json:"vapidPrivateKey,omitempty"`
+	LLMKeys         map[string]string `json:"llmKeys"`
 }
 
 // jobSecrets are the service secrets a job's events and packs redact.
 func (f secretFile) jobSecrets() []string {
-	return []string{f.DatabaseURL, f.TokenKey}
+	out := []string{f.DatabaseURL, f.TokenKey}
+	if f.VAPIDPrivateKey != "" {
+		out = append(out, f.VAPIDPrivateKey)
+	}
+	return out
 }
 
 func withBoard(opts Options, repoFlag, dataFlag string, fn func(context.Context, *sql.DB, resolvedPaths) error) error {
@@ -148,8 +158,33 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})
 	}()
+	logf := func(format string, args ...any) {
+		fmt.Fprintln(opts.Stderr, scrub(fmt.Errorf(format, args...), secrets.DatabaseURL))
+	}
+	notifier := &notify.Notifier{DB: db, Data: paths.Data, Logf: logf}
+	if vapid, err := webpush.ParseKey(secrets.VAPIDPrivateKey); err == nil {
+		pusher := &webpush.Pusher{DB: db, Logf: logf, Sender: &webpush.Sender{
+			Client:  netguard.Client(netguard.Policy{}, nil),
+			Key:     vapid,
+			Subject: vapidSubject(db),
+		}}
+		if srv.PushKey, err = webpush.PublicKey(vapid); err == nil {
+			srv.Push = pusher
+			notifier.Push = pusher.Push
+		}
+	}
+	listener := &notify.Listener{
+		DB: db, Hub: srv.Notify, Events: notifier.Fanout, Logf: logf,
+		Connect: func(ctx context.Context) (*pgx.Conn, error) { return pgx.Connect(ctx, secrets.DatabaseURL) },
+	}
+	listening := make(chan struct{})
+	go func() {
+		defer close(listening)
+		listener.Run(ctx)
+	}()
 	server := &http.Server{Addr: addr, Handler: srv.Handler()}
 	server.RegisterOnShutdown(srv.Live.Close)
+	server.RegisterOnShutdown(srv.Notify.Close)
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -159,6 +194,7 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	err = server.ListenAndServe()
 	stop()
 	<-done
+	<-listening
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -219,6 +255,15 @@ func bootstrapAdmin(opts Options, db *sql.DB) error {
 		fmt.Fprintln(opts.Stdout, "admin created")
 	}
 	return err
+}
+
+// vapidSubject is the contact push services see: the first admin's email.
+func vapidSubject(db *sql.DB) string {
+	var email string
+	if err := db.QueryRow(`SELECT email FROM users WHERE admin ORDER BY created_at LIMIT 1`).Scan(&email); err != nil || email == "" {
+		return "mailto:orchestrator@localhost"
+	}
+	return "mailto:" + email
 }
 
 func hostAllowlist(getenv func(string) string) map[string]bool {
@@ -393,12 +438,26 @@ func loadSecrets(data string, getenv func(string) string) (secretFile, error) {
 	if err := json.Unmarshal(body, &file); err != nil {
 		return secretFile{}, err
 	}
+	changed := false
 	if strings.TrimSpace(file.TokenKey) == "" {
 		key, err := newTokenKey()
 		if err != nil {
 			return secretFile{}, err
 		}
 		file.TokenKey = key
+		changed = true
+	}
+	if _, err := webpush.ParseKey(file.VAPIDPrivateKey); err != nil {
+		key, err := webpush.GenerateKey()
+		if err != nil {
+			return secretFile{}, err
+		}
+		if file.VAPIDPrivateKey, err = webpush.EncodeKey(key); err != nil {
+			return secretFile{}, err
+		}
+		changed = true
+	}
+	if changed {
 		if err := writeSecretFile(path, file); err != nil {
 			return secretFile{}, err
 		}

@@ -104,6 +104,12 @@ describe('board filters', () => {
     expect(search('kay ng')).toEqual(['card_4']);
   });
 
+  it("hides won't fix cards unless asked", () => {
+    const closed = [...cards, card('card_6', { title: 'Old idea', status: 'wont_fix', group: 'closed' })];
+    expect(ids(filterCards(closed, { q: '', owners: [], blocked: false }))).not.toContain('card_6');
+    expect(ids(filterCards(closed, { q: 'old', owners: [], blocked: false, wontFix: true }))).toEqual(['card_6']);
+  });
+
   it('searches the status label', () => {
     const search = (q: string) => ids(filterCards(cards, { q, owners: [], blocked: false }));
     expect(search('waiting for review')).toEqual(['card_4']);

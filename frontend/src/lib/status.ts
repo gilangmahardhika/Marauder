@@ -13,7 +13,8 @@ const statuses: Record<string, string> = {
   deploying_dev: 'Deploying to dev',
   verifying: 'Verifying on dev',
   done: 'Done',
-  blocked: 'Blocked'
+  blocked: 'Blocked',
+  wont_fix: "Won't fix"
 };
 
 const reasons: Record<string, string> = {

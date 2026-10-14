@@ -20,6 +20,8 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 | MCP Registry entries | Untrusted | What the setup form is filled with, which the tribe admin reviews before saving. A registry description is never sent to a model (RFC-096) |
 | Featured MCP entries | Trusted as code: a fixed list compiled into the harness and reviewed with it. Registry data never sets `source` to `featured` | What the setup form is filled with. The URL still passes the check on save and at dial, and the admin still allowlists each tool (RFC-099) |
 | Check processes, local and dev | Untrusted code | Their own exit code and output, from inside the sandbox |
+| Browser push subscriptions (RFC-113) | Untrusted: any signed-in person can post an endpoint and keys | Where an encrypted `{title, body, url, tag}` is posted, and only to an allowlisted push host over HTTPS |
+| Browser push services (FCM, Mozilla, Windows, Apple) | Outside the boundary. They see the encrypted payload, the endpoint, and the VAPID public key and contact | Nothing; their reply only deletes or keeps a subscription |
 | Fixture mode | Trusted only when the resolved repo ends with `/testdata/fixture-repo` | `sandbox` off, `http://127.0.0.1` for health and dev URL |
 
 The model is outside the boundary. Agreement from the model does not cross it.
@@ -255,7 +257,9 @@ Load secrets once per job into that project's snapshot, never into a global that
 - child output before it reaches the log file
 - failure notes before they are stored, since the card page returns them to every project member
 
-The implement and review jobs get `databaseUrl` and `tokenKey` through `JobDeps.Secrets`, which `serve` and `run-next` fill from `secrets.json`. A job started where the file cannot be read still redacts its model keys and GitHub tokens.
+The implement and review jobs get `databaseUrl` and `tokenKey` through `JobDeps.Secrets`, which `serve` and `run-next` fill from `secrets.json`, with `vapidPrivateKey` when set. A job started where the file cannot be read still redacts its model keys and GitHub tokens.
+
+`vapidPrivateKey` signs every push request, so whoever holds it can send this site's subscribers notifications through their push service. It lives only in `secrets.json` (mode `0600`); `GET /api/push/key` derives and returns the public key, and no route, event, or log carries the private one. Losing it means every browser must turn notifications off and on again; deleting it from the file makes `serve` generate a new one, which invalidates every subscription the same way.
 
 A secret shorter than 8 characters is refused at save, and a job refuses to start if one is loaded. Short values make redaction collide with ordinary text.
 
@@ -552,6 +556,28 @@ A runner is a trusted operator binary on a machine the company runs. It is not a
 - The runner redacts the company token from every event and message it sends, and the control plane redacts again with the full job list.
 - The install script verifies the binary's and the unit's SHA-256 against `SHA256SUMS` from the same origin, over HTTPS; it accepts `http://` only on loopback. It passes the registration token to `runner register` in the environment, not on its command line.
 
+## Push notifications
+
+RFC-113 sends data out of the process in two ways. Each is limited as below.
+
+| Threat | Control |
+| --- | --- |
+| Card details leak through a browser vendor's push service | The payload is only `title` (a fixed phrase and, for blocked cards, a known reason label), `body` (card title and project name, at most 120 characters), `url`, and `tag` (the card id). It never holds a reason, note, code, log, review text, or token. It is encrypted with RFC 8291 to the browser's key, so the vendor sees only its size |
+| A stored endpoint turns the server into a request forger (SSRF) | An endpoint must be `https`, port 443, no user info or fragment, at most 2048 bytes, on `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.notify.windows.com`, `web.push.apple.com`, or `*.push.apple.com`. It is checked on save and again before each send, and sent through `netguard.Client`, which refuses private, loopback, link-local, and metadata addresses after DNS and follows no redirect or proxy |
+| A push service that hangs holds the listener | Sends run in their own goroutine within 30 seconds; the reply body is read at most 4 KiB and discarded |
+| A dead or hostile endpoint is retried forever | `404` and `410` delete the subscription at once, and five failures in a row delete it |
+| A person reads another person's notifications or subscriptions | Every notification query has `user_id` = the bearer's user and joins through tribe membership, so a person who left a project's tribe no longer sees its rows. Subscription delete is scoped to the caller. An endpoint saved again by another person moves to them, since a browser has one endpoint per site |
+| The stream shows cards of a project the viewer lost | The stream checks membership on open (`404`) and on every recompute, and ends with `done` `reconnect: false` |
+| Many streams exhaust the server | 8 streams per person and 256 in all, else `429`; each stream ends after 10 minutes |
+| A notification link sends a person off-site | The bell and the service worker follow only paths starting with a single `/`; anything else goes to `/` |
+| A person is notified of their own action, or twice | The actor is dropped, and `UNIQUE (event_id, user_id, kind)` with `ON CONFLICT DO NOTHING` writes one row; only the process that inserted it pushes |
+
+| Test | Asserts |
+| --- | --- |
+| `TestPushEndpointGuard` | Private, metadata, lookalike, and non-HTTPS endpoints are refused (RFC-113) |
+| `TestPushGone` | The decrypted payload holds exactly `title`, `body`, `url`, and `tag`, and dead endpoints are deleted (RFC-113) |
+| `TestVAPIDKeySecret` | The private key is only in `secrets.json` and never in an API response (RFC-113) |
+
 ## Operator duties
 
 These stay outside the program.
@@ -565,6 +591,8 @@ These stay outside the program.
 | Leave `ORCHESTRATOR_CLOUD` unset on a laptop | Loopback stays the default bind |
 | Set cloud mode only behind TLS | RFC-045 refuses a public bind without that flag |
 | Keep `tokenKey` in the service secrets file | It decrypts every GitHub token |
+| Keep `vapidPrivateKey` with `secrets.json` in backups and moves | A new key silently ends every browser subscription (RFC-113) |
+| Allow outbound HTTPS to the browser push hosts when people want browser notifications | The server posts to the vendors' push services; the in-app bell needs no egress (RFC-113) |
 | Ask developers for fine-grained tokens limited to the company organization, with Contents and Pull requests write | Unattended jobs push with each owner's token (RFC-054) |
 | Review what dev checks reach | Dev check egress is open in v1 |
 | Give each database connector a login that can only read, scoped to the tables jobs may see | The harness enforces read-only per call, but a SQL Server login is the main guard, and rows it can read reach the model (RFC-097) |

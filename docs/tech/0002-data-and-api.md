@@ -63,11 +63,12 @@ A successful body never includes `error`.
 | `approved` | `shipping` | `request_changes`, `reject`, `deploy`; with project deploy off, `merge` instead of `deploy` (RFC-111) |
 | `deploying_dev`, `verifying` | `shipping` | `[]` |
 | `done` | `finished` | `[]` |
-| `blocked` | `stopped` | `unblock`, unless release is refused |
+| `blocked` | `stopped` | `unblock`, unless release is refused; `wont_fix` (RFC-112) |
+| `wont_fix` | `closed` | `reopen` (RFC-112) |
 
-`deploy` remains only for a Lead Developer member. `merge` is listed for a Lead Developer member, and for the card owner when `approval.solo` is on. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
+`wont_fix` and `reopen` are listed for a Lead Developer or Product Owner member and for the card owner. `deploy` remains only for a Lead Developer member. `merge` is listed for a Lead Developer member, and for the card owner when `approval.solo` is on. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
 
-After the table, every card that is not `done` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
+After the table, every card that is not `done` or `wont_fix` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
 
 ## Blocked reasons
 
@@ -138,7 +139,7 @@ CREATE TABLE cards (
   status TEXT NOT NULL CHECK (status IN (
     'backlog', 'ready', 'in_progress', 'self_check', 'pr_open', 'agent_review',
     'changes_requested', 'human_review', 'approved', 'deploying_dev',
-    'verifying', 'done', 'blocked')),
+    'verifying', 'done', 'blocked', 'wont_fix')),
   manual BOOLEAN NOT NULL DEFAULT false,
   local_check TEXT,
   dev_check TEXT,
@@ -374,7 +375,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -384,6 +385,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
 | `merge` | `prUrl`, `approvedSha`, `mergeSha` (the squash commit GitHub made), `login` (the GitHub account that merged), `method` (`squash`). The row's `actor_id` is the person who pressed Squash and merge (RFC-111) |
+| `wont_fix` | `reason`, `prUrl` (empty without a pull request), `prClosed` (true when this action closed it), `login` (the GitHub account that closed it, empty when no GitHub call ran). The row's `actor_id` is the person who closed the card (RFC-112) |
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
@@ -394,6 +396,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `job_error` | `message`, the redacted error that stopped an implement job (RFC-063). NUL bytes are dropped and invalid UTF-8 is replaced. A message over 8 KiB keeps its first and last 4 KiB around `... (N bytes cut) ...` |
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 | `context_changed` | `kind` (`skill`, `rule`, or `mcp`), `itemId`, and `mode` (`attach`, `detach`, or `inherit`). The row's `actor_id` is the person who changed the card's context (RFC-105) |
+| `review_failed` | `sha`, the head the AI review gave no verdict on. It wakes the notifier (RFC-113) |
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one. A `tool_call` named `mcp_context` adds `servers`, one `{ "id", "slug", "transport", "tools" }` object per offered server, with `host`, `database`, `image`, or `error` as RFC-094 and RFC-097 describe, and `scope`: `all`, `mentioned`, `card`, or `none` (RFC-102, RFC-105). `attached` and `detached` list the slugs the card's context added and removed; the scope is `card` when they changed the set. `missing` lists the mentioned slugs that are not an enabled server of the tribe, and `reason` says why the scope is `none`. A scope of `none` writes the event with `servers: []`.
 
@@ -1217,6 +1220,10 @@ After an approval that inserted a new row, the server posts with the company tok
 
 `POST /api/projects/{projectId}/cards/{id}/merge` has an empty body (RFC-111). It is allowed for a Lead Developer member, and for the card owner when `approval.solo` is on; anyone else gets `403`. Deploy on is `422`, and a card that is not `approved` with an approved SHA is `409`. The server sends `PUT repos/{owner}/{repo}/pulls/{n}/merge` with `{"merge_method":"squash","sha":"<approvedSha>"}` through `gh api` with the caller's verified GitHub token on the company host. No verified token is `422` "connect your GitHub account in Account to merge", with no GitHub call. A GitHub refusal, such as a head that moved or a pull request that is not mergeable, is `422` with GitHub's first line, and the card stays `approved`. On success the card moves `approved -> done` through `machine.Transition` with the merge commit as `SHA` evidence, a `merge` event is appended, and the response is the single card.
 
+`POST /api/projects/{projectId}/cards/{id}/wont-fix` takes `{ "reason": "..." }` (RFC-112). It is allowed for a Lead Developer or Product Owner member and for the card owner; anyone else gets `403`. The reason is trimmed; empty or over 500 characters is `422` with `fields.reason`. A card that is not `blocked` is `409`. When the card has a pull request, the server reads `gh api repos/{owner}/{repo}/pulls/{n} --jq .state` with the caller's verified GitHub token on the company host; no verified token is `422` "connect your GitHub account in Account to close the pull request", with no GitHub call. A pull request in state `open` gets the comment "Closed as won't fix by @login: {reason}" (`POST repos/{owner}/{repo}/issues/{n}/comments`), then `PATCH repos/{owner}/{repo}/pulls/{n}` with `{"state":"closed"}`. A closed or merged pull request is left alone. A GitHub refusal is `422` with GitHub's first line, and the card stays `blocked`. On success the card moves `blocked -> wont_fix` with the reason and actor as evidence, keeping `blockedReason`, a `wont_fix` event is appended, and the response is the single card.
+
+`POST /api/projects/{projectId}/cards/{id}/reopen` has an empty body and the same roles (RFC-112). A card that is not `wont_fix` is `409`. The card moves `wont_fix -> blocked` with its kept `blockedReason`, or `reopened` when it had none. GitHub is not called; the next publish edits the pull request with `state: open` with its title and body, which reopens one closed as won't fix.
+
 `POST /api/projects/{projectId}/cards/{id}/unblock`
 
 ```json
@@ -1354,6 +1361,84 @@ Report facts: `finished` with `outcome` (empty for a commit, `no_change`, `no_co
 ### Install routes
 
 `GET /runner/install.sh`, `GET /runner/download/SHA256SUMS`, and `GET /runner/download/{file}` serve files from the directory named by `ORCHESTRATOR_RUNNER_RELEASES`, with no bearer. `{file}` is `orchestrator-linux-amd64`, `orchestrator-linux-arm64`, or `orchestrator-runner.service`; any other name is `404`. An unset directory or a missing file is `404`. `scripts/release.sh [version] [out]` writes that directory: both binaries with `cli.Version` set, the systemd unit, `install-runner.sh`, and a `SHA256SUMS` over the binaries and the unit.
+
+## Push notifications
+
+`00031_push_notifications.sql` adds the wake-up triggers and the notification tables (RFC-113):
+
+```sql
+-- AFTER INSERT ON events, AFTER INSERT OR UPDATE ON cards and runs:
+--   pg_notify('orchestrator', {"t": table, "s": current_schema(), "projectId", "cardId"})
+-- The project is the card's project; an event row's own project_id is the fallback.
+-- AFTER INSERT ON notifications:
+--   pg_notify('orchestrator', {"t": "notifications", "s", "userId", "id"})
+CREATE INDEX events_seq ON events (seq);
+CREATE INDEX events_ts ON events (ts);
+
+CREATE TABLE notifications (
+  id TEXT PRIMARY KEY,               -- ntf_ + 16 hex
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                -- review, ship, approved, changes_requested, blocked,
+                                     -- owner_github, review_failed, done, wont_fix, reopened
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  card_id TEXT REFERENCES cards(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,                -- card title · project name, at most 120 characters
+  url TEXT NOT NULL,                 -- /cards/{id}?project={projectId}
+  push BOOLEAN NOT NULL DEFAULT false,
+  created_at TEXT NOT NULL,
+  read_at TEXT,
+  UNIQUE (event_id, user_id, kind)
+);
+
+CREATE TABLE push_subscriptions (
+  id TEXT PRIMARY KEY,               -- psub_ + 16 hex
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,              -- base64url P-256 public key of the browser
+  auth TEXT NOT NULL,                -- base64url 16-byte auth secret
+  failures INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE notify_cursor (id INTEGER PRIMARY KEY CHECK (id = 1), seq BIGINT NOT NULL);
+```
+
+`notify_cursor.seq` starts at the highest event `seq` when the migration runs, so existing events notify nobody. The listener only raises it. `push` is true when the row may go to a browser, per the RFC-113 table. A notification is visible to its user only while they are a member of the project's tribe.
+
+Notification JSON:
+
+```json
+{
+  "id": "ntf_a1b2c3d4e5f60718", "kind": "review", "title": "Review needed",
+  "body": "Export CSV · Widget", "projectId": "proj_a", "cardId": "card_1",
+  "url": "/cards/card_1?project=proj_a", "createdAt": "2026-10-14T05:00:00Z", "readAt": null
+}
+```
+
+| Route | Body | Response |
+| --- | --- | --- |
+| `GET /api/stream?project={id}` | none | Server-sent events, below. Without `project`, notification frames only. A project the viewer cannot see is `404`. More than 8 open streams for one person, or 256 in all, is `429` |
+| `GET /api/notifications[?unread=1]` | none | `{ "notifications": [...], "unread": n }`, the newest 50 |
+| `POST /api/notifications/read` | `{ "ids": [...] }` (at most 50) or `{ "all": true }` | `{ "unread": n }`. Neither, or more than 50 ids, is `422`. Ids that are not the viewer's are ignored |
+| `GET /api/push/key` | none | `{ "publicKey", "subscriptions" }`, the base64url VAPID public key and how many browsers the viewer subscribed. `503` when push is not set up |
+| `POST /api/push/subscriptions` | `{ "endpoint", "keys": { "p256dh", "auth" } }` | `204`. An endpoint off the push host allowlist is `422` with `fields.endpoint`; bad keys are `422` with `fields.keys`. An endpoint saved by another person moves to the viewer |
+| `DELETE /api/push/subscriptions` | `{ "endpoint" }` | `204`. Deletes only the viewer's own row |
+| `POST /api/push/test` | `{}` | `{ "sent": n }`, how many of the viewer's browsers accepted a test message |
+
+Stream frames, each `event: {kind}` and `data: {json}`:
+
+| Kind | Data |
+| --- | --- |
+| `ready` | `{ "unread": n }`, always first |
+| `cards` | `{ "full", "cards": [...], "removed": [ids] }`. Each card is the board card JSON with the viewer's `actions`. The first frame and the frame after a `resync` are `full` and list every card; later frames list only cards whose JSON changed, and ids that left the board |
+| `board` | `{ "readyCount", "running", "canRun" }`, sent when it changes |
+| `notification` | `{ "notification": {...}, "unread": n }` |
+| `resync` | `{}`. The viewer's queue overflowed or the listener reconnected; read notifications again. A full `cards` frame follows |
+| `done` | `{ "reconnect": bool }`. `true` after 10 minutes, so the client opens a new stream; `false` when the viewer lost access to the project |
+
+A `: ping` comment line is written every 15 seconds.
 
 ## Settings
 

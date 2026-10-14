@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ApiError, changePassword, getMe, getMyGitHub, putMe, putMyGitHub, testMyGitHub, unreachable } from '$lib/api';
+  import NotificationsPanel from '$lib/components/NotificationsPanel.svelte';
   import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
   import { roleLabel } from '$lib/roles';
   import { shell, showShell } from '$lib/shell.svelte';
@@ -188,5 +189,6 @@
         {/snippet}
       </Panel>
     </form>
+    <NotificationsPanel />
   </div>
 </Page>

@@ -312,6 +312,15 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestSquashMergeNoToken` | A lead with no verified GitHub token gets `422` naming Account, no GitHub call is made, and the card stays `approved` |
 | `TestSquashMergeRefused` | GitHub's "not mergeable (HTTP 405)" comes back as `422` with that text and no token, and the card stays `approved` |
 | `TestDeployRefusedWhenOff` | Merge while deploy is on is `422`. Deploy while it is off is `422` "deploy is off", the card stays `approved`, and no GitHub call is made |
+| `TestBlockedToWontFix` | `blocked -> wont_fix` without a reason or an actor is `ErrEvidence`. With both it keeps `blocked_reason` and writes no gate row, and `wont_fix -> blocked` restores the reason (RFC-112) |
+| `TestActionsWontFix` | A Lead Developer, a Product Owner, and the card owner see `wont_fix` on a blocked card. A QA Lead does not, and the route is `403`. A `wont_fix` card is in group `closed` and offers `reopen` and no `instructions` |
+| `TestWontFixClosesPR` | An empty or 501-character reason is `422` on `reason` with no GitHub call. Then one state read of `repos/acme/widget/pulls/7`, one comment "Closed as won't fix by @lead: …" on `issues/7/comments`, and one `PATCH` with `state: closed`, each with the caller's token in `GH_TOKEN` and not in argv. The card is `wont_fix`, and the `wont_fix` event has `prClosed: true` and no token |
+| `TestWontFixNoPR` | A card with no pull request closes with no GitHub token and no GitHub call |
+| `TestWontFixNoToken` | A pull request and no verified token give `422` naming Account, no GitHub call, and the card stays `blocked` |
+| `TestWontFixClosedPR` | A pull request whose state is `closed` or `merged` gets the state read only |
+| `TestWontFixRefused` | A refused `PATCH` comes back as `422` with GitHub's text and no token, and the card stays `blocked` |
+| `TestReopen` | A QA Lead gets `403`. The lead's reopen moves the card to `blocked` with its old `attempt_cap` reason, and a second reopen is `409` |
+| `TestEnsurePRReopens` | Publishing a card with an existing pull request sends `state: open` with the title and body |
 | `TestCardDiffAfterMerge` | After the card branch merges into `main` with a merge commit and `main` moves on, the diff still lists the card's files against `main` before the merge |
 | `TestCardDiffAfterFastForward` | After `main` fast-forwards to the card head, the diff lists the card's files against the first attempt's `base_sha` |
 | `TestPRBodyForDisplay` | The display body drops the "Orchestrator metadata" block, keeps the sections, undoes the `&lt;!-- orchestrator:` escape, and leaves a body without metadata trimmed and otherwise unchanged |
@@ -356,6 +365,19 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestProtocolMismatchRefused` | A claim from protocol 0 is `409` `protocol`, and the runner lists `updateRequired: true` (RFC-109) |
 | `TestRunnerReleaseFiles` | `/runner/install.sh` and `/runner/download/{file}` are `404` with no release directory, serve the listed files from it, and refuse any other name (RFC-109) |
 | `TestRunnerChaos` | Two runners share a queue; one stops heartbeating during an attempt; the reaper requeues and the other runner takes the card to `pr_open` (REQ-094) |
+| `TestNotifyTriggers` | A card update, a run insert, an event insert, and a notification insert each wake the listener's hub with the card's project, or the user, and a write in another schema wakes nothing (RFC-113) |
+| `TestNotifyCursor` | Events written while no listener runs are handed on after it starts; an event committed with a `seq` below the cursor inside the 10-second overlap is handed on once; the cursor only rises (RFC-113) |
+| `TestRecipients` | Each RFC-113 trigger notifies the listed people: reviewers or approvers for review, leads for ship, the owner for changes requested, leads too for `deploy_failed`; never the actor, a non-member, or a disabled user, and one note per person (RFC-113) |
+| `TestFanoutOnce` | Two notifiers given the same events write one row per person and kind, and only the one that inserted it pushes it (RFC-113) |
+| `TestStreamCards` | A non-member's stream is `404`; the first frames are `ready`, a `full` `cards` frame with the viewer's own actions, and `board`; a status change sends only that card, with actions that differ by role (RFC-113) |
+| `TestStreamNotification` | Requesting changes on an owned card sends the owner a `notification` frame with the unread count and pushes it, and sends the actor nothing (RFC-113) |
+| `TestNotificationsRead` | The list holds only the viewer's rows in projects they still see, newest first; marking ids and all lowers the count; no ids, or more than 50, is `422` (RFC-113) |
+| `TestPushRoutes` | Push routes are `503` without a key; an endpoint off the allowlist and bad keys are `422` with the field; save and delete change only the viewer's rows (RFC-113) |
+| `TestWebPushEncrypt` | `encrypt` with the RFC 8291 Appendix A keys and salt gives the appendix's message byte for byte; a payload over one record is refused (RFC-113) |
+| `TestVAPIDJWT` | The JWT has `ES256`, the endpoint origin as `aud`, `mailto:` as `sub`, `exp` within 24 hours, and a signature that verifies with the public key (RFC-113) |
+| `TestPushEndpointGuard` | Each allowlisted push host is accepted; `http`, IP literals, metadata addresses, lookalike hosts, user info, other ports, fragments, and over-long URLs are refused (RFC-113) |
+| `TestPushGone` | Against a TLS stub, a `410` deletes that subscription, five `500`s in a row delete another, success keeps one; the request carries `vapid` auth and `aes128gcm`, and the decrypted payload is exactly `title`, `body`, `url`, and `tag` (RFC-113) |
+| `TestVAPIDKeySecret` | The first `serve` writes `vapidPrivateKey` to `secrets.json`, a second keeps it, an LLM settings save keeps it, and `GET /api/push/key` returns the public key and never the private one (RFC-113) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |
@@ -465,12 +487,15 @@ Run this after `orchestrator serve` and `npm run dev` are up. Use the fixture da
 | `approved` card for a Product Owner | Request changes and Reject, and no Deploy |
 | `approved` card for a Lead Developer with Deploy approved cards off | Request changes, Reject, and Squash and merge, and no Deploy (RFC-111) |
 | `blocked` card with `health` | Unblock text says the card returns to human review |
+| `blocked` card, Won't fix with a reason | The card leaves the board, an open pull request has the comment and is closed, "Show won't fix" shows it under Won't fix, and Reopen returns it to Stopped (RFC-112) |
 | Approve in the UI while the CLI approves the same card | One approval row. The second action gets a reload or the same card back |
 | Settings GET after a token was saved | Password field is empty. Placeholder says a value is saved. The network response has no token |
 | Deploy settings with a repo-relative command | Field error on the command |
 | Router with one family | The independence sentence from the API is visible |
 | Router save of an unknown model | Field error, yaml unchanged |
 | Leave the board while a poll is active | No further card requests after navigation |
+| Two browsers, two people, one project: one requests changes on the other's card | The other's board moves the card within a second with no poll request, their bell count rises with a toast, and the actor gets no notification (RFC-113) |
+| Turn on browser notifications in Account, then Send a test | The OS notification appears; clicking it focuses the tab on Account. A card notification opens the card, switching project when needed (RFC-113) |
 | Built page | Response `index.html` has the CSP meta tag. The console shows no CSP violation |
 | Keyboard | Tab reaches nav, Run, and the settings submit. Focus outline is visible |
 

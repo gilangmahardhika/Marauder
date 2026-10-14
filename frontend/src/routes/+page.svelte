@@ -1,12 +1,13 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { ApiError, getCards, runCard, startRun, unreachable } from '$lib/api';
-  import { filterCards, ownerChoices, parseOwners } from '$lib/board';
+  import { filterCards, mergeCards, ownerChoices, parseOwners } from '$lib/board';
   import BoardCard from '$lib/components/BoardCard.svelte';
   import OwnerFilter from '$lib/components/OwnerFilter.svelte';
   import { setParams } from '$lib/params';
   import { session } from '$lib/session';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { live } from '$lib/stream.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -20,7 +21,8 @@
     ['review', 'Review'],
     ['shipping', 'Shipping'],
     ['finished', 'Finished'],
-    ['stopped', 'Stopped']
+    ['stopped', 'Stopped'],
+    ['closed', "Won't fix"]
   ] as const;
 
   let cards = $state<Card[]>([]);
@@ -55,12 +57,28 @@
     void load();
   });
 
+  $effect(() =>
+    live.on((event) => {
+      if (event.kind === 'cards') {
+        cards = mergeCards(cards, event);
+        loaded = true;
+        unavailable = false;
+        if (message === 'Loading board') message = 'Board';
+      } else if (event.kind === 'board') {
+        canRun = event.canRun;
+        readyCount = event.readyCount;
+        running = event.running;
+      }
+    })
+  );
+
   const polling = $derived(
     running || cards.some((card) => card.group === 'running' || card.group === 'shipping' || card.status === 'agent_review')
   );
 
+  // The stream pushes every change; polling is only the fallback while it is down.
   $effect(() => {
-    if (!polling) return;
+    if (!polling || live.connected) return;
     const timer = setInterval(() => {
       void load();
     }, 3000);
@@ -110,19 +128,23 @@
   );
 
   const params = $derived($page.url.searchParams);
-  const choices = $derived(ownerChoices(cards, shell.email));
+  const wontFix = $derived(params.get('wontfix') === '1');
+  const visible = $derived(wontFix ? cards : cards.filter((card) => card.status !== 'wont_fix'));
+  const columns = $derived(wontFix ? labels : labels.filter(([group]) => group !== 'closed'));
+  const choices = $derived(ownerChoices(visible, shell.email));
   const filter = $derived({
     q: params.get('q') ?? '',
     owners: parseOwners(params.get('owner'), choices, shell.email),
-    blocked: params.get('blocked') === '1'
+    blocked: params.get('blocked') === '1',
+    wontFix
   });
   const filtered = $derived(filter.q !== '' || filter.owners.length > 0 || filter.blocked);
   const shown = $derived(filterCards(cards, filter));
 
   const summary = $derived(
-    cards.length === 0
+    visible.length === 0
       ? ''
-      : `${cards.length} ${cards.length === 1 ? 'card' : 'cards'}${running ? ' · worker running' : ''}`
+      : `${visible.length} ${visible.length === 1 ? 'card' : 'cards'}${running ? ' · worker running' : ''}`
   );
 
   showShell(() => ({ title: 'Board', message }));
@@ -169,17 +191,28 @@
           />
           Blocked only
         </label>
+        <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            class="size-4 accent-accent"
+            checked={wontFix}
+            onchange={(event) => setParams({ wontfix: event.currentTarget.checked ? '1' : '' })}
+          />
+          Show won't fix
+        </label>
       </Toolbar>
     </div>
     {#if shown.length === 0}
       <EmptyState title="No cards match" description="Change the search or filters to see more cards.">
-        <Button type="button" variant="secondary" onclick={() => setParams({ q: '', owner: '', blocked: '' })}>Clear filters</Button>
+        <Button type="button" variant="secondary" onclick={() => setParams({ q: '', owner: '', blocked: '', wontfix: '' })}
+          >Clear filters</Button
+        >
       </EmptyState>
     {:else}
       <div
         class="grid grid-cols-1 gap-3 min-[720px]:auto-cols-[minmax(15rem,1fr)] min-[720px]:grid-flow-col min-[720px]:grid-cols-none min-[720px]:overflow-x-auto min-[720px]:pb-3"
       >
-        {#each labels as [group, label] (group)}
+        {#each columns as [group, label] (group)}
           {@const column = shown.filter((card) => card.group === group)}
           {@const total = cards.filter((card) => card.group === group).length}
           <section class="flex min-w-0 flex-col rounded-panel bg-sidebar/70 p-2" aria-label={label}>

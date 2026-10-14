@@ -2,6 +2,7 @@ import { session } from "$lib/session";
 import type {
   AccountGitHub,
   AIReviewMode,
+  AppNotification,
   Board,
   Card,
   CardContextChange,
@@ -40,6 +41,7 @@ import type {
   SkillInput,
   Stack,
   StackInput,
+  StreamEvent,
   TraceResponse,
   TraceStreamEvent,
   TribeCandidate,
@@ -443,6 +445,55 @@ export async function streamTrace(
   await readStream(response, onEvent);
 }
 
+/**
+ * Opens the push stream (RFC-113): the project's card changes with this viewer's actions when project is set, and the
+ * viewer's notifications. It resolves when the server ends the stream and rejects with ApiError, or when signal aborts.
+ */
+export async function openStream(
+  project: string,
+  onEvent: (event: StreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : "";
+  const response = await send(`/api/stream${query}`, { signal });
+  await readStream(response, onEvent);
+}
+
+export function getNotifications(unread = false) {
+  return request<{ notifications: AppNotification[]; unread: number }>(
+    `/api/notifications${unread ? "?unread=1" : ""}`,
+  );
+}
+
+export function readNotifications(body: { ids: string[] } | { all: true }) {
+  return request<{ unread: number }>("/api/notifications/read", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getPushKey() {
+  return request<{ publicKey: string; subscriptions: number }>("/api/push/key");
+}
+
+export function savePushSubscription(subscription: PushSubscriptionJSON) {
+  return request<void>("/api/push/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({ endpoint: subscription.endpoint, keys: subscription.keys }),
+  });
+}
+
+export function deletePushSubscription(endpoint: string) {
+  return request<void>("/api/push/subscriptions", {
+    method: "DELETE",
+    body: JSON.stringify({ endpoint }),
+  });
+}
+
+export function testPush() {
+  return request<{ sent: number }>("/api/push/test", { method: "POST", body: "{}" });
+}
+
 export function getIntake() {
   return request<Intake>(`${projectPrefix()}/intake`);
 }
@@ -579,6 +630,20 @@ export function deployCard(id: string) {
 
 export function mergeCard(id: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/merge`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export function wontFixCard(id: string, reason: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/wont-fix`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function reopenCard(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/reopen`, {
     method: "POST",
     body: "{}",
   });

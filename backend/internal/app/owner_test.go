@@ -221,6 +221,27 @@ func TestPublishEditsExistingPR(t *testing.T) {
 	}
 }
 
+func TestEnsurePRReopens(t *testing.T) {
+	f := newPublishFixture(t)
+	if _, err := f.db.Exec(`UPDATE cards SET pr_url = $2 WHERE id = $1`, f.card.ID, prURL); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	if _, err := app.Publish(context.Background(), f.db, f.card.ID, f.input(rec)); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.inputs) != 1 {
+		t.Fatalf("inputs = %d", len(rec.inputs))
+	}
+	var payload map[string]string
+	if err := json.Unmarshal([]byte(rec.inputs[0]), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["state"] != "open" {
+		t.Fatalf("payload = %v, want state open so a pull request closed as won't fix reopens", payload)
+	}
+}
+
 func TestPublishStoresPRText(t *testing.T) {
 	f := newPublishFixture(t)
 	ctx := context.Background()

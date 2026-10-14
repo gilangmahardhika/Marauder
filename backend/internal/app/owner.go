@@ -395,7 +395,7 @@ func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, projec
 			return "", err
 		}
 		body := vcs.MergeBody(strings.TrimRight(string(out), "\n"), in.Text.Body)
-		if err := ghWrite(ctx, gh, acct.Host, token, dir, "PATCH", pull, map[string]string{"title": title, "body": body}); err != nil {
+		if err := ghWrite(ctx, gh, acct.Host, token, dir, "PATCH", pull, map[string]string{"title": title, "body": body, "state": "open"}); err != nil {
 			return "", err
 		}
 		return card.PRURL, nil

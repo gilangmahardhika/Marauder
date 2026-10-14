@@ -129,6 +129,28 @@ export type Board = {
   cards: Card[];
 };
 
+/** A person's notification (RFC-113). `body` is the card title and project name. */
+export type AppNotification = {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  projectId: string;
+  cardId: string;
+  url: string;
+  createdAt: string;
+  readAt: string | null;
+};
+
+/** Frames of GET /api/stream. `cards` with `full` replaces the board; otherwise it updates and removes cards by id. */
+export type StreamEvent =
+  | { kind: "ready"; unread: number }
+  | { kind: "cards"; full: boolean; cards: Card[]; removed: string[] }
+  | { kind: "board"; readyCount: number; running: boolean; canRun: boolean }
+  | { kind: "notification"; notification: AppNotification; unread: number }
+  | { kind: "resync" }
+  | { kind: "done"; reconnect: boolean };
+
 export type TraceEvent = {
   id: string;
   /** Insert order; it breaks ties between events in the same second. */

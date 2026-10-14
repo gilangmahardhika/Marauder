@@ -6,7 +6,17 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { session } from '$lib/session';
 import { shell } from '$lib/shell.svelte';
 
-const api = vi.hoisted(() => ({ getMe: vi.fn(), getProjects: vi.fn(), getTribes: vi.fn(), closeSession: vi.fn() }));
+const api = vi.hoisted(() => ({
+  getMe: vi.fn(),
+  getProjects: vi.fn(),
+  getTribes: vi.fn(),
+  closeSession: vi.fn(),
+  getNotifications: vi.fn(),
+  readNotifications: vi.fn()
+}));
+vi.mock('$lib/stream.svelte', () => ({
+  live: { connected: false, start: () => () => {}, wake: () => {}, on: () => () => {} }
+}));
 const location = vi.hoisted(() => ({ path: '/' }));
 
 vi.mock('$app/stores', () => ({
@@ -28,6 +38,7 @@ function me(admin: boolean, tribeAdminOf: string[] = []) {
 
 beforeEach(() => {
   api.getTribes.mockResolvedValue({ tribes: [] });
+  api.getNotifications.mockResolvedValue({ notifications: [], unread: 0 });
 });
 
 afterEach(() => {
@@ -38,14 +49,26 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-test('Token usage is the first admin item and only admins see it', async () => {
+test('Admin links are ordered by use and only admins see them', async () => {
   api.getProjects.mockResolvedValue({ projects: [] });
   api.getMe.mockResolvedValue(me(true));
   const admin = render(Layout, { children });
-  const sections = () => screen.getAllByRole('navigation', { name: 'Sections' })[0];
   await waitFor(() => expect(sections().querySelector('a[href="/admin/usage"]')).not.toBeNull());
-  const adminLinks = [...sections().querySelectorAll('a[href^="/admin"]')].map((link) => link.getAttribute('href'));
-  expect(adminLinks[0]).toBe('/admin/usage');
+  expect(headings(sections()).slice(-2)).toEqual(['Admin', 'Company setup']);
+  const adminLinks = [...sections().querySelectorAll('a[href^="/admin"], a[href="/tribes"]')].map((link) =>
+    link.getAttribute('href')
+  );
+  expect(adminLinks).toEqual([
+    '/admin/users',
+    '/tribes',
+    '/admin/runners',
+    '/admin/usage',
+    '/admin/github',
+    '/admin/llm',
+    '/admin/router',
+    '/admin/conventions',
+    '/admin/skills'
+  ]);
   expect(screen.getAllByRole('link', { name: 'Token usage' })[0].getAttribute('href')).toBe('/admin/usage');
   admin.unmount();
 
@@ -56,6 +79,7 @@ test('Token usage is the first admin item and only admins see it', async () => {
   await waitFor(() => expect(screen.getAllByRole('link', { name: 'Board' }).length).toBeGreaterThan(0));
   expect(screen.queryByRole('link', { name: 'Token usage' })).toBeNull();
   expect(document.querySelector('a[href="/admin/usage"]')).toBeNull();
+  expect(headings(sections())).not.toContain('Company setup');
 });
 
 test('the user menu links to My token usage for any member', async () => {
@@ -124,7 +148,7 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
   api.getProjects.mockResolvedValue({ projects });
   const member = render(Layout, { children });
   await waitFor(() => expect(headings(sections())).toContain('Tribe · Alpha'));
-  expect(headings(sections())).toEqual(['Workspace', 'Tribe · Alpha', 'Project · Shop']);
+  expect(headings(sections())).toEqual(['Workspace', 'Project · Shop', 'Tribe · Alpha']);
   expect(sections().querySelector('a[href="/projects"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/tribes/tribe_a/conventions"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/settings/conventions"]')).not.toBeNull();
@@ -140,13 +164,13 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
   expect(tribeLinks).toEqual([
     'Board',
     'Intake',
-    'Projects',
-    'MCP servers',
-    'Conventions',
-    'Members',
-    'Repository',
-    'Linked projects',
     'Deploy',
+    'Repository',
+    'Conventions',
+    'Linked projects',
+    'Projects',
+    'Members',
+    'MCP servers',
     'Conventions'
   ]);
   expect(sections().querySelector('a[href="/tribes/tribe_a"]')?.textContent?.trim()).toBe('Members');
@@ -201,5 +225,5 @@ test('the mobile menu shows the section headings', async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
   const navs = screen.getAllByRole('navigation', { name: 'Sections' });
   expect(navs).toHaveLength(2);
-  expect(headings(navs[1])).toEqual(['Workspace', 'Tribe · Alpha', 'Project · Shop', 'Account']);
+  expect(headings(navs[1])).toEqual(['Workspace', 'Project · Shop', 'Tribe · Alpha', 'Account']);
 });

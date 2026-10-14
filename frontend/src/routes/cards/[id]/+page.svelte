@@ -11,6 +11,7 @@
   import { displayName } from "$lib/people";
   import { shell } from "$lib/shell.svelte";
   import { cardTone, reasonLabel, statusLabel } from "$lib/status";
+  import { live } from "$lib/stream.svelte";
   import { verdictLabel } from "$lib/trace";
   import type { Card, CardDiff, CardOwner, CardRequirement } from "$lib/types";
   import Avatar from "$lib/ui/Avatar.svelte";
@@ -34,6 +35,8 @@
     "request_changes",
     "reject",
     "unblock",
+    "wont_fix",
+    "reopen",
   ];
   const hasControls = $derived(
     card !== null &&
@@ -58,6 +61,33 @@
     const id = $page.params.id;
     if (!id || shell.projectId === "") return;
     void load(id);
+  });
+
+  /** Reads the card again, without the loading message, when the stream says it changed. */
+  async function refresh(id: string) {
+    try {
+      const next = await getCard(id);
+      if ($page.params.id === id) card = next;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        card = null;
+        missing = true;
+      }
+    }
+  }
+
+  $effect(() => {
+    const id = $page.params.id;
+    if (!id) return;
+    return live.on((event) => {
+      if (event.kind !== "cards") return;
+      if (
+        event.full ||
+        event.removed.includes(id) ||
+        event.cards.some((changed) => changed.id === id)
+      )
+        void refresh(id);
+    });
   });
 
   $effect(() => {

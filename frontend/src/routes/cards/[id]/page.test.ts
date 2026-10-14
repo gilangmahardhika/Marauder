@@ -12,6 +12,18 @@ vi.mock('$app/stores', () => ({
       readable({ params: { id: 'card_1' }, url: new URL('http://127.0.0.1:4173/cards/card_1') }).subscribe(run)
   }
 }));
+const stream = vi.hoisted(() => ({ handlers: [] as ((event: unknown) => void)[] }));
+vi.mock('$lib/stream.svelte', () => ({
+  live: {
+    connected: true,
+    on: (handler: (event: unknown) => void) => {
+      stream.handlers.push(handler);
+      return () => {
+        stream.handlers = stream.handlers.filter((item) => item !== handler);
+      };
+    }
+  }
+}));
 vi.mock('$lib/api', () => ({
   ApiError: class ApiError extends Error {},
   unreachable: () => 'API unreachable',
@@ -120,6 +132,24 @@ test('the header links the pull request and the next step leads with approve', a
   expect(screen.getByRole('link', { name: 'View trace' }).getAttribute('href')).toBe('/cards/card_1/trace');
   expect(screen.getByText('Attempt 1 of 3')).toBeTruthy();
   expect(screen.getByText('main')).toBeTruthy();
+});
+
+test('a pushed change to this card reads it again; other cards do not', async () => {
+  render(CardPage);
+  await screen.findByRole('heading', { name: 'REQ-001: Change login label' });
+  expect(api.getCard).toHaveBeenCalledTimes(1);
+
+  for (const handler of stream.handlers)
+    handler({ kind: 'cards', full: false, cards: [{ ...card, id: 'card_2' }], removed: [] });
+  await Promise.resolve();
+  expect(api.getCard).toHaveBeenCalledTimes(1);
+
+  api.getCard.mockResolvedValue({ ...card, status: 'approved', actions: ['deploy'], approvedSha: head });
+  for (const handler of stream.handlers)
+    handler({ kind: 'cards', full: false, cards: [{ ...card, status: 'approved' }], removed: [] });
+  expect(await screen.findByRole('button', { name: /Deploy/ })).toBeTruthy();
+  expect(api.getCard).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole('button', { name: 'Approve ae5d441' })).toBeNull();
 });
 
 test('a card with nothing to do says so in the next step', async () => {

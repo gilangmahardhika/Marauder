@@ -1,0 +1,116 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { session } from '$lib/session';
+import type { AppNotification } from '$lib/types';
+
+const api = vi.hoisted(() => ({ getNotifications: vi.fn(), readNotifications: vi.fn() }));
+const stream = vi.hoisted(() => ({ handlers: [] as ((event: unknown) => void)[] }));
+
+vi.mock('$lib/api', () => api);
+vi.mock('$lib/stream.svelte', () => ({
+  live: {
+    on: (handler: (event: unknown) => void) => {
+      stream.handlers.push(handler);
+      return () => {
+        stream.handlers = stream.handlers.filter((item) => item !== handler);
+      };
+    }
+  }
+}));
+
+import NotificationBell from './NotificationBell.svelte';
+
+function note(id: string, title: string, readAt: string | null = null, projectId = 'proj_a'): AppNotification {
+  return {
+    id,
+    kind: 'review',
+    title,
+    body: 'Export CSV · Widget',
+    projectId,
+    cardId: 'card_1',
+    url: `/cards/card_1?project=${projectId}`,
+    createdAt: '2026-10-14T05:00:00Z',
+    readAt
+  };
+}
+
+function push(event: unknown) {
+  for (const handler of stream.handlers) handler(event);
+}
+
+beforeEach(() => {
+  session.setProject('proj_a');
+  api.getNotifications.mockResolvedValue({
+    notifications: [note('ntf_2', 'Review needed'), note('ntf_1', 'Done', '2026-10-14T06:00:00Z')],
+    unread: 1
+  });
+  api.readNotifications.mockResolvedValue({ unread: 0 });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+  stream.handlers = [];
+  sessionStorage.clear();
+});
+
+test('the bell shows the unread count and lists notifications as links', async () => {
+  render(NotificationBell);
+  const bell = await screen.findByRole('button', { name: 'Notifications, 1 unread' });
+  await fireEvent.click(bell);
+  const panel = screen.getByRole('group', { name: 'Notifications' });
+  const links = within(panel).getAllByRole('link');
+  expect(links.map((link) => link.getAttribute('href'))).toEqual(['/cards/card_1?project=proj_a', '/cards/card_1?project=proj_a']);
+  expect(links[0].textContent).toContain('Review needed');
+  expect(links[0].textContent).toContain('unread');
+  expect(links[1].textContent).not.toContain('unread');
+});
+
+test('a pushed notification raises the count, joins the top of the list, and is announced', async () => {
+  render(NotificationBell);
+  await screen.findByRole('button', { name: 'Notifications, 1 unread' });
+  push({ kind: 'notification', notification: note('ntf_3', 'Changes requested'), unread: 2 });
+  expect(await screen.findByRole('button', { name: 'Notifications, 2 unread' })).toBeTruthy();
+  expect(screen.getByRole('status').textContent).toContain('Changes requested: Export CSV · Widget');
+  api.getNotifications.mockReturnValue(new Promise(() => {}));
+  await fireEvent.click(screen.getByRole('button', { name: 'Notifications, 2 unread' }));
+  const links = within(screen.getByRole('group', { name: 'Notifications' })).getAllByRole('link');
+  expect(links.map((link) => link.textContent)).toEqual([
+    expect.stringContaining('Changes requested'),
+    expect.stringContaining('Review needed'),
+    expect.stringContaining('Done')
+  ]);
+});
+
+test('Mark all read clears the count', async () => {
+  render(NotificationBell);
+  await fireEvent.click(await screen.findByRole('button', { name: 'Notifications, 1 unread' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Mark all read' }));
+  expect(api.readNotifications).toHaveBeenCalledWith({ all: true });
+  expect(await screen.findByRole('button', { name: 'Notifications' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Mark all read' }).hasAttribute('disabled')).toBe(true);
+});
+
+test('opening a notification marks it read', async () => {
+  render(NotificationBell);
+  await fireEvent.click(await screen.findByRole('button', { name: 'Notifications, 1 unread' }));
+  const first = within(screen.getByRole('group', { name: 'Notifications' })).getAllByRole('link')[0];
+  first.addEventListener('click', (event) => event.preventDefault());
+  await fireEvent.click(first);
+  expect(api.readNotifications).toHaveBeenCalledWith({ ids: ['ntf_2'] });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Notifications' })).toBeTruthy());
+});
+
+test('a resync reads the list again, and a link off this site is not followed', async () => {
+  render(NotificationBell);
+  await screen.findByRole('button', { name: 'Notifications, 1 unread' });
+  api.getNotifications.mockResolvedValue({
+    notifications: [{ ...note('ntf_9', 'Review needed'), url: 'https://evil.example/x' }],
+    unread: 1
+  });
+  push({ kind: 'resync' });
+  await waitFor(() => expect(api.getNotifications).toHaveBeenCalledTimes(2));
+  await fireEvent.click(screen.getByRole('button', { name: 'Notifications, 1 unread' }));
+  await waitFor(() =>
+    expect(within(screen.getByRole('group', { name: 'Notifications' })).getAllByRole('link')[0].getAttribute('href')).toBe('/')
+  );
+});

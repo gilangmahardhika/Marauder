@@ -10,9 +10,21 @@ export type BoardFilter = {
   q: string;
   owners: string[];
   blocked: boolean;
+  /** Show cards closed as won't fix, which the board hides by default. */
+  wontFix?: boolean;
 };
 
 export type OwnerChoice = { id: string; person: CardOwner | null; count: number };
+
+/** Applies a pushed `cards` frame: a full frame replaces the list; otherwise changed cards replace theirs or join the end, and removed ids leave. */
+export function mergeCards(cards: Card[], frame: { full: boolean; cards: Card[]; removed: string[] }): Card[] {
+  if (frame.full) return frame.cards;
+  const changed = new Map(frame.cards.map((card) => [card.id, card]));
+  const gone = new Set(frame.removed);
+  const next = cards.filter((card) => !gone.has(card.id)).map((card) => changed.get(card.id) ?? card);
+  const known = new Set(next.map((card) => card.id));
+  return [...next, ...frame.cards.filter((card) => !known.has(card.id))];
+}
 
 export function personName(person: CardOwner) {
   return displayName(person);
@@ -59,6 +71,7 @@ export function parseOwners(param: string | null, choices: OwnerChoice[], email:
 export function filterCards(cards: Card[], filter: BoardFilter) {
   return cards.filter(
     (card) =>
+      (filter.wontFix || card.status !== 'wont_fix') &&
       (filter.owners.length === 0 || filter.owners.includes(card.owner?.id ?? noOwner)) &&
       (!filter.blocked || card.status === 'blocked') &&
       matchText(

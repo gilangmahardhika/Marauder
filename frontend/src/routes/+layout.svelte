@@ -4,10 +4,12 @@
   import type { Snippet } from 'svelte';
   import { closeSession, getMe, getProjects, getTribes } from '$lib/api';
   import Live from '$lib/components/Live.svelte';
+  import NotificationBell from '$lib/components/NotificationBell.svelte';
   import { displayName } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
   import { session } from '$lib/session';
   import { canManageTribe, shell } from '$lib/shell.svelte';
+  import { live } from '$lib/stream.svelte';
   import type { ProjectRecord, TribeRecord } from '$lib/types';
   import Icon from '$lib/ui/Icon.svelte';
   import Menu from '$lib/ui/Menu.svelte';
@@ -36,13 +38,19 @@
   const admin: NavGroup = {
     label: 'Admin',
     items: [
-      { href: '/admin/usage', label: 'Token usage', icon: 'chart' },
       { href: '/admin/users', label: 'Users', icon: 'users' },
       { href: '/tribes', label: 'Tribes', icon: 'shield' },
+      { href: '/admin/runners', label: 'Runners', icon: 'server' },
+      { href: '/admin/usage', label: 'Token usage', icon: 'chart' }
+    ]
+  };
+
+  const company: NavGroup = {
+    label: 'Company setup',
+    items: [
       { href: '/admin/github', label: 'Company GitHub', icon: 'building' },
       { href: '/admin/llm', label: 'LLM APIs', icon: 'spark' },
       { href: '/admin/router', label: 'Router', icon: 'router' },
-      { href: '/admin/runners', label: 'Runners', icon: 'server' },
       { href: '/admin/conventions', label: 'Conventions', icon: 'rules' },
       { href: '/admin/skills', label: 'Skills', icon: 'skill' }
     ]
@@ -53,9 +61,11 @@
     if (!tribe) return { label: 'Tribe', items: [{ href: '/projects', label: 'Projects', icon: 'projects' }] };
     const manages = canManageTribe(tribe.id);
     const items: NavItem[] = [{ href: '/projects', label: 'Projects', icon: 'projects' }];
-    if (manages) items.push({ href: `/tribes/${tribe.id}/mcp`, label: 'MCP servers', icon: 'mcp' });
+    if (manages) {
+      items.push({ href: `/tribes/${tribe.id}`, label: 'Members', icon: 'users', exact: true });
+      items.push({ href: `/tribes/${tribe.id}/mcp`, label: 'MCP servers', icon: 'mcp' });
+    }
     items.push({ href: `/tribes/${tribe.id}/conventions`, label: 'Conventions', icon: 'rules' });
-    if (manages) items.push({ href: `/tribes/${tribe.id}`, label: 'Members', icon: 'users', exact: true });
     return { label: `Tribe · ${tribe.name}`, items };
   });
 
@@ -65,16 +75,18 @@
     return {
       label: `Project · ${project.name}`,
       items: [
-        { href: '/settings/repository', label: 'Repository', icon: 'git' },
-        { href: '/settings/links', label: 'Linked projects', icon: 'link' },
         { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' },
-        { href: '/settings/conventions', label: 'Conventions', icon: 'rules' }
+        { href: '/settings/repository', label: 'Repository', icon: 'git' },
+        { href: '/settings/conventions', label: 'Conventions', icon: 'rules' },
+        { href: '/settings/links', label: 'Linked projects', icon: 'link' }
       ]
     };
   });
 
   const navGroups = $derived(
-    [workspace, tribeGroup, projectGroup, shell.admin ? admin : null].filter((group): group is NavGroup => group !== null)
+    [workspace, projectGroup, tribeGroup, shell.admin ? admin : null, shell.admin ? company : null].filter(
+      (group): group is NavGroup => group !== null
+    )
   );
   const navItems = $derived(navGroups.flatMap((group) => group.items));
 
@@ -151,7 +163,18 @@
         projects = [];
       });
   });
+
+  $effect(() => {
+    if (bare || session.bearer() === '') return;
+    return live.start(shell.projectId);
+  });
 </script>
+
+<svelte:document
+  onvisibilitychange={() => {
+    if (document.visibilityState === 'visible') live.wake();
+  }}
+/>
 
 <svelte:head>
   <title>{shell.title === 'Marauder' ? 'Marauder' : `${shell.title} · Marauder`}</title>
@@ -273,9 +296,10 @@
           <span class="hidden text-line-strong lg:inline" aria-hidden="true">/</span>
           <span class="hidden truncate font-medium text-ink lg:inline">{projectName}</span>
         </p>
-        <div class="ml-auto min-w-0 pr-2 text-right lg:pr-0">
+        <div class="ml-auto min-w-0 text-right">
           <Live class="truncate text-[13px]" message={shell.message === shell.title ? '' : shell.message} />
         </div>
+        <NotificationBell />
       </header>
       <main id="main" class="flex-1 px-6 py-6 lg:px-8 lg:py-8">{@render children()}</main>
     </div>

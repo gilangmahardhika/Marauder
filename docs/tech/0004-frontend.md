@@ -258,7 +258,7 @@ frontend/
 | `/intake/[id]` | Edit or delete a manual requirement, and name its reviewers |
 | `/cards/[id]` | Card |
 | `/cards/[id]/trace` | Trace |
-| `/account` | Name, password, and the caller's GitHub settings |
+| `/account` | Name, password, the caller's GitHub settings, and browser notifications |
 | `/account/usage` | My token usage (RFC-090) |
 | `/admin/usage` | Token usage across every project (RFC-089) |
 | `/admin/users` | Admin user list |
@@ -294,9 +294,17 @@ frontend/
 | `/settings/deploy` | Deploy and checks for the project |
 | `/settings/conventions` | The project's stacks, skills, and rules over its tribe (RFC-104) |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups are Workspace (Board, Intake), "Tribe · {tribe name}" (Projects, MCP servers, Conventions, Members), "Project · {project name}" (Repository, Linked projects, Deploy, Conventions), and Admin (Token usage, Users, Tribes, Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}/mcp`, `/tribes/{tribe}/conventions`, and `/tribes/{tribe}`; MCP servers and Members show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. Admin links render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Deploy, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Members and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the live status line. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
+
+A card link with `?project={id}` (from a notification) that names a project other than the stored one makes `+layout.ts` read `GET /api/projects`, then store that project and its tribe before the page loads. An id the caller cannot see is left alone, and the card page shows its `404`.
+
+### Live stream
+
+`src/lib/stream.svelte.ts` exports `live`, one stream per tab (RFC-113). `+layout.svelte` calls `live.start(projectId)` when the shell shows and a bearer is stored, so it restarts when the project changes, and `live.wake()` when the tab becomes visible. `openStream` in `api.ts` reads `GET /api/stream` through `fetch` with the bearer header and `parseEvents`. `live.connected` turns true on the `ready` frame. A dropped stream reconnects after 1 second, doubling up to 30; `wake` reconnects at once. After a reconnect, `live` hands handlers a `resync` before the next frames. Pages subscribe with `live.on(handler)`, which returns the unsubscribe.
+
+`NotificationBell.svelte` sits in the top bar after the live status line. The 44px button's label is "Notifications, N unread", with a badge showing the count (99+ past 99). It opens a panel, a group named "Notifications", that loads `GET /api/notifications` each time it opens and on `resync`. Each row links to the row's `url` when it is a path starting with a single `/`, else to `/`, and shows the title, body, and time; unread rows are bold with a dot. Following a row marks it read; a row in another project does a full page load so the project switches. "Mark all read" posts `{ "all": true }`. A `notification` frame sets the count, adds the row to the list, and shows "title: body" in a `role="status"` toast for 6 seconds. Escape (focus returns to the bell) and a click outside close the panel.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -342,7 +350,7 @@ A list page that can grow long has a `Toolbar` above it, and every page filters 
 
 | Page | Search | Filters | Show more |
 | --- | --- | --- | --- |
-| Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` avatars (comma list of user ids, `none` for no owner), `blocked=1` Blocked only | No |
+| Board | Card id, title, status, owner and reviewer names, emails, and logins, requirement ids | `owner` avatars (comma list of user ids, `none` for no owner), `blocked=1` Blocked only, `wontfix=1` Show won't fix | No |
 | Intake | See Intake | `tab`, `status`, `source` | Yes |
 | Projects | Name, repository, base branch | None; the list is the active tribe's projects | No |
 | Tribes | Name | None | No |
@@ -373,15 +381,17 @@ Below the link, outside it, a ready card has a footer row (RFC-061). It shows a 
 
 The primary button reads "Run ready cards (N)", where N is `readyCount`. It is enabled when `canRun` is true and N is above zero. Its `title` says why when it is disabled: "All ready cards are queued", "No ready card can start", or "Your role cannot start cards". It POSTs `/api/projects/{id}/runs`, then reloads the list, and the message reads "Queued N cards." The page says "Queued" and never "Running" for these cards, because the worker loop is not built yet.
 
-When `running` is true, or any card is in the `running` or `shipping` group or in `agent_review`, an `$effect` starts a 3 second `setInterval` that calls `GET /api/cards` again. The effect cleanup clears the timer when the condition becomes false and when the page is destroyed.
+The board listens to the live stream (RFC-113, see Live stream). A `cards` frame merges into the list with `mergeCards` in `src/lib/board.ts`: a `full` frame replaces the list, otherwise each card replaces the one with its id or is added, and `removed` ids leave. A `board` frame sets `readyCount`, `running`, and `canRun`. Only while the stream is not connected, and `running` is true or any card is in the `running` or `shipping` group or in `agent_review`, an `$effect` starts a 3 second `setInterval` that calls `GET /api/cards` again. The effect cleanup clears the timer when the condition becomes false, when the stream connects, and when the page is destroyed.
 
 Above the lanes, a toolbar searches the cards, filters them by owner, and has Blocked only (see Search and filters). The owner filter is a row of overlapping 36px avatars in 44px toggle buttons, one per distinct card owner (`ownerChoices` in `src/lib/board.ts`). The signed-in user comes first, matched by `owner.email` ignoring case (RFC-058). The others follow by display name. A dashed "No owner" circle comes last when a card has no owner. Each button has `aria-pressed`, the label "Cards owned by {name}", and the name and card count in `title`. Several owners can be on at once, and the board keeps cards owned by any of them. Past six owners, the rest sit behind a "+n" button that opens a checklist. It has a ring while one of its owners is selected. The selection is `?owner=` with user ids separated by commas. An old `?owner=mine` link maps to the signed-in user's id, or is dropped when that user owns no card. Clear filters also clears the owners. While a filter is on, each lane header counts "x of y". The poll keeps the filter.
+
+The board hides cards in the `closed` group (`wont_fix`, RFC-112) and leaves them out of the page's card count and the owner filter. A "Show won't fix" checkbox after Blocked only sets `?wontfix=1`, which shows them in a "Won't fix" lane after Stopped. Clear filters also clears it.
 
 Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" to `/intake`. No table of placeholder rows.
 
 ## Card
 
-`src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page.
+`src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page. It loads the card again, without clearing the page or the live message, when a `full` `cards` frame arrives or a frame names its id.
 
 The header shows the title and a badge with `statusLabel`, with the raw status in `title`. A line under the title shows the owner's avatar and display name ("No owner" when `null`), "Attempt {attemptsUsed} of {maxAttempts}", and `branch` in monospace when set. The header buttons are "Open pull request" (secondary) when `prUrl` passes the link rule, and "View trace" (secondary, with the terminal icon) (RFC-110).
 
@@ -415,6 +425,8 @@ Render a control only when its name is in `actions`:
 | `deploy` | Button "Deploy approved SHA". |
 | `merge` | Button "Squash and merge" with the git icon, primary when `approve` is absent. It posts to `merge`; a refusal shows GitHub's reason in the status line (RFC-111). |
 | `unblock` | Form. Checkbox "Reset attempt counter", unchecked by default. Button "Unblock". Text above the button from `unblockTo` |
+| `wont_fix` | Secondary button "Won't fix" beside Unblock, or alone when release is refused, so Unblock stays primary. It opens a form: textarea "Why won't this be fixed?", 3 rows, growing, hint "Shown in the trace. An open pull request gets this as a comment and is closed." Buttons "Close as won't fix" (danger, disabled while the trimmed reason is empty) and "Cancel". The body is `{ reason }` trimmed; a `fields.reason` error shows on the textarea (RFC-112) |
+| `reopen` | Primary button "Reopen" with "Reopen returns this card to Blocked." It POSTs `reopen` with `{}` (RFC-112) |
 
 `unblockTo` text:
 
@@ -525,6 +537,16 @@ The first panel is Name. "Save name" calls `PUT /api/me` and is disabled while t
 Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
 
 GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that cards built from requirements the caller brought in are committed, pushed, and opened as pull requests with this token (RFC-054). Clones and fetches still use the company account. The panel header shows a "Verified" or "Not verified" badge from `verified`. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`. After the test, reload `GET /api/me/github` so the login and badge show what GitHub reported.
+
+Browser notifications (`NotificationsPanel.svelte`, RFC-113) is the last panel. `src/lib/push.ts` holds the browser calls:
+
+- `syncPush` returns `unsupported` without a service worker, `PushManager`, or `Notification`; `blocked` when permission is `denied`; `on` when the browser holds a subscription and permission is `granted`, after sending that subscription again with `POST /api/push/subscriptions`, since the server deletes failing ones; else `off`.
+- `enablePush` asks for permission, reads `GET /api/push/key`, registers `/service-worker.js` (as a module in dev), waits for `ready`, replaces a subscription made with another key, subscribes with `userVisibleOnly: true`, and posts it.
+- `disablePush` unsubscribes and then sends `DELETE /api/push/subscriptions` with the endpoint.
+
+The header badge reads On, Off, or "Blocked in browser settings". Off shows "Turn on". On shows "Send a test" (`POST /api/push/test`; `sent: 0` says no browser took it) and "Turn off". Blocked tells the person to allow notifications in the browser's site settings and shows no button. The hint says a notification shows the card title and project only. Results go to a `role="status"` line.
+
+`src/service-worker.ts` is built by SvelteKit with `serviceWorker.register: false`, so only the panel registers it. On `push` it shows the payload's `title` and `body` with `tag` and `data.url`. On `notificationclick` it focuses a window of this origin and navigates it to the URL, or opens a new window. A URL that is not a single-slash path becomes `/`. It caches nothing, handles no `fetch`, and calls no API.
 
 ### Users and tribes
 
@@ -747,6 +769,8 @@ npm run build
 | `CardActions` Approve | The button reads "Approve ae5d441" beside "AI review: Recommend approve" and the short reviewed SHA, with "The head moved after the review." when they differ. "Approve a different SHA" opens the SHA input prefilled with `headSha`, and the POST sends the edited `{ sha }`. With no `headSha` the input shows and the button reads "Approve SHA" (RFC-110) |
 | `CardActions` with `retry_review` | "Retry AI review" renders only when listed, and a click POSTs `retry-review` |
 | `CardActions` on a blocked card with `unblockTo: null` | No Unblock button. The Intake sentence renders |
+| `CardActions` Won't fix | Unblock stays primary and "Won't fix" is secondary. It opens the reason form, "Close as won't fix" is disabled until the reason has text, and the POST to `wont-fix` sends the trimmed `{ reason }` (RFC-112) |
+| `CardActions` Reopen | "Reopen" renders with its sentence on a `wont_fix` card and POSTs `reopen` |
 | `CardActions` Request changes | The button opens the reason form. A `422` shows `fields.reason` under it. A later submit POSTs `{ reason }` and closes the form |
 | `CardNotes` | No notes render nothing. The newest review note renders its bold and code as elements, with "AI review" and "· attempt 2". Earlier notes wait behind "Show 1 earlier note", and a local check note stays plain text in a `pre`. An approver note has no attempt number. An instructions note reads "Instructions" and renders markdown, and a blank one reads "Instructions cleared". Current instructions and the newest other note are both open, and older notes wait behind the button |
 | `CardActions` Run | Run opens the instructions box prefilled with `instructions`. Unchanged text POSTs `{}`. A `422` shows `fields.instructions`. Changed text POSTs `{ instructions }` and closes the form |
@@ -762,7 +786,7 @@ npm run build
 | `requirements` mentions | `mentions` keeps `@tickets` and `(@db)`, drops `a@b.co`, `@scope/pkg`, `@pytest.fixture`, `@Override`, and mentions in backticks and fences, keeps first-use order without repeats, and allows a trailing `.`. `mentionAt` finds the `@` and query before the caret, and is null after a space or inside an email |
 | `RequirementForm` mentions | Typing `@ti` opens a listbox with `tickets`, ArrowDown moves `aria-activedescendant`, Enter inserts `@tickets `, and Escape closes the list. With no server the list says so. Chips show a known server, a disabled one with its warning, and an unknown slug with its warning |
 | Tribe selector | `/choose-tribe` lists two tribes with their project counts. Picking one stores the tribe and its first project and loads `/`; a tribe with no project stores an empty project. With no tribes a member reads "Ask an admin", and an admin also gets "Create a tribe" |
-| Tribe and Project sections | The sidebar headings read "Tribe · Alpha" and "Project · Shop". MCP servers and Members show only to a tribe manager, and Members is not current on `/tribes/{id}/mcp`. With no project the Project group is gone. The mobile menu shows the headings |
+| Tribe and Project sections | The sidebar headings read "Workspace", "Project · Shop", then "Tribe · Alpha". For a tribe manager the links read Board, Intake, Deploy, Repository, Conventions, Linked projects, Projects, Members, MCP servers, Conventions. Members and MCP servers show only to a tribe manager, and Members is not current on `/tribes/{id}/mcp`. With no project the Project group is gone. The mobile menu shows the headings in the same order |
 | Layered conventions pages | The tribe page saves `stackIds`, `skillIds`, and `rulesOff`, and is read only without `canEdit`. The project page shows origins and saves on/off `choices` |
 | Card context | `CardContext` shows controls only with the `context` action, Detach and Attach call `setCardContext`, and Attach server shows only with `attach-mcp`. The trace renders `context_changed` and the `card` MCP scope |
 | Layout tribe scope | The switcher lists only the selected tribe's projects, "Switch tribe" links to `/choose-tribe`, a stored project from another tribe is replaced by the tribe's first project, and a stored tribe the API no longer returns sends the browser to `/choose-tribe` |
@@ -782,9 +806,9 @@ npm run build
 | Reviewers before GitHub | `reviewerChoices` labels a member without a login "No verified GitHub login". `/intake/new` sends an unverified member picked as a reviewer. `ReviewersPanel` shows the hint. A `reviewers_requested` row lists the `waiting` reviewers (RFC-103) |
 | `intake` filters | Search matches id, statement, heading, source path, and acceptance lines, ignoring case. A markdown statement or acceptance line also matches by its `plainText` words. Status and source filters narrow the list. Only unaccepted rows are offered for acceptance. The status defaults to "Needs acceptance" while any row is unaccepted |
 | `filter` | `matchText` ignores case and a blank query matches. `withParams` sets and removes parameters. `pickParam` falls back on an unknown value |
-| `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
+| `board` filters | `ownerChoices` lists each owner once, the signed-in user first in any email case, then by name, then `none` when a card has no owner. `parseOwners` reads the comma list and maps `mine`. Selected owners keep cards of any of them, and `none` keeps unowned cards. Blocked only keeps blocked cards. `wont_fix` cards are dropped unless `wontFix` is set. Search matches title, id, status and its label, requirement id, and the owner's and reviewers' name, login, and email |
 | `OwnerFilter` | Clicking an avatar adds its owner and clicking again removes it. Owners past the limit are in the "+n" checklist |
-| `status` labels | Every card status has a label in words. An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
+| `status` labels | Every card status has a label in words, and `wont_fix` reads "Won't fix". An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
 | `usage` lib | Groups by LLM, model, project, user, and task, with "Unknown family" and "No owner". Filters use `-` for a missing value. Options count the rows the other filters keep and keep a chosen value with none. Groups sort by any column either way, ties by name. Daily totals fill every day of the range. The summary's cache share is cached over all input read. `rangeWindow` ends today in UTC |
 | Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and the Model choices, and picking one sets `model`. `?by=user` regroups and Group by sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
 | `usage` source and card | Source groups Card and Intake; Card groups by id with refines as "Intake" and falls back to the id without a title. `source=intake` and `card=-` keep only refines, and card options list each card once, largest first (RFC-091) |
@@ -793,7 +817,7 @@ npm run build
 | Tribe usage page | It reads `getTribeUsage` with the route's tribe id and 30 days, titles the page and the shell "Token usage: Gadget tribe", links back to the tribe, and offers the User filter |
 | Account usage page | It reads `getMyUsage`, has no User filter, and Group by offers LLM, Model, Project, Task, Source, and Card. `?by=user&user=...` is ignored: models group and every row counts |
 | User menu | Opening the menu shows "My token usage" linking to `/account/usage` for a member who is not an admin |
-| Nav admin items | Token usage is the first Admin link for an admin and is absent for a member who is not one |
+| Nav admin items | For an admin the last groups are Admin (Users, Tribes, Runners, Token usage) and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills). Neither group shows to a member who is not an admin |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
 | `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |
@@ -814,4 +838,11 @@ npm run build
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
 | `api` AI review mode | `addRequirement` sends `aiReviewMode` in the POST body, as the New requirement page does, and `setAIReviewMode` PUTs `{ aiReviewMode }` to `requirements/{id}/ai-review-mode` in the selected project (RFC-072) |
+| `stream` | `createLive` opens one stream for the project, is `connected` after `ready`, hands frames to every handler, reconnects after 1 second doubling to 30 with a `resync` first, reconnects at once on `wake`, closes on `stop` and on a project change, and drops a handler after `off` (RFC-113) |
+| Board live | With a mocked stream: a `cards` frame replaces one card and drops a `removed` id, a `full` frame replaces the list, a `board` frame updates "Run ready cards (N)", and no `GET /api/cards` poll runs while connected (RFC-113) |
+| Card page live | A `cards` frame naming the card reloads it quietly, and a frame for another card does not |
+| Layout load `?project=` | `/cards/x?project=proj_b` stores `proj_b` and its tribe from `GET /api/projects`; an unknown id changes nothing |
+| `NotificationBell` | The label counts unread, opening lists rows with unread marked, a row links to its path and marks it read, "Mark all read" posts `{ all: true }`, a `notification` frame raises the count and shows the toast, and a URL that is not a single-slash path links to `/` (RFC-113) |
+| `push` | `enablePush` subscribes with the 65-byte server key and `userVisibleOnly`, saves the subscription, and replaces one made with another key. A denied permission is `blocked` and subscribes nothing. `syncPush` sends a held subscription again. `disablePush` unsubscribes and deletes the endpoint (RFC-113) |
+| `NotificationsPanel` | Off shows "Turn on", which turns it On with "Send a test" and "Turn off". A test reports a send, or that no browser took it. Blocked shows the site settings hint and no button. Unsupported says so (RFC-113) |
 | Built `build/index.html` | Contains a CSP meta tag with `script-src 'self'` and a hash, and no `unsafe-inline` |

@@ -6,10 +6,12 @@
     getCard,
     mergeCard,
     rejectCard,
+    reopenCard,
     requestChanges,
     retryReview,
     runCard,
-    unblockCard
+    unblockCard,
+    wontFixCard
   } from '$lib/api';
   import { shell } from '$lib/shell.svelte';
   import { verdictLabel, verdictTone } from '$lib/trace';
@@ -33,6 +35,8 @@
   let starting = $state(false);
   let instructions = $state('');
   let instructionsError = $state('');
+  let closing = $state(false);
+  let closeReason = $state('');
 
   let choosing = $state(false);
 
@@ -81,6 +85,19 @@
   function cancelChanges() {
     asking = false;
     reason = '';
+    reasonError = '';
+  }
+
+  async function sendWontFix() {
+    if (await run("Close as won't fix", () => wontFixCard(card.id, closeReason.trim()))) {
+      closing = false;
+      closeReason = '';
+    }
+  }
+
+  function cancelWontFix() {
+    closing = false;
+    closeReason = '';
     reasonError = '';
   }
 
@@ -261,12 +278,54 @@
         {/if}
       </p>
       <Checkbox id="reset" label="Reset attempt counter" bind:checked={reset} />
-      <Button variant={actions.includes('approve') || actions.includes('deploy') ? 'secondary' : 'primary'} type="submit" disabled={busy}>
-        Unblock
-      </Button>
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant={actions.includes('approve') || actions.includes('deploy') ? 'secondary' : 'primary'} type="submit" disabled={busy}>
+          Unblock
+        </Button>
+        {#if actions.includes('wont_fix') && !closing}
+          <Button type="button" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
+        {/if}
+      </div>
+    </form>
+  {:else if actions.includes('wont_fix') && !closing}
+    <div class="flex flex-wrap items-center gap-2">
+      <Button type="button" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
+    </div>
+  {/if}
+  {#if closing && actions.includes('wont_fix')}
+    <form
+      class="flex flex-col items-start gap-3"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void sendWontFix();
+      }}
+    >
+      <Field
+        label="Why won't this be fixed?"
+        id="wont-fix-reason"
+        type="textarea"
+        width="full"
+        rows={3}
+        grow
+        hint="Shown in the trace. An open pull request gets this as a comment and is closed."
+        error={reasonError}
+        bind:value={closeReason}
+      />
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="danger" type="submit" disabled={busy || closeReason.trim() === ''}>Close as won't fix</Button>
+        <Button variant="ghost" type="button" disabled={busy} onclick={cancelWontFix}>Cancel</Button>
+      </div>
     </form>
   {/if}
   {#if card.status === 'blocked' && card.unblockTo === null}
     <Notice tone="danger">Accept the changed requirements in Intake before this card can be released.</Notice>
+  {/if}
+  {#if actions.includes('reopen')}
+    <div class="flex flex-wrap items-center gap-3">
+      <Button variant="primary" type="button" disabled={busy} onclick={() => void run('Reopen', () => reopenCard(card.id))}>
+        Reopen
+      </Button>
+      <p class="text-sm text-muted">Reopen returns this card to Blocked.</p>
+    </div>
   {/if}
 </div>

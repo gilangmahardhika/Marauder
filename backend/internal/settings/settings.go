@@ -26,9 +26,10 @@ func (v *Invalid) Error() string {
 func (v *Invalid) Unwrap() error { return ErrValidation }
 
 type Secrets struct {
-	DatabaseURL string            `json:"databaseUrl"`
-	TokenKey    string            `json:"tokenKey,omitempty"`
-	LLMKeys     map[string]string `json:"llmKeys"`
+	DatabaseURL     string            `json:"databaseUrl"`
+	TokenKey        string            `json:"tokenKey,omitempty"`
+	VAPIDPrivateKey string            `json:"vapidPrivateKey,omitempty"`
+	LLMKeys         map[string]string `json:"llmKeys"`
 }
 
 type Model struct {

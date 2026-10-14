@@ -14,7 +14,8 @@ const statuses = [
   'deploying_dev',
   'verifying',
   'done',
-  'blocked'
+  'blocked',
+  'wont_fix'
 ];
 
 describe('status labels', () => {
@@ -25,6 +26,7 @@ describe('status labels', () => {
     }
     expect(statusLabel('human_review')).toBe('Waiting for review');
     expect(statusLabel('in_progress')).toBe('In progress');
+    expect(statusLabel('wont_fix')).toBe("Won't fix");
   });
 
   it('turns an unknown code into a sentence', () => {

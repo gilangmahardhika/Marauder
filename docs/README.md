@@ -53,6 +53,8 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0046-remote-runners.md](rfc/0046-remote-runners.md) | Decisions `RFC-106` to `RFC-109`. An installed runner registers, heartbeats, and claims leased implement jobs over HTTPS, and the control plane keeps every status change and credential |
 | [rfc/0047-card-page-review.md](rfc/0047-card-page-review.md) | Decision `RFC-110`. Publish stores the pull request title and description, and the card page leads with the next step, the pull request, and a numbered diff |
 | [rfc/0048-squash-merge.md](rfc/0048-squash-merge.md) | Decision `RFC-111`. A project turns deploy off, and an approved card is then squash-merged on GitHub by a person and moves to Done |
+| [rfc/0049-wont-fix.md](rfc/0049-wont-fix.md) | Decision `RFC-112`. A blocked card is closed as won't fix with a reason, its open pull request is closed, the board hides it, and Reopen returns it to Blocked |
+| [rfc/0050-push-notifications.md](rfc/0050-push-notifications.md) | Decision `RFC-113`. Board changes are pushed to open pages over one stream, and the people a card waits on get a notification in the bell and in the browser |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -43,6 +43,8 @@ func TestEdgesMatchPRD(t *testing.T) {
 		{"verifying", "blocked"}:              {},
 		{"blocked", "ready"}:                  {},
 		{"blocked", "human_review"}:           {},
+		{"blocked", "wont_fix"}:               {},
+		{"wont_fix", "blocked"}:               {},
 	}
 	got := machine.Edges()
 	if len(got) != len(want) {
@@ -198,6 +200,38 @@ func TestApprovedToDone(t *testing.T) {
 	}
 	if n := countGates(t, db, card.ID); n != 0 {
 		t.Fatalf("gates = %d, want 0: a merge is not a dev test", n)
+	}
+}
+
+func TestBlockedToWontFix(t *testing.T) {
+	db := boardtest.Open(t)
+	card := insertCard(t, db, "blocked")
+	if _, err := db.Exec(`UPDATE cards SET blocked_reason = 'source_changed' WHERE id = $1`, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	card = reload(t, db, card.ID)
+	if _, err := apply(t, db, card, "wont_fix", machine.Evidence{ActorID: "usr_ada"}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without a reason", err)
+	}
+	if _, err := apply(t, db, card, "wont_fix", machine.Evidence{Reason: "Out of scope"}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without an actor", err)
+	}
+	closed, err := apply(t, db, card, "wont_fix", machine.Evidence{Reason: "Out of scope", ActorID: "usr_ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.Status != "wont_fix" || closed.BlockedReason != "source_changed" {
+		t.Fatalf("closed = %s %q, want wont_fix keeping source_changed", closed.Status, closed.BlockedReason)
+	}
+	if n := countGates(t, db, card.ID); n != 0 {
+		t.Fatalf("gates = %d, want 0", n)
+	}
+	reopened, err := apply(t, db, closed, "blocked", machine.Evidence{Reason: closed.BlockedReason, ActorID: "usr_ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopened.Status != "blocked" || reopened.BlockedReason != "source_changed" {
+		t.Fatalf("reopened = %s %q, want blocked with source_changed", reopened.Status, reopened.BlockedReason)
 	}
 }
 

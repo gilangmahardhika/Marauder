@@ -21,6 +21,7 @@ var kinds = map[string]struct{}{
 	"transition_rejected": {},
 	"deploy":              {},
 	"merge":               {},
+	"wont_fix":            {},
 	"health":              {},
 	"verify":              {},
 	"budget_stop":         {},
@@ -32,6 +33,7 @@ var kinds = map[string]struct{}{
 	"instructions_saved":  {},
 	"context_changed":     {},
 	"requirement_refined": {},
+	"review_failed":       {},
 }
 
 type queryer interface {

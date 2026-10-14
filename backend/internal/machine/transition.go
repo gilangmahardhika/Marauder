@@ -67,7 +67,7 @@ func Transition(ctx context.Context, tx *sql.Tx, card board.Card, to string, ev 
 	if to == "blocked" {
 		write.SetBlockedReason = true
 		write.BlockedReason = sql.NullString{String: ev.Reason, Valid: true}
-	} else if card.Status == "blocked" {
+	} else if card.Status == "blocked" && to != "wont_fix" {
 		write.SetBlockedReason = true
 		write.BlockedReason = sql.NullString{}
 	}
@@ -139,6 +139,13 @@ func missingEvidence(from, to string, ev Evidence) string {
 		return "reason"
 	}
 	switch from + "->" + to {
+	case "blocked->wont_fix":
+		if ev.Reason == "" {
+			return "reason"
+		}
+		if ev.ActorID == "" {
+			return "actorId"
+		}
 	case "human_review->approved":
 		if ev.Approver == "" {
 			return "approver"

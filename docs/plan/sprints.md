@@ -1094,3 +1094,65 @@ Packages: `internal/machine`, `internal/trace`, `internal/settings`, `internal/a
 - `CardActions` shows "Squash and merge"; the Deploy settings Board panel has "Deploy approved cards".
 
 Done when: `TestApprovedToDone`, `TestDeployEnabledDefault`, `TestActionsDeployOff`, `TestSquashMerge`, `TestSquashMergeNoToken`, `TestSquashMergeRefused`, `TestDeployRefusedWhenOff`, the `CardActions` and Deploy settings Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 80: Sidebar ordered by priority
+
+Goal: The sidebar reads from daily work outward, and each group lists its most-used links first (REQ-091).
+
+Packages: frontend `+layout.svelte`.
+
+- Groups in order: Workspace, "Project · {name}", "Tribe · {name}", Admin, Company setup.
+- Project: Deploy, Repository, Conventions, Linked projects. Tribe: Projects, Members, MCP servers, Conventions.
+- Admin (Users, Tribes, Runners, Token usage) and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) show only to an admin.
+
+Done when: the layout Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 81: Won't fix for blocked cards
+
+Goal: A blocked card is closed as won't fix with a reason, leaves the board, and can be reopened (RFC-112, REQ-006).
+
+Packages: `migrations`, `internal/machine`, `internal/trace`, `internal/app`, `internal/httpapi`, frontend card actions, board filters, and status labels.
+
+- Migration 30: `wont_fix` in the card status check. `blocked <-> wont_fix` edges; `blocked_reason` kept.
+- `app.CanCloseCard`, `app.WontFix` (comment and close an open pull request with the caller's token first), `app.Reopen`; publish sends `state: open`.
+- `wont_fix` and `reopen` in `actions`, the `closed` group, `POST .../wont-fix` and `POST .../reopen`.
+- "Won't fix" form beside Unblock, "Reopen", and "Show won't fix" on the board.
+
+Done when: `TestBlockedToWontFix`, `TestActionsWontFix`, `TestWontFixClosesPR`, `TestWontFixNoPR`, `TestWontFixNoToken`, `TestWontFixClosedPR`, `TestWontFixRefused`, `TestReopen`, `TestEnsurePRReopens`, the `board`, `status`, and `CardActions` Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 82: Live board stream
+
+Goal: Open boards and card pages update from a server push instead of polling (RFC-113, REQ-095).
+
+Packages: `migrations`, `internal/notify`, `internal/httpapi`, `internal/cli` (serve starts the listener), frontend `stream.svelte.ts`, the board, and the card page.
+
+- Migration 31: `pg_notify` triggers on `events`, `cards`, and `runs`; `notifications`, `push_subscriptions`, and `notify_cursor`.
+- `notify.Listener`: `LISTEN orchestrator`, the `seq` cursor with a 10-second overlap, and touched cards debounced per project.
+- `GET /api/stream` with `cards`, `board`, `notification`, `ping`, and `resync` frames.
+- The board stops polling while the stream is open; the card page applies live frames.
+
+Done when: `TestNotifyTriggers`, `TestNotifyCursor`, `TestStreamCards`, the `stream` and board Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 83: Notifications and the bell
+
+Goal: The people a card waits on get a notification in the app (RFC-113, REQ-095).
+
+Packages: `internal/notify`, `internal/httpapi`, frontend layout and card page.
+
+- `notify.Recipients` per the RFC-113 table, and `Fanout` with `ON CONFLICT DO NOTHING`.
+- `GET /api/notifications` and `POST /api/notifications/read`.
+- The bell with the unread count, the list, Mark all read, and a live-region message; `?project=` card links switch project.
+
+Done when: `TestRecipients`, `TestStreamNotification`, `TestNotificationsRead`, the bell and card page Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 84: Browser push notifications
+
+Goal: A person who turned it on gets a browser notification even with the tab closed (RFC-113, REQ-095).
+
+Packages: `internal/webpush`, `internal/notify`, `internal/httpapi`, `internal/cli`, frontend service worker and Account.
+
+- `internal/webpush`: RFC 8291 `aes128gcm`, an RFC 8292 VAPID JWT, `netguard.Client`, the push host allowlist, and cleanup on `404` or `410`.
+- The VAPID key pair in `<data>/secrets.json`; `GET /api/push/key`, `POST` and `DELETE /api/push/subscriptions`, and `POST /api/push/test`.
+- `src/service-worker.ts` and the Account Notifications panel.
+
+Done when: `TestWebPushEncrypt`, `TestVAPIDJWT`, `TestPushEndpointGuard`, `TestPushGone`, `TestVAPIDKeySecret`, the Account notifications Vitest cases, `npm run check`, and the rest of the suite.

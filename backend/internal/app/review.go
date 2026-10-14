@@ -383,6 +383,12 @@ func reviewFailed(ctx context.Context, db *sql.DB, deps JobDeps, gh githubReader
 	if err := gh.comment(ctx, dir, card.PRURL, ReviewFailedComment(why, pr.Head)); err != nil {
 		_ = jobError(ctx, db, card, attemptID, "review comment: "+err.Error(), redact)
 	}
+	if _, err := trace.Append(ctx, db, trace.Event{
+		CardID: card.ID, AttemptID: attemptID, ProjectID: card.ProjectID, Kind: "review_failed",
+		Payload: map[string]any{"sha": pr.Head},
+	}, redact); err != nil {
+		return card, err
+	}
 	return settleChecks(ctx, db, deps, card, attemptID, freshChecks(ctx, gh, card.PRURL, pr), redact)
 }
 

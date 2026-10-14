@@ -1,6 +1,8 @@
 package httpapi
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,29 +158,31 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	body, err := s.projectBoard(r, projectID)
+	if err != nil {
+		writeErr(w, 500, "internal", "cards")
+		return
+	}
+	writeJSON(w, 200, body)
+}
+
+// projectBoard is the board of one project with the viewer's actions on
+// each card. The caller checks the viewer sees the project.
+func (s *Server) projectBoard(r *http.Request, projectID string) (map[string]any, error) {
 	reviewers, err := app.CardReviewerUsers(r.Context(), s.DB, projectID, "")
 	if err != nil {
-		writeErr(w, 500, "internal", "cards")
-		return
+		return nil, err
 	}
-	rows, err := s.DB.QueryContext(r.Context(), `SELECT id FROM cards WHERE project_id = $1 ORDER BY updated_at`, projectID)
+	ids, err := projectCardIDs(r.Context(), s.DB, projectID)
 	if err != nil {
-		writeErr(w, 500, "internal", "cards")
-		return
+		return nil, err
 	}
-	defer rows.Close()
 	cards := []any{}
 	ready := 0
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			writeErr(w, 500, "internal", "cards")
-			return
-		}
+	for _, id := range ids {
 		card, err := board.GetCard(r.Context(), s.DB, id)
 		if err != nil {
-			writeErr(w, 500, "internal", "cards")
-			return
+			return nil, err
 		}
 		body := s.cardJSON(r, card, reviewers[card.ID])
 		body["projectId"] = projectID
@@ -187,7 +191,24 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 		}
 		cards = append(cards, body)
 	}
-	writeJSON(w, 200, s.boardBody(r, projectID, cards, ready))
+	return s.boardBody(r, projectID, cards, ready), nil
+}
+
+func projectCardIDs(ctx context.Context, db *sql.DB, projectID string) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM cards WHERE project_id = $1 ORDER BY updated_at`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // mergeCard squash-merges an approved card's pull request (RFC-111). A Lead
@@ -207,6 +228,42 @@ func (s *Server) mergeCard(w http.ResponseWriter, r *http.Request, user app.User
 		return
 	}
 	next, err := app.SquashMerge(r.Context(), s.DB, s.jobDeps(), id, user.ID)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
+// closeCard sets a blocked card to won't fix or reopens one (RFC-112). A Lead
+// Developer, a Product Owner, or the card owner may.
+func (s *Server) closeCard(w http.ResponseWriter, r *http.Request, user app.User, id, action string) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	card, err := board.GetCard(r.Context(), s.DB, id)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	if !app.CanCloseCard(user.Role, user.ID, card) {
+		writeErr(w, 403, "forbidden", "forbidden")
+		return
+	}
+	var next board.Card
+	if action == "reopen" {
+		next, err = app.Reopen(r.Context(), s.DB, id, user.ID)
+	} else {
+		var body struct {
+			Reason string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		next, err = app.WontFix(r.Context(), s.DB, s.jobDeps(), id, user.ID, body.Reason)
+	}
 	if err != nil {
 		writeAppErr(w, err)
 		return
@@ -237,6 +294,10 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 	}
 	if action == "merge" {
 		s.mergeCard(w, r, user, id)
+		return
+	}
+	if action == "wont-fix" || action == "reopen" {
+		s.closeCard(w, r, user, id, action)
 		return
 	}
 	if !actionAllowed(user.Role, action) {
