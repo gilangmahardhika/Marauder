@@ -280,6 +280,11 @@ func (h *harness) worker(t *testing.T, c *runner.Client) (*runner.Runner, *netFa
 	if out, err := exec.Command(git, "clone", "--quiet", "--branch", "main", h.repo, repo).CombinedOutput(); err != nil {
 		t.Fatalf("clone: %v\n%s", err, out)
 	}
+	// A detached auto gc in the clone outlives the test and races the
+	// TempDir cleanup.
+	if out, err := exec.Command(git, "-C", repo, "config", "gc.auto", "0").CombinedOutput(); err != nil {
+		t.Fatalf("config: %v\n%s", err, out)
+	}
 	net := &netFake{}
 	return &runner.Runner{
 		Client: c, Name: "test-runner", Data: dir, Slots: 1, Version: "test",

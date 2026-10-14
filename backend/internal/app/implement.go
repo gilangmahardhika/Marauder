@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/claudecode"
 	"orchestrator/backend/internal/company"
 	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/live"
@@ -95,6 +96,10 @@ type preparedJob struct {
 	model        string
 	fallback     string
 	provider     providers.Provider
+	// claude is set when the company's agent is Claude Code (RFC-121), and
+	// maxTurns is then its turn cap.
+	claude   *loop.ClaudeCode
+	maxTurns int
 }
 
 // implementPreflight checks and resolves everything an implement attempt
@@ -206,6 +211,35 @@ func implementPreflight(ctx context.Context, db *sql.DB, deps JobDeps, projectID
 	if err != nil {
 		return p, false, err
 	}
+	budgetTurns := cfg.Router.Budgets.MaxModelTurnsPerAttempt
+	p = preparedJob{
+		card: card, project: project, cfg: cfg, projectCfg: projectCfg, redact: redact,
+		acct: acct, companyToken: companyToken, owner: owner, mcpConns: mcpConns, mcpScope: mcpScope,
+		fixture: fixture, engine: engine, class: class, maxTurns: budgetTurns,
+	}
+	if cfg.AgentKind() == settings.AgentClaudeCode {
+		cc, ok := ClaudeCodeFor(cfg, secrets)
+		if !ok {
+			_ = jobError(ctx, db, card, "", "the Claude Code agent needs an anthropic protocol family with a key and a model; fix it on the Agent page, then unblock the card", redact)
+			return done(BlockCard(ctx, db, card, "agent_config", redact))
+		}
+		if !remote {
+			bin, err := claudecode.Find(cfg.Agent.ClaudeCode.Binary)
+			if err == nil {
+				cc.Version, err = claudecode.Version(ctx, bin)
+			}
+			if err != nil {
+				_ = jobError(ctx, db, card, "", err.Error()+"; install Claude Code on this server or set its path on the Agent page, then unblock the card", redact)
+				return done(BlockCard(ctx, db, card, "agent_config", redact))
+			}
+			cc.Binary = bin
+		}
+		p.claude, p.model = cc, cfg.Agent.ClaudeCode.Model
+		if n := cfg.Agent.ClaudeCode.MaxTurns; n > 0 {
+			p.maxTurns = n
+		}
+		return p, false, nil
+	}
 	route := cfg.Router.Routes[class]
 	provider := deps.Provider
 	if provider == nil {
@@ -216,11 +250,25 @@ func implementPreflight(ctx context.Context, db *sql.DB, deps JobDeps, projectID
 	} else if route.Model == "" {
 		return done(BlockCard(ctx, db, card, "router_config", redact))
 	}
-	return preparedJob{
-		card: card, project: project, cfg: cfg, projectCfg: projectCfg, redact: redact,
-		acct: acct, companyToken: companyToken, owner: owner, mcpConns: mcpConns, mcpScope: mcpScope,
-		fixture: fixture, engine: engine, class: class, model: route.Model, fallback: route.Fallback, provider: provider,
-	}, false, nil
+	p.model, p.fallback, p.provider = route.Model, route.Fallback, provider
+	return p, false, nil
+}
+
+// ClaudeCodeFor resolves the Claude Code agent's family endpoint, key, and
+// auth mode. ok is false when the family is gone, is not anthropic protocol,
+// has no key, or no model is set.
+func ClaudeCodeFor(cfg settings.Config, secrets settings.Secrets) (*loop.ClaudeCode, bool) {
+	opts := cfg.Agent.ClaudeCode
+	family, ok := cfg.Family(opts.Family)
+	key := secrets.LLMKeys[opts.Family]
+	if !ok || family.Protocol != "anthropic" || key == "" || opts.Model == "" {
+		return nil, false
+	}
+	return &loop.ClaudeCode{
+		SmallModel: opts.SmallModel, BaseURL: family.BaseURL, APIKey: key,
+		Auth: settings.ResolveAuth(opts.Auth, family.BaseURL), AllowWeb: opts.AllowWeb,
+		Instructions: opts.Instructions,
+	}, true
 }
 
 func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
@@ -266,14 +314,16 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			}
 			_ = sandbox.SweepMCP(ctx, engine, card.ID, run)
 		}
-		toolset, err := OpenMCPToolset(attemptCtx, db, dialer, mcpConns, MCPScope{ProjectID: projectID, CardID: card.ID}, redact)
-		if err != nil {
-			return card, err
-		}
-		defer toolset.Close()
 		var extra loop.ExtraTools
-		if toolset != nil {
-			extra = toolset
+		if p.claude == nil {
+			toolset, err := OpenMCPToolset(attemptCtx, db, dialer, mcpConns, MCPScope{ProjectID: projectID, CardID: card.ID}, redact)
+			if err != nil {
+				return card, err
+			}
+			defer toolset.Close()
+			if toolset != nil {
+				extra = toolset
+			}
 		}
 		rounds, err := board.QuestionRounds(ctx, db, card.ID)
 		if err != nil {
@@ -282,7 +332,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		result, err := loop.Run(attemptCtx, loop.Input{
 			QuestionMode: card.QuestionMode, QuestionRounds: rounds,
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
-			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
+			Model: route.Model, TaskClass: class, MaxTurns: p.maxTurns, ClaudeCode: p.claude,
 			Provider: provider, Secrets: redact, Live: deps.Live, Allow: projectCfg.Checks.AllowExecutables,
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,

@@ -44,6 +44,7 @@ function runner(over: Partial<Runner>): Runner {
     heartbeatAt: new Date().toISOString(),
     leases: [{ id: 'lse_1', cardId: 'card_one', projectId: 'proj_default', since: '2026-10-14T05:00:00Z' }],
     actions: ['drain', 'remove'],
+    agents: ['builtin'],
     ...over
   };
 }
@@ -121,6 +122,26 @@ test('warns when runners take jobs and none is online', async () => {
   api.getRunners.mockResolvedValue({ executor: 'runners', protocol: 1, runners: [runners[1]] });
   render(RunnersPage);
   expect(await screen.findByText(/No runner is online/)).toBeTruthy();
+});
+
+test('the Agents column lists each runner\'s agents', async () => {
+  api.getRunners.mockResolvedValue({ executor: 'runners', agent: 'builtin', protocol: 1, runners: [runner({ agents: ['builtin', 'claude_code'] })] });
+  render(RunnersPage);
+  const table = await screen.findByRole('table', { name: 'Runners' });
+  expect(within(table).getByRole('columnheader', { name: 'Agents' })).toBeTruthy();
+  expect(within(table).getByText('Built-in, Claude Code')).toBeTruthy();
+  expect(screen.queryByText(/No runner has Claude Code/)).toBeNull();
+});
+
+test('warns when the agent is Claude Code and no online runner has it', async () => {
+  api.getRunners.mockResolvedValue({ executor: 'runners', agent: 'claude_code', protocol: 1, runners });
+  const view = render(RunnersPage);
+  expect(await screen.findByText('No runner has Claude Code. Queued cards wait.')).toBeTruthy();
+  view.unmount();
+  api.getRunners.mockResolvedValue({ executor: 'local', agent: 'claude_code', protocol: 1, runners });
+  render(RunnersPage);
+  await screen.findByRole('table', { name: 'Runners' });
+  expect(screen.queryByText(/No runner has Claude Code/)).toBeNull();
 });
 
 test('filters by status from the URL', async () => {

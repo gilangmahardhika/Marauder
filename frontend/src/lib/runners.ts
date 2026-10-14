@@ -1,5 +1,5 @@
 import { matchText, type Option } from '$lib/filter';
-import type { Runner, RunnerStatus } from '$lib/types';
+import type { AgentKind, Runner, RunnerStatus } from '$lib/types';
 
 export const statusValues = ['idle', 'busy', 'draining', 'offline'] as const satisfies readonly RunnerStatus[];
 
@@ -60,6 +60,21 @@ export function since(ts: string | null, now: number) {
 /** True when jobs go to runners and none can take one. */
 export function waitingForRunners(executor: string, runners: Runner[]) {
   return executor === 'runners' && !runners.some((runner) => runner.status === 'idle' || runner.status === 'busy');
+}
+
+const agentLabels: Record<string, string> = { builtin: 'Built-in', claude_code: 'Claude Code' };
+
+export function agentLabel(agent: string) {
+  return agentLabels[agent] ?? agent;
+}
+
+/** True when jobs go to runners with Claude Code and no online runner has it. */
+export function waitingForClaude(executor: string, agent: AgentKind, runners: Runner[]) {
+  return (
+    executor === 'runners' &&
+    agent === 'claude_code' &&
+    !runners.some((runner) => (runner.status === 'idle' || runner.status === 'busy') && (runner.agents ?? []).includes('claude_code'))
+  );
 }
 
 function quote(value: string) {

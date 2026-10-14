@@ -13,12 +13,12 @@ import (
 	"orchestrator/backend/internal/settings"
 )
 
-func (s *Server) executor() string {
+func (s *Server) executor() (string, string) {
 	cfg, _, err := s.loadSettings()
 	if err != nil {
-		return settings.ExecutorLocal
+		return settings.ExecutorLocal, settings.AgentBuiltin
 	}
-	return cfg.Executor()
+	return cfg.Executor(), cfg.AgentKind()
 }
 
 func (s *Server) jobsSettings(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +52,8 @@ func (s *Server) listRunners(w http.ResponseWriter, r *http.Request) {
 	for _, view := range runners {
 		out = append(out, runnerJSON(view))
 	}
-	writeJSON(w, 200, map[string]any{"executor": s.executor(), "protocol": app.RunnerProtocol, "runners": out})
+	executor, agent := s.executor()
+	writeJSON(w, 200, map[string]any{"executor": executor, "agent": agent, "protocol": app.RunnerProtocol, "runners": out})
 }
 
 func (s *Server) mintRunnerToken(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +90,7 @@ func runnerJSON(view app.RunnerView) map[string]any {
 		"id": view.ID, "name": view.Name, "labels": view.Labels, "slots": view.Slots, "busy": view.Busy,
 		"status": view.Status, "version": view.Version, "protocol": view.Protocol,
 		"updateRequired": view.UpdateRequired, "heartbeatAt": nullString(view.HeartbeatAt),
-		"leases": leases, "actions": view.Actions,
+		"leases": leases, "actions": view.Actions, "agents": view.Agents,
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -196,8 +197,12 @@ func CurrentRunner(ctx context.Context) (board.Runner, bool) {
 
 // RunnerHeartbeat records a heartbeat and returns the runner's state and the
 // leases it still holds open.
-func RunnerHeartbeat(ctx context.Context, db *sql.DB, r board.Runner, version string, protocol int) (string, []string, error) {
-	if err := board.Heartbeat(ctx, db, r.ID, version, protocol); err != nil {
+func RunnerHeartbeat(ctx context.Context, db *sql.DB, r board.Runner, version string, protocol int, agents []string) (string, []string, error) {
+	known := []string{settings.AgentBuiltin}
+	if slices.Contains(agents, settings.AgentClaudeCode) {
+		known = append(known, settings.AgentClaudeCode)
+	}
+	if err := board.Heartbeat(ctx, db, r.ID, version, protocol, known); err != nil {
 		return "", nil, err
 	}
 	if err := board.ExtendLeases(ctx, db, r.ID); err != nil {
@@ -219,8 +224,9 @@ func RunnerHeartbeat(ctx context.Context, db *sql.DB, r board.Runner, version st
 }
 
 // ClaimForRunner leases the next queued implement job to the runner when
-// jobs.executor is runners. Nothing to claim, or the local executor, is
-// board.ErrNotFound; a runner on another protocol is ErrProtocol.
+// jobs.executor is runners. Nothing to claim, the local executor, or a
+// Claude Code agent the runner did not report is board.ErrNotFound; a runner
+// on another protocol is ErrProtocol.
 func ClaimForRunner(ctx context.Context, db *sql.DB, data string, r board.Runner) (board.Lease, error) {
 	if r.Protocol != RunnerProtocol {
 		return board.Lease{}, ErrProtocol
@@ -230,6 +236,9 @@ func ClaimForRunner(ctx context.Context, db *sql.DB, data string, r board.Runner
 		return board.Lease{}, err
 	}
 	if cfg.Executor() != settings.ExecutorRunners {
+		return board.Lease{}, board.ErrNotFound
+	}
+	if cfg.AgentKind() == settings.AgentClaudeCode && !slices.Contains(r.Agents, settings.AgentClaudeCode) {
 		return board.Lease{}, board.ErrNotFound
 	}
 	return board.ClaimRun(ctx, db, r.ID, func(projectID string) int {

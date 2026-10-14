@@ -28,6 +28,7 @@ var kinds = map[string]struct{}{
 	"context_compacted":     {},
 	"handoff_saved":         {},
 	"handoff_applied":       {},
+	"agent_run":             {},
 	"config_changed":        {},
 	"assertion_failed":      {},
 	"reviewers_requested":   {},

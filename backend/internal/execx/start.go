@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -22,6 +23,7 @@ const stderrTail = 8 << 10
 type StartChild struct {
 	Argv     []string
 	Env      []string
+	Dir      string
 	MaxFrame int
 }
 
@@ -30,6 +32,7 @@ type StartChild struct {
 type Process struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
+	stdout *os.File
 	out    *bufio.Reader
 	max    int
 	stderr *tail
@@ -51,6 +54,7 @@ func Start(ctx context.Context, child StartChild) (*Process, error) {
 	}
 	cmd := exec.CommandContext(ctx, child.Argv[0], child.Argv[1:]...)
 	cmd.Env = append([]string{}, child.Env...)
+	cmd.Dir = child.Dir
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -63,13 +67,19 @@ func Start(ctx context.Context, child StartChild) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := cmd.StdoutPipe()
+	// An os.Pipe, unlike StdoutPipe, is not closed by Wait, so lines the
+	// child wrote before it exited are still read, then io.EOF.
+	stdout, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdin: stdin, out: bufio.NewReaderSize(stdout, 64<<10), max: child.MaxFrame, stderr: &tail{}, waited: make(chan struct{})}
+	cmd.Stdout = w
+	p := &Process{cmd: cmd, stdin: stdin, stdout: stdout, out: bufio.NewReaderSize(stdout, 64<<10), max: child.MaxFrame, stderr: &tail{}, waited: make(chan struct{})}
 	cmd.Stderr = p.stderr
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	w.Close()
+	if err != nil {
+		stdout.Close()
 		return nil, err
 	}
 	go func() {
@@ -119,7 +129,26 @@ func (p *Process) Stderr() []byte {
 	return p.stderr.bytes()
 }
 
-// Close closes stdin, kills the process group, and waits for the child.
+// CloseInput closes the child's stdin, so a child that reads to the end of
+// its input goes on.
+func (p *Process) CloseInput() error {
+	p.wmu.Lock()
+	defer p.wmu.Unlock()
+	return p.stdin.Close()
+}
+
+// Wait waits for the child to exit and returns its exit code, -1 when a
+// signal ended it.
+func (p *Process) Wait() int {
+	<-p.waited
+	if p.cmd.ProcessState == nil {
+		return -1
+	}
+	return p.cmd.ProcessState.ExitCode()
+}
+
+// Close closes stdin, kills the process group, waits for the child, and
+// closes its stdout.
 func (p *Process) Close() error {
 	p.once.Do(func() {
 		_ = p.stdin.Close()
@@ -127,6 +156,7 @@ func (p *Process) Close() error {
 			_ = syscall.Kill(-p.cmd.Process.Pid, syscall.SIGKILL)
 		}
 		<-p.waited
+		_ = p.stdout.Close()
 	})
 	return nil
 }

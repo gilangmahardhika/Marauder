@@ -145,7 +145,7 @@ func (s *Server) runnerHeartbeat(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	state, leases, err := app.RunnerHeartbeat(r.Context(), s.DB, runner, body.Version, body.Protocol)
+	state, leases, err := app.RunnerHeartbeat(r.Context(), s.DB, runner, body.Version, body.Protocol, body.Agents)
 	if err != nil {
 		writeRunnerErr(w, err)
 		return

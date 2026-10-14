@@ -1270,3 +1270,42 @@ Packages: frontend `lib/llm.ts`, `lib/types.ts`, `lib/trace.ts`, `FamilyForm.sve
 - Words for `context_compacted`, `handoff_saved`, and `handoff_applied`.
 
 Done when: the `FamilyForm` context window and `trace` handoff words Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 94: Agent setting and the Claude Code engine
+
+Goal: An admin chooses the implement agent, and a local implement job runs Claude Code inside the harness (RFC-120, RFC-121, REQ-099).
+
+Packages: `internal/settings`, `internal/claudecode`, `internal/loop`, `internal/app`, `internal/trace`.
+
+- `Config.Agent` with `ClaudeCodeOptions`, `AgentKind()`, and `SaveAgent`.
+- `claudecode.Run`: the argv, the built environment, and the stream reader.
+- `loop.Input.ClaudeCode`: tool calls, tokens and the token cap, the turn cap, todos, the commit, the handoff, and `agent_run`.
+- `ImplementCard` sets it from the agent setting and blocks with `agent_config`.
+
+Done when: `TestAgentSettingsValidate`, `TestClaudeCodeCommits`, `TestClaudeCodeArgsAndEnv`, `TestClaudeCodeTokenCapKills`, `TestClaudeCodeMaxTurns`, `TestClaudeCodeErrorExit`, `TestClaudeCodeHandoffSaved`, `TestClaudeCodeTraceRedactsKey`, `TestImplementUsesClaudeCode`, `TestImplementClaudeCodeWithoutKeyBlocks`, and the rest of the suite.
+
+## Sprint 95: Claude Code on runners and the agent routes
+
+Goal: A runner that has `claude` runs Claude Code jobs with the job's key, and the agent setting has its routes (RFC-120, RFC-122).
+
+Packages: `internal/runnerapi`, `internal/runner`, `internal/app`, `internal/board`, `internal/httpapi`, migrations.
+
+- Migration 34: `runners.agents_json`, written by the heartbeat.
+- `runnerapi.Job.Agent` and `ClaudeCode`, the heartbeat `agents`, and the claim filter.
+- The runner's `claudePath` and the job switch.
+- `GET` and `PUT /api/settings/agent`, `POST /api/settings/agent/test`, and `agent` and `agents` in `GET /api/runners`.
+- The `claudeCode` fixture scenario.
+
+Done when: `TestClaimNeedsClaudeCodeRunner`, `TestRunnerRunsClaudeCode`, `TestAgentSettingsAdminOnly`, `TestAgentSettingsNeverReturnsKey`, `go run ./cmd/fixture`, and the rest of the suite.
+
+## Sprint 96: Agent page
+
+Goal: An admin sets the agent from the UI, and the Runners page and the trace show Claude Code (RFC-120, RFC-121).
+
+Packages: frontend `routes/admin/agent`, `routes/admin/runners`, `lib/api.ts`, `lib/types.ts`, `lib/trace.ts`.
+
+- The Agent page with the Claude Code panel and the Check button.
+- The Runners Agents column and the no-runner note.
+- Words for `agent_run`.
+
+Done when: the Agent page, the runners agents, and the `trace` agent words Vitest cases, `npm run check`, and the rest of the suite.

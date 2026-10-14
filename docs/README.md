@@ -58,6 +58,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0051-agent-questions.md](rfc/0051-agent-questions.md) | Decisions `RFC-114` and `RFC-115`. The implementer asks the team questions; a Manual card waits for a person's answer and an Auto card takes the agent's suggestion |
 | [rfc/0052-needs-answer-column.md](rfc/0052-needs-answer-column.md) | Decision `RFC-116`. A card waiting for an answer has its own board lane, Needs answer, between Waiting and Running |
 | [rfc/0053-continue-work.md](rfc/0053-continue-work.md) | Decisions `RFC-117` to `RFC-119`. A long attempt compacts its context, an unfinished attempt hands its edits, plan, and summary to the next one, and a runner starts from the control plane's card branch |
+| [rfc/0054-agent-selection.md](rfc/0054-agent-selection.md) | Decisions `RFC-120` to `RFC-122`. An admin chooses the implement agent, the built-in loop or Claude Code, and a runner runs Claude Code with the job's model key in its environment only |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

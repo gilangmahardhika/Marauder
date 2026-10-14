@@ -39,7 +39,7 @@ var (
 // remoteEventKinds are the event kinds a runner may append (RFC-108).
 var remoteEventKinds = map[string]bool{
 	"model_call": true, "tool_call": true, "budget_stop": true, "job_error": true, "assertion_failed": true,
-	"context_compacted": true, "handoff_saved": true, "handoff_applied": true,
+	"context_compacted": true, "handoff_saved": true, "handoff_applied": true, "agent_run": true,
 }
 
 // RemoteJobs holds what the control plane resolved for each open lease: the
@@ -231,6 +231,13 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	if err != nil {
 		return runnerapi.Job{}, err
 	}
+	var claude *runnerapi.ClaudeCodeJob
+	if cc := p.claude; cc != nil {
+		claude = &runnerapi.ClaudeCodeJob{
+			BaseURL: cc.BaseURL, APIKey: cc.APIKey, Auth: cc.Auth, Model: p.model, SmallModel: cc.SmallModel,
+			MaxTurns: p.maxTurns, AllowWeb: cc.AllowWeb, Instructions: cc.Instructions,
+		}
+	}
 	cardBundle := false
 	if card.PRURL == "" {
 		_, cardBundle = controlBranchAhead(ctx, ProjectGit(deps.Data, p.project, p.owner.Author, deps.Tools), card.ID, base)
@@ -242,7 +249,8 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 		BaseBranch: base, CloneURL: p.acct.CloneURL(p.project.Repo), CloneToken: p.companyToken,
 		Author:          runnerapi.Author{Name: p.owner.Author.Name, Email: p.owner.Author.Email},
 		PublishedBranch: card.PRURL != "", Fixture: p.fixture,
-		Model: p.model, TaskClass: p.class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
+		Model: p.model, TaskClass: p.class, MaxTurns: p.maxTurns,
+		Agent: p.cfg.AgentKind(), ClaudeCode: claude,
 		HistoryBudget:    llmHistory(p.cfg, p.model),
 		ContextTokens:    llm.Options(p.cfg, p.model).ContextWindow(),
 		MaxTokensPerCard: tokenCap, WallMinutes: budgets.MaxWallMinutesPerAttempt,
@@ -751,7 +759,11 @@ func ReportRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJob
 	switch rep.Fact {
 	case runnerapi.FactBlocked:
 		_ = jobError(ctx, db, card, lease.AttemptID, rep.Message, p.redact)
-		return done(BlockCard(ctx, db, card, "sandbox_config", p.redact))
+		reason := "sandbox_config"
+		if rep.Reason == "agent_config" {
+			reason = rep.Reason
+		}
+		return done(BlockCard(ctx, db, card, reason, p.redact))
 	case runnerapi.FactFinished:
 		switch rep.Outcome {
 		case "error":

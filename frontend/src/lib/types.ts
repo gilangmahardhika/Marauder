@@ -447,6 +447,29 @@ export type RouterSettings = {
 
 export type Executor = "local" | "runners";
 
+/** The company's implement agent (RFC-120). */
+export type AgentKind = "builtin" | "claude_code";
+
+export type ClaudeCodeOptions = {
+  family: string;
+  model: string;
+  smallModel: string;
+  /** 0 uses the router's turn budget. */
+  maxTurns: number;
+  auth: "" | "auto" | "apiKey" | "bearer";
+  allowWeb: boolean;
+  instructions: string;
+  /** Absolute path on this server; empty uses claude on PATH. */
+  binary: string;
+};
+
+export type AgentSettings = {
+  kind: AgentKind;
+  claudeCode: ClaudeCodeOptions;
+};
+
+export type AgentCheck = { ok: boolean; version?: string; message?: string };
+
 export type RunnerStatus = "idle" | "busy" | "draining" | "offline";
 
 export type RunnerLease = {
@@ -469,10 +492,13 @@ export type Runner = {
   heartbeatAt: string | null;
   leases: RunnerLease[];
   actions: string[];
+  /** Engines its last heartbeat reported: builtin, and claude_code. */
+  agents: AgentKind[];
 };
 
 export type RunnerList = {
   executor: Executor;
+  agent: AgentKind;
   protocol: number;
   runners: Runner[];
 };

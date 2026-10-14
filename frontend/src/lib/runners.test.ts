@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { filterRunners, installCommand, since, statusOptions, waitingForRunners } from '$lib/runners';
+import { agentLabel, filterRunners, installCommand, since, statusOptions, waitingForClaude, waitingForRunners } from '$lib/runners';
 import type { Runner } from '$lib/types';
 
 function runner(over: Partial<Runner>): Runner {
@@ -16,6 +16,7 @@ function runner(over: Partial<Runner>): Runner {
     heartbeatAt: '2026-10-14T05:00:00Z',
     leases: [],
     actions: ['drain', 'remove'],
+    agents: ['builtin'],
     ...over
   };
 }
@@ -46,4 +47,14 @@ test('builds the install command and quotes odd names', () => {
     "curl -fsSL https://orch.example.com/runner/install.sh | sudo bash -s -- --url https://orch.example.com --token ab12 --name 'Bob'\\''s box' --slots 4"
   );
   expect(installCommand('http://127.0.0.1:8787', 'ab12', '', 1)).not.toContain('--name');
+});
+
+test('waitingForClaude needs an online runner with Claude Code', () => {
+  expect(waitingForClaude('runners', 'builtin', [])).toBe(false);
+  expect(waitingForClaude('local', 'claude_code', [])).toBe(false);
+  expect(waitingForClaude('runners', 'claude_code', [runner({ status: 'idle', agents: ['builtin'] })])).toBe(true);
+  expect(waitingForClaude('runners', 'claude_code', [runner({ status: 'offline', agents: ['builtin', 'claude_code'] })])).toBe(true);
+  expect(waitingForClaude('runners', 'claude_code', [runner({ status: 'busy', agents: ['builtin', 'claude_code'] })])).toBe(false);
+  expect(agentLabel('claude_code')).toBe('Claude Code');
+  expect(agentLabel('builtin')).toBe('Built-in');
 });

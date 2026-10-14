@@ -19,6 +19,8 @@ type Config struct {
 	Slots    int      `json:"slots"`
 	Labels   []string `json:"labels"`
 	Data     string   `json:"data"`
+	// ClaudePath is the Claude Code binary; empty looks for claude on PATH.
+	ClaudePath string `json:"claudePath,omitempty"`
 }
 
 // ErrConfigMode is a config file that a group or other user can read.

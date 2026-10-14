@@ -2,6 +2,8 @@ import { apiOrigin, unreachableMessage } from "$lib/origin";
 import { session } from "$lib/session";
 import type {
   AccountGitHub,
+  AgentCheck,
+  AgentSettings,
   AIReviewMode,
   AppNotification,
   Board,
@@ -782,6 +784,24 @@ export function putRouter(body: Record<string, unknown>) {
   return request<RouterSettings>("/api/settings/router", {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+}
+
+export function getAgent() {
+  return request<AgentSettings>("/api/settings/agent");
+}
+
+export function putAgent(body: AgentSettings) {
+  return request<AgentSettings>("/api/settings/agent", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function testAgent() {
+  return request<AgentCheck>("/api/settings/agent/test", {
+    method: "POST",
+    body: "{}",
   });
 }
 

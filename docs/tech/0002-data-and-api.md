@@ -79,7 +79,8 @@ After the table, every card that is not `done` or `wont_fix` also lists `instruc
 
 | Reason | Set when | `unblockTo` |
 | --- | --- | --- |
-| `turn_cap`, `token_cap`, `wall_cap` | A budget stopped the attempt | `ready` |
+| `turn_cap`, `token_cap`, `wall_cap`, `context_full` | A budget stopped the attempt | `ready` |
+| `agent_config` | The agent is Claude Code and its model family has no key or is gone, or `claude` is not found on this server (RFC-121) | `ready` |
 | `attempt_cap` | `attemptsUsed` reached `maxAttempts` | `ready` |
 | `provider_error` | Primary and fallback both failed in the implement job | `ready` |
 | `review_parse` | Two reviewer replies had no parseable verdict. Since RFC-069 the review job records a `failed` verdict instead; older cards may still carry it | `ready` |
@@ -379,7 +380,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`, `questions_answered`, `question_mode_changed`, `context_compacted`, `handoff_saved`, `handoff_applied`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`, `questions_answered`, `question_mode_changed`, `context_compacted`, `handoff_saved`, `handoff_applied`, `agent_run`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -405,7 +406,10 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `context_compacted` | `inputTokens` of the reply that reached the compaction point (`0` after a full-context error), `turnsDropped`, `summaryBytes`, and `n`, the compaction's number in the attempt (RFC-117) |
 | `handoff_saved` | `files` in the patch, `patchBytes`, `source` (`model` or `harness`), and `left` listing files left out of the patch. Never the summary or the patch (RFC-118) |
 | `handoff_applied` | `fromAttemptId`, `ok`, `files`, `todos`, and `reason` when the patch did not apply (RFC-118) |
+| `agent_run` | `agent` (`claude_code`), `version` (the `claude --version` line, empty when unknown), `modelId`, `exitCode`, and `turns`. Written once when a Claude Code process ends (RFC-121) |
 | `question_mode_changed` | `from` and `to`, each `manual` or `auto`. The row's `actor_id` is the person who changed it (RFC-115) |
+
+A Claude Code attempt writes its tool calls as `tool_call` rows with the Claude Code tool name (`Read`, `Edit`, `Bash`, and so on), `ok: true`, and `args`: `path` for file tools, the `command` for `Bash` (clipped), `pattern` for `Glob` and `Grep`, `bytes` for `Write` and `Edit` text, and `items` for `TodoWrite`. Each assistant message is one `model_call` row with `role` `implementer`, its text, and its tokens, counted once per message id; cache writes count as input (RFC-121).
 
 A `tool_call` named `ask_user` adds `questions`, the redacted questions with their kind, options, and suggestion, `mode` (`manual` or `auto`), and on an Auto card the answers it returned (RFC-114).
 
@@ -1370,6 +1374,8 @@ CREATE TABLE runners (
   created_at TEXT NOT NULL,
   created_by TEXT REFERENCES users(id)
 );
+-- migration 34 (RFC-120): the agents the runner's last heartbeat reported
+ALTER TABLE runners ADD COLUMN agents_json TEXT NOT NULL DEFAULT '["builtin"]';
 
 CREATE TABLE runner_leases (
   id TEXT PRIMARY KEY,              -- lse_ + 12 hex
@@ -1403,10 +1409,11 @@ A company admin calls these; anyone else is `403`.
 ```json
 {
   "executor": "runners",
+  "agent": "claude_code",
   "protocol": 1,
   "runners": [{
     "id": "rnr_a1b2c3d4e5f6", "name": "agent-1", "labels": ["podman", "cpu=16"],
-    "slots": 4, "busy": 1, "status": "busy", "version": "0.1.0", "protocol": 1,
+    "slots": 4, "busy": 1, "status": "busy", "version": "0.1.0", "protocol": 1, "agents": ["builtin", "claude_code"],
     "updateRequired": false, "heartbeatAt": "2026-10-14T05:00:00Z",
     "leases": [{ "id": "lse_…", "cardId": "card_…", "projectId": "proj_…", "since": "…" }],
     "actions": ["drain", "remove"]
@@ -1424,6 +1431,8 @@ A company admin calls these; anyone else is `403`.
 
 `PUT /api/settings/jobs` takes `{ "executor": "local" }` or `{ "executor": "runners" }` and returns `{ "executor": … }`. Another value is `422` with `fields.executor`. The value is `jobs.executor` in the service `config.yaml`.
 
+`agent` in `GET /api/runners` is the company agent (RFC-120), and each runner's `agents` is what its last heartbeat reported. While the agent is `claude_code`, a claim from a runner whose `agents` lacks `claude_code` is `204`.
+
 ### Runner routes
 
 `Authorization: Runner <secret>` authenticates every `/api/runner/*` route except `register`. A missing, wrong, or removed runner's secret is `401`. A user bearer is never accepted there, and a runner secret never passes another route. Each job route names a lease the caller holds and has not ended, else `404`.
@@ -1431,7 +1440,7 @@ A company admin calls these; anyone else is `403`.
 | Route | Body | Response |
 | --- | --- | --- |
 | `POST /api/runner/register` | `{ "token", "name", "labels", "slots", "version", "protocol" }` | `{ "runnerId", "secret", "heartbeatSeconds": 10, "protocol": 1 }`. A used, expired, or unknown token is `401`. `name` is 1 to 64 printable chars and `slots` 1 to 16, else `422` |
-| `POST /api/runner/heartbeat` | `{ "version", "protocol" }` | `{ "state", "protocol": 1, "leases": ["lse_…"] }`, the leases still open |
+| `POST /api/runner/heartbeat` | `{ "version", "protocol", "agents" }`, where `agents` lists `builtin` and, when `claude --version` succeeds on the runner, `claude_code`; a missing list means `["builtin"]` | `{ "state", "protocol": 1, "leases": ["lse_…"] }`, the leases still open |
 | `POST /api/runner/claim` | `{ "waitSeconds": 0 to 25 }` | `200` with `{ "leaseId", "cardId", "projectId" }`, or `204` when nothing was claimed within the wait. A draining runner gets `204`. Another protocol is `409` `protocol` |
 | `POST /api/runner/jobs/{lease}/start` | none | The job context below, or `{ "done": true, "status" }` when the preflight blocked the card or nothing can start |
 | `POST /api/runner/jobs/{lease}/board` | `{ "op", … }` | The attempt's board calls, below |
@@ -1457,13 +1466,21 @@ The job context:
   "localCheck": "npm test", "allowExecutables": ["npm"], "commandExecutables": [],
   "sandboxEngine": "podman", "sandboxImage": "…@sha256:…",
   "mcp": { "scope": "all", "offered": [], "missing": [], "attached": [], "detached": [], "total": 0 },
-  "resume": { "attemptId": "att_…", "sha": "…" }
+  "resume": { "attemptId": "att_…", "sha": "…" },
+  "agent": "claude_code",
+  "claudeCode": {
+    "baseUrl": "https://api.deepseek.com/anthropic", "apiKey": "…", "auth": "bearer",
+    "model": "deepseek-chat", "smallModel": "deepseek-chat", "maxTurns": 40,
+    "allowWeb": false, "instructions": "…"
+  }
 }
 ```
 
+`agent` is `builtin` or `claude_code` (RFC-120). `claudeCode` is present only for `claude_code`. Its `apiKey` is the chosen family's key and `auth` is resolved to `apiKey` or `bearer`; the runner passes them to `claude` in its environment only and redacts the key from everything it reports (RFC-122).
+
 `cardBundle` is true when the card has no pull request and the control plane's `orch/<card>` is ahead of the base; the runner then seeds its branch from `GET .../bundle` unless its own branch already contains that commit (RFC-119). `contextTokens` is the routed model's context window (RFC-117). `cloneToken` is the company token. `resume` is present when the card's latest attempt has a commit whose gating check never ran; the runner checks it without a model call when its worktree head is that SHA. When that attempt passed and only the publish failed, the control plane publishes from the commit it already holds and `start` returns `done`.
 
-Board ops: `card`, `lock`, `unlock`, `next_attempt`, `insert_attempt`, `finish_attempt`, `event`, `add_tokens`, `card_tokens`, `failure_note`, `add_attempt_used`, `requirements`, `decisions`, `latest_note`, `instructions`, `conventions`, `ask_questions`, `answers`, `save_handoff`, `pending_handoff`, and `handoff_applied`. Every op works on the lease card and its project, whatever ids the body names. `save_handoff` stores the handoff of the lease's attempt only (RFC-118); `pending_handoff` returns the card's pending handoff with its patch, and `handoff_applied` marks it applied. `lock` holds the card lock as the lease id. `insert_attempt` records the attempt on the lease. `event` takes `model_call`, `tool_call`, `budget_stop`, `job_error`, and `assertion_failed`, and any other kind is `422`. There is no op that moves a card.
+Board ops: `card`, `lock`, `unlock`, `next_attempt`, `insert_attempt`, `finish_attempt`, `event`, `add_tokens`, `card_tokens`, `failure_note`, `add_attempt_used`, `requirements`, `decisions`, `latest_note`, `instructions`, `conventions`, `ask_questions`, `answers`, `save_handoff`, `pending_handoff`, and `handoff_applied`. Every op works on the lease card and its project, whatever ids the body names. `save_handoff` stores the handoff of the lease's attempt only (RFC-118); `pending_handoff` returns the card's pending handoff with its patch, and `handoff_applied` marks it applied. `lock` holds the card lock as the lease id. `insert_attempt` records the attempt on the lease. `event` takes `model_call`, `tool_call`, `budget_stop`, `job_error`, `assertion_failed`, `context_compacted`, `handoff_saved`, `handoff_applied`, and `agent_run`, and any other kind is `422`. There is no op that moves a card.
 
 Report facts: `finished` with `outcome` (empty for a commit, `no_change`, `no_commit`, `budget` with `reason`, or `error` with `cause` of `wall_cap`, `provider_error`, or `other` and a `message`), `resume` with `attemptId`, `check` with `exit`, `tail`, and an `error` of `sandbox_config` or `check_error` when the check could not run, and `blocked` with `reason` `sandbox_config` and a `message`. The control plane applies each fact as the local implement job does.
 
@@ -1728,6 +1745,23 @@ Removing a family whose models are used by the router is `422` on `families`.
 `reviewIndependentPossible` is true when two or more families each have at least one model and are usable.
 
 `PUT /api/settings/router` is admin only. It sends `routes` and `budgets`. A non-empty model or fallback must exist on a saved family. The review sentinel `different-family-from-author` is allowed only on `review.model`. `fallback` may be empty, which means no fallback. An empty `model` may be saved. A job that needs that class then blocks with `router_config`. Budgets are integers greater than zero, with `maxAttempts` at most 10. `maxModelTurnsPerAttempt` is at most 200, and `0` means 40. `maxTokensPerCard` cannot be negative, and `0` means 2,000,000. A saved value is kept (RFC-081). A bad turn or token budget is `422` with that field.
+
+`GET /api/settings/agent` and `PUT /api/settings/agent` are admin only; anyone else gets `403` (RFC-120). The value is `agent` in the service `config.yaml`:
+
+```json
+{
+  "kind": "claude_code",
+  "claudeCode": {
+    "family": "deepseek", "model": "deepseek-chat", "smallModel": "",
+    "maxTurns": 0, "auth": "auto", "allowWeb": false,
+    "instructions": "", "binary": ""
+  }
+}
+```
+
+`kind` is `builtin` or `claude_code`; an empty `kind` reads as `builtin`. With `claude_code`, `family` must be a saved family whose protocol is `anthropic` and whose key is set, `model` and a non-empty `smallModel` must be among its models, `maxTurns` is 0 (the router's turn budget) or from 1 to 200, `auth` is empty, `auto`, `apiKey`, or `bearer`, `instructions` is at most 8 KiB, and a non-empty `binary` is an absolute path. Each failure is `422` on its field, named `claudeCode.family` and so on. With `builtin`, the Claude Code options are kept as saved and not checked. The reply never has a key. A save appends `config_changed` with section `agent`.
+
+`POST /api/settings/agent/test` is admin only and runs `claude --version` on this server with the saved `binary`, else `claude` on `PATH`. It returns `{ "ok": true, "version": "…" }` or `{ "ok": false, "message": "…" }`.
 
 The coding rules, stacks, and integration skills are one company catalog (RFC-055, RFC-056). Every signed-in user may GET it. Only an admin may create, update, or delete an item. Anyone else gets `403`. A successful write appends `config_changed` with section `conventions` and the changed field names.
 

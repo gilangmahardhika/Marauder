@@ -156,6 +156,9 @@ func run() error {
 	if err := continueWork(ctx, db, g); err != nil {
 		return err
 	}
+	if err := claudeCode(ctx, db, g); err != nil {
+		return err
+	}
 	out, err := exec.Command(gitBin, "-C", repo, "status", "--porcelain").Output()
 	if err != nil {
 		return err
@@ -740,6 +743,67 @@ func continueWork(ctx context.Context, db *sql.DB, g runtime.Git) error {
 	out, err := exec.Command(g.Bin, "-C", g.Repo, "show", "refs/heads/orch/"+card.ID+":hello.txt").Output()
 	if err != nil || string(out) != "continued\n" {
 		return fmt.Errorf("continue work: committed hello.txt = %q %v", out, err)
+	}
+	return nil
+}
+
+// claudeCode runs an attempt with a fake claude binary in place of the tool
+// loop and checks that the harness commits its edit, records its usage and
+// agent_run, and keeps its key out of the trace (RFC-121, RFC-122).
+func claudeCode(ctx context.Context, db *sql.DB, g runtime.Git) error {
+	const key = "sk-fixture-claude-key"
+	dir, err := os.MkdirTemp("", "orchestrator-claude-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	bin := filepath.Join(dir, "claude")
+	script := `#!/bin/sh
+cat > /dev/null
+printf 'claude\n' > hello.txt
+printf '%s\n' '{"type":"assistant","message":{"id":"msg_1","model":"author","stop_reason":"tool_use","content":[{"type":"tool_use","id":"tu_1","name":"Edit","input":{"file_path":"hello.txt"}}],"usage":{"input_tokens":200,"output_tokens":40,"cache_read_input_tokens":100}}}'
+printf '{"type":"result","subtype":"success","is_error":false,"result":"Say claude\\n\\nkey %s","num_turns":2}\n' "$ANTHROPIC_API_KEY"
+`
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		return err
+	}
+	card, err := board.InsertCard(ctx, db, board.Card{Title: "Say claude", Status: "backlog", LocalCheck: "check.sh"})
+	if err != nil {
+		return err
+	}
+	for _, to := range []string{"ready", "in_progress"} {
+		if card, err = walk(ctx, db, card, to, machine.Evidence{}); err != nil {
+			return fmt.Errorf("claude code: %w", err)
+		}
+	}
+	defer removeWorktree(g, card.ID)
+	result, err := app.RunImplementer(ctx, loop.Input{
+		DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement", MaxTurns: 5,
+		Allow: []string{"true", "false"}, Secrets: []string{key},
+		ClaudeCode: &loop.ClaudeCode{Binary: bin, Version: "fixture", APIKey: key, Auth: "apiKey"},
+	})
+	if err != nil {
+		return fmt.Errorf("claude code: %w", err)
+	}
+	if result.Outcome != "" {
+		return fmt.Errorf("claude code: the attempt ended %q %q", result.Outcome, result.Reason)
+	}
+	out, err := exec.Command(g.Bin, "-C", g.Repo, "log", "-1", "--format=%s%n%(trailers:key=Committed-By,valueonly)", "refs/heads/orch/"+card.ID).Output()
+	if err != nil || !strings.HasPrefix(string(out), "Say claude\n") || !strings.Contains(string(out), "harness for claude code") {
+		return fmt.Errorf("claude code: commit = %q %v", out, err)
+	}
+	var input, output, cached, runs, leaks int
+	if err := db.QueryRowContext(ctx, `SELECT input_tokens, output_tokens, tokens_cached FROM attempts WHERE id = $1`, result.AttemptID).Scan(&input, &output, &cached); err != nil {
+		return err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM events WHERE card_id = $1 AND kind = 'agent_run'`, card.ID).Scan(&runs); err != nil {
+		return err
+	}
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM events WHERE payload_json LIKE '%' || $1 || '%'`, key).Scan(&leaks); err != nil {
+		return err
+	}
+	if input != 200 || output != 40 || cached != 100 || runs != 1 || leaks != 0 {
+		return fmt.Errorf("claude code: tokens %d/%d/%d, agent_run %d, events with the key %d", input, output, cached, runs, leaks)
 	}
 	return nil
 }

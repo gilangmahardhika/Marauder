@@ -141,6 +141,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-096 | Feedback appears where the person acts |
 | REQ-097 | The implementer asks the team questions, and each card chooses whether a person or the agent answers |
 | REQ-098 | A new attempt continues the card's unfinished work, and a long attempt compacts its context instead of overflowing it |
+| REQ-099 | An admin chooses the implement agent: the built-in loop or Claude Code |
 
 ## Requirements
 
@@ -1355,6 +1356,18 @@ An attempt that ends without a commit hands its progress to the card's next atte
 - A reply that reaches 75% of the model's `contextTokens`, or a full-context error, compacts the attempt and it continues; a fourth compaction ends it with `budget` and reason `context_full`.
 - The patch and the summary never appear in an API response, and the summary is redacted.
 - A runner that starts a card without a pull request has the card branch's commits from the control plane.
+
+### REQ-099 Choose the implement agent
+
+A company admin chooses which agent writes the code of an implement job: the built-in loop or the Claude Code CLI, with the Claude Code model family, model, turn cap, web access, and extra instructions. With Claude Code, the job runs `claude` in the card worktree on this server or on a runner that has it. The harness still builds the pack, counts tokens against the card's cap, commits, runs the gating check, saves the handoff, and moves the card (RFC-120, RFC-121, RFC-122).
+
+#### Acceptance
+
+- Only an admin reads or changes the agent setting; a saved family must use the anthropic protocol and have a key, and the model must be one of its models, else `422` on that field.
+- With Claude Code, an attempt's edits are committed by the harness, the gating check decides the card, and the trace shows each Claude Code tool call and an `agent_run` row.
+- Claude Code tokens count toward the card's token cap; reaching it stops the process and blocks the card with `token_cap`.
+- The model key never appears in an API response, an event, a log, or a file on the runner.
+- While the agent is Claude Code, a runner without `claude` gets no job, and the Runners page says so.
 
 ## Non-goals
 

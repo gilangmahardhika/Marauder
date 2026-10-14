@@ -21,6 +21,8 @@ type Runner struct {
 	HeartbeatAt string
 	CreatedAt   string
 	CreatedBy   string
+	// Agents are the engines its last heartbeat reported (RFC-121).
+	Agents []string
 }
 
 // Lease is one implement job a runner holds (RFC-107).
@@ -85,18 +87,22 @@ func InsertRunner(ctx context.Context, db DBTX, r Runner, secretHash string) err
 	return err
 }
 
-const runnerColumns = `id, name, labels_json, slots, version, protocol, state, COALESCE(heartbeat_at, ''), created_at, COALESCE(created_by, '')`
+const runnerColumns = `id, name, labels_json, slots, version, protocol, state, COALESCE(heartbeat_at, ''), created_at, COALESCE(created_by, ''), agents_json`
 
 func scanRunner(scan func(...any) error) (Runner, error) {
 	var r Runner
-	var labels string
-	if err := scan(&r.ID, &r.Name, &labels, &r.Slots, &r.Version, &r.Protocol, &r.State, &r.HeartbeatAt, &r.CreatedAt, &r.CreatedBy); err != nil {
+	var labels, agents string
+	if err := scan(&r.ID, &r.Name, &labels, &r.Slots, &r.Version, &r.Protocol, &r.State, &r.HeartbeatAt, &r.CreatedAt, &r.CreatedBy, &agents); err != nil {
 		return Runner{}, err
 	}
 	if err := json.Unmarshal([]byte(labels), &r.Labels); err != nil {
 		return Runner{}, err
 	}
+	if err := json.Unmarshal([]byte(agents), &r.Agents); err != nil {
+		return Runner{}, err
+	}
 	r.Labels = nonNilStrings(r.Labels)
+	r.Agents = nonNilStrings(r.Agents)
 	return r, nil
 }
 
@@ -139,11 +145,19 @@ func ListRunners(ctx context.Context, db *sql.DB) ([]Runner, error) {
 	return out, rows.Err()
 }
 
-// Heartbeat records that the runner is alive with its version and protocol.
-func Heartbeat(ctx context.Context, db DBTX, id, version string, protocol int) error {
-	_, err := db.ExecContext(ctx, `
-		UPDATE runners SET heartbeat_at = $2, version = $3, protocol = $4
-		WHERE id = $1 AND state <> 'removed'`, id, stamp(time.Now()), version, protocol)
+// Heartbeat records that the runner is alive with its version, protocol, and
+// agents. No agents is builtin only.
+func Heartbeat(ctx context.Context, db DBTX, id, version string, protocol int, agents []string) error {
+	if len(agents) == 0 {
+		agents = []string{"builtin"}
+	}
+	raw, err := json.Marshal(agents)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `
+		UPDATE runners SET heartbeat_at = $2, version = $3, protocol = $4, agents_json = $5
+		WHERE id = $1 AND state <> 'removed'`, id, stamp(time.Now()), version, protocol, string(raw))
 	return err
 }
 

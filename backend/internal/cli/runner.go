@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"orchestrator/backend/internal/claudecode"
 	"orchestrator/backend/internal/runner"
 	"orchestrator/backend/internal/runnerapi"
 )
@@ -30,7 +31,7 @@ func runnerCommand(opts Options, data *string) *cobra.Command {
 		return runner.DefaultConfigPath()
 	}
 
-	var url, token, name, labels string
+	var url, token, name, labels, claude string
 	var slots int
 	register := &cobra.Command{
 		Use:   "register",
@@ -64,6 +65,11 @@ func runnerCommand(opts Options, data *string) *cobra.Command {
 			if dir, err = filepath.Abs(dir); err != nil {
 				return err
 			}
+			if claude != "" {
+				if claude, err = claudecode.Find(claude); err != nil {
+					return err
+				}
+			}
 			var labelList []string
 			for _, label := range strings.Split(labels, ",") {
 				if label = strings.TrimSpace(label); label != "" {
@@ -82,6 +88,7 @@ func runnerCommand(opts Options, data *string) *cobra.Command {
 			}
 			if err := runner.SaveConfig(path, runner.Config{
 				URL: url, RunnerID: reg.RunnerID, Secret: reg.Secret, Name: name, Slots: slots, Labels: labelList, Data: dir,
+				ClaudePath: claude,
 			}); err != nil {
 				return err
 			}
@@ -94,6 +101,7 @@ func runnerCommand(opts Options, data *string) *cobra.Command {
 	register.Flags().StringVar(&name, "name", "", "name on the Runners page (default: host name)")
 	register.Flags().IntVar(&slots, "slots", 2, "implement jobs at once, 1 to 16")
 	register.Flags().StringVar(&labels, "labels", "", "comma-separated labels")
+	register.Flags().StringVar(&claude, "claude", "", "absolute path of the Claude Code binary (default: claude on PATH)")
 	cmd.AddCommand(register)
 
 	cmd.AddCommand(&cobra.Command{
@@ -116,12 +124,17 @@ func runnerCommand(opts Options, data *string) *cobra.Command {
 			if tools.Git == "" {
 				return errors.New("git is not installed")
 			}
+			claudeBin := cfg.ClaudePath
+			if claudeBin == "" {
+				claudeBin = lookTool("claude")
+			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			r := &runner.Runner{
 				Client: &runner.Client{URL: cfg.URL, Secret: cfg.Secret},
 				Name:   cfg.Name, Data: cfg.Data, Slots: cfg.Slots, Version: Version, Tools: tools,
-				Logf: func(format string, args ...any) { fmt.Fprintf(opts.Stderr, format+"\n", args...) },
+				Claude: claudeBin,
+				Logf:   func(format string, args ...any) { fmt.Fprintf(opts.Stderr, format+"\n", args...) },
 			}
 			fmt.Fprintf(opts.Stderr, "runner %s (%s) on %s with %d slots\n", cfg.Name, cfg.RunnerID, cfg.URL, cfg.Slots)
 			return r.Run(ctx)

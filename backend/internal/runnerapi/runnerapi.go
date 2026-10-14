@@ -29,6 +29,9 @@ type Registered struct {
 type Heartbeat struct {
 	Version  string `json:"version"`
 	Protocol int    `json:"protocol"`
+	// Agents are the engines the runner can drive: builtin, and claude_code
+	// when its Claude Code binary answers --version (RFC-121).
+	Agents []string `json:"agents,omitempty"`
 }
 
 type HeartbeatReply struct {
@@ -104,6 +107,22 @@ type Job struct {
 	// window (RFC-117).
 	CardBundle    bool `json:"cardBundle"`
 	ContextTokens int  `json:"contextTokens,omitempty"`
+	// Agent is the company's engine; ClaudeCode is set when it is claude_code
+	// and carries the family key, which the runner never writes to disk
+	// (RFC-122).
+	Agent      string         `json:"agent,omitempty"`
+	ClaudeCode *ClaudeCodeJob `json:"claudeCode,omitempty"`
+}
+
+type ClaudeCodeJob struct {
+	BaseURL      string `json:"baseUrl,omitempty"`
+	APIKey       string `json:"apiKey"`
+	Auth         string `json:"auth"`
+	Model        string `json:"model"`
+	SmallModel   string `json:"smallModel,omitempty"`
+	MaxTurns     int    `json:"maxTurns,omitempty"`
+	AllowWeb     bool   `json:"allowWeb"`
+	Instructions string `json:"instructions,omitempty"`
 }
 
 // BoardOp is one board call of an attempt. Only the fields of Op are read.

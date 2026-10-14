@@ -560,6 +560,17 @@ A runner is a trusted operator binary on a machine the company runs. It is not a
 - The runner redacts the company token from every event and message it sends, and the control plane redacts again with the full job list.
 - The install script verifies the binary's and the unit's SHA-256 against `SHA256SUMS` from the same origin, over HTTPS; it accepts `http://` only on loopback. It passes the registration token to `runner register` in the environment, not on its command line.
 
+### Claude Code jobs
+
+RFC-121 and RFC-122 let an implement job run the Claude Code CLI instead of the built-in loop. These controls apply:
+
+- The model key reaches a runner only in the `start` reply of a Claude Code job. The runner holds it in memory, sets it only in the `claude` child's environment, never writes it to a file, and adds it to its redaction list. The control plane adds it to the job's list too, so an event that carries it is redacted twice.
+- The child's environment is built, never inherited: `PATH`, a fresh `HOME` and `CLAUDE_CONFIG_DIR` removed after the attempt, the `ANTHROPIC_*` values, and the telemetry and auto-update switches off. The host's Claude Code login, settings, and MCP servers are not read (`--strict-mcp-config`).
+- Tools are an allowlist: file tools, `TodoWrite`, read-only `git status`, `git diff`, and `git log`, and `Bash(<exe>:*)` for each name in the project's `checks.allowExecutables` and `checks.commandExecutables`. `git push`, `git commit`, `git remote`, `git config`, `curl`, and `wget` are denied, and `WebFetch` and `WebSearch` are denied unless `allowWeb` is on. Deny rules win over allow rules.
+- Claude Code runs on the host in the card worktree, not in the container sandbox, because it needs the model API. Its file tools are limited to its working directory by Claude Code itself; the harness does not add a second path check. A project that needs stronger isolation keeps the built-in agent, or runs Claude Code only on runners.
+- The gating check still runs in the sandbox, and only its exit code decides the card. Claude Code never commits, pushes, or moves a card; the harness commits and the control plane pushes.
+- Stream lines over 1 MiB end the attempt with an error. Tool arguments and the final text are clipped and redacted before they are stored.
+
 ## Push notifications
 
 RFC-113 sends data out of the process in two ways. Each is limited as below.

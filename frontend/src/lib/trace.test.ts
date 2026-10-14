@@ -178,6 +178,19 @@ group('describe', () => {
     });
   });
 
+  it('words a Claude Code run, red on a non-zero exit', () => {
+    expect(words('agent_run', { agent: 'claude_code', version: '1.0.0', modelId: 'deepseek-chat', exitCode: 0, turns: 7 })).toMatchObject({
+      label: 'Claude Code',
+      detail: 'deepseek-chat · 7 turns',
+      meta: '1.0.0',
+      tone: 'default'
+    });
+    expect(words('agent_run', { agent: 'claude_code', modelId: 'deepseek-chat', exitCode: 1, turns: 1 })).toMatchObject({
+      detail: 'deepseek-chat · 1 turn · exited 1',
+      tone: 'red'
+    });
+  });
+
   it('shows a card context change and the servers the card changed', () => {
     const changed = (kind: string, itemId: string, mode: string) => describe({ id: 'e', ts: '', kind: 'context_changed', payload: { kind, itemId, mode } });
     expect(changed('skill', 'skl_oauth2', 'attach')).toMatchObject({ label: 'Context changed', detail: 'Attached skill skl_oauth2' });

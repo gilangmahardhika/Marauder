@@ -4,10 +4,21 @@
   import { pickParam } from '$lib/filter';
   import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
-  import { actionLabel, filterRunners, since, statusLabel, statusOptions, statusTone, statusValues, waitingForRunners } from '$lib/runners';
+  import {
+    actionLabel,
+    agentLabel,
+    filterRunners,
+    since,
+    statusLabel,
+    statusOptions,
+    statusTone,
+    statusValues,
+    waitingForClaude,
+    waitingForRunners
+  } from '$lib/runners';
   import { showShell } from '$lib/shell.svelte';
   import { toast } from '$lib/toast.svelte';
-  import type { Executor, Runner } from '$lib/types';
+  import type { AgentKind, Executor, Runner } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
@@ -23,6 +34,7 @@
 
   let runners = $state<Runner[]>([]);
   let executor = $state<Executor>('local');
+  let agent = $state<AgentKind>('builtin');
   let loaded = $state(false);
   let busy = $state(false);
   let loading = $state('Loading runners');
@@ -39,6 +51,7 @@
   });
   const shown = $derived(filterRunners(runners, filter));
   const waiting = $derived(waitingForRunners(executor, runners));
+  const noClaude = $derived(!waiting && waitingForClaude(executor, agent, runners));
   const removing = $derived(runners.find((runner) => runner.id === confirming));
 
   const executorOptions = [
@@ -51,6 +64,7 @@
       const body = await getRunners();
       runners = body.runners;
       executor = body.executor;
+      agent = body.agent ?? 'builtin';
       loaded = true;
       loadError = '';
       now = Date.now();
@@ -110,7 +124,7 @@
 
 <Page
   title="Runners"
-  description="Machines that run implement jobs. A runner calls this server over HTTPS and never holds the database or model keys."
+  description="Machines that run implement jobs. A runner calls this server over HTTPS and never holds the database. It gets a model key only for a Claude Code job."
   {loading}
   error={loadError}
   onretry={retry}
@@ -125,6 +139,8 @@
         <Segmented label="Implement jobs run on" options={executorOptions} value={executor} disabled={busy || !loaded} onchange={(value) => void saveExecutor(value)} />
         {#if waiting}
           <Notice tone="warning">No runner is online. Queued cards wait until a runner connects.</Notice>
+        {:else if noClaude}
+          <Notice tone="warning">No runner has Claude Code. Queued cards wait.</Notice>
         {/if}
       </div>
     </Panel>
@@ -158,6 +174,7 @@
               <th class={th} scope="col">Status</th>
               <th class={th} scope="col">Slots</th>
               <th class={th} scope="col">Version</th>
+              <th class={th} scope="col">Agents</th>
               <th class={th} scope="col">Heartbeat</th>
               <th class={th} scope="col">Cards</th>
               <th class={th} scope="col"><span class="sr-only">Actions</span></th>
@@ -180,6 +197,7 @@
                   {runner.version || 'unknown'}
                   {#if runner.updateRequired}<span class="ml-1"><Badge tone="amber">Update required</Badge></span>{/if}
                 </td>
+                <td class="{td} text-muted">{(runner.agents ?? []).map(agentLabel).join(', ') || 'Built-in'}</td>
                 <td class="{td} text-muted" title={runner.heartbeatAt ?? ''}>{since(runner.heartbeatAt, now)}</td>
                 <td class={td}>
                   {#if runner.leases.length === 0}

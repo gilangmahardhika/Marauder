@@ -407,6 +407,20 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestContextTokensRange` | `contextTokens` of 0 or 8000 to 2000000 saves, another value is `422` on `modelOptions`, and zero reads as 128000 (RFC-117) |
 | `TestRunnerHandoffRoundTrip` | A runner's `save_handoff` stores the handoff for the lease's attempt and card whatever ids it names, and `pending_handoff` and `handoff_applied` work on the lease card only (RFC-118) |
 | `TestRunnerSeedsFromControlPlaneBundle` | A job for a card without a pull request whose control-plane branch is ahead has `cardBundle: true`, and the runner's branch is at that commit after the seed (RFC-119) |
+| `TestAgentSettingsValidate` | `claude_code` with a family that is not anthropic, a family without a key, a model not in the family, or `maxTurns` over 200 is `422` on that field; `builtin` saves whatever Claude Code options it carries (RFC-120) |
+| `TestClaudeCodeCommits` | With a fake `claude` that edits a file and writes a `result`, the attempt commits with the harness trailer, its tokens are the summed usage, and the trace has the tool calls and `agent_run` (RFC-121) |
+| `TestClaudeCodeArgsAndEnv` | The argv has `-p`, `stream-json`, the model, the turn cap, the allowlist from `Allow` and `Commands`, the deny list, and no `--resume`; the environment has a fresh `HOME`, the base URL, and the key under the auto variable, and nothing else from the parent (RFC-121) |
+| `TestClaudeCodeTokenCapKills` | Usage that reaches the card's token cap kills the process and ends the attempt with `budget` and `token_cap`, and a handoff is saved (RFC-121) |
+| `TestClaudeCodeMaxTurns` | A `result` with subtype `error_max_turns` ends the attempt with `budget` and `turn_cap` (RFC-121) |
+| `TestClaudeCodeErrorExit` | A non-zero exit without `result` returns an error with the stderr tail, the key redacted, and saves a harness handoff (RFC-121) |
+| `TestClaudeCodeHandoffSaved` | A `result` with no change ends with `no_commit`, and the handoff's summary is Claude Code's final text with source `model` (RFC-121) |
+| `TestClaudeCodeTraceRedactsKey` | A tool argument and a final text that contain the key are stored redacted (RFC-122) |
+| `TestImplementUsesClaudeCode` | With `agent.kind` `claude_code`, `ImplementCard` runs the fake `claude` with the agent's model and turn cap, commits, and runs the gating check to `pr_open` (RFC-121) |
+| `TestImplementClaudeCodeWithoutKeyBlocks` | A Claude Code family whose key was cleared blocks the card with `agent_config` before `claude` runs (RFC-121) |
+| `TestClaimNeedsClaudeCodeRunner` | While the agent is `claude_code`, a runner whose heartbeat lacks `claude_code` gets `204` and one that has it gets the lease (RFC-120) |
+| `TestRunnerRunsClaudeCode` | A runner job with `agent: claude_code` runs the fake `claude` with the key in its environment, writes no file holding the key, and no event or report has it (RFC-122) |
+| `TestAgentSettingsAdminOnly` | GET and PUT `/api/settings/agent` and the test route are `403` for a non-admin (RFC-120) |
+| `TestAgentSettingsNeverReturnsKey` | The agent GET and PUT replies, and the job context's events, never hold the family key (RFC-120, RFC-122) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

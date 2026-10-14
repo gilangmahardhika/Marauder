@@ -67,6 +67,7 @@ test('Admin links are ordered by use and only admins see them', async () => {
     '/admin/github',
     '/admin/llm',
     '/admin/router',
+    '/admin/agent',
     '/admin/conventions',
     '/admin/skills'
   ]);

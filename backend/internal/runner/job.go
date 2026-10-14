@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"orchestrator/backend/internal/claudecode"
 	"orchestrator/backend/internal/execx"
 	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/runnerapi"
@@ -85,6 +86,9 @@ func (r *Runner) RunJob(ctx context.Context, leaseID string) error {
 		return r.Client.End(ctx, leaseID)
 	}
 	j := &job{r: r, leaseID: leaseID, ctx: start, secrets: []string{start.CloneToken}}
+	if start.ClaudeCode != nil && start.ClaudeCode.APIKey != "" {
+		j.secrets = append(j.secrets, start.ClaudeCode.APIKey)
+	}
 	if err := j.run(ctx); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -130,6 +134,11 @@ func (j *job) run(ctx context.Context) error {
 			return err
 		}
 	}
+	claude, err := j.claudeCode()
+	if err != nil {
+		_, err := j.report(ctx, runnerapi.Report{Fact: runnerapi.FactBlocked, Reason: "agent_config", Message: err.Error()})
+		return err
+	}
 	if j.ctx.PublishedBranch {
 		if err := j.git.FetchCard(ctx, j.ctx.CardID, remote); err != nil {
 			if ctx.Err() != nil {
@@ -153,7 +162,7 @@ func (j *job) run(ctx context.Context) error {
 		return err
 	}
 	if !resumed {
-		if reply, err = j.attempt(ctx); err != nil {
+		if reply, err = j.attempt(ctx, claude); err != nil {
 			return err
 		}
 	}
@@ -161,6 +170,25 @@ func (j *job) run(ctx context.Context) error {
 		return j.check(ctx, reply)
 	}
 	return nil
+}
+
+// claudeCode is the attempt's Claude Code engine when the job names it, and
+// an error when this runner has no Claude Code binary.
+func (j *job) claudeCode() (*loop.ClaudeCode, error) {
+	if j.ctx.Agent != claudecode.Agent {
+		return nil, nil
+	}
+	cc := j.ctx.ClaudeCode
+	if cc == nil {
+		return nil, errors.New("the job names Claude Code without its settings")
+	}
+	if j.r.claude == "" {
+		return nil, fmt.Errorf("Claude Code is not installed on the runner %s; install it or set claudePath in its config, then unblock the card", j.r.Name)
+	}
+	return &loop.ClaudeCode{
+		Binary: j.r.claude, Version: j.r.version, SmallModel: cc.SmallModel, BaseURL: cc.BaseURL,
+		APIKey: cc.APIKey, Auth: cc.Auth, AllowWeb: cc.AllowWeb, Instructions: cc.Instructions,
+	}, nil
 }
 
 // seedFromControlPlane starts orch/<card> from the control plane's copy of
@@ -205,15 +233,17 @@ func (j *job) resume(ctx context.Context) (runnerapi.ReportReply, bool, error) {
 
 // attempt runs one tool loop with the board, model, and MCP of the lease and
 // reports how it ended.
-func (j *job) attempt(ctx context.Context) (runnerapi.ReportReply, error) {
+func (j *job) attempt(ctx context.Context, claude *loop.ClaudeCode) (runnerapi.ReportReply, error) {
 	b := &Board{Client: j.r.Client, LeaseID: j.leaseID, Secrets: j.secrets}
-	proxy, err := OpenMCP(ctx, j.r.Client, j.leaseID)
-	if err != nil {
-		return runnerapi.ReportReply{}, err
-	}
 	var extra loop.ExtraTools
-	if proxy != nil {
-		extra = proxy
+	if claude == nil {
+		proxy, err := OpenMCP(ctx, j.r.Client, j.leaseID)
+		if err != nil {
+			return runnerapi.ReportReply{}, err
+		}
+		if proxy != nil {
+			extra = proxy
+		}
 	}
 	var scope *loop.MCPContext
 	if m := j.ctx.MCP; m != nil {
@@ -236,7 +266,7 @@ func (j *job) attempt(ctx context.Context) (runnerapi.ReportReply, error) {
 		Engine: j.engine, Image: j.ctx.SandboxImage, Exec: j.r.Tools.Exec,
 		HistoryBudget: j.ctx.HistoryBudget, MaxTokensPerCard: j.ctx.MaxTokensPerCard, ContextTokens: j.ctx.ContextTokens,
 		Extra: extra, MCP: scope, Board: b, Fixture: j.ctx.Fixture,
-		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds,
+		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds, ClaudeCode: claude,
 	})
 	if err != nil {
 		if ctx.Err() != nil {

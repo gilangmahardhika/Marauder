@@ -191,6 +191,8 @@ type Config struct {
 	Jobs struct {
 		Executor string `yaml:"executor,omitempty" json:"executor"`
 	} `yaml:"jobs,omitempty" json:"jobs"`
+	// Agent is what writes the code of an implement job (RFC-120).
+	Agent AgentConfig `yaml:"agent,omitempty" json:"agent"`
 }
 
 const (

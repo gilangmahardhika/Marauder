@@ -51,6 +51,7 @@
       { href: '/admin/github', label: 'Company GitHub', icon: 'building' },
       { href: '/admin/llm', label: 'LLM APIs', icon: 'spark' },
       { href: '/admin/router', label: 'Router', icon: 'router' },
+      { href: '/admin/agent', label: 'Agent', icon: 'terminal' },
       { href: '/admin/conventions', label: 'Conventions', icon: 'rules' },
       { href: '/admin/skills', label: 'Skills', icon: 'skill' }
     ]

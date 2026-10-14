@@ -146,11 +146,13 @@ func (s *session) saveHandoff(ctx context.Context, ending, base string) {
 		work = runtime.WorkPatch{}
 	}
 	commits, _ := s.in.Git.Commits(ctx, s.wt, base, maxWorkCommits)
-	if len(work.Files) == 0 && len(work.Skipped) == 0 && len(s.todos) == 0 && len(s.turns) == 0 && s.lastSummary == "" {
+	if len(work.Files) == 0 && len(work.Skipped) == 0 && len(s.todos) == 0 && len(s.turns) == 0 && s.lastSummary == "" && s.finalText == "" {
 		return
 	}
 	source, summary := "harness", ""
-	if modelSummaryStops[ending] && len(s.turns) > 0 {
+	if s.finalText != "" {
+		source, summary = "model", clipSummary(s.finalText)
+	} else if modelSummaryStops[ending] && len(s.turns) > 0 {
 		if text, err := s.summarize(ctx); err == nil {
 			source, summary = "model", text
 		}

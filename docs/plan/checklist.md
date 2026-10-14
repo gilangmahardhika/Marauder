@@ -1264,3 +1264,30 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Words for `context_compacted`, `handoff_saved`, and `handoff_applied`.
 - [x] `FamilyForm` context window and `trace` handoff words Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 94: Agent setting and the Claude Code engine
+
+- [x] `Config.Agent`, `AgentKind()`, and `SaveAgent`.
+- [x] `claudecode.Run`: argv, environment, and stream reader.
+- [x] `loop.Input.ClaudeCode` with tool calls, tokens, caps, todos, commit, handoff, and `agent_run`.
+- [x] `ImplementCard` agent switch and `agent_config`.
+- [x] `TestAgentSettingsValidate`, `TestClaudeCodeCommits`, `TestClaudeCodeArgsAndEnv`, `TestClaudeCodeTokenCapKills`
+- [x] `TestClaudeCodeMaxTurns`, `TestClaudeCodeErrorExit`, `TestClaudeCodeHandoffSaved`, `TestClaudeCodeTraceRedactsKey`
+- [x] `TestImplementUsesClaudeCode`, `TestImplementClaudeCodeWithoutKeyBlocks`
+
+## Sprint 95: Claude Code on runners and the agent routes
+
+- [x] Migration 34: `runners.agents_json`.
+- [x] `runnerapi.Job.Agent` and `ClaudeCode`, heartbeat `agents`, and the claim filter.
+- [x] Runner `claudePath` and the job switch.
+- [x] Agent settings routes, the test route, and `agent` and `agents` in `GET /api/runners`.
+- [x] `TestClaimNeedsClaudeCodeRunner`, `TestRunnerRunsClaudeCode`, `TestAgentSettingsAdminOnly`, `TestAgentSettingsNeverReturnsKey`
+- [x] `go run ./cmd/fixture` exits 0 with the `claudeCode` scenario
+
+## Sprint 96: Agent page
+
+- [x] The Agent page with the Claude Code panel and Check.
+- [x] The Runners Agents column and the no-runner note.
+- [x] Words for `agent_run`.
+- [x] Agent page, runners agents, and `trace` agent words Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

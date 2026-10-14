@@ -436,6 +436,18 @@ export function describe(event: TraceEvent): Described {
             tone: 'default',
             text: ''
           };
+    case 'agent_run': {
+      const exit = num(p.exitCode);
+      return {
+        label: 'Claude Code',
+        detail: [str(p.modelId), plural(num(p.turns), 'turn', 'turns'), exit !== 0 ? `exited ${exit}` : '']
+          .filter(Boolean)
+          .join(' · '),
+        meta: str(p.version),
+        tone: exit !== 0 ? 'red' : 'default',
+        text: ''
+      };
+    }
     case 'context_changed': {
       const what = ({ skill: 'skill', rule: 'rule', mcp: 'MCP server' } as Record<string, string>)[str(p.kind)] ?? str(p.kind);
       const verb = ({ attach: 'Attached', detach: 'Detached', inherit: 'Restored' } as Record<string, string>)[str(p.mode)] ?? str(p.mode);

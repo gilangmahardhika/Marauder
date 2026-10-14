@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"orchestrator/backend/internal/claudecode"
 	"orchestrator/backend/internal/runnerapi"
 )
 
@@ -21,7 +22,10 @@ type Runner struct {
 	Slots   int
 	Version string
 	Tools   Tools
-	Logf    func(string, ...any)
+	// Claude is the Claude Code binary; empty means the runner cannot run
+	// Claude Code jobs (RFC-121).
+	Claude string
+	Logf   func(string, ...any)
 	// Heartbeat and Retry default to 10 and 5 seconds, ClaimWait to 20.
 	Heartbeat time.Duration
 	Retry     time.Duration
@@ -32,6 +36,9 @@ type Runner struct {
 	running  map[string]context.CancelFunc
 	orphans  map[string]bool
 	outdated bool
+	agents   []string
+	claude   string
+	version  string
 }
 
 func (r *Runner) logf(format string, args ...any) {
@@ -62,6 +69,7 @@ func (r *Runner) Run(ctx context.Context) error {
 	r.running = map[string]context.CancelFunc{}
 	r.orphans = map[string]bool{}
 	r.mu.Unlock()
+	r.Probe(ctx)
 	if err := r.beat(ctx); err != nil {
 		return err
 	}
@@ -100,11 +108,32 @@ func (r *Runner) Run(ctx context.Context) error {
 	return nil
 }
 
+// Probe sets the agents the runner reports: claude_code besides builtin when
+// its Claude Code binary answers --version. Run calls it before the first
+// heartbeat.
+func (r *Runner) Probe(ctx context.Context) {
+	r.agents = []string{"builtin"}
+	if r.Claude == "" {
+		return
+	}
+	bin, err := claudecode.Find(r.Claude)
+	if err == nil {
+		r.version, err = claudecode.Version(ctx, bin)
+	}
+	if err != nil {
+		r.logf("runner: Claude Code unavailable: %v", err)
+		return
+	}
+	r.claude = bin
+	r.agents = append(r.agents, claudecode.Agent)
+	r.logf("runner: Claude Code %s at %s", r.version, bin)
+}
+
 // beat sends one heartbeat. A lease the control plane holds open for this
 // runner that no job runs, seen on two heartbeats in a row, is given back.
 // A lease no longer open stops its job.
 func (r *Runner) beat(ctx context.Context) error {
-	reply, err := r.Client.Heartbeat(ctx, runnerapi.Heartbeat{Version: r.Version, Protocol: runnerapi.Protocol})
+	reply, err := r.Client.Heartbeat(ctx, runnerapi.Heartbeat{Version: r.Version, Protocol: runnerapi.Protocol, Agents: r.agents})
 	if StatusOf(err) == http.StatusUnauthorized {
 		return ErrRemoved
 	}

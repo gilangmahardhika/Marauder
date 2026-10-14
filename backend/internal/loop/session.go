@@ -75,6 +75,8 @@ type session struct {
 	checked   bool
 	checkExit int
 	checkTail string
+	// finalText is Claude Code's last reply, redacted (RFC-121).
+	finalText string
 }
 
 // readOnly are the tools that change nothing, so the calls of one reply that

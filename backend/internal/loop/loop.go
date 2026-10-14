@@ -235,6 +235,22 @@ type Input struct {
 	// earlier attempts that ended with a question (RFC-114).
 	QuestionMode   string
 	QuestionRounds int
+	// ClaudeCode, when set, runs the Claude Code CLI in place of the tool
+	// loop, with Model and MaxTurns (RFC-121).
+	ClaudeCode *ClaudeCode
+}
+
+// ClaudeCode is how an attempt runs the Claude Code CLI. Binary is an
+// absolute path; Auth is apiKey or bearer; APIKey must be in Secrets.
+type ClaudeCode struct {
+	Binary       string
+	Version      string
+	SmallModel   string
+	BaseURL      string
+	APIKey       string
+	Auth         string
+	AllowWeb     bool
+	Instructions string
 }
 
 func (in Input) board() Board {
@@ -450,7 +466,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 	}
-	if err := session.loop(ctx); err != nil {
+	drive := session.loop
+	if in.ClaudeCode != nil {
+		drive = session.claude
+	}
+	if err := drive(ctx); err != nil {
 		session.saveHandoff(ctx, "error", base)
 		_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 		return Result{}, err

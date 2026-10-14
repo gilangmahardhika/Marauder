@@ -101,6 +101,7 @@ frontend/
   src/routes/admin/llm/new/+page.svelte
   src/routes/admin/llm/[family]/+page.svelte
   src/routes/admin/router/+page.svelte
+  src/routes/admin/agent/+page.svelte
   src/routes/admin/runners/+page.svelte
   src/routes/admin/runners/new/+page.svelte
   src/routes/admin/runners/guide/+page.svelte
@@ -277,6 +278,7 @@ frontend/
 | `/admin/llm/new` | Create an LLM family |
 | `/admin/llm/[family]` | Edit, test, or delete one LLM family |
 | `/admin/router` | Router for the company |
+| `/admin/agent` | The implement agent for the company: built-in or Claude Code, with the Claude Code options (RFC-120) |
 | `/admin/runners` | Remote runners with their status, and where implement jobs run (RFC-106, RFC-107) |
 | `/admin/runners/new` | Mint a registration token and show the install command once (RFC-106) |
 | `/admin/runners/guide` | How to register, update, pause, and unregister a runner (RFC-109) |
@@ -673,7 +675,7 @@ The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with prop
 
 `src/lib/components/FamilyForm.svelte` is the form both pages use: id, protocol select with `anthropic` and `openai` only, base URL, model ids (a list plus "Add model" and a remove button per row), API key. Under each model id are its Thinking select (Provider default, On, Off, and Adaptive on anthropic only), a Budget number field shown for On on anthropic, an Effort select whose values follow the protocol, with Provider default first (RFC-079), a History budget (KiB) number field on either protocol, empty for the 16 KiB default (RFC-081), and a Context window (tokens) number field on either protocol, empty for the 128,000 default, with the hint "The agent compacts its work at 75% of this." (RFC-117). They save in the family's `modelOptions`.
 
-The trace page words the RFC-117 and RFC-118 events: `context_compacted` reads "Context compacted" with the input tokens, `handoff_saved` reads "Handoff saved" with the file count and whether the model or the harness wrote the summary, and `handoff_applied` reads "Continued from the last attempt" with the file count, or "Earlier work could not be re-applied" in amber with the reason.
+The trace page words the RFC-117 and RFC-118 events: `context_compacted` reads "Context compacted" with the input tokens, `handoff_saved` reads "Handoff saved" with the file count and whether the model or the harness wrote the summary, and `handoff_applied` reads "Continued from the last attempt" with the file count, or "Earlier work could not be re-applied" in amber with the reason. `agent_run` (RFC-121) reads "Claude Code" with the model and the turn count, red when `exitCode` is not 0.
 
 `src/routes/admin/llm/new/+page.svelte` creates a family. The id must be set, must not be `new`, and must not match an existing family. `src/routes/admin/llm/[family]/+page.svelte` edits one family. Its id is fixed after create, because the saved key is stored under the id. That page has Save, "Test connection", and "Delete family" behind an inline confirm.
 
@@ -700,12 +702,29 @@ The page does not calculate that flag itself.
 
 The save result line includes "Applies to the next route decision."
 
+### Agent
+
+`src/routes/admin/agent/+page.svelte` (RFC-120). GET and PUT `/api/settings/agent`, GET `/api/settings/llm` for the family and model selects, and GET `/api/settings/router` for the turn budget placeholder. Admin only, like Router.
+
+- A Segmented control "Implement agent" with "Built-in" (`builtin`) and "Claude Code" (`claude_code`). It changes the draft; the Save button saves.
+- With Claude Code, a Panel "Claude Code" shows:
+  - "Model family", a Select of the families whose protocol is `anthropic`. A family without a saved key is a disabled option marked "No API key", and a hint links to LLM APIs.
+  - "Model" and "Small model (optional)", Selects of the chosen family's models; Small model starts with "Same as model".
+  - "Max turns", a number with the router's turn budget as the placeholder.
+  - "Auth header", a Select: Auto, `x-api-key`, and Bearer.
+  - A checkbox "Allow web fetch and search".
+  - "Extra instructions", a textarea, at most 8 KiB.
+  - "Claude binary on this server", optional, monospace, with the hint "Empty uses claude on PATH. Runners use their own."
+  - A ghost Button "Check" that calls POST `/api/settings/agent/test` and shows the version, or the message in red.
+- A `422` puts each `claudeCode.<field>` error under its control. Saving shows a toast.
+
 ### Runners
 
 `src/routes/admin/runners/+page.svelte` (RFC-106, RFC-107). GET `/api/runners`, polled every 5 seconds while the page is open.
 
 - A Segmented control "Implement jobs run on" with "This server" (`local`) and "Runners" (`runners`) saves through PUT `/api/settings/jobs`. With `runners` and no runner `idle` or `busy`, a note says queued cards wait until a runner connects.
 - A Table: name with labels, status Badge (`idle`, `busy`, `draining`, `offline`), slots as `busy/slots`, version with "Update required" when `updateRequired`, last heartbeat as a relative time, and the card links of its leases. Each row shows one text button per entry in the runner's `actions` from the API and nothing else; `remove` asks to confirm. The buttons sit in the row, not in a dropdown, because the Table's horizontal scroll clips a dropdown.
+- An "Agents" column lists each runner's `agents` as "Built-in" and "Claude Code" (RFC-120). While `agent` is `claude_code` and no `idle` or `busy` runner lists `claude_code`, a warning note says "No runner has Claude Code. Queued cards wait." The note shows only when `executor` is `runners`.
 - Search by name or label, and a status FilterSelect, both in the URL through `setParams`.
 - The header Button "Add runner" goes to `/admin/runners/new`, and a ghost Button "Runner guide" goes to `/admin/runners/guide`.
 
@@ -904,6 +923,9 @@ npm run build
 | Deploy settings allowed commands | Allowed commands load one per line, save as `commandExecutables` with blank lines dropped, and a refused name shows its field error |
 | `FamilyForm` history budget | Every model row has a History budget field on either protocol. `toDraft` and `fromDraft` round-trip `historyBudgetKiB` and drop an empty one |
 | `FamilyForm` context window | Every model row has a Context window field on either protocol. `toDraft` and `fromDraft` round-trip `contextTokens` and drop an empty one (RFC-117) |
+| Agent page | The Claude Code panel shows only for Claude Code; a family without a key is disabled; `422` field errors show under their controls (RFC-120) |
+| Runners agents | The Agents column, and the note when the agent is Claude Code and no online runner has it (RFC-120) |
+| `trace` agent words | `agent_run` reads "Claude Code" with the model and turns, red on a non-zero exit (RFC-121) |
 | `trace` handoff words | `context_compacted`, `handoff_saved`, and `handoff_applied` have words; a `handoff_applied` with `ok: false` is amber and shows its reason (RFC-117, RFC-118) |
 | `SecretField` saved with an empty input | The emitted body omits the secret field |
 | `api` on `401` | The bearer is cleared |
