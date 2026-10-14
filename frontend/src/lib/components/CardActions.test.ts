@@ -51,20 +51,66 @@ function card(partial: Partial<Card>): Card {
 
 test('empty actions render no controls', () => {
   render(CardActions, { card: card({ actions: [] }) });
-  expect(screen.queryByRole('button', { name: 'Approve SHA' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Request changes' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Unblock' })).toBeNull();
 });
 
-test('approved card renders request changes and reject', async () => {
+test('approved card shows request changes and keeps reject in the menu', async () => {
   render(CardActions, {
     card: card({ status: 'approved', group: 'shipping', actions: ['request_changes', 'reject'] })
   });
-  await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
   expect(screen.getByRole('button', { name: 'Request changes' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
   expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Approve SHA' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
+});
+
+test('approve names the head SHA and shows the AI review beside it', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  const bodies: unknown[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body ?? '{}')));
+      return new Response(JSON.stringify(card({ status: 'approved', group: 'shipping', actions: [] })), { status: 200 });
+    })
+  );
+  const head = 'ae5d4418f1f5c54e02c2ced82de2a5b66ba65753';
+  render(CardActions, {
+    card: card({
+      status: 'human_review',
+      group: 'review',
+      actions: ['approve', 'request_changes', 'reject'],
+      headSha: head,
+      reviewedSha: '1111111aaaaaaa',
+      reviewVerdict: 'recommend_approve'
+    })
+  });
+  expect(screen.getByText('AI review: Recommend approve')).toBeTruthy();
+  expect(screen.getByText('1111111').getAttribute('title')).toBe('1111111aaaaaaa');
+  expect(screen.getByText('The head moved after the review.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Request changes' })).toBeTruthy();
+  expect(screen.queryByLabelText('SHA')).toBeNull();
+
+  const other = screen.getByRole('button', { name: 'Approve a different SHA' });
+  expect(other.getAttribute('aria-expanded')).toBe('false');
+  await fireEvent.click(other);
+  const field = screen.getByLabelText('SHA') as HTMLInputElement;
+  expect(field.value).toBe(head);
+  await fireEvent.input(field, { target: { value: 'bbbbbbb2222222' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Approve bbbbbbb' }));
+  await vi.waitFor(() => expect(bodies).toEqual([{ sha: 'bbbbbbb2222222' }]));
+});
+
+test('approve without a head SHA shows the SHA field', () => {
+  render(CardActions, { card: card({ status: 'human_review', group: 'review', actions: ['approve'] }) });
+  expect(screen.getByRole('button', { name: 'Approve SHA' })).toBeTruthy();
+  expect(screen.getByLabelText('SHA')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Approve a different SHA' })).toBeNull();
 });
 
 test('request changes asks for a reason and sends it', async () => {
@@ -92,7 +138,6 @@ test('request changes asks for a reason and sends it', async () => {
   render(CardActions, {
     card: card({ status: 'human_review', group: 'review', actions: ['approve', 'request_changes'] })
   });
-  await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
   const box = screen.getByLabelText('What should change?');
 

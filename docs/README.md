@@ -51,6 +51,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0044-reviewers-before-github.md](rfc/0044-reviewers-before-github.md) | Decision `RFC-103`. A requirement names any tribe member as a reviewer, and GitHub is asked once they verify |
 | [rfc/0045-layered-conventions-and-card-context.md](rfc/0045-layered-conventions-and-card-context.md) | Decisions `RFC-104` and `RFC-105`. A tribe sets its projects' conventions, a project switches each on or off, and a person changes one card's skills, rules, and MCP servers |
 | [rfc/0046-remote-runners.md](rfc/0046-remote-runners.md) | Decisions `RFC-106` to `RFC-109`. An installed runner registers, heartbeats, and claims leased implement jobs over HTTPS, and the control plane keeps every status change and credential |
+| [rfc/0047-card-page-review.md](rfc/0047-card-page-review.md) | Decision `RFC-110`. Publish stores the pull request title and description, and the card page leads with the next step, the pull request, and a numbered diff |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

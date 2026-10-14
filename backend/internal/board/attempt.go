@@ -251,6 +251,19 @@ func LatestReview(ctx context.Context, q DBTX, cardID string) (Review, error) {
 	return r, err
 }
 
+// FirstBaseSHA returns the base commit of the card's first attempt that has
+// one, or "" when there is none.
+func FirstBaseSHA(ctx context.Context, q DBTX, cardID string) (string, error) {
+	var sha string
+	err := q.QueryRowContext(ctx, `
+		SELECT base_sha FROM attempts WHERE card_id = $1 AND COALESCE(base_sha, '') <> ''
+		ORDER BY n ASC LIMIT 1`, cardID).Scan(&sha)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return sha, err
+}
+
 // RecordReview stores the review of an attempt (RFC-065).
 func RecordReview(ctx context.Context, q DBTX, attemptID, model, promptHash string, independent bool, verdict, reviewedSHA string) error {
 	_, err := q.ExecContext(ctx, `
@@ -268,6 +281,35 @@ func ClearReview(ctx context.Context, q DBTX, attemptID string) error {
 			review_verdict = NULL, reviewed_sha = NULL
 		WHERE id = $1`, attemptID)
 	return err
+}
+
+// PRText is the pull request title and harness body an attempt published
+// (RFC-110).
+type PRText struct {
+	Title     string
+	Body      string
+	AttemptN  int
+	CommitSHA string
+}
+
+// SetAttemptPRText stores the pull request title and body an attempt published.
+func SetAttemptPRText(ctx context.Context, q DBTX, attemptID, title, body string) error {
+	_, err := q.ExecContext(ctx, `UPDATE attempts SET pr_title = $2, pr_body = $3 WHERE id = $1`, attemptID, title, body)
+	return err
+}
+
+// LatestPRText returns the pull request text of the card's newest attempt that
+// published one, or a zero PRText when there is none.
+func LatestPRText(ctx context.Context, q DBTX, projectID, cardID string) (PRText, error) {
+	var t PRText
+	err := q.QueryRowContext(ctx, `
+		SELECT pr_title, COALESCE(pr_body, ''), n, COALESCE(commit_sha, '')
+		FROM attempts WHERE card_id = $1 AND project_id = $2 AND pr_title IS NOT NULL
+		ORDER BY n DESC LIMIT 1`, cardID, projectID).Scan(&t.Title, &t.Body, &t.AttemptN, &t.CommitSHA)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PRText{}, nil
+	}
+	return t, err
 }
 
 // AttemptSummary is what the trace shows for one attempt. Empty strings are

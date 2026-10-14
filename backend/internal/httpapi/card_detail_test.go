@@ -104,6 +104,64 @@ func TestCardDetail(t *testing.T) {
 	check("unblock", unblocked.Body.String())
 }
 
+func TestCardDetailPullRequest(t *testing.T) {
+	srv := accountServer(t)
+	ctx := context.Background()
+	admin := seedUser(t, srv, "admin@example.com", "password-long-0", "product_owner", true)
+	lead := seedUser(t, srv, "lead@example.com", "password-long-1", "lead_developer", false)
+	if err := app.AddMember(ctx, srv.DB, admin, "tribe_default", lead.ID); err != nil {
+		t.Fatal(err)
+	}
+	id := reviewerCard(t, srv, "proj_default", lead.ID)
+	token := loginToken(t, srv, "lead@example.com", "password-long-1")
+	type detail struct {
+		PullRequest *struct {
+			Title    string `json:"title"`
+			Body     string `json:"body"`
+			AttemptN int    `json:"attemptN"`
+			SHA      string `json:"sha"`
+		} `json:"pullRequest"`
+	}
+	read := func() detail {
+		t.Helper()
+		one := getAuth(t, srv, "/api/projects/proj_default/cards/"+id, token)
+		if one.Code != 200 {
+			t.Fatalf("card = %d %s", one.Code, one.Body.String())
+		}
+		if !strings.Contains(one.Body.String(), `"pullRequest"`) {
+			t.Fatalf("card has no pullRequest key: %s", one.Body.String())
+		}
+		var got detail
+		if err := json.Unmarshal(one.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if got := read(); got.PullRequest != nil {
+		t.Fatalf("before publish = %+v", got.PullRequest)
+	}
+
+	body := app.PRBody(app.PRInput{CardID: id, CardTitle: "Export CSV", CommitMessage: "Export CSV", CommitSHA: "abc1234def", AttemptID: "att_pr", Model: "m"})
+	if _, err := srv.DB.Exec(`
+		INSERT INTO attempts (id, card_id, n, task_class, commit_sha, started_at, project_id, pr_title, pr_body)
+		VALUES ('att_pr', $1, 1, 'implement', 'abc1234def', '2026-10-12T03:00:00Z', 'proj_default', 'REQ-001: Export CSV', $2)`,
+		id, body); err != nil {
+		t.Fatal(err)
+	}
+	got := read()
+	if got.PullRequest == nil || got.PullRequest.Title != "REQ-001: Export CSV" || got.PullRequest.AttemptN != 1 || got.PullRequest.SHA != "abc1234def" {
+		t.Fatalf("pullRequest = %+v", got.PullRequest)
+	}
+	if !strings.HasPrefix(got.PullRequest.Body, "## Summary\n\nExport CSV") || strings.Contains(got.PullRequest.Body, "<details>") {
+		t.Fatalf("body = %q", got.PullRequest.Body)
+	}
+
+	list := getAuth(t, srv, "/api/projects/proj_default/cards", token)
+	if list.Code != 200 || strings.Contains(list.Body.String(), `"pullRequest"`) {
+		t.Fatalf("board list = %d %s", list.Code, list.Body.String())
+	}
+}
+
 func TestCardDetailNotes(t *testing.T) {
 	srv := accountServer(t)
 	ctx := context.Background()

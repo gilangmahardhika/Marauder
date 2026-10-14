@@ -354,6 +354,10 @@ func Publish(ctx context.Context, db *sql.DB, cardID string, in PublishInput) (b
 	if err != nil {
 		return card, errors.New(trace.Redact(err.Error(), secrets))
 	}
+	if in.AttemptID != "" {
+		// The pull request is already out, so a failed store does not fail the publish.
+		_ = board.SetAttemptPRText(ctx, db, in.AttemptID, trace.Redact(prTitle(in.Text, card), secrets), trace.Redact(in.Text.Body, secrets))
+	}
 	exit := in.ExitCode
 	next, err := move(ctx, db, card, "pr_open", machine.Evidence{ExitCode: &exit, PRURL: prURL, AttemptID: in.AttemptID}, secrets)
 	if err != nil {
@@ -365,11 +369,15 @@ func Publish(ctx context.Context, db *sql.DB, cardID string, in PublishInput) (b
 	return next, nil
 }
 
-func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, project tenancy.Project, card board.Card, token string, in PublishInput, dir string) (string, error) {
-	title := in.Text.Title
-	if title == "" {
-		title = card.Title
+func prTitle(text PRText, card board.Card) string {
+	if text.Title == "" {
+		return card.Title
 	}
+	return text.Title
+}
+
+func ensurePR(ctx context.Context, gh ghcli.Runner, acct company.Account, project tenancy.Project, card board.Card, token string, in PublishInput, dir string) (string, error) {
+	title := prTitle(in.Text, card)
 	if card.PRURL != "" {
 		pull, _, err := pullAPI(card.PRURL)
 		if err != nil {

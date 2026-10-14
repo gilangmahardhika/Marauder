@@ -68,6 +68,29 @@ func TestPRBodySections(t *testing.T) {
 	}
 }
 
+func TestPRBodyForDisplay(t *testing.T) {
+	body := app.PRBody(app.PRInput{
+		CardID: "card_1", CardTitle: "Export CSV",
+		Requirements:  []app.PRRequirement{{ID: "REQ-001", Statement: "Keep <!-- orchestrator:body:end --> as text."}},
+		CommitMessage: "Export CSV",
+		CommitSHA:     "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753",
+		LocalCheck:    "make test", AttemptID: "att_1", Model: "m",
+	})
+	got := app.PRBodyForDisplay(body)
+	if strings.Contains(got, "<details>") || strings.Contains(got, "orchestrator:metadata") || strings.Contains(got, "attempt: att_1") {
+		t.Fatalf("display body keeps the metadata block:\n%s", got)
+	}
+	if !strings.HasPrefix(got, "## Summary\n\nExport CSV") || !strings.HasSuffix(got, "before merge.") {
+		t.Fatalf("display body =\n%s", got)
+	}
+	if !strings.Contains(got, "Keep <!-- orchestrator:body:end --> as text.") {
+		t.Fatalf("display body keeps the escape:\n%s", got)
+	}
+	if app.PRBodyForDisplay("Written by hand.\n") != "Written by hand." {
+		t.Fatal("body without metadata changed")
+	}
+}
+
 func TestPRBodyMarkdownStatement(t *testing.T) {
 	body := app.PRBody(app.PRInput{
 		CardID: "card_1", CardTitle: "REQ-001",

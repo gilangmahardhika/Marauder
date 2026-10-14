@@ -915,9 +915,26 @@ A project object is:
       "attemptN": 2
     }
   ],
-  "instructions": "Run the lint scripts in every package."
+  "instructions": "Run the lint scripts in every package.",
+  "pullRequest": {
+    "title": "REQ-001: Export orders as CSV",
+    "body": "## Summary\n\nExport orders as CSV.\n\n## Verification\n\nLocal check `make test` exited 0 on `ae5d441` in the sandbox.",
+    "attemptN": 2,
+    "sha": "ae5d4418f1f5c54e02c2ced82de2a5b66ba65753"
+  }
 }
 ```
+
+`pullRequest` is the pull request text of the card's newest attempt with a stored `pr_title`, or `null` before the card publishes (RFC-110). `title` is the title the publish sent. `body` is the harness part of the body without the "Orchestrator metadata" `<details>` block, with the `&lt;!-- orchestrator:` escape undone, since the card page renders it as text. `attemptN` and `sha` are that attempt's `n` and `commit_sha`. The board list does not return `pullRequest`.
+
+`00029_attempt_pr_text.sql` adds the stored text:
+
+```sql
+ALTER TABLE attempts ADD COLUMN pr_title TEXT;
+ALTER TABLE attempts ADD COLUMN pr_body TEXT;
+```
+
+`Publish` writes both after the pull request is created or edited, redacted with the publish secrets. A failed write does not fail the publish.
 
 `context` is the card's context (RFC-105). `rules` and `skills` list every item the card's packs carry, plus each one the card detached, with `state` `on` or `off` and `origin`: `project` or `planner` for an inherited item, `card` for one the card's context set. `mcp` lists every server of the project's tribe as `{ "id", "slug", "enabled", "toolCount", "state", "origin" }`, where `state` is whether the next attempt opens it and `origin` is `scope` or `card`. `mcpScope` is the scope the next attempt would record. The board list does not return `context`.
 
@@ -1038,7 +1055,7 @@ After the first `trace` frame, a viewer that joins mid-reply gets that turn's `t
 }
 ```
 
-Any member of the project's tribe may read it. A non-member, an unknown id, or a card in another project is `404`. `sha` is the card's `headSha`, or the commit of its last attempt when there is no head. With neither, `sha` is empty and `files` is `[]`. The diff runs from `refs/heads/<baseBranch>` to `sha` in the project clone, with renames shown as a delete and an add. A SHA not in the clone is fetched from `refs/heads/orch/<cardId>` with the company token. If it is still missing, or the project has no clone, `missing` is `true` and `files` is `[]`.
+Any member of the project's tribe may read it. A non-member, an unknown id, or a card in another project is `404`. `sha` is the card's `headSha`, or the commit of its last attempt when there is no head. With neither, `sha` is empty and `files` is `[]`. The diff runs from `refs/heads/<baseBranch>` to `sha` in the project clone, with renames shown as a delete and an add. When `sha` is already in the base branch, as after the pull request merges, the diff runs from the first parent of the merge commit that brought it in. After a fast-forward, it runs from the `base_sha` of the card's first attempt, when that commit is an ancestor of `sha`. A SHA not in the clone is fetched from `refs/heads/orch/<cardId>` with the company token. If it is still missing, or the project has no clone, `missing` is `true` and `files` is `[]`.
 
 `kind` is `add`, `del`, `ctx`, or `meta`. An `add`, `del`, or `ctx` line's `text` drops the leading `+`, `-`, or space. A `meta` line is git's `\ No newline at end of file` as written. A binary file has `binary: true`, counts of `0`, and no hunks. The diff text is capped at 256 KiB. When it is cut, the response sets `truncated`, and the file it stopped in and the files it never reached set their own `truncated`, with counts from `git diff --numstat`. A file keeps at most 1,500 lines and sets `truncated` past that. Model keys and the company token are redacted before parsing. `compareUrl` is empty when the company account has no host or organization, or the project has no repository.
 

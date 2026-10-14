@@ -22,6 +22,8 @@ export type Card = {
   instructions?: string | null;
   /** Single card only. The rules, skills, and MCP servers the next attempt carries (RFC-105). */
   context?: CardContext;
+  /** Single card only. The pull request text the card last published, `null` before it publishes (RFC-110). */
+  pullRequest?: CardPullRequest | null;
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -53,6 +55,14 @@ export type Card = {
   failureReason: string | null;
   blockedReason: string | null;
   updatedAt: string;
+};
+
+/** The title and harness description of the published pull request, without the metadata block. */
+export type CardPullRequest = {
+  title: string;
+  body: string;
+  attemptN: number;
+  sha: string;
 };
 
 export type CardContextRule = EffectiveRule & { state: "on" | "off" };

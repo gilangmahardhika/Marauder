@@ -5,12 +5,15 @@
     title,
     description = '',
     meta,
+    summary,
     actions,
     children
   }: {
     title: string;
     description?: string;
     meta?: Snippet;
+    /** A line under the title, after `description`. */
+    summary?: Snippet;
     actions?: Snippet;
     children: Snippet;
   } = $props();
@@ -24,6 +27,7 @@
         {#if meta}{@render meta()}{/if}
       </div>
       {#if description}<p class="mt-1.5 max-w-2xl text-sm text-muted">{description}</p>{/if}
+      {#if summary}<div class="mt-2">{@render summary()}</div>{/if}
     </div>
     {#if actions}<div class="flex shrink-0 flex-wrap items-center gap-2">{@render actions()}</div>{/if}
   </div>

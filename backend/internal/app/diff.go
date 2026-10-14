@@ -120,7 +120,7 @@ func ReadCardDiff(ctx context.Context, db *sql.DB, deps JobDeps, projectID, card
 		out.SHA = sha
 	}
 
-	base := "refs/heads/" + out.Base
+	base := mergedBase(ctx, db, git, card.ID, sha, "refs/heads/"+out.Base)
 	stats, err := git.NumStat(ctx, base, sha)
 	if err != nil {
 		return out, redactedErr(err, redact)
@@ -132,6 +132,22 @@ func ReadCardDiff(ctx context.Context, db *sql.DB, deps JobDeps, projectID, card
 	out.Truncated = truncated
 	out.Files = mergeStats(ParseDiff(trace.Redact(text, redact)), stats, redact, truncated)
 	return out, nil
+}
+
+// mergedBase returns the commit to diff sha against. Once sha is in branch,
+// branch...sha is empty, so a merged head diffs against branch before the
+// merge, or against the card's first attempt base after a fast-forward.
+func mergedBase(ctx context.Context, db *sql.DB, git runtime.Git, cardID, sha, branch string) string {
+	if !git.IsAncestor(ctx, sha, branch) {
+		return branch
+	}
+	if before, err := git.MergedFrom(ctx, sha, branch); err == nil {
+		return before
+	}
+	if first, err := board.FirstBaseSHA(ctx, db, cardID); err == nil && first != "" && git.IsAncestor(ctx, first, sha) {
+		return first
+	}
+	return branch
 }
 
 func redactedErr(err error, redact []string) error {

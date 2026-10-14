@@ -221,6 +221,37 @@ func TestPublishEditsExistingPR(t *testing.T) {
 	}
 }
 
+func TestPublishStoresPRText(t *testing.T) {
+	f := newPublishFixture(t)
+	ctx := context.Background()
+	if _, err := f.db.Exec(`
+		INSERT INTO attempts (id, card_id, n, task_class, commit_sha, started_at, project_id)
+		VALUES ('att_pub', $1, 1, 'implement', 'abc1234def', '2026-10-12T03:00:00Z', 'proj_default')`, f.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	in := f.input(&recorder{})
+	in.AttemptID = "att_pub"
+	in.Text.Body = "## Summary\n\nAdds the export with " + ownerToken + "."
+	if _, err := app.Publish(ctx, f.db, f.card.ID, in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := board.LatestPRText(ctx, f.db, "proj_default", f.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Title != "REQ-001: Export CSV" || got.AttemptN != 1 || got.CommitSHA != "abc1234def" {
+		t.Fatalf("pr text = %+v", got)
+	}
+	if !strings.HasPrefix(got.Body, "## Summary\n\nAdds the export with ") || strings.Contains(got.Body, ownerToken) {
+		t.Fatalf("body = %q", got.Body)
+	}
+
+	none, err := board.LatestPRText(ctx, f.db, "proj_default", "card_missing")
+	if err != nil || none.Title != "" {
+		t.Fatalf("missing card = %+v, %v", none, err)
+	}
+}
+
 func TestOwnerGitHubBlocks(t *testing.T) {
 	f := newPublishFixture(t)
 	if _, err := f.db.Exec(`UPDATE user_github SET verified_at = NULL WHERE user_id = $1`, f.owner.ID); err != nil {

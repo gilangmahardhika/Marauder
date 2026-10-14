@@ -33,11 +33,20 @@ type cardNote struct {
 	AttemptN  int    `json:"attemptN"`
 }
 
+// cardPullRequest is the pull request text the card last published (RFC-110).
+type cardPullRequest struct {
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	AttemptN int    `json:"attemptN"`
+	SHA      string `json:"sha"`
+}
+
 const cardNoteLimit = 10
 
 // cardDetail is the single-card body: the board fields plus the card's
-// requirements, the rules its packs carry, its newest failure notes, and its
-// context (RFC-105). The board list leaves these out.
+// requirements, the rules its packs carry, its newest failure notes, its
+// context (RFC-105), and its published pull request text (RFC-110). The board
+// list leaves these out.
 func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 	body := s.cardBody(r, card)
 	reqs, err := cardRequirements(r.Context(), s.DB, card.ProjectID, card.RequirementIDs)
@@ -66,6 +75,11 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 		instructions = text
 	}
 	body["instructions"] = instructions
+	var pr any
+	if text, err := board.LatestPRText(r.Context(), s.DB, card.ProjectID, card.ID); err == nil && text.Title != "" {
+		pr = cardPullRequest{Title: text.Title, Body: app.PRBodyForDisplay(text.Body), AttemptN: text.AttemptN, SHA: text.CommitSHA}
+	}
+	body["pullRequest"] = pr
 	if view, err := app.CardContextFor(r.Context(), s.DB, card); err == nil {
 		body["context"] = view
 	}

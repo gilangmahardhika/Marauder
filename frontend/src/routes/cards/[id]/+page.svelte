@@ -6,6 +6,7 @@
   import CardContext from '$lib/components/CardContext.svelte';
   import CardInstructions from '$lib/components/CardInstructions.svelte';
   import CardNotes from '$lib/components/CardNotes.svelte';
+  import CardPullRequest from '$lib/components/CardPullRequest.svelte';
   import { plainText } from '$lib/markdown';
   import { displayName } from '$lib/people';
   import { shell } from '$lib/shell.svelte';
@@ -16,6 +17,7 @@
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import Icon from '$lib/ui/Icon.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
@@ -84,9 +86,16 @@
 </script>
 
 {#snippet item(label: string, value: string, mono = false, danger = false)}
-  <div class="min-w-0">
-    <dt class="text-xs text-muted">{label}</dt>
-    <dd class="mt-1 break-words text-sm {mono ? 'font-mono text-[13px]' : ''} {danger ? 'danger' : 'text-ink'}">{value}</dd>
+  <div class="flex min-w-0 items-baseline justify-between gap-4">
+    <dt class="shrink-0 text-xs text-muted">{label}</dt>
+    <dd class="min-w-0 break-words text-right text-sm {mono ? 'font-mono text-[13px]' : ''} {danger ? 'danger' : 'text-ink'}">{value}</dd>
+  </div>
+{/snippet}
+
+{#snippet sha(label: string, value: string)}
+  <div class="flex min-w-0 items-baseline justify-between gap-4">
+    <dt class="shrink-0 text-xs text-muted">{label}</dt>
+    <dd class="font-mono text-[13px] text-ink" title={value}>{value.slice(0, 7)}</dd>
   </div>
 {/snippet}
 
@@ -95,8 +104,9 @@
     <Avatar person={who} />
     <span class="min-w-0 flex-1">
       <span class="block truncate text-sm font-medium text-ink">{displayName(who)}</span>
+      <span class="block truncate text-xs text-muted" title={who.email}>{who.email}</span>
       <span class="block truncate text-xs text-muted">
-        {who.email} · {who.githubLogin ? `GitHub @${who.githubLogin}` : 'No verified GitHub login'}
+        {who.githubLogin ? `GitHub @${who.githubLogin}` : 'No verified GitHub login'}
       </span>
     </span>
     <span class="shrink-0 text-xs text-muted">{role}</span>
@@ -112,8 +122,25 @@
     {#snippet meta()}
       <span title={card!.status}><Badge tone={cardTone(card!)}>{statusLabel(card!.status)}</Badge></span>
     {/snippet}
+    {#snippet summary()}
+      <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted">
+        <span class="inline-flex items-center gap-1.5">
+          <Avatar person={card!.owner} size="sm" />
+          {card!.owner ? displayName(card!.owner) : 'No owner'}
+        </span>
+        <span>Attempt {card!.attemptsUsed} of {card!.maxAttempts}</span>
+        {#if card!.branch}
+          <span class="inline-flex min-w-0 items-center gap-1.5">
+            <Icon name="git" class="size-4 shrink-0" /><span class="truncate font-mono">{card!.branch}</span>
+          </span>
+        {/if}
+      </p>
+    {/snippet}
     {#snippet actions()}
-      <Button href={`/cards/${card!.id}/trace`}>View trace</Button>
+      {#if card!.prUrl && linkable(card!.prUrl)}
+        <Button href={card!.prUrl}>Open pull request</Button>
+      {/if}
+      <Button href={`/cards/${card!.id}/trace`}><Icon name="terminal" />View trace</Button>
     {/snippet}
     <div class="flex flex-col gap-6">
       {#if card.blockedReason === 'owner_github'}
@@ -122,91 +149,91 @@
           connection. Then unblock the card.
         </Notice>
       {/if}
-      {#if (card.actions ?? []).includes('instructions')}
-        <CardInstructions bind:card />
-      {/if}
-      <CardNotes notes={card.notes ?? []} />
-      {#if hasControls}
-        <Panel title="Next step">
-          <CardActions bind:card />
-        </Panel>
-      {/if}
-      <Panel title="People">
-        <ul class="flex flex-col gap-4">
-          {#if card.owner}
-            {@render person(card.owner, 'Owner')}
-          {:else}
-            <li class="flex items-center gap-3 text-sm text-muted"><Avatar person={null} />No owner</li>
-          {/if}
-          {#each card.reviewers ?? [] as reviewer (reviewer.id)}
-            {@render person(reviewer, 'Reviewer')}
-          {/each}
-        </ul>
-        {#if (card.reviewers ?? []).length === 0}
-          <p class="text-sm text-muted">
-            No reviewers. Reviewers come from the card's requirements.
-            {#if card.requirementIds.length > 0}
-              <a class="text-accent underline" href={`/intake/${card.requirementIds[0]}`}>Edit reviewers</a>
+      <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="flex min-w-0 flex-col gap-6" data-testid="card-main">
+          <Panel title="Next step">
+            {#if hasControls}
+              <CardActions bind:card />
+            {:else if card.queued}
+              <p class="text-sm text-muted">Queued. The card starts when the worker picks it up.</p>
+            {:else}
+              <p class="text-sm text-muted">No action is open for you right now.</p>
             {/if}
-          </p>
-        {/if}
-      </Panel>
-      <Panel title="Intake" hint="The requirements this card builds.">
-        {#if (card.requirements ?? []).length === 0}
-          <p class="text-sm text-muted">No requirements.</p>
-        {:else}
-          <ul class="flex flex-col divide-y divide-line">
-            {#each card.requirements ?? [] as requirement (requirement.id)}
-              <li class="py-3 first:pt-0 last:pb-0">
-                <a class="group block" href={`/intake/${requirement.id}`}>
-                  <span class="flex flex-wrap items-center gap-2">
-                    <span class="font-mono text-[13px] text-muted">{requirement.id}</span>
-                    {#if headingText(requirement)}
-                      <span class="text-sm font-medium text-ink group-hover:underline">{headingText(requirement)}</span>
-                    {/if}
-                    {#if !requirement.accepted}<Badge tone="amber">Draft</Badge>{/if}
-                  </span>
-                  <span class="mt-1 line-clamp-3 text-sm text-muted">{plainText(requirement.statement)}</span>
-                </a>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </Panel>
-      {#if card.context}
-        <CardContext bind:card />
-      {/if}
-      <Panel title="Details">
-        <dl class="grid gap-x-10 gap-y-5 sm:grid-cols-2">
-          {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
-          {@render item('Risk', card.risk)}
-          {@render item('Attempts', `${card.attemptsUsed} of ${card.maxAttempts}`)}
-          {#if card.branch}{@render item('Branch', card.branch, true)}{/if}
-          {#if card.prUrl}
-            <div class="min-w-0">
-              <dt class="text-xs text-muted">Pull request</dt>
-              <dd class="mt-1 break-words text-sm">
-                {#if linkable(card.prUrl)}
-                  <a class="text-accent underline" href={card.prUrl}>{card.prUrl}</a>
-                {:else}{card.prUrl}{/if}
-              </dd>
-            </div>
+          </Panel>
+          <CardPullRequest pullRequest={card.pullRequest ?? null} prUrl={card.prUrl} branch={card.branch} base={diff?.base ?? ''} />
+          <CardChanges {diff} error={diffError} />
+          <CardNotes notes={card.notes ?? []} />
+          {#if (card.actions ?? []).includes('instructions')}
+            <CardInstructions bind:card />
           {/if}
-          {#if card.localCheck}{@render item('Local check', card.localCheck, true)}{/if}
-          {#if card.devCheck}{@render item('Dev check', card.devCheck, true)}{/if}
-          {#if card.headSha}{@render item('Head SHA', card.headSha, true)}{/if}
-          {#if card.selfReview}{@render item('Approval', 'Self review: the owner approves alone')}{/if}
-          {#if card.aiReviewMode === 'manual'}{@render item('After AI review', 'A person reviews')}{/if}
-          {#if card.reviewVerdict}{@render item('AI review', verdictLabel(card.reviewVerdict), false, card.reviewVerdict === 'failed')}{/if}
-          {#if card.reviewedSha}{@render item('Reviewed SHA', card.reviewedSha, true)}{/if}
-          {#if card.reviewIndependent !== null}{@render item('Review independent', card.reviewIndependent ? 'yes' : 'no')}{/if}
-          {#if card.approvedSha}{@render item('Approved SHA', card.approvedSha, true)}{/if}
-          {#if card.deployedSha}{@render item('Deployed SHA', card.deployedSha, true)}{/if}
-          {#if card.failureReason}{@render item('Failure reason', reasonLabel(card.failureReason))}{/if}
-          {#if card.blockedReason}{@render item('Blocked reason', reasonLabel(card.blockedReason), false, true)}{/if}
-        </dl>
-      </Panel>
-      <CardChanges {diff} error={diffError} />
+          {#if card.context}
+            <CardContext bind:card />
+          {/if}
+        </div>
+        <aside class="flex min-w-0 flex-col gap-6" aria-label="Card details">
+          <Panel title="Details">
+            <dl class="flex flex-col gap-3">
+              {#if card.blockedReason}{@render item('Blocked reason', reasonLabel(card.blockedReason), false, true)}{/if}
+              {#if card.failureReason}{@render item('Failure reason', reasonLabel(card.failureReason))}{/if}
+              {#if card.reviewVerdict}{@render item('AI review', verdictLabel(card.reviewVerdict), false, card.reviewVerdict === 'failed')}{/if}
+              {#if card.reviewIndependent !== null}{@render item('Review independent', card.reviewIndependent ? 'yes' : 'no')}{/if}
+              {#if card.selfReview}{@render item('Approval', 'Self review: the owner approves alone')}{/if}
+              {#if card.aiReviewMode === 'manual'}{@render item('After AI review', 'A person reviews')}{/if}
+              {#if card.headSha}{@render sha('Head SHA', card.headSha)}{/if}
+              {#if card.reviewedSha}{@render sha('Reviewed SHA', card.reviewedSha)}{/if}
+              {#if card.approvedSha}{@render sha('Approved SHA', card.approvedSha)}{/if}
+              {#if card.deployedSha}{@render sha('Deployed SHA', card.deployedSha)}{/if}
+              {@render item('Attempts', `${card.attemptsUsed} of ${card.maxAttempts}`)}
+              {#if card.localCheck}{@render item('Local check', card.localCheck, true)}{/if}
+              {#if card.devCheck}{@render item('Dev check', card.devCheck, true)}{/if}
+              {@render item('Risk', card.risk)}
+              {@render item('Decisions', card.decisionIds.join(', ') || '—', true)}
+            </dl>
+          </Panel>
+          <Panel title="People">
+            <ul class="flex flex-col gap-4">
+              {#if card.owner}
+                {@render person(card.owner, 'Owner')}
+              {:else}
+                <li class="flex items-center gap-3 text-sm text-muted"><Avatar person={null} />No owner</li>
+              {/if}
+              {#each card.reviewers ?? [] as reviewer (reviewer.id)}
+                {@render person(reviewer, 'Reviewer')}
+              {/each}
+            </ul>
+            {#if (card.reviewers ?? []).length === 0}
+              <p class="text-sm text-muted">
+                No reviewers. Reviewers come from the card's requirements.
+                {#if card.requirementIds.length > 0}
+                  <a class="text-accent underline" href={`/intake/${card.requirementIds[0]}`}>Edit reviewers</a>
+                {/if}
+              </p>
+            {/if}
+          </Panel>
+          <Panel title="Intake" hint="The requirements this card builds.">
+            {#if (card.requirements ?? []).length === 0}
+              <p class="text-sm text-muted">No requirements.</p>
+            {:else}
+              <ul class="flex flex-col divide-y divide-line">
+                {#each card.requirements ?? [] as requirement (requirement.id)}
+                  <li class="py-3 first:pt-0 last:pb-0">
+                    <a class="group block" href={`/intake/${requirement.id}`}>
+                      <span class="flex flex-wrap items-center gap-2">
+                        <span class="font-mono text-[13px] text-muted">{requirement.id}</span>
+                        {#if headingText(requirement)}
+                          <span class="text-sm font-medium text-ink group-hover:underline">{headingText(requirement)}</span>
+                        {/if}
+                        {#if !requirement.accepted}<Badge tone="amber">Draft</Badge>{/if}
+                      </span>
+                      <span class="mt-1 line-clamp-3 text-sm text-muted">{plainText(requirement.statement)}</span>
+                    </a>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </Panel>
+        </aside>
+      </div>
     </div>
   </Page>
 {/if}

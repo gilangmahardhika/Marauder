@@ -178,12 +178,25 @@ func PRBody(in PRInput) string {
 	b.WriteString("## Review\n\n")
 	b.WriteString("The AI review is posted as a comment. A person approves the card in the orchestrator before merge.\n\n")
 
-	b.WriteString("<details><summary>Orchestrator metadata</summary>\n\n")
+	b.WriteString(prMetadataStart + "\n\n")
 	b.WriteString("<!-- orchestrator:metadata:start -->\n```text\n")
 	fmt.Fprintf(&b, "requirements: %s\nlocalCheck: %s\ncard: %s\nattempt: %s\nmodel: %s\ncommit: %s\n",
 		strings.Join(requirementIDs(in.Requirements), ", "), oneLine(in.LocalCheck), in.CardID, in.AttemptID, in.Model, in.CommitSHA)
 	b.WriteString("```\n<!-- orchestrator:metadata:end -->\n\n</details>")
 	return b.String()
+}
+
+const prMetadataStart = "<details><summary>Orchestrator metadata</summary>"
+
+// PRBodyForDisplay is a stored PR body as the card page shows it: without the
+// metadata block, whose HTML the page's markdown renders as text, and with the
+// untrustedText escape undone (RFC-110).
+func PRBodyForDisplay(body string) string {
+	if i := strings.LastIndex(body, prMetadataStart); i >= 0 {
+		body = body[:i]
+	}
+	body = strings.ReplaceAll(body, "&lt;!-- orchestrator:", "<!-- orchestrator:")
+	return strings.TrimSpace(body)
 }
 
 // splitCommit returns the subject and body of a commit message without the

@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -78,6 +79,84 @@ func TestCardDiff(t *testing.T) {
 	if _, err := app.ReadCardDiff(ctx, db, deps, "proj_other", card.ID); !errors.Is(err, board.ErrNotFound) {
 		t.Fatalf("other project err = %v", err)
 	}
+}
+
+type mergedDiffFixture struct {
+	db      *sql.DB
+	deps    app.JobDeps
+	git     string
+	repo    string
+	card    board.Card
+	head    string
+	oldMain string
+}
+
+// newMergedDiffFixture commits one card change on orch/card and leaves main
+// checked out where the card started.
+func newMergedDiffFixture(t *testing.T) mergedDiffFixture {
+	t.Helper()
+	ctx := context.Background()
+	f := mergedDiffFixture{db: boardtest.Open(t), git: lookGit(t)}
+	f.repo = tempRepo(t, f.git, map[string]string{"hello.txt": "hello job\n"})
+	f.oldMain = revParse(t, f.repo, f.git, "HEAD")
+	runGit(t, f.repo, f.git, "checkout", "-b", "orch/card")
+	writeFile(t, filepath.Join(f.repo, "hello.txt"), "hello done\n")
+	writeFile(t, filepath.Join(f.repo, "new.txt"), "new\n")
+	commitAll(t, f.repo, f.git, "say done")
+	f.head = revParse(t, f.repo, f.git, "HEAD")
+	runGit(t, f.repo, f.git, "checkout", "main")
+
+	if _, err := f.db.Exec(`UPDATE projects SET github_repo = 'widget', github_base = 'main', repo_path = $1 WHERE id = 'proj_default'`, f.repo); err != nil {
+		t.Fatal(err)
+	}
+	card, err := board.InsertCard(ctx, f.db, board.Card{Status: "approved"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE cards SET project_id = 'proj_default', head_sha = $2 WHERE id = $1`, card.ID, f.head); err != nil {
+		t.Fatal(err)
+	}
+	f.card = card
+	f.deps = app.JobDeps{Data: t.TempDir(), Key: tokenKey, Tools: app.Tools{Git: f.git}}
+	return f
+}
+
+func (f mergedDiffFixture) wantCardFiles(t *testing.T) {
+	t.Helper()
+	diff, err := app.ReadCardDiff(context.Background(), f.db, f.deps, "proj_default", f.card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff.SHA != f.head || diff.Missing {
+		t.Fatalf("diff = %+v", diff)
+	}
+	var paths []string
+	for _, file := range diff.Files {
+		paths = append(paths, file.Path)
+	}
+	if strings.Join(paths, " ") != "hello.txt new.txt" {
+		t.Fatalf("files = %v, want the card's two files", paths)
+	}
+}
+
+func TestCardDiffAfterMerge(t *testing.T) {
+	f := newMergedDiffFixture(t)
+	identity := []string{"-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "-c", "commit.gpgSign=false"}
+	runGit(t, f.repo, f.git, append(identity, "merge", "--no-ff", "-m", "Merge orch/card", "orch/card")...)
+	writeFile(t, filepath.Join(f.repo, "later.txt"), "later\n")
+	commitAll(t, f.repo, f.git, "later work")
+	f.wantCardFiles(t)
+}
+
+func TestCardDiffAfterFastForward(t *testing.T) {
+	f := newMergedDiffFixture(t)
+	runGit(t, f.repo, f.git, "merge", "--ff-only", "orch/card")
+	if err := board.InsertAttempt(context.Background(), f.db, board.Attempt{
+		ID: "att_ffbase000001", CardID: f.card.ID, N: 1, TaskClass: "implement", ModelID: "m", MaxTurns: 1, BaseSHA: f.oldMain,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.wantCardFiles(t)
 }
 
 func TestReviewIgnoresApprovalStatus(t *testing.T) {

@@ -276,6 +276,33 @@ func (g Git) NumStat(ctx context.Context, base, head string) ([]FileChange, erro
 	return out, nil
 }
 
+// IsAncestor reports whether ancestor is reachable from ref.
+func (g Git) IsAncestor(ctx context.Context, ancestor, ref string) bool {
+	_, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "merge-base", "--is-ancestor", "--end-of-options", ancestor, ref)...)
+	return err == nil
+}
+
+// MergedFrom returns the first parent of the merge commit that brought head
+// into ref: ref as it was just before the merge. It returns an error when no
+// merge on ref holds head, as after a fast-forward.
+func (g Git) MergedFrom(ctx context.Context, head, ref string) (string, error) {
+	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "rev-list", "--ancestry-path", "--merges", "--reverse",
+		"--end-of-options", head+".."+ref)...)
+	if err != nil {
+		return "", err
+	}
+	for _, merge := range strings.Fields(string(res.Out)) {
+		parent, err := g.RevParse(ctx, merge+"^1")
+		if err != nil {
+			return "", err
+		}
+		if !g.IsAncestor(ctx, head, parent) {
+			return parent, nil
+		}
+	}
+	return "", errors.New("no merge commit holds the head")
+}
+
 func (g Git) run(ctx context.Context, argv ...string) (execx.Result, error) {
 	return g.runEnv(ctx, gitEnv(g.Bin, g.Data), gitTimeout, argv...)
 }

@@ -1116,3 +1116,16 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] The fleet plan's Phase C points at RFC-0046.
 - [x] `TestRunnerChaos`
 - [x] The fixture and the full backend suite pass
+
+## Sprint 78: Card page for review
+
+- [x] `00029_attempt_pr_text.sql`; `Publish` stores the title and harness body; the single card returns `pullRequest`.
+- [x] The card page leads with Next step, Pull request, and Changes, with Details, People, and Intake in the sidebar.
+- [x] Approve names the short head SHA beside the AI review; Request changes is a button; Reject is under More actions.
+- [x] The Changes panel has line numbers, a file list, Expand all and Collapse all, Wrap lines, and screen-reader line labels.
+- [x] A merged card's diff runs against the base branch before the merge, so the Changes panel still shows its files.
+- [x] "View trace" is a secondary button with the terminal icon.
+- [x] `TestLatestPRText`, `TestPublishStoresPRText`, `TestPRBodyForDisplay`, `TestCardDetailPullRequest`
+- [x] `TestCardDiffAfterMerge`, `TestCardDiffAfterFastForward`
+- [x] `diff`, `CardChanges`, `CardPullRequest`, `CardActions`, and card page Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

@@ -11,10 +11,13 @@
     unblockCard
   } from '$lib/api';
   import { shell } from '$lib/shell.svelte';
+  import { verdictLabel, verdictTone } from '$lib/trace';
   import type { Card } from '$lib/types';
+  import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import Icon from '$lib/ui/Icon.svelte';
   import Menu from '$lib/ui/Menu.svelte';
   import Notice from '$lib/ui/Notice.svelte';
 
@@ -30,11 +33,16 @@
   let instructions = $state('');
   let instructionsError = $state('');
 
+  let choosing = $state(false);
+
   const actions = $derived(card.actions ?? []);
-  const menuItems = $derived([
-    ...(actions.includes('request_changes') ? [{ label: 'Request changes', onclick: () => (asking = true) }] : []),
-    ...(actions.includes('reject') ? [{ label: 'Reject', onclick: () => void run('Reject', () => rejectCard(card.id)) }] : [])
-  ]);
+  const menuItems = $derived(
+    actions.includes('reject') ? [{ label: 'Reject', onclick: () => void run('Reject', () => rejectCard(card.id)) }] : []
+  );
+
+  function short(value: string) {
+    return value.slice(0, 7);
+  }
 
   async function run(action: string, work: () => Promise<Card>) {
     busy = true;
@@ -135,36 +143,69 @@
       <p class="text-sm text-muted">The AI review gave no verdict. The worker runs it again on this commit.</p>
     </div>
   {/if}
+  {#snippet decisions()}
+    {#if actions.includes('deploy')}
+      <Button
+        variant={actions.includes('approve') ? 'secondary' : 'primary'}
+        type="button"
+        disabled={busy}
+        onclick={() => void run('Deploy approved SHA', () => deployCard(card.id))}
+      >
+        Deploy approved SHA
+      </Button>
+    {/if}
+    {#if actions.includes('request_changes') && !asking}
+      <Button type="button" disabled={busy} onclick={() => (asking = true)}>Request changes</Button>
+    {/if}
+    {#if menuItems.length > 0}
+      <Menu label="More actions" block={false} items={menuItems} />
+    {/if}
+  {/snippet}
   {#if actions.includes('approve')}
     <form
-      class="flex flex-col gap-1.5"
+      class="flex flex-col gap-3"
       onsubmit={(event) => {
         event.preventDefault();
         void run('Approve SHA', () => approveCard(card.id, sha));
       }}
     >
-      <div class="flex flex-wrap items-end gap-3">
-        <Field label="SHA" id="sha" width="md" mono bind:value={sha} />
-        <Button variant="primary" type="submit" disabled={busy}>Approve SHA</Button>
+      {#if card.reviewVerdict}
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+          <Badge tone={verdictTone(card.reviewVerdict)}>AI review: {verdictLabel(card.reviewVerdict)}</Badge>
+          {#if card.reviewedSha}
+            <span>on <span class="font-mono text-ink" title={card.reviewedSha}>{short(card.reviewedSha)}</span></span>
+            {#if card.headSha && card.reviewedSha !== card.headSha}
+              <span class="text-amber-800">The head moved after the review.</span>
+            {/if}
+          {/if}
+        </p>
+      {/if}
+      <div class="flex flex-wrap items-center gap-2">
+        <Button variant="primary" type="submit" disabled={busy}>{sha.trim() ? `Approve ${short(sha.trim())}` : 'Approve SHA'}</Button>
+        {@render decisions()}
       </div>
+      {#if card.headSha}
+        <button
+          type="button"
+          class="inline-flex min-h-11 w-fit items-center gap-1.5 text-sm text-muted hover:text-ink hover:underline"
+          aria-expanded={choosing}
+          aria-controls="approve-sha"
+          onclick={() => (choosing = !choosing)}
+        >
+          <Icon name="chevron" class="size-4 transition-transform {choosing ? 'rotate-180' : ''}" />
+          Approve a different SHA
+        </button>
+      {/if}
+      {#if choosing || !card.headSha}
+        <div id="approve-sha">
+          <Field label="SHA" id="sha" width="md" mono hint="The full commit SHA a person approves." bind:value={sha} />
+        </div>
+      {/if}
       {#if shaError}<p class="error text-xs">{shaError}</p>{/if}
     </form>
-  {/if}
-  {#if actions.includes('deploy') || menuItems.length > 0}
+  {:else if actions.includes('deploy') || actions.includes('request_changes') || menuItems.length > 0}
     <div class="flex flex-wrap items-center gap-2">
-      {#if actions.includes('deploy')}
-        <Button
-          variant={actions.includes('approve') ? 'secondary' : 'primary'}
-          type="button"
-          disabled={busy}
-          onclick={() => void run('Deploy approved SHA', () => deployCard(card.id))}
-        >
-          Deploy approved SHA
-        </Button>
-      {/if}
-      {#if menuItems.length > 0}
-        <Menu label="Actions" block={false} items={menuItems} />
-      {/if}
+      {@render decisions()}
     </div>
   {/if}
   {#if asking && actions.includes('request_changes')}

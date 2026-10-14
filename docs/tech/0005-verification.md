@@ -302,6 +302,12 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardReviewers` | The board and the card route list the requirement reviewers sorted by email, without the owner, with `githubLogin` `""` when unverified. A card in another project naming the same requirement id has `"reviewers": []` |
 | `TestCardDetail` | The single card returns `requirements` from its own project only, `rules` labelled `global` and by stack, and `skills[].useWhen`. The board list has no `requirements` or `rules`. Unblock returns the same detail fields |
 | `TestCardDetailNotes` | The single card returns `notes` newest first with source, text, and `attemptN`, `0` for an approver note. A note stored under another project is left out. The board list has no `notes` |
+| `TestCardDetailPullRequest` | The single card returns `"pullRequest": null` before publish. After an attempt stores `pr_title` and `pr_body`, it returns the title, `attemptN`, `sha`, and the body without the metadata `<details>` block. The board list has no `pullRequest` (RFC-110) |
+| `TestLatestPRText` | `LatestPRText` returns nothing before publish, the newest attempt with a stored title, and nothing for another project |
+| `TestPublishStoresPRText` | `Publish` stores the title it sent and the body with the owner token redacted on its attempt, with the attempt's `n` and commit |
+| `TestCardDiffAfterMerge` | After the card branch merges into `main` with a merge commit and `main` moves on, the diff still lists the card's files against `main` before the merge |
+| `TestCardDiffAfterFastForward` | After `main` fast-forwards to the card head, the diff lists the card's files against the first attempt's `base_sha` |
+| `TestPRBodyForDisplay` | The display body drops the "Orchestrator metadata" block, keeps the sections, undoes the `&lt;!-- orchestrator:` escape, and leaves a body without metadata trimmed and otherwise unchanged |
 | `TestCardPeopleNames` | The card route returns `owner.name` and `reviewers[].name`. A reviewer without a name has `"name": ""` (RFC-058) |
 | `TestReviewersSetByCreator` | The creator and a Lead Developer set reviewers on a parsed row. Another Developer is `403`. A non-member reviewer or the creator is `422`, and an unverified tribe member is accepted (RFC-103) |
 | `TestReviewerOptionsUnverified` | The intake's `reviewerOptions` lists an enabled member without a verified login with an empty `githubLogin`, and leaves out a disabled member and a non-member (RFC-103) |

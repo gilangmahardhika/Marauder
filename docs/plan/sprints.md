@@ -1065,3 +1065,18 @@ Packages: `internal/runner`, docs.
 - The fleet plan's Phase C points at RFC-0046.
 
 Done when: `TestRunnerChaos`, the fixture, and the rest of the suite.
+
+## Sprint 78: Card page for review
+
+Goal: The card page leads with the next step, shows the pull request title and description the harness published, and makes the diff readable (RFC-110, REQ-071).
+
+Packages: `internal/board`, `internal/app`, `internal/httpapi`, `migrations`, frontend card page.
+
+- `00029_attempt_pr_text.sql`; `Publish` stores the title and harness body on the attempt; the single card returns `pullRequest`.
+- The card page: header links, two columns with Next step, Pull request, and Changes first, and Details, People, and Intake in the sidebar.
+- `CardActions`: Approve names the short head SHA beside the AI review, Request changes is a button, Reject is under More actions.
+- `CardChanges`: line numbers, a file list by folder, Expand all and Collapse all, Wrap lines, sticky file headers, and screen-reader line labels.
+- `ReadCardDiff` diffs a head already in the base branch against the branch before the merge, or the first attempt's base after a fast-forward, so a merged card still shows its changes.
+- "View trace" is a secondary button with the terminal icon.
+
+Done when: `TestLatestPRText`, `TestPublishStoresPRText`, `TestPRBodyForDisplay`, `TestCardDetailPullRequest`, `TestCardDiffAfterMerge`, `TestCardDiffAfterFastForward`, the `diff`, `CardChanges`, `CardPullRequest`, `CardActions`, and card page Vitest files, `npm run check`, and the rest of the suite.
