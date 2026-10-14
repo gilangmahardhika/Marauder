@@ -246,11 +246,15 @@ func TestRunCommandCannotPassGate(t *testing.T) {
 func TestRunCommandRedactsOutput(t *testing.T) {
 	secret := "sk-live-0123456789abcdef"
 	var out strings.Builder
-	out.WriteString("token " + secret + " in the head\n")
+	out.WriteString("token ")
+	out.WriteString(secret)
+	out.WriteString(" in the head\n")
 	for i := 0; i < 300; i++ {
 		out.WriteString("line\n")
 	}
-	out.WriteString("--- FAIL: TestX token=" + secret + "\n")
+	out.WriteString("--- FAIL: TestX token=")
+	out.WriteString(secret)
+	out.WriteString("\n")
 	s := commandSession(t, []string{"go"}, func(context.Context, execx.Child) (execx.Result, error) {
 		return execx.Result{Exit: 1, Out: []byte(out.String())}, nil
 	})

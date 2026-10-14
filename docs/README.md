@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-094`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-097`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -55,6 +55,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0048-squash-merge.md](rfc/0048-squash-merge.md) | Decision `RFC-111`. A project turns deploy off, and an approved card is then squash-merged on GitHub by a person and moves to Done |
 | [rfc/0049-wont-fix.md](rfc/0049-wont-fix.md) | Decision `RFC-112`. A blocked card is closed as won't fix with a reason, its open pull request is closed, the board hides it, and Reopen returns it to Blocked |
 | [rfc/0050-push-notifications.md](rfc/0050-push-notifications.md) | Decision `RFC-113`. Board changes are pushed to open pages over one stream, and the people a card waits on get a notification in the bell and in the browser |
+| [rfc/0051-agent-questions.md](rfc/0051-agent-questions.md) | Decisions `RFC-114` and `RFC-115`. The implementer asks the team questions; a Manual card waits for a person's answer and an Auto card takes the agent's suggestion |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -24,6 +24,8 @@ export type Card = {
   context?: CardContext;
   /** Single card only. The pull request text the card last published, `null` before it publishes (RFC-110). */
   pullRequest?: CardPullRequest | null;
+  /** Single card only. The agent's questions, open ones first (RFC-114). */
+  questions?: CardQuestion[];
   requirementIds: string[];
   decisionIds: string[];
   dependsOn: string[];
@@ -49,6 +51,8 @@ export type Card = {
   selfReview: boolean;
   /** `manual` when any requirement of the card is manual (RFC-072). */
   aiReviewMode: AIReviewMode;
+  /** Whether a person or the agent answers the agent's questions (RFC-115). */
+  questionMode: QuestionMode;
   approvedSha: string | null;
   deployedSha: string | null;
   environment: string;
@@ -56,6 +60,30 @@ export type Card = {
   blockedReason: string | null;
   updatedAt: string;
 };
+
+export type QuestionMode = "manual" | "auto";
+
+export type QuestionAnswer = { selected: string[]; text: string };
+
+/** One question the agent asked on the card (RFC-114). `answer` is `null` while it is open. */
+export type CardQuestion = {
+  id: string;
+  attemptN: number;
+  question: string;
+  kind: "single" | "multiple" | "text";
+  options: string[];
+  allowOther: boolean;
+  recommended: QuestionAnswer;
+  why: string;
+  answer: QuestionAnswer | null;
+  answerSource: "person" | "suggestion" | "auto" | null;
+  answeredBy: { id: string; name: string; email: string } | null;
+  answeredAt: string | null;
+  createdAt: string;
+};
+
+/** One entry of the answers route body. */
+export type GivenAnswer = { questionId: string; selected: string[]; text: string };
 
 /** The title and harness description of the published pull request, without the metadata block. */
 export type CardPullRequest = {

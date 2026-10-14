@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -225,7 +226,12 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	if engine == "" {
 		engine = "podman"
 	}
+	rounds, err := board.QuestionRounds(ctx, db, card.ID)
+	if err != nil {
+		return runnerapi.Job{}, err
+	}
 	return runnerapi.Job{
+		QuestionMode: card.QuestionMode, QuestionRounds: rounds,
 		CardID: card.ID, ProjectID: card.ProjectID, Title: card.Title, Status: card.Status,
 		BaseBranch: base, CloneURL: p.acct.CloneURL(p.project.Repo), CloneToken: p.companyToken,
 		Author:          runnerapi.Author{Name: p.owner.Author.Name, Email: p.owner.Author.Email},
@@ -279,6 +285,13 @@ func RemoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		reply.Lines[i] = redact(reply.Lines[i])
 	}
 	reply.Text = redact(reply.Text)
+	for i := range reply.Questions {
+		q := &reply.Questions[i]
+		q.Question, q.Why = redact(q.Question), redact(q.Why)
+		if q.Answer != nil {
+			q.Answer.Text = redact(q.Answer.Text)
+		}
+	}
 	for i := range reply.Conventions {
 		reply.Conventions[i].Body = redact(reply.Conventions[i].Body)
 		reply.Conventions[i].Title = redact(reply.Conventions[i].Title)
@@ -323,7 +336,7 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		if err := needAttempt(); err != nil {
 			return reply, err
 		}
-		if !slices.Contains([]string{"", "error", "no_change", "budget", "no_commit"}, op.Outcome) {
+		if !slices.Contains([]string{"", "error", "no_change", "budget", "no_commit", "question"}, op.Outcome) {
 			return reply, fmt.Errorf("%w: outcome %q", ErrRunnerOp, op.Outcome)
 		}
 		err = board.FinishAttempt(ctx, db, lease.AttemptID, op.Outcome, op.CommitSHA)
@@ -372,6 +385,33 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		reply.Text, err = dbBoard.LatestNote(ctx, card.ID)
 	case "instructions":
 		reply.Text, err = dbBoard.Instructions(ctx, card.ID)
+	case "answers":
+		reply.Questions, err = dbBoard.Answers(ctx, card.ID)
+	case "ask_questions":
+		if err := needAttempt(); err != nil {
+			return reply, err
+		}
+		questions, err := remoteQuestions(op.Questions)
+		if err != nil || op.First < 0 {
+			return reply, fmt.Errorf("%w: ask_questions: %v", ErrRunnerOp, err)
+		}
+		job, err := jobs.get(ctx, db, deps, lease)
+		if err != nil {
+			return reply, err
+		}
+		redact := func(s string) string { return trace.Redact(s, job.p.redact) }
+		for i := range questions {
+			q := &questions[i]
+			q.Question, q.Why, q.Recommended.Text = redact(q.Question), redact(q.Why), redact(q.Recommended.Text)
+			for j := range q.Options {
+				q.Options[j] = redact(q.Options[j])
+			}
+			for j := range q.Recommended.Selected {
+				q.Recommended.Selected[j] = redact(q.Recommended.Selected[j])
+			}
+		}
+		err = board.InsertQuestions(ctx, db, card.ID, lease.AttemptID, op.First, questions, op.Auto)
+		return reply, err
 	case "conventions":
 		var convs []runnerapi.Convention
 		items, refs, cerr := dbBoard.Conventions(ctx, card.ProjectID, card.ID)
@@ -386,6 +426,20 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		return reply, fmt.Errorf("%w: op %q", ErrRunnerOp, op.Op)
 	}
 	return reply, err
+}
+
+// remoteQuestions checks a runner's questions with the rules ask_user
+// applies, so a runner cannot store what a local attempt could not.
+func remoteQuestions(questions []board.Question) ([]board.Question, error) {
+	raw, err := json.Marshal(questions)
+	if err != nil {
+		return nil, err
+	}
+	var items []any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+	return loop.ParseQuestions(map[string]any{"questions": items})
 }
 
 // RemoteModel runs one model call of a lease's attempt with the lease's
@@ -607,6 +661,11 @@ func ReportRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJob
 				return runnerapi.ReportReply{}, fmt.Errorf("%w: budget reason %q", ErrRunnerOp, rep.Reason)
 			}
 			return done(BlockCard(ctx, db, card, rep.Reason, p.redact))
+		case "question":
+			if err := needLeaseAttempt(lease); err != nil {
+				return runnerapi.ReportReply{}, err
+			}
+			return done(move(ctx, db, card, "waiting_answer", machine.Evidence{AttemptID: lease.AttemptID}, p.redact))
 		case "", "no_change":
 			if err := needLeaseAttempt(lease); err != nil {
 				return runnerapi.ReportReply{}, err

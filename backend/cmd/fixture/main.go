@@ -19,6 +19,7 @@ import (
 	"orchestrator/backend/internal/contextpack"
 	"orchestrator/backend/internal/deploy"
 	"orchestrator/backend/internal/envfile"
+	"orchestrator/backend/internal/identity"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/machine"
@@ -147,6 +148,9 @@ func run() error {
 		return err
 	}
 	if err := budgetCaps(ctx, db, g); err != nil {
+		return err
+	}
+	if err := questions(ctx, db, g); err != nil {
 		return err
 	}
 	out, err := exec.Command(gitBin, "-C", repo, "status", "--porcelain").Output()
@@ -599,6 +603,69 @@ func budgetCaps(ctx context.Context, db *sql.DB, g runtime.Git) error {
 		if stops != 1 {
 			return fmt.Errorf("budget caps: %s budget_stop events = %d", c.cap, stops)
 		}
+	}
+	return nil
+}
+
+// questions parks a Manual card on an ask_user call, answers it with the
+// suggestions, and checks that the next attempt's pack carries the answer
+// (RFC-114).
+func questions(ctx context.Context, db *sql.DB, g runtime.Git) error {
+	card, err := board.InsertCard(ctx, db, board.Card{Title: "Pick a format", Status: "backlog", LocalCheck: "check.sh"})
+	if err != nil {
+		return err
+	}
+	for _, to := range []string{"ready", "in_progress"} {
+		if card, err = walk(ctx, db, card, to, machine.Evidence{}); err != nil {
+			return fmt.Errorf("questions: %w", err)
+		}
+	}
+	defer removeWorktree(g, card.ID)
+	ask, err := fake.Load([]byte(`{"implement":[{"tool":"ask_user","questions":[{"question":"Which export format?","kind":"single",
+		"options":["CSV","Excel"],"recommended":{"selected":["CSV"]},"why":"The requirement names CSV."}]}]}`))
+	if err != nil {
+		return err
+	}
+	in := loop.Input{DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement", MaxTurns: 3,
+		Provider: ask, Allow: []string{"true", "false"}, QuestionMode: "manual"}
+	result, err := app.RunImplementer(ctx, in)
+	if err != nil {
+		return fmt.Errorf("questions: %w", err)
+	}
+	if result.Outcome != "question" || len(ask.Prompts()) != 1 {
+		return fmt.Errorf("questions: attempt ended %q after %d model calls", result.Outcome, len(ask.Prompts()))
+	}
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil {
+		return err
+	}
+	if card, err = walk(ctx, db, card, "waiting_answer", machine.Evidence{AttemptID: result.AttemptID}); err != nil {
+		return fmt.Errorf("questions: %w", err)
+	}
+	qa, err := identity.Insert(ctx, db, "qa@example.com", "password-long-1", "qa", false)
+	if err != nil {
+		return err
+	}
+	card, err = app.AnswerQuestions(ctx, db, app.User{ID: qa.ID, Role: "qa"}, card.ProjectID, card.ID, nil, true)
+	if err != nil {
+		return fmt.Errorf("questions: %w", err)
+	}
+	if card.Status != "ready" || card.AttemptsUsed != 0 {
+		return fmt.Errorf("questions: answered card is %s used %d", card.Status, card.AttemptsUsed)
+	}
+	if card, err = walk(ctx, db, card, "in_progress", machine.Evidence{}); err != nil {
+		return fmt.Errorf("questions: %w", err)
+	}
+	next, err := fake.Load([]byte(`{"implement":[{"text":"done"}]}`))
+	if err != nil {
+		return err
+	}
+	in.Provider = next
+	if _, err := app.RunImplementer(ctx, in); err != nil {
+		return fmt.Errorf("questions: %w", err)
+	}
+	user := next.Prompts()[0].User
+	if !strings.Contains(user, contextpack.AnswersHeading) || !strings.Contains(user, "answer: CSV\nsource: suggestion") {
+		return errors.New("questions: the next pack lacks the answer")
 	}
 	return nil
 }

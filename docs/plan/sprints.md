@@ -1193,3 +1193,31 @@ Packages: frontend `lib/ui/Button.svelte`, `lib/ui/icons.ts`, `app.css`, every p
 - Thin themed scrollbars, `.scrollbar-dark` for the terminal view, and a stable gutter.
 
 Done when: the `Button` Vitest cases, `npm run check`, the rest of the suite, and a browser pass over the board, a card, a form error, and a toast.
+
+## Sprint 88: The agent asks
+
+Goal: The implementer asks the team questions, a Manual card waits for the answer, and an Auto card takes the agent's suggestion (RFC-114, RFC-115, REQ-097).
+
+Packages: `internal/machine`, `internal/loop`, `internal/board`, `internal/contextpack`, `internal/app`, `internal/httpapi`, `internal/notify`, `internal/runnerapi`, `internal/runner`.
+
+- Migration 32: `waiting_answer`, outcome `question`, `cards.question_mode`, and `card_questions`.
+- `in_progress -> waiting_answer`, `waiting_answer -> ready`, and `waiting_answer -> blocked`.
+- `ask_user` with `ParseQuestions` and `CheckAnswer`, the commit rule, the per-attempt and per-card caps, and both modes; `Board.AskQuestions` and `Board.Answers` locally and through a runner op.
+- `ImplementCard` and the runner report move a `question` outcome to `waiting_answer` without counting the attempt.
+- `ANSWERS FROM THE TEAM` in the implementer pack.
+- `POST .../answers`, `PUT .../question-mode`, `questionMode` and `questions` in the card JSON, and the `answer` and `question_mode` actions.
+- The `question` notification to the owner.
+
+Done when: `TestWaitingAnswerEdges`, `TestAskUserValidation`, `TestAskUserParksCard`, `TestAskUserAutoAnswers`, `TestAskUserAfterCommitRejected`, `TestQuestionRoundCap`, `TestQuestionAttemptNotCounted`, `TestAnswerQueuesRun`, `TestAnswerValidation`, `TestAnswerSuggestions`, `TestQuestionModeRights`, `TestPackIncludesAnswers`, `TestQuestionNotifiesOwner`, `TestRunnerQuestionOutcome`, `go run ./cmd/fixture`, and the rest of the suite.
+
+## Sprint 89: Answering on the card page
+
+Goal: A person answers the agent's questions on the card page and chooses the card's answer mode (RFC-114, RFC-115, REQ-097).
+
+Packages: frontend `lib/types.ts`, `lib/api.ts`, `lib/status.ts`, `lib/components`, the card page.
+
+- `CardQuestions.svelte` in Next step for the `answer` action, with single, multiple, text, and Other answers, the agent's suggestion, Let the agent decide, and earlier questions.
+- `QuestionModeField.svelte` at the top of Details.
+- "Needs answer" status label.
+
+Done when: the `CardQuestions`, `QuestionModeField`, card page, and `status` Vitest cases, `npm run check`, and the rest of the suite.

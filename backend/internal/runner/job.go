@@ -207,6 +207,7 @@ func (j *job) attempt(ctx context.Context) (runnerapi.ReportReply, error) {
 		Engine: j.engine, Image: j.ctx.SandboxImage, Exec: j.r.Tools.Exec,
 		HistoryBudget: j.ctx.HistoryBudget, MaxTokensPerCard: j.ctx.MaxTokensPerCard,
 		Extra: extra, MCP: scope, Board: b, Fixture: j.ctx.Fixture,
+		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds,
 	})
 	if err != nil {
 		if ctx.Err() != nil {

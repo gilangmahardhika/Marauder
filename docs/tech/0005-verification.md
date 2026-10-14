@@ -378,6 +378,20 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestPushEndpointGuard` | Each allowlisted push host is accepted; `http`, IP literals, metadata addresses, lookalike hosts, user info, other ports, fragments, and over-long URLs are refused (RFC-113) |
 | `TestPushGone` | Against a TLS stub, a `410` deletes that subscription, five `500`s in a row delete another, success keeps one; the request carries `vapid` auth and `aes128gcm`, and the decrypted payload is exactly `title`, `body`, `url`, and `tag` (RFC-113) |
 | `TestVAPIDKeySecret` | The first `serve` writes `vapidPrivateKey` to `secrets.json`, a second keeps it, an LLM settings save keeps it, and `GET /api/push/key` returns the public key and never the private one (RFC-113) |
+| `TestWaitingAnswerEdges` | `in_progress -> waiting_answer` without an attempt id is `ErrEvidence`; `waiting_answer -> ready` needs an actor; `waiting_answer -> blocked` needs a reason; `waiting_answer -> in_progress` is rejected (RFC-114) |
+| `TestAskUserValidation` | Six questions, a `single` question with one option, repeated options, options on a `text` question, and a suggestion that is not one of the options each return `error: ask_user: ...` and store nothing; the attempt goes on (RFC-114) |
+| `TestAskUserParksCard` | A Manual card's attempt that calls `ask_user` makes no further model call, finishes with outcome `question`, stores the questions open with the attempt's redaction applied, and the card is `waiting_answer` with `attempts_used` unchanged and no check run (RFC-114) |
+| `TestAskUserAutoAnswers` | An Auto card's `ask_user` stores the questions with `answer_source` `auto` and the suggestion as answer, the tool result starts `No person answers on this card.`, and the attempt goes on to commit and `pr_open`; a fourth call in one attempt is a tool error (RFC-115) |
+| `TestAskUserAfterCommitRejected` | `ask_user` after `commit` replies `error: ask_user is not available after commit` and stores nothing |
+| `TestQuestionRoundCap` | A Manual card with three `question` attempts gets the cap error, stores nothing, and the attempt goes on |
+| `TestQuestionAttemptNotCounted` | After a parked attempt and an answer, the next attempt's `n` rises and `attempts_used` counts only that attempt |
+| `TestAnswerQueuesRun` | Answering every open question stores each answer with the caller and source `person`, moves the card to `ready`, inserts one open card-scoped run, appends `questions_answered`, and the card JSON lists `queued: true` (RFC-114) |
+| `TestAnswerValidation` | A missing question, an unknown id, two options on `single`, text on `single` without `allowOther`, an option not listed, and empty `text` are each `422` on `answers.{n}` or `answers` with the card still `waiting_answer`; a `ready` card is `409`; a Product Owner is `403` |
+| `TestAnswerSuggestions` | `{ useSuggestions: true }` stores each suggestion with source `suggestion` and queues the run |
+| `TestQuestionModeRights` | A Developer sets `auto` and a `question_mode_changed` event is appended; a Product Owner is `403`; `sometimes` is `422`; a `done` card is `409`; the card JSON carries `questionMode` and lists `question_mode` only for the allowed roles (RFC-115) |
+| `TestPackIncludesAnswers` | The next attempt's pack holds `ANSWERS FROM THE TEAM` with each answered question, its answer, and its source, inside the untrusted markers, and an open question is not in it (RFC-114) |
+| `TestQuestionNotifiesOwner` | `-> waiting_answer` gives the owner one `question` notification titled "Agent has a question" with push on, and no one else (RFC-114) |
+| `TestRunnerQuestionOutcome` | A runner's report with outcome `question` moves its lease card to `waiting_answer` without counting the attempt; the questions op writes rows only for the lease's attempt and card (RFC-114) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

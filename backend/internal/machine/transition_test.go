@@ -18,6 +18,9 @@ func TestEdgesMatchPRD(t *testing.T) {
 		{"ready", "in_progress"}:              {},
 		{"in_progress", "self_check"}:         {},
 		{"in_progress", "blocked"}:            {},
+		{"in_progress", "waiting_answer"}:     {},
+		{"waiting_answer", "ready"}:           {},
+		{"waiting_answer", "blocked"}:         {},
 		{"self_check", "in_progress"}:         {},
 		{"self_check", "pr_open"}:             {},
 		{"self_check", "blocked"}:             {},
@@ -200,6 +203,50 @@ func TestApprovedToDone(t *testing.T) {
 	}
 	if n := countGates(t, db, card.ID); n != 0 {
 		t.Fatalf("gates = %d, want 0: a merge is not a dev test", n)
+	}
+}
+
+func TestWaitingAnswerEdges(t *testing.T) {
+	db := boardtest.Open(t)
+	card := insertCard(t, db, "in_progress")
+	if _, err := apply(t, db, card, "waiting_answer", machine.Evidence{}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without an attempt", err)
+	}
+	waiting, err := apply(t, db, card, "waiting_answer", machine.Evidence{AttemptID: "att_1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if waiting.Status != "waiting_answer" {
+		t.Fatalf("status = %s, want waiting_answer", waiting.Status)
+	}
+	for _, to := range []string{"in_progress", "self_check", "pr_open", "done"} {
+		if _, err := apply(t, db, waiting, to, machine.Evidence{ActorID: "usr_ada", AttemptID: "att_1"}); !errors.Is(err, machine.ErrIllegal) {
+			t.Fatalf("waiting_answer -> %s: err = %v, want ErrIllegal", to, err)
+		}
+	}
+	if _, err := apply(t, db, waiting, "ready", machine.Evidence{}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without an actor", err)
+	}
+	ready, err := apply(t, db, waiting, "ready", machine.Evidence{ActorID: "usr_ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready.Status != "ready" {
+		t.Fatalf("status = %s, want ready", ready.Status)
+	}
+	other := insertCard(t, db, "waiting_answer")
+	if _, err := apply(t, db, other, "blocked", machine.Evidence{ActorID: "usr_ada"}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without a reason", err)
+	}
+	blocked, err := apply(t, db, other, "blocked", machine.Evidence{Reason: "source_changed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Status != "blocked" || blocked.BlockedReason != "source_changed" {
+		t.Fatalf("blocked = %s %q, want blocked with source_changed", blocked.Status, blocked.BlockedReason)
+	}
+	if n := countGates(t, db, card.ID); n != 0 {
+		t.Fatalf("gates = %d, want 0", n)
 	}
 }
 

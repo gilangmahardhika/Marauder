@@ -45,6 +45,7 @@ function card(partial: Partial<Card>): Card {
     reviewVerdict: null,
     selfReview: false,
     aiReviewMode: 'continue',
+    questionMode: 'manual',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

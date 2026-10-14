@@ -139,6 +139,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-094 | An operator installs runners that claim implement jobs, and an admin sees each runner's status |
 | REQ-095 | People who must act on a card are notified, and open pages update without polling |
 | REQ-096 | Feedback appears where the person acts |
+| REQ-097 | The implementer asks the team questions, and each card chooses whether a person or the agent answers |
 
 ## Requirements
 
@@ -1328,6 +1329,19 @@ A person sees the result of what they did next to where they did it. A form that
 - A wrong current password on the Account page is a field error and does not sign the person out.
 - A success or an error from an action with no form shows as a toast, announced to screen readers, that the person can dismiss.
 - Every control and toast button is at least 44px tall, and an icon on a button never changes its accessible name.
+
+### REQ-097 Agent questions
+
+The implementer asks the team up to five questions when the card leaves a choice open. A question offers options with one answer or several, and the person may write their own answer. Each card has an answer mode. With Manual, the default, the attempt ends without using an attempt, the card waits for an answer, and the owner is notified. A person answers on the card page, or lets the agent's suggestions stand, and the next attempt reads every answer. With Auto, the agent's own suggested answer is recorded and the attempt goes on (RFC-114, RFC-115).
+
+#### Acceptance
+
+- A Manual card whose attempt asks moves to `waiting_answer`, keeps its attempt count, and notifies its owner.
+- Answering every open question moves the card to `ready` and queues a run, and the next attempt's pack carries each question and answer.
+- A single-choice answer takes exactly one option or, where allowed, the person's own text; a missing or unknown answer is `422` and the card does not move.
+- An Auto card records the agent's suggestion as the answer, marked Auto, and the attempt continues.
+- A person who may run the card changes its answer mode; another role gets `403`, and the change applies from the next attempt.
+- The agent cannot ask after it commits, nor more than three times on a Manual card.
 
 ## Non-goals
 

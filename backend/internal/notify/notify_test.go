@@ -404,6 +404,19 @@ func TestRecipients(t *testing.T) {
 	}
 }
 
+func TestQuestionNotifiesOwner(t *testing.T) {
+	f := newRecipients(t)
+	if got := f.recipients(t, "in_progress", "waiting_answer", ""); got != "owner:question:Agent has a question+push" {
+		t.Fatalf("waiting answer = %s", got)
+	}
+	if got := f.recipients(t, "in_progress", "waiting_answer", "owner"); got != "" {
+		t.Fatalf("waiting answer by the owner = %s", got)
+	}
+	if got := f.recipients(t, "waiting_answer", "ready", "dev"); got != "" {
+		t.Fatalf("answered = %s", got)
+	}
+}
+
 func TestFanoutOnce(t *testing.T) {
 	f := newRecipients(t)
 	ctx := context.Background()

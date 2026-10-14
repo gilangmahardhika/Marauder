@@ -548,6 +548,10 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		if rights, err := app.CardContextRightsFor(r.Context(), s.DB, user, card.ProjectID); err == nil {
 			if rights.Change {
 				actions = append(actions, "context")
+				if card.Status == "waiting_answer" {
+					actions = append(actions, "answer")
+				}
+				actions = append(actions, "question_mode")
 			}
 			if rights.AttachMCP {
 				actions = append(actions, "attach-mcp")
@@ -589,7 +593,8 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
 		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
 		"reviewVerdict": reviewVerdict, "selfReview": selfReview, "aiReviewMode": reviewMode,
-		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
+		"questionMode": card.QuestionMode,
+		"approvedSha":  nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,
 	}

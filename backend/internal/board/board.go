@@ -56,6 +56,8 @@ type Card struct {
 	DependsOn      []string
 	CreatedAt      string
 	UpdatedAt      string
+	// QuestionMode is manual or auto: who answers the agent's questions (RFC-115).
+	QuestionMode string
 }
 
 type StatusWrite struct {
@@ -197,14 +199,15 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 			COALESCE(approved_sha, ''), COALESCE(deployed_sha, ''),
 			COALESCE(blocked_reason, ''), COALESCE(failure_reason, ''),
 			COALESCE(local_check, ''), COALESCE(dev_check, ''),
-			requirement_ids_json, depends_on_json, created_at, updated_at, COALESCE(owner_id, '')
+			requirement_ids_json, depends_on_json, created_at, updated_at, COALESCE(owner_id, ''),
+			question_mode
 		FROM cards WHERE id = $1`, id).Scan(
 		&card.ID, &card.ProjectID, &card.Title, &card.Status, &card.Risk, &card.Manual,
 		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
 		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
 		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,
 		&card.LocalCheck, &card.DevCheck, &reqJSON, &depJSON, &card.CreatedAt, &card.UpdatedAt,
-		&card.OwnerID,
+		&card.OwnerID, &card.QuestionMode,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound

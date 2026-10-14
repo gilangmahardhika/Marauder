@@ -129,6 +129,31 @@ func ImplementerTools() []providers.Tool {
 			}, "argv"),
 		},
 		{
+			Name: "ask_user",
+			Description: "Ask the team up to 5 questions when the requirements leave a product choice open that the code and the earlier answers cannot settle. " +
+				"Ask before you edit files: on a card where a person answers, the attempt ends after this call and uncommitted edits are discarded, and the next attempt starts with the answers. " +
+				"On a card where the agent decides, your recommended answers are recorded and returned, and you go on. " +
+				"Give each question your recommended answer and why. Not available after commit.",
+			Parameters: object(map[string]any{
+				"questions": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": maxQuestions, "description": "The questions, most important first",
+					"items": object(map[string]any{
+						"question": str("The question, at most 500 characters"),
+						"kind": map[string]any{"type": "string", "enum": questionKinds,
+							"description": "single: exactly one option; multiple: one or more options; text: a written answer with no options"},
+						"options": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": maxOptions,
+							"description": "2 to 8 distinct options of at most 120 characters for single and multiple; none for text"},
+						"allowOther": boolean("Let the person write their own answer beside or instead of the options"),
+						"recommended": object(map[string]any{
+							"selected": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The options you recommend"},
+							"text":     str("Your recommended written answer, for text questions or an other answer"),
+						}),
+						"why": str("Why you recommend that answer, in one or two sentences"),
+					}, "question", "kind", "recommended"),
+				},
+			}, "questions"),
+		},
+		{
 			Name:        "commit",
 			Description: "Commit every change in the worktree. Call it once the work is done and the local check passes.",
 			Parameters:  object(map[string]any{"message": str("Subject of at most 72 characters in the imperative mood, a blank line, then what changed and why")}, "message"),
@@ -202,6 +227,11 @@ type Input struct {
 	// Fixture runs checks as fixture commands, as runtime.FixtureMode does
 	// for the fixture repo path.
 	Fixture bool
+	// QuestionMode is the card's answer mode when the attempt starts: auto,
+	// or manual when empty (RFC-115). QuestionRounds counts the card's
+	// earlier attempts that ended with a question (RFC-114).
+	QuestionMode   string
+	QuestionRounds int
 }
 
 func (in Input) board() Board {
@@ -230,8 +260,8 @@ type MCPContext struct {
 }
 
 // Result is how the attempt ended. Outcome is empty for a new commit,
-// no_commit, no_change for a branch already ahead of its base, or budget with
-// the cap in Reason.
+// no_commit, no_change for a branch already ahead of its base, budget with
+// the cap in Reason, or question when a manual card waits for answers.
 type Result struct {
 	AttemptID string
 	Outcome   string
@@ -321,6 +351,16 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	answered, err := b.Answers(ctx, card.ID)
+	if err != nil {
+		return Result{}, err
+	}
+	answers := make([]contextpack.Answer, 0, len(answered))
+	for _, q := range answered {
+		if q.Answer != nil {
+			answers = append(answers, contextpack.Answer{Question: q.Question, Answer: AnswerText(*q.Answer), Source: q.AnswerSource})
+		}
+	}
 	convs, convItems, err := b.Conventions(ctx, card.ProjectID, card.ID)
 	if err != nil {
 		return Result{}, err
@@ -335,6 +375,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		RepoFiles:    repoFiles,
 		FailureNote:  note,
 		Instructions: instructions,
+		Answers:      answers,
 		Linked:       linked,
 		Conventions:  convs,
 		Secrets:      in.Secrets,
@@ -403,6 +444,12 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err := session.loop(ctx); err != nil {
 		_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 		return Result{}, err
+	}
+	if session.stop == "question" {
+		if err := b.FinishAttempt(ctx, attemptID, "question", ""); err != nil {
+			return Result{}, err
+		}
+		return Result{AttemptID: attemptID, Outcome: "question", Status: card.Status}, nil
 	}
 	if session.stop == "" {
 		if err := session.autoCommit(ctx); err != nil {
@@ -558,6 +605,9 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 			shown = append(shown, clip(text))
 		}
 		args["argv"] = shown
+	case "ask_user":
+		questions, _ := call.Args["questions"].([]any)
+		args["count"] = len(questions)
 	case "comment_pr", "verdict":
 		args["body"] = clip(strArg(call.Args, "body"))
 	default:

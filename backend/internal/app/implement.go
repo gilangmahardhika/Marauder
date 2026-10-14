@@ -275,7 +275,12 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		if toolset != nil {
 			extra = toolset
 		}
+		rounds, err := board.QuestionRounds(ctx, db, card.ID)
+		if err != nil {
+			return card, err
+		}
 		result, err := loop.Run(attemptCtx, loop.Input{
+			QuestionMode: card.QuestionMode, QuestionRounds: rounds,
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
 			Model: route.Model, TaskClass: class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
 			Provider: provider, Secrets: redact, Live: deps.Live, Allow: projectCfg.Checks.AllowExecutables,
@@ -288,6 +293,12 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
 		}
 		switch result.Outcome {
+		case "question":
+			card, err = board.GetCard(ctx, db, card.ID)
+			if err != nil {
+				return card, err
+			}
+			return move(ctx, db, card, "waiting_answer", machine.Evidence{AttemptID: result.AttemptID}, redact)
 		case "no_commit":
 			return retryOrCap(ctx, db, card.ID)
 		case "budget":

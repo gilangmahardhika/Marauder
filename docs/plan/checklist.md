@@ -1207,3 +1207,25 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Themed scrollbars.
 - [x] `Button` Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 88: The agent asks
+
+- [x] Migration 32: `waiting_answer`, outcome `question`, `cards.question_mode`, and `card_questions`.
+- [x] `waiting_answer` edges and evidence.
+- [x] `ask_user` in both modes, with the commit rule and caps, locally and through a runner.
+- [x] A `question` outcome parks the card without counting the attempt.
+- [x] Answers in the implementer pack.
+- [x] Answers and question-mode routes, card JSON, and actions.
+- [x] The owner's `question` notification.
+- [x] `TestWaitingAnswerEdges`, `TestAskUserValidation`, `TestAskUserParksCard`, `TestAskUserAutoAnswers`, `TestAskUserAfterCommitRejected`
+- [x] `TestQuestionRoundCap`, `TestQuestionAttemptNotCounted`, `TestAnswerQueuesRun`, `TestAnswerValidation`, `TestAnswerSuggestions`
+- [x] `TestQuestionModeRights`, `TestPackIncludesAnswers`, `TestQuestionNotifiesOwner`, `TestRunnerQuestionOutcome`
+- [x] `go run ./cmd/fixture` exits 0
+
+## Sprint 89: Answering on the card page
+
+- [x] `CardQuestions` with single, multiple, text, and Other answers, suggestions, and Let the agent decide.
+- [x] `QuestionModeField` in Details.
+- [x] "Needs answer" status label.
+- [x] `CardQuestions`, `QuestionModeField`, card page, and `status` Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

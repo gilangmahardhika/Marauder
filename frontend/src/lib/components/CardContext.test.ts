@@ -61,6 +61,7 @@ function card(actions: string[], next: Context = context): Card {
     reviewVerdict: null,
     selfReview: false,
     aiReviewMode: 'continue',
+    questionMode: 'manual',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

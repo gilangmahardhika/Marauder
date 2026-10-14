@@ -77,6 +77,7 @@ function card(id: string, title: string, status: string, group: string): Card {
     reviewVerdict: null,
     selfReview: false,
     aiReviewMode: 'continue',
+    questionMode: 'manual',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

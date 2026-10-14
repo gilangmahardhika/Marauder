@@ -42,7 +42,8 @@ type session struct {
 	// used counts model calls; outOfTurns is set when every turn was used.
 	used       int
 	outOfTurns bool
-	// stop is the cap that ended the attempt: token_cap, or empty.
+	// stop is what ended the attempt early: token_cap, question when a manual
+	// card asked (RFC-114), or empty.
 	stop string
 	// todos is the model's current todo_write list.
 	todos []todoItem
@@ -55,6 +56,11 @@ type session struct {
 	// mcpCalls counts MCP calls in the attempt, replyMCP in the current reply.
 	mcpCalls int
 	replyMCP int
+	// asks counts the ask_user calls that stored questions, and asked the
+	// questions they stored. askEvent is the last call's trace fields.
+	asks     int
+	asked    int
+	askEvent map[string]any
 }
 
 // readOnly are the tools that change nothing, so the calls of one reply that
@@ -292,6 +298,12 @@ func (s *session) loop(ctx context.Context) error {
 					payload[key] = value
 				}
 			}
+			if call.Name == "ask_user" && s.askEvent != nil {
+				for key, value := range s.askEvent {
+					payload[key] = value
+				}
+				s.askEvent = nil
+			}
 			if err := s.event(ctx, "tool_call", payload); err != nil {
 				return err
 			}
@@ -302,6 +314,9 @@ func (s *session) loop(ctx context.Context) error {
 			done.Results = append(done.Results, summary)
 		}
 		s.turns = append(s.turns, done)
+		if s.stop == "question" {
+			return nil
+		}
 	}
 	s.outOfTurns = true
 	return nil
@@ -340,14 +355,14 @@ func (s *session) dedupeRead(call providers.ToolCall, summary string, idx int) s
 
 // runCalls runs one reply's calls. A run of read-only calls goes concurrently;
 // every other call runs alone, in order. Results keep the reply's order, and
-// a call that fails the attempt ends the list.
+// a call that fails the attempt, or an ask_user that parks it, ends the list.
 func (s *session) runCalls(ctx context.Context, calls []providers.ToolCall) []callResult {
 	out := make([]callResult, len(calls))
 	concurrent := func(call providers.ToolCall) bool { return readOnly[call.Name] && call.BadArgs == "" }
 	for i := 0; i < len(calls); {
 		if !concurrent(calls[i]) {
 			out[i].summary, out[i].rejected, out[i].err = s.dispatch(ctx, calls[i])
-			if out[i].err != nil {
+			if out[i].err != nil || s.stop == "question" {
 				return out[:i+1]
 			}
 			i++
@@ -445,6 +460,8 @@ func (s *session) run(ctx context.Context, call providers.ToolCall) (string, err
 		return fmtInt(exit) + "\n" + tail, nil
 	case "run_command":
 		return s.runCommand(ctx, args)
+	case "ask_user":
+		return s.askUser(ctx, args)
 	case "commit":
 		message := commitMessage(strArg(args, "message"), s.card.ID, s.attemptID, s.in.Model)
 		if err := s.in.Git.Commit(ctx, s.wt, message); err != nil {

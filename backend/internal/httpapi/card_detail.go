@@ -83,7 +83,50 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 	if view, err := app.CardContextFor(r.Context(), s.DB, card); err == nil {
 		body["context"] = view
 	}
+	questions, err := cardQuestions(r.Context(), s.DB, card.ProjectID, card.ID)
+	if err != nil {
+		questions = []map[string]any{}
+	}
+	body["questions"] = questions
 	return body
+}
+
+// cardQuestions is the card's questions as the card page shows them, with the
+// answering person as {id, name, email} (RFC-114).
+func cardQuestions(ctx context.Context, db *sql.DB, projectID, cardID string) ([]map[string]any, error) {
+	items, err := board.CardQuestions(ctx, db, projectID, cardID)
+	if err != nil {
+		return nil, err
+	}
+	people := map[string]any{}
+	out := make([]map[string]any, 0, len(items))
+	for _, q := range items {
+		var answer, source, answeredBy, answeredAt any
+		if q.Answer != nil {
+			selected := q.Answer.Selected
+			if selected == nil {
+				selected = []string{}
+			}
+			answer = board.Answer{Selected: selected, Text: q.Answer.Text}
+			source, answeredAt = q.AnswerSource, q.AnsweredAt
+		}
+		if q.AnsweredBy != "" {
+			person, ok := people[q.AnsweredBy]
+			if !ok {
+				if found, ok, err := app.OwnerOf(ctx, db, q.AnsweredBy); err == nil && ok {
+					person = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email}
+				}
+				people[q.AnsweredBy] = person
+			}
+			answeredBy = person
+		}
+		out = append(out, map[string]any{
+			"id": q.ID, "attemptN": q.AttemptN, "question": q.Question, "kind": q.Kind, "options": q.Options,
+			"allowOther": q.AllowOther, "recommended": q.Recommended, "why": q.Why, "answer": answer,
+			"answerSource": source, "answeredBy": answeredBy, "answeredAt": answeredAt, "createdAt": q.CreatedAt,
+		})
+	}
+	return out, nil
 }
 
 // cardRequirements reads the named requirements of one project in the card's

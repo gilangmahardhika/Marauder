@@ -16,6 +16,7 @@ import type {
   ConventionRule,
   DeploySettings,
   Executor,
+  GivenAnswer,
   Intake,
   LLMSettings,
   MCPCatalogEntry,
@@ -28,6 +29,7 @@ import type {
   ProjectLink,
   ProjectLinks,
   ProjectRecord,
+  QuestionMode,
   Repository,
   RefineEvent,
   RefineRequest,
@@ -614,6 +616,24 @@ export function setCardContext(id: string, change: CardContextChange) {
   return request<Card>(`${projectPrefix()}/cards/${id}/context`, {
     method: "PUT",
     body: JSON.stringify(change),
+  });
+}
+
+/** Answers every open question, or takes each suggestion with `useSuggestions` (RFC-114). */
+export function answerQuestions(
+  id: string,
+  body: { answers: GivenAnswer[] } | { useSuggestions: true },
+) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/answers`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function setQuestionMode(id: string, questionMode: QuestionMode) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/question-mode`, {
+    method: "PUT",
+    body: JSON.stringify({ questionMode }),
   });
 }
 

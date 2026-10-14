@@ -264,7 +264,7 @@ func Actions(status, reason string, open bool, role string) (string, []string, a
 	var actions []string
 	var unblock any
 	switch status {
-	case "backlog", "ready":
+	case "backlog", "ready", "waiting_answer":
 		group, actions, unblock = "waiting", []string{}, nil
 	case "in_progress", "self_check":
 		group, actions, unblock = "running", []string{}, nil

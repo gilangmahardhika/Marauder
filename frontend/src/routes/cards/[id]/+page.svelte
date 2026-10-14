@@ -7,6 +7,8 @@
   import CardInstructions from "$lib/components/CardInstructions.svelte";
   import CardNotes from "$lib/components/CardNotes.svelte";
   import CardPullRequest from "$lib/components/CardPullRequest.svelte";
+  import CardQuestions from "$lib/components/CardQuestions.svelte";
+  import QuestionModeField from "$lib/components/QuestionModeField.svelte";
   import { failureText } from "$lib/forms";
   import { plainText } from "$lib/markdown";
   import { displayName } from "$lib/people";
@@ -243,7 +245,9 @@
         <div class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div class="flex min-w-0 flex-col gap-6" data-testid="card-main">
             <Panel title="Next step">
-              {#if hasControls}
+              {#if (card.actions ?? []).includes("answer")}
+                <CardQuestions bind:card />
+              {:else if hasControls}
                 <CardActions bind:card />
               {:else if card.queued}
                 <p class="text-sm text-muted">
@@ -266,12 +270,18 @@
             {#if (card.actions ?? []).includes("instructions")}
               <CardInstructions bind:card />
             {/if}
+            {#if !(card.actions ?? []).includes("answer") && (card.questions ?? []).length > 0}
+              <Panel title="Questions" hint="What the agent asked on this card and the answers it read.">
+                <CardQuestions bind:card />
+              </Panel>
+            {/if}
             {#if card.context}
               <CardContext bind:card />
             {/if}
           </div>
           <aside class="flex min-w-0 flex-col gap-6" aria-label="Card details">
             <Panel title="Details">
+              <QuestionModeField bind:card />
               <dl class="flex flex-col gap-3">
                 {#if card.blockedReason}{@render item(
                     "Blocked reason",

@@ -4,6 +4,7 @@ const statuses: Record<string, string> = {
   backlog: 'Backlog',
   ready: 'Ready',
   in_progress: 'In progress',
+  waiting_answer: 'Needs answer',
   self_check: 'Running checks',
   pr_open: 'Pull request open',
   agent_review: 'AI review',
@@ -48,6 +49,7 @@ export function reasonLabel(reason: string) {
 /** Badge tone for a card's status. */
 export function cardTone(card: Pick<Card, 'status' | 'group'>) {
   if (card.status === 'blocked' || card.group === 'stopped') return 'red';
+  if (card.status === 'waiting_answer') return 'amber';
   if (card.group === 'finished') return 'green';
   if (card.group === 'review') return 'amber';
   if (card.group === 'running' || card.group === 'shipping') return 'sky';

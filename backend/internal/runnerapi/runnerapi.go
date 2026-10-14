@@ -2,7 +2,10 @@
 // control plane and the runner both use them; neither imports the other.
 package runnerapi
 
-import "orchestrator/backend/internal/providers"
+import (
+	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/providers"
+)
 
 // Protocol is the runner API version of this binary (RFC-109).
 const Protocol = 1
@@ -91,6 +94,10 @@ type Job struct {
 	SandboxImage       string   `json:"sandboxImage,omitempty"`
 	MCP                *MCP     `json:"mcp,omitempty"`
 	Resume             *Resume  `json:"resume,omitempty"`
+	// QuestionMode and QuestionRounds are the card's answer mode and its
+	// attempts that ended with a question (RFC-114, RFC-115).
+	QuestionMode   string `json:"questionMode,omitempty"`
+	QuestionRounds int    `json:"questionRounds,omitempty"`
 }
 
 // BoardOp is one board call of an attempt. Only the fields of Op are read.
@@ -109,6 +116,10 @@ type BoardOp struct {
 	Cached    int            `json:"cached,omitempty"`
 	Kind      string         `json:"kind,omitempty"`
 	Payload   map[string]any `json:"payload,omitempty"`
+	// Questions, First, and Auto are the ask_questions op (RFC-114).
+	Questions []board.Question `json:"questions,omitempty"`
+	First     int              `json:"first,omitempty"`
+	Auto      bool             `json:"auto,omitempty"`
 }
 
 type Attempt struct {
@@ -157,6 +168,7 @@ type BoardReply struct {
 	Tokens      int              `json:"tokens,omitempty"`
 	Conventions []Convention     `json:"conventions,omitempty"`
 	Items       []map[string]any `json:"items,omitempty"`
+	Questions   []board.Question `json:"questions,omitempty"`
 }
 
 type ModelCall struct {

@@ -41,6 +41,7 @@ function card(instructions: string | null): Card {
     reviewVerdict: null,
     selfReview: false,
     aiReviewMode: 'continue',
+    questionMode: 'manual',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

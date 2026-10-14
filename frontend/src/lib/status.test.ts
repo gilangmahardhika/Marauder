@@ -5,6 +5,7 @@ const statuses = [
   'backlog',
   'ready',
   'in_progress',
+  'waiting_answer',
   'self_check',
   'pr_open',
   'agent_review',
@@ -27,6 +28,7 @@ describe('status labels', () => {
     expect(statusLabel('human_review')).toBe('Waiting for review');
     expect(statusLabel('in_progress')).toBe('In progress');
     expect(statusLabel('wont_fix')).toBe("Won't fix");
+    expect(statusLabel('waiting_answer')).toBe('Needs answer');
   });
 
   it('turns an unknown code into a sentence', () => {

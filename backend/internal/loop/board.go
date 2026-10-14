@@ -31,6 +31,11 @@ type Board interface {
 	AddAttemptTokens(ctx context.Context, id string, input, output, cached int) error
 	CardTokens(ctx context.Context, cardID string) (int, error)
 	AppendEvent(ctx context.Context, ev trace.Event, secrets []string) error
+	// AskQuestions stores an attempt's questions numbered from first, answered
+	// with their recommendations when auto is set (RFC-114, RFC-115).
+	AskQuestions(ctx context.Context, attemptID, cardID string, first int, questions []board.Question, auto bool) error
+	// Answers lists the card's answered questions, oldest first.
+	Answers(ctx context.Context, cardID string) ([]board.Question, error)
 }
 
 // DBBoard is the Board of a job that runs beside the database.
@@ -100,6 +105,14 @@ func (b DBBoard) AddAttemptTokens(ctx context.Context, id string, input, output,
 
 func (b DBBoard) CardTokens(ctx context.Context, cardID string) (int, error) {
 	return board.CardTokens(ctx, b.DB, cardID)
+}
+
+func (b DBBoard) AskQuestions(ctx context.Context, attemptID, cardID string, first int, questions []board.Question, auto bool) error {
+	return board.InsertQuestions(ctx, b.DB, cardID, attemptID, first, questions, auto)
+}
+
+func (b DBBoard) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
+	return board.AnsweredQuestions(ctx, b.DB, cardID)
 }
 
 func (b DBBoard) AppendEvent(ctx context.Context, ev trace.Event, secrets []string) error {

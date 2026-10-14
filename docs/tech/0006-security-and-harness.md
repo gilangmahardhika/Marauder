@@ -17,6 +17,8 @@ Decisions are in [../rfc/0002-hardening.md](../rfc/0002-hardening.md) and [../rf
 | `@slug` mentions in requirement text, written by members or in the repository | Trusted only to narrow: a mention picks among the tribe's enabled, allowlisted servers and never adds a server, a tool, or a disabled server. A requirement edited since acceptance offers no MCP tools (RFC-101, RFC-102) | Which of the tribe's servers a card's attempt and a draft's refine offer |
 | A card's context, set by a person (RFC-105) | Trusted as that person's choice: any role that may run the card adds or removes rule and skill text, which stays inside the untrusted markers and adds no tool. Adding an MCP server is trusted only from a Lead Developer member, a tribe admin of the project's tribe, or an admin, and only for an enabled server of that tribe | Which catalog rules and skills the next attempt reads, and which of the tribe's enabled servers it opens. Never a disabled server, a tool off the allowlist, or a server of another tribe |
 | MCP server responses and database rows | Untrusted | Text inside the untrusted markers after `MCP RESULT`, and the tool list only where its schema hash matches the allowlist |
+| `ask_user` questions, options, and suggestions (RFC-114) | Untrusted model output, redacted with the attempt's secrets and capped before storage | Text a person reads as plain text on the card page. On an Auto card the suggestion becomes an answer the next attempt reads inside the untrusted markers. Never a status, a route, a tool, or a setting |
+| Answers to agent questions, written by a person who may run the card (RFC-114) | Trusted as that person's choice for the card, like instructions | Text the next attempt reads inside the untrusted markers. Never a status beyond `waiting_answer -> ready`, which the answers route makes through `Transition` |
 | MCP Registry entries | Untrusted | What the setup form is filled with, which the tribe admin reviews before saving. A registry description is never sent to a model (RFC-096) |
 | Featured MCP entries | Trusted as code: a fixed list compiled into the harness and reviewed with it. Registry data never sets `source` to `featured` | What the setup form is filled with. The URL still passes the check on save and at dial, and the admin still allowlists each tool (RFC-099) |
 | Check processes, local and dev | Untrusted code | Their own exit code and output, from inside the sandbox |
@@ -32,6 +34,7 @@ The model is outside the boundary. Agreement from the model does not cross it.
 | --- | --- |
 | Data directory inside the repo, or the reverse | Process exits before opening the database |
 | Tool name not in the profile | Error to the model, no exec |
+| `ask_user` after `commit`, past its cap, or with a bad argument | Error to the model, nothing stored, no status change (RFC-114) |
 | Path escapes the root, or a symlink does | Tool error, no write |
 | Check command fails parsing, or its first word is not allowed | `sandbox_config`, check does not run |
 | Card check differs from settings | Card is blocked with `source_changed` |

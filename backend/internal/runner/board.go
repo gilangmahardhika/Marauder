@@ -144,6 +144,25 @@ func (b *Board) CardTokens(ctx context.Context, cardID string) (int, error) {
 	return reply.Tokens, err
 }
 
+// AskQuestions sends the attempt's questions, redacted with the board's
+// secrets; the control plane stores them on the lease's attempt and card.
+func (b *Board) AskQuestions(ctx context.Context, attemptID, cardID string, first int, questions []board.Question, auto bool) error {
+	sent := make([]board.Question, len(questions))
+	for i, q := range questions {
+		q.Question = trace.Redact(q.Question, b.Secrets)
+		q.Why = trace.Redact(q.Why, b.Secrets)
+		q.Recommended.Text = trace.Redact(q.Recommended.Text, b.Secrets)
+		sent[i] = q
+	}
+	_, err := b.op(ctx, runnerapi.BoardOp{Op: "ask_questions", Questions: sent, First: first, Auto: auto})
+	return err
+}
+
+func (b *Board) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
+	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "answers"})
+	return reply.Questions, err
+}
+
 // AppendEvent sends the event's kind and payload, redacted with the loop's
 // secrets and the board's own.
 func (b *Board) AppendEvent(ctx context.Context, ev trace.Event, secrets []string) error {

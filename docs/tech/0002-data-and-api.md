@@ -55,6 +55,7 @@ A successful body never includes `error`.
 | `backlog` | `waiting` | `[]` |
 | `ready` | `waiting` | `run` when every `dependsOn` card is `done` and the card has no open run request (RFC-061) |
 | `in_progress` | `running` | `run` when the card has no open attempt, its dependencies are `done`, and it has no open run request (RFC-063) |
+| `waiting_answer` | `waiting` | `answer` (RFC-114) |
 | `self_check` | `running` | `[]` |
 | `changes_requested` | `review` | `run` under the same rule as `in_progress` (RFC-063) |
 | `pr_open` | `review` | `[]` |
@@ -69,6 +70,8 @@ A successful body never includes `error`.
 `wont_fix` and `reopen` are listed for a Lead Developer or Product Owner member and for the card owner. `deploy` remains only for a Lead Developer member. `merge` is listed for a Lead Developer member, and for the card owner when `approval.solo` is on. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
 
 After the table, every card that is not `done` or `wont_fix` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
+
+`answer` is listed for those same four roles and for a tribe admin of the project's tribe (RFC-114). Every card that is not `done` or `wont_fix` also lists `question_mode` for the same people (RFC-115). Neither names a status change the client makes; the answers route makes it.
 
 ## Blocked reasons
 
@@ -139,7 +142,7 @@ CREATE TABLE cards (
   status TEXT NOT NULL CHECK (status IN (
     'backlog', 'ready', 'in_progress', 'self_check', 'pr_open', 'agent_review',
     'changes_requested', 'human_review', 'approved', 'deploying_dev',
-    'verifying', 'done', 'blocked', 'wont_fix')),
+    'verifying', 'done', 'blocked', 'wont_fix', 'waiting_answer')),
   manual BOOLEAN NOT NULL DEFAULT false,
   local_check TEXT,
   dev_check TEXT,
@@ -190,7 +193,8 @@ CREATE TABLE attempts (
   started_at TEXT NOT NULL,
   ended_at TEXT,
   outcome TEXT CHECK (outcome IN (
-    'checks_passed', 'checks_failed', 'no_commit', 'no_change', 'budget', 'error', 'cancelled')),
+    'checks_passed', 'checks_failed', 'no_commit', 'no_change', 'budget', 'error', 'cancelled',
+    'question')),
   UNIQUE (card_id, n)
 );
 
@@ -375,7 +379,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`, `questions_answered`, `question_mode_changed`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -397,6 +401,10 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `instructions_saved` | `length`, the character count of the saved instructions, `0` when they were cleared. The text stays in the note. The row's `actor_id` is the person who saved them (RFC-073) |
 | `context_changed` | `kind` (`skill`, `rule`, or `mcp`), `itemId`, and `mode` (`attach`, `detach`, or `inherit`). The row's `actor_id` is the person who changed the card's context (RFC-105) |
 | `review_failed` | `sha`, the head the AI review gave no verdict on. It wakes the notifier (RFC-113) |
+| `questions_answered` | `questionIds`, and `source` (`person` or `suggestion`). The row's `actor_id` is the person who answered. The answers stay in `card_questions` (RFC-114) |
+| `question_mode_changed` | `from` and `to`, each `manual` or `auto`. The row's `actor_id` is the person who changed it (RFC-115) |
+
+A `tool_call` named `ask_user` adds `questions`, the redacted questions with their kind, options, and suggestion, `mode` (`manual` or `auto`), and on an Auto card the answers it returned (RFC-114).
 
 A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "rule" or "skill", "id", "version", "hash" }` for every rule and skill in the attempt's pack (RFC-055). A `tool_call` named `linked_context` adds `links`. A `tool_call` named `repo_context` adds `files`, a list of `{ "path", "bytes", "sha256" }` for each `AGENTS.md` and `CLAUDE.md` in the attempt's pack; `bytes` and `sha256` are of the whole file, even when the pack holds it cut (RFC-082). It is appended only when the pack holds one. A `tool_call` named `mcp_context` adds `servers`, one `{ "id", "slug", "transport", "tools" }` object per offered server, with `host`, `database`, `image`, or `error` as RFC-094 and RFC-097 describe, and `scope`: `all`, `mentioned`, `card`, or `none` (RFC-102, RFC-105). `attached` and `detached` list the slugs the card's context added and removed; the scope is `card` when they changed the set. `missing` lists the mentioned slugs that are not an enabled server of the tribe, and `reason` says why the scope is `none`. A scope of `none` writes the event with `servers: []`.
 
@@ -414,6 +422,7 @@ A `tool_call` named `conventions_context` adds `items`, a list of `{ "kind": "ru
 | `move_file` | `from`, `to` |
 | `todo_write` | `items`, the count of items. Never the item text |
 | `run_command` | `argv`, each element clipped |
+| `ask_user` | `count`, the number of questions. The questions themselves go in the event's `questions` field (RFC-114) |
 | `run_local_check` | `command`, the card's `local_check` |
 | `commit` | `message`, as the model wrote it |
 | `comment_pr`, `verdict` | `body` |
@@ -885,6 +894,7 @@ A project object is:
   "reviewVerdict": "recommend_approve",
   "selfReview": false,
   "aiReviewMode": "continue",
+  "questionMode": "manual",
   "approvedSha": null,
   "deployedSha": null,
   "environment": "dev",
@@ -894,7 +904,7 @@ A project object is:
 }
 ```
 
-`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `aiReviewMode` is `manual` when any requirement the card lists has that mode in the card's project, and `continue` otherwise (RFC-072). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
+`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `aiReviewMode` is `manual` when any requirement the card lists has that mode in the card's project, and `continue` otherwise (RFC-072). `questionMode` is the card's answer mode, `manual` or `auto` (RFC-115). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 
@@ -939,6 +949,61 @@ ALTER TABLE attempts ADD COLUMN pr_body TEXT;
 ```
 
 `Publish` writes both after the pull request is created or edited, redacted with the publish secrets. A failed write does not fail the publish.
+
+The single card also carries `questions`, every `card_questions` row of the card, open ones first and then answered ones, each group oldest first (RFC-114). The board list does not return it.
+
+```json
+{
+  "questions": [
+    {
+      "id": "qst_a1b2c3d4e5f6",
+      "attemptN": 2,
+      "question": "Which export format should the button offer?",
+      "kind": "single",
+      "options": ["CSV", "Excel"],
+      "allowOther": true,
+      "recommended": { "selected": ["CSV"], "text": "" },
+      "why": "The requirement says CSV and no Excel library is in the repo.",
+      "answer": null,
+      "answerSource": null,
+      "answeredBy": null,
+      "answeredAt": null,
+      "createdAt": "2026-10-14T05:00:00Z"
+    }
+  ]
+}
+```
+
+`kind` is `single`, `multiple`, or `text`; `options` is `[]` for `text`. `answer` is `{ "selected": [...], "text": "..." }` once answered. `answerSource` is `person`, `suggestion`, or `auto`. `answeredBy` is `{ "id", "name", "email" }` of the person, or `null` for `auto`.
+
+`00032_agent_questions.sql` adds the status, the outcome, the mode, and the table (RFC-114, RFC-115):
+
+```sql
+-- cards_status_check gains 'waiting_answer'; attempts_outcome_check gains 'question'
+ALTER TABLE cards ADD COLUMN question_mode TEXT NOT NULL DEFAULT 'manual'
+  CHECK (question_mode IN ('manual', 'auto'));
+
+CREATE TABLE card_questions (
+  id TEXT PRIMARY KEY,               -- qst_ + 12 hex
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  attempt_id TEXT NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  question TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('single', 'multiple', 'text')),
+  options_json TEXT NOT NULL,        -- JSON array of strings
+  allow_other BOOLEAN NOT NULL DEFAULT false,
+  recommended_json TEXT NOT NULL,    -- {"selected": [...], "text": "..."}
+  why TEXT NOT NULL DEFAULT '',
+  answer_json TEXT,
+  answer_source TEXT CHECK (answer_source IN ('person', 'suggestion', 'auto')),
+  answered_by TEXT REFERENCES users(id),
+  answered_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (attempt_id, position)
+);
+CREATE INDEX card_questions_card ON card_questions (project_id, card_id);
+```
 
 `context` is the card's context (RFC-105). `rules` and `skills` list every item the card's packs carry, plus each one the card detached, with `state` `on` or `off` and `origin`: `project` or `planner` for an inherited item, `card` for one the card's context set. `mcp` lists every server of the project's tribe as `{ "id", "slug", "enabled", "toolCount", "state", "origin" }`, where `state` is whether the next attempt opens it and `origin` is `scope` or `card`. `mcpScope` is the scope the next attempt would record. The board list does not return `context`.
 
@@ -1204,6 +1269,22 @@ The server turns CRLF into LF and trims outer whitespace. Blank text clears the 
 
 `kind` is `skill`, `rule`, or `mcp`. `mode` is `attach`, `detach`, or `inherit`, which deletes the card's row. The roles that may run a card, a tribe admin of the project's tribe, and a company admin change skills and rules and detach a server; anyone else is `403`. Attaching a server also needs a Lead Developer member, a tribe admin of the project's tribe, or a company admin, else `403`. A skill or rule must be enabled in the catalog, and a server must be an enabled server of the project's tribe, else `422` with `fields.itemId`. A `done` card is `409`. A card in another project is `404`. It takes the card row lock, writes no status, and appends `context_changed`. The card object adds the action `context` for the roles that may change it, and `attach-mcp` for those who may attach a server, on any card that is not `done`.
 
+`POST /api/projects/{projectId}/cards/{id}/answers` answers every open question of a `waiting_answer` card and returns the card object (RFC-114).
+
+```json
+{ "answers": [{ "questionId": "qst_a1b2c3d4e5f6", "selected": ["CSV"], "text": "" }] }
+```
+
+`{ "useSuggestions": true }` instead takes each open question's `recommended` answer. The caller needs `answer` in the card's `actions`, else `403`. A card that is not `waiting_answer` is `409`. Every open question needs exactly one entry; a missing, repeated, or unknown `questionId` is `422` on `answers`. Text is trimmed, CRLF becomes LF, and over 2000 characters is `422`. A `single` answer is exactly one listed option and no text, or no option and text when `allowOther` is on. A `multiple` answer is one or more distinct listed options, plus text when `allowOther` is on, or text alone when `allowOther` is on. A `text` answer is non-empty text and no option. A failed entry is `422` with `fields["answers.{n}"]`, `n` counting from 0, and nothing changes. On success one transaction takes the card row lock, stores each answer with `answer_source` `person` or `suggestion`, the caller, and the time, moves the card `waiting_answer -> ready` through `machine.Transition` with the caller as actor, inserts one card-scoped `runs` row, and appends `questions_answered`.
+
+`PUT /api/projects/{projectId}/cards/{id}/question-mode` sets the card's answer mode and returns the card object (RFC-115).
+
+```json
+{ "questionMode": "auto" }
+```
+
+The caller needs `question_mode` in the card's `actions`, else `403`. A value other than `manual` or `auto` is `422` on `questionMode`. A `done` or `wont_fix` card is `409`. An unchanged mode writes nothing; a change appends `question_mode_changed`. An attempt that already started keeps the mode it started with.
+
 `POST /api/projects/{projectId}/cards/{id}/approve`
 
 ```json
@@ -1380,7 +1461,8 @@ CREATE TABLE notifications (
   event_id TEXT NOT NULL,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind TEXT NOT NULL,                -- review, ship, approved, changes_requested, blocked,
-                                     -- owner_github, review_failed, done, wont_fix, reopened
+                                     -- owner_github, review_failed, done, wont_fix, reopened,
+                                     -- question (RFC-114)
   project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   card_id TEXT REFERENCES cards(id) ON DELETE CASCADE,
   title TEXT NOT NULL,

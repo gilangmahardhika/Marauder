@@ -69,6 +69,7 @@ const card: Card = {
   reviewVerdict: 'recommend_approve',
   selfReview: false,
   aiReviewMode: 'continue',
+  questionMode: 'manual',
   approvedSha: null,
   deployedSha: null,
   environment: 'dev',
@@ -179,6 +180,49 @@ test('a pushed change to this card reads it again; other cards do not', async ()
   expect(await screen.findByRole('button', { name: /Deploy/ })).toBeTruthy();
   expect(api.getCard).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole('button', { name: 'Approve ae5d441' })).toBeNull();
+});
+
+test('open questions replace the next step controls, and Details starts with the answer mode', async () => {
+  const question = {
+    id: 'qst_000000000001',
+    attemptN: 1,
+    question: 'Which format?',
+    kind: 'single' as const,
+    options: ['CSV', 'Excel'],
+    allowOther: false,
+    recommended: { selected: ['CSV'], text: '' },
+    why: '',
+    answer: null,
+    answerSource: null,
+    answeredBy: null,
+    answeredAt: null,
+    createdAt: '2026-10-14T05:00:00Z'
+  };
+  api.getCard.mockResolvedValue({
+    ...card,
+    status: 'waiting_answer',
+    group: 'waiting',
+    actions: ['answer', 'question_mode', 'context'],
+    questions: [question]
+  });
+  render(CardPage);
+  expect(await screen.findByText('The agent has a question')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Submit answers' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Approve ae5d441' })).toBeNull();
+  expect(screen.getByText('Needs answer')).toBeTruthy();
+  const aside = screen.getByRole('complementary', { name: 'Card details' });
+  const details = within(aside).getByRole('heading', { name: 'Details' }).closest('section')!;
+  const body = [...details.children].find((child) => child.tagName === 'DIV');
+  expect(body?.firstElementChild?.textContent ?? '').toContain('When the agent has a question');
+  expect(document.getElementById('questions')).not.toBeNull();
+});
+
+test('without the answer action the next step keeps its controls and the mode reads as text', async () => {
+  render(CardPage);
+  expect(await screen.findByRole('button', { name: 'Approve ae5d441' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Submit answers' })).toBeNull();
+  expect(screen.getByText('Questions: A person answers')).toBeTruthy();
+  expect(document.getElementById('questions')).toBeNull();
 });
 
 test('a card with nothing to do says so in the next step', async () => {

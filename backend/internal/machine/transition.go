@@ -164,6 +164,14 @@ func missingEvidence(from, to string, ev Evidence) string {
 		if ev.PRURL == "" {
 			return "prUrl"
 		}
+	case "in_progress->waiting_answer":
+		if ev.AttemptID == "" {
+			return "attemptId"
+		}
+	case "waiting_answer->ready":
+		if ev.ActorID == "" {
+			return "actorId"
+		}
 	case "agent_review->pr_open":
 		if ev.AttemptID == "" {
 			return "attemptId"

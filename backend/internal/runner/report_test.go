@@ -157,7 +157,7 @@ func bundle(t *testing.T, clone string, refs ...string) *os.File {
 
 // committedAttempt records an attempt with base and commit through the lease
 // and reports it finished, which moves the card to self_check.
-func committedAttempt(t *testing.T, h *harness, c *runner.Client, base, sha string) string {
+func committedAttempt(t *testing.T, _ *harness, c *runner.Client, base, sha string) string {
 	t.Helper()
 	ctx := context.Background()
 	claimed := claim(t, c)
@@ -231,6 +231,58 @@ func TestBundleOnlyCardBranch(t *testing.T) {
 		}
 		if exec.Command(lookGit(t), "-C", h.repo, "rev-parse", "--verify", "--quiet", "refs/heads/orch/"+h.card.ID).Run() == nil {
 			t.Fatal("a refused bundle moved the card branch")
+		}
+	})
+}
+
+func TestRunnerQuestionOutcome(t *testing.T) {
+	t.Run("job parks the card", func(t *testing.T) {
+		h := newHarness(t, `{"implement":[{"tool":"ask_user","questions":[{"question":"Which format?","kind":"single",
+			"options":["CSV","Excel"],"recommended":{"selected":["CSV"]},"why":"CSV is named."}]}]}`, "true")
+		c := h.register(t, "agent-1")
+		r, _ := h.worker(t, c)
+		if err := r.RunJob(context.Background(), claim(t, c).LeaseID); err != nil {
+			t.Fatal(err)
+		}
+		card := h.status(t)
+		if card.Status != "waiting_answer" || card.AttemptsUsed != 0 {
+			t.Fatalf("card = %s used %d, want waiting_answer used 0", card.Status, card.AttemptsUsed)
+		}
+		if n := count(t, h, `SELECT count(*) FROM attempts WHERE card_id = $1 AND outcome = 'question'`, card.ID); n != 1 {
+			t.Fatalf("question attempts = %d", n)
+		}
+		if n := count(t, h, `SELECT count(*) FROM card_questions WHERE card_id = $1 AND answer_json IS NULL`, card.ID); n != 1 {
+			t.Fatalf("open questions = %d", n)
+		}
+		if n := count(t, h, `SELECT count(*) FROM runner_leases WHERE card_id = $1 AND ended_at IS NULL`, card.ID); n != 0 {
+			t.Fatalf("open leases = %d", n)
+		}
+	})
+	t.Run("questions pinned to the lease", func(t *testing.T) {
+		h := newHarness(t, commitScript, "true")
+		ctx := context.Background()
+		other, err := board.InsertCard(ctx, h.db, board.Card{ProjectID: "proj_default", Title: "Other card", Status: "ready", MaxAttempts: 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := h.register(t, "agent-1")
+		b, _ := startAttempt(t, h, c, "att_question0001")
+		q := board.Question{Question: "Which format? " + ownerToken, Kind: "single", Options: []string{"CSV", "Excel"},
+			Recommended: board.Answer{Selected: []string{"CSV"}}, Why: "named"}
+		if err := b.AskQuestions(ctx, "att_forged000001", other.ID, 0, []board.Question{q}, false); err != nil {
+			t.Fatal(err)
+		}
+		var cardID, attemptID, question string
+		if err := h.db.QueryRow(`SELECT card_id, attempt_id, question FROM card_questions`).Scan(&cardID, &attemptID, &question); err != nil {
+			t.Fatal(err)
+		}
+		if cardID != h.card.ID || attemptID != "att_question0001" || strings.Contains(question, ownerToken) {
+			t.Fatalf("question row = %s %s %q, want the lease card and attempt, redacted", cardID, attemptID, question)
+		}
+		bad := q
+		bad.Options = []string{"CSV"}
+		if err := b.AskQuestions(ctx, "att_question0001", h.card.ID, 1, []board.Question{bad}, false); runner.StatusOf(err) != http.StatusUnprocessableEntity {
+			t.Fatalf("one-option question = %v, want 422", err)
 		}
 	})
 }

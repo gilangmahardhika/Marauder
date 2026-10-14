@@ -292,6 +292,14 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		s.cardContext(w, r, user, projectID, id)
 		return
 	}
+	if action == "answers" {
+		s.cardAnswers(w, r, user, projectID, id)
+		return
+	}
+	if action == "question-mode" {
+		s.cardQuestionMode(w, r, user, projectID, id)
+		return
+	}
 	if action == "merge" {
 		s.mergeCard(w, r, user, id)
 		return
@@ -390,6 +398,49 @@ func (s *Server) cardContext(w http.ResponseWriter, r *http.Request, user app.Us
 		return
 	}
 	next, err := app.SetCardContext(r.Context(), s.DB, user, projectID, id, body.Kind, body.ItemID, body.Mode)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
+// cardAnswers handles POST .../cards/{id}/answers (RFC-114).
+func (s *Server) cardAnswers(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	var body struct {
+		Answers        []app.GivenAnswer `json:"answers"`
+		UseSuggestions bool              `json:"useSuggestions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	next, err := app.AnswerQuestions(r.Context(), s.DB, user, projectID, id, body.Answers, body.UseSuggestions)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
+// cardQuestionMode handles PUT .../cards/{id}/question-mode (RFC-115).
+func (s *Server) cardQuestionMode(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	if r.Method != http.MethodPut {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	var body struct {
+		QuestionMode string `json:"questionMode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	next, err := app.SetQuestionMode(r.Context(), s.DB, user, projectID, id, body.QuestionMode)
 	if err != nil {
 		writeAppErr(w, err)
 		return
