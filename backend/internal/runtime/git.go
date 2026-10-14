@@ -66,7 +66,14 @@ func (g Git) EnsureWorktree(ctx context.Context, cardID, baseBranch string) (Wor
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0o700); err != nil {
 		return Worktree{}, err
 	}
-	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "worktree", "add", "-b", branch, wtPath, baseBranch)...); err != nil {
+	add := []string{"worktree", "add", "-b", branch, wtPath, baseBranch}
+	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)...); err == nil {
+		if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "worktree", "prune")...); err != nil {
+			return Worktree{}, err
+		}
+		add = []string{"worktree", "add", wtPath, branch}
+	}
+	if _, err := g.run(ctx, append(append(g.prefix(), "-C", g.Repo), add...)...); err != nil {
 		return Worktree{}, err
 	}
 	gitDir, err := readGitDir(filepath.Join(wtPath, ".git"))

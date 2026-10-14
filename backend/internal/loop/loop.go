@@ -196,6 +196,23 @@ type Input struct {
 	// MCP is how the job scoped the tribe's servers (RFC-102); nil records
 	// no scope.
 	MCP *MCPContext
+	// Board takes the attempt's board reads and writes; nil means
+	// DBBoard{DB} (RFC-108).
+	Board Board
+	// Fixture runs checks as fixture commands, as runtime.FixtureMode does
+	// for the fixture repo path.
+	Fixture bool
+}
+
+func (in Input) board() Board {
+	if in.Board != nil {
+		return in.Board
+	}
+	return DBBoard{DB: in.DB}
+}
+
+func (in Input) fixture() bool {
+	return in.Fixture || runtime.FixtureMode(in.Git.Repo)
 }
 
 // MCPContext is the scope of an attempt's MCP servers (RFC-102). Scope is
@@ -235,11 +252,15 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if in.HistoryBudget <= 0 {
 		in.HistoryBudget = defaultHistory
 	}
-	card, err := board.GetCard(ctx, in.DB, in.CardID)
+	b := in.board()
+	card, err := b.GetCard(ctx, in.CardID)
 	if err != nil {
 		return Result{}, err
 	}
 	if card.Status == "ready" || card.Status == "changes_requested" {
+		if in.DB == nil {
+			return Result{}, fmt.Errorf("card is %s; the control plane starts it", card.Status)
+		}
 		card, err = move(ctx, in.DB, card, "in_progress", machine.Evidence{}, in.Secrets)
 		if err != nil {
 			return Result{}, err
@@ -253,17 +274,17 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := board.StoreWorktree(ctx, in.DB, card.ID, wt.Branch, wt.Path, wt.GitDir); err != nil {
+	if err := b.StoreWorktree(ctx, card.ID, wt.Branch, wt.Path, wt.GitDir); err != nil {
 		return Result{}, err
 	}
 	holder, err := board.NewID("lok_")
 	if err != nil {
 		return Result{}, err
 	}
-	if err := board.AcquireLock(ctx, in.DB, card.ID, holder); err != nil {
+	if err := b.AcquireLock(ctx, card.ID, holder); err != nil {
 		return Result{}, err
 	}
-	defer board.ReleaseLock(ctx, in.DB, card.ID, holder)
+	defer b.ReleaseLock(context.WithoutCancel(ctx), card.ID, holder)
 
 	if err := in.Git.DiscardChanges(ctx, wt); err != nil {
 		return Result{}, err
@@ -272,11 +293,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	requirements, err := requirementBlocks(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	requirements, err := b.Requirements(ctx, card.ProjectID, card.RequirementIDs)
 	if err != nil {
 		return Result{}, err
 	}
-	decisions, err := decisionLines(ctx, in.DB, card.ProjectID, card.RequirementIDs)
+	decisions, err := b.Decisions(ctx, card.ProjectID, card.RequirementIDs)
 	if err != nil {
 		return Result{}, err
 	}
@@ -292,15 +313,15 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	note, err := latestNote(ctx, in.DB, card.ID)
+	note, err := b.LatestNote(ctx, card.ID)
 	if err != nil {
 		return Result{}, err
 	}
-	instructions, err := board.CurrentInstructions(ctx, in.DB, card.ID)
+	instructions, err := b.Instructions(ctx, card.ID)
 	if err != nil {
 		return Result{}, err
 	}
-	convs, convItems, err := CardConventions(ctx, in.DB, card.ProjectID, card.ID)
+	convs, convItems, err := b.Conventions(ctx, card.ProjectID, card.ID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -322,7 +343,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	n, parent, err := board.NextAttempt(ctx, in.DB, card.ID)
+	n, parent, err := b.NextAttempt(ctx, card.ID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -330,7 +351,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := board.InsertAttempt(ctx, in.DB, board.Attempt{
+	if err := b.InsertAttempt(ctx, board.Attempt{
 		ID: attemptID, CardID: card.ID, N: n, ParentID: parent,
 		TaskClass: in.TaskClass, ModelID: in.Model, PromptHash: hashText(user),
 		SystemHash: systemHash, BaseSHA: baseSHA, MaxTurns: in.MaxTurns,
@@ -380,12 +401,12 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		}
 	}
 	if err := session.loop(ctx); err != nil {
-		_ = board.FinishAttempt(ctx, in.DB, attemptID, "error", "")
+		_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 		return Result{}, err
 	}
 	if session.stop == "" {
 		if err := session.autoCommit(ctx); err != nil {
-			_ = board.FinishAttempt(ctx, in.DB, attemptID, "error", "")
+			_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 			return Result{}, err
 		}
 	}
@@ -404,7 +425,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 		if clean && ahead > 0 {
-			if err := board.FinishAttempt(ctx, in.DB, attemptID, "no_change", head); err != nil {
+			if err := b.FinishAttempt(ctx, attemptID, "no_change", head); err != nil {
 				return Result{}, err
 			}
 			return Result{AttemptID: attemptID, Outcome: "no_change", Status: card.Status}, nil
@@ -417,34 +438,34 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		if err := session.event(ctx, "budget_stop", map[string]any{"cap": stop, "turns": session.used, "maxTurns": in.MaxTurns}); err != nil {
 			return Result{}, err
 		}
-		if err := board.AddAttemptUsed(ctx, in.DB, card.ID); err != nil {
+		if err := b.AddAttemptUsed(ctx, card.ID); err != nil {
 			return Result{}, err
 		}
-		if err := board.FinishAttempt(ctx, in.DB, attemptID, "budget", ""); err != nil {
+		if err := b.FinishAttempt(ctx, attemptID, "budget", ""); err != nil {
 			return Result{}, err
 		}
 		return Result{AttemptID: attemptID, Outcome: "budget", Reason: stop, Status: card.Status}, nil
 	}
 	if head == baseSHA {
-		if err := board.InsertFailureNote(ctx, in.DB, card.ID, attemptID, "no_commit", "no commit"); err != nil {
+		if err := b.InsertFailureNote(ctx, card.ID, attemptID, "no_commit", "no commit"); err != nil {
 			return Result{}, err
 		}
-		if err := board.AddAttemptUsed(ctx, in.DB, card.ID); err != nil {
+		if err := b.AddAttemptUsed(ctx, card.ID); err != nil {
 			return Result{}, err
 		}
-		if err := board.FinishAttempt(ctx, in.DB, attemptID, "no_commit", ""); err != nil {
+		if err := b.FinishAttempt(ctx, attemptID, "no_commit", ""); err != nil {
 			return Result{}, err
 		}
-		fresh, err := board.GetCard(ctx, in.DB, card.ID)
+		fresh, err := b.GetCard(ctx, card.ID)
 		if err != nil {
 			return Result{}, err
 		}
 		return Result{AttemptID: attemptID, Outcome: "no_commit", Status: fresh.Status}, nil
 	}
-	if err := board.FinishAttempt(ctx, in.DB, attemptID, "", head); err != nil {
+	if err := b.FinishAttempt(ctx, attemptID, "", head); err != nil {
 		return Result{}, err
 	}
-	fresh, err := board.GetCard(ctx, in.DB, card.ID)
+	fresh, err := b.GetCard(ctx, card.ID)
 	if err != nil {
 		return Result{}, err
 	}
@@ -559,10 +580,9 @@ func countLines(text string) int {
 }
 
 func (s *session) event(ctx context.Context, kind string, payload map[string]any) error {
-	_, err := trace.Append(ctx, s.in.DB, trace.Event{
+	return s.in.board().AppendEvent(ctx, trace.Event{
 		CardID: s.card.ID, AttemptID: s.attemptID, ProjectID: s.card.ProjectID, Kind: kind, Payload: payload,
 	}, s.in.Secrets)
-	return err
 }
 
 func allowedTool(name string) bool {

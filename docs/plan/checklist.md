@@ -1069,3 +1069,50 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Card context Vitest
 - [x] `npm run check` and the full Vitest suite pass
 
+
+## Sprint 72: Runner registration and status
+
+- [x] Migration `00028` adds `runner_registrations`, `runners`, `runner_leases`, and `cards.runner_affinity`.
+- [x] Registration token, runner secret, heartbeat, and the `Runner` authorization that passes only `/api/runner/*`.
+- [x] `GET /api/runners` with derived status and drain, resume, and remove actions.
+- [x] The Runners page lists runners and mints a token with the install command.
+- [x] `TestRunnerTokenHashed`, `TestRegistrationSingleUse`, `TestRunnerAuthScope`, `TestRunnerStatusDerived`
+- [x] Runners page Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 73: Leased implement jobs
+
+- [x] Claim with `SKIP LOCKED` under the cap from open leases, with card affinity.
+- [x] Heartbeats extend leases; the reaper cancels, unlocks, clears affinity, and requeues.
+- [x] `ReconcileProject` leaves leased cards; `jobs.executor` stops local implement jobs.
+- [x] `TestClaimSkipLocked`, `TestClaimRespectsCap`, `TestCardAffinity`, `TestReaperRequeues`, `TestReconcileSkipsLiveLease`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 74: Remote implement loop
+
+- [x] `loop.Board` with `DBBoard`; the runner's HTTPS board client.
+- [x] `start`, `board`, and `model` job routes; live frames from the model proxy.
+- [x] `TestLocalExecutorUnchanged`, `TestModelProxyBudgets`, `TestLiveFromRunner`, `TestRunnerNeverGetsSecrets`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 75: Remote checks and publish
+
+- [x] `report` maps facts to transitions; `bundle` imports the card branch, then the control plane publishes.
+- [x] A runner seeds a missing worktree from the published card branch.
+- [x] `TestRunnerCannotSetStatus`, `TestCheckExitDecides`, `TestBundleOnlyCardBranch`, `TestRunnerLeaseScope`
+- [x] The fixture and the full backend suite pass
+
+## Sprint 76: MCP proxy and packaging
+
+- [x] MCP list and call through the control plane.
+- [x] `orchestrator runner register|run|remove`, the install and release scripts, and the systemd unit.
+- [x] Install and download routes; protocol mismatch is 409.
+- [x] `TestMCPProxyNetguard`, `TestProtocolMismatchRefused`, `shellcheck` on the scripts
+- [x] The fixture and the full backend suite pass
+
+## Sprint 77: Runner fleet drill
+
+- [x] A killed runner's card finishes on another runner.
+- [x] The fleet plan's Phase C points at RFC-0046.
+- [x] `TestRunnerChaos`
+- [x] The fixture and the full backend suite pass

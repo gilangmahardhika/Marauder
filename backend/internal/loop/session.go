@@ -242,7 +242,7 @@ func (s *session) loop(ctx context.Context) error {
 			return err
 		}
 		s.used = turn + 1
-		if err := board.AddAttemptTokens(ctx, s.in.DB, s.attemptID, resp.InputTokens, resp.OutputTokens, resp.CachedInputTokens); err != nil {
+		if err := s.in.board().AddAttemptTokens(ctx, s.attemptID, resp.InputTokens, resp.OutputTokens, resp.CachedInputTokens); err != nil {
 			return err
 		}
 		modelID := resp.Model
@@ -312,7 +312,7 @@ func (s *session) overTokens(ctx context.Context) (bool, error) {
 	if s.in.MaxTokensPerCard <= 0 {
 		return false, nil
 	}
-	used, err := board.CardTokens(ctx, s.in.DB, s.card.ID)
+	used, err := s.in.board().CardTokens(ctx, s.card.ID)
 	if err != nil {
 		return false, err
 	}
@@ -500,7 +500,7 @@ func (s *session) localCheck(ctx context.Context) (int, string, error) {
 	res, executed, err := sandbox.ExecuteCheck(ctx, sandbox.ExecuteOpts{
 		Command: s.card.LocalCheck,
 		Allow:   s.in.Allow,
-		Fixture: runtime.FixtureMode(s.in.Git.Repo),
+		Fixture: s.in.fixture(),
 		Engine:  s.in.Engine,
 		Image:   s.in.Image,
 		Dir:     dest,
@@ -548,7 +548,7 @@ func (s *session) runCommand(ctx context.Context, args map[string]any) (string, 
 	if err := sandbox.ParseArgv(argv, s.in.Commands); err != nil {
 		return "", err
 	}
-	if runtime.FixtureMode(s.in.Git.Repo) {
+	if s.in.fixture() {
 		return "", errors.New("run_command needs the container sandbox")
 	}
 	if s.commands >= maxCommands {

@@ -17,6 +17,9 @@ type Jobs struct {
 	Implement func(ctx context.Context, projectID, cardID string) (status string, err error)
 	Review    func(ctx context.Context, projectID, cardID string) (status string, err error)
 	Refresh   func(ctx context.Context, projectID, cardID string) (status string, err error)
+	// Reap ends expired runner leases and returns how many it ended. When nil
+	// the worker ends them on the board alone.
+	Reap func(ctx context.Context) (int, error)
 }
 
 // Slots tracks one project's implement jobs running in this process.
@@ -62,10 +65,20 @@ func (s *Slots) release(cardID string) {
 // StartQueued starts an implement job for each open card-scoped run request
 // of the project (RFC-061), oldest first, while the project's running jobs are
 // under scheduler.implementationCap (RFC-063). A request is marked processed
-// when its job starts. Ready cards without a request are not started.
+// when its job starts. Ready cards without a request are not started. When
+// jobs.executor is runners the requests are left for runners to claim.
 func StartQueued(ctx context.Context, db *sql.DB, dataRoot, projectID string, jobs Jobs, slots *Slots, logf func(string, ...any)) (int, error) {
 	if jobs.Implement == nil {
 		return 0, nil
+	}
+	if dataRoot != "" {
+		cfg, _, err := settings.Load(dataRoot)
+		if err != nil {
+			return 0, err
+		}
+		if cfg.Executor() == settings.ExecutorRunners {
+			return 0, nil
+		}
 	}
 	if logf == nil {
 		logf = func(string, ...any) {}

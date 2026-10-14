@@ -321,6 +321,28 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardContextPack` | After a card attaches a skill and detaches a rule, the next attempt's `conventions_context` has the skill and not the rule; `inherit` restores the rule (RFC-105) |
 | `TestMCPScopeCardAttach` | A card attach adds an enabled server beside the mentioned one, a detach removes a server from scope `all`, `mcp_context` has scope `card` with `attached` and `detached`, and a requirement edited since acceptance still gives `none` (RFC-105) |
 | `TestCardContextDisabledServer` | Attaching a disabled server, a server of another tribe, or a disabled skill is `422` (RFC-105) |
+| `TestRunnerTokenHashed` | A minted registration token and a runner secret appear in no row; the rows hold their SHA-256 hex (RFC-106) |
+| `TestRegistrationSingleUse` | A token registers once; a second use and a token past its hour are `401`; minting is `403` for a non-admin (RFC-106) |
+| `TestRunnerAuthScope` | A runner secret is `401` on `/api/cards`, a user bearer is `401` on `/api/runner/heartbeat`, and a removed runner's secret is `401` (RFC-106) |
+| `TestRunnerStatusDerived` | A runner is `idle`, then `busy 1/2` with a lease, `draining` after drain, and `offline` once its heartbeat is 61 seconds old; actions follow the state (RFC-106) |
+| `TestClaimSkipLocked` | Eight concurrent claims for three run requests make three leases on three distinct runs, and each run's `processed_at` is set (RFC-107) |
+| `TestClaimRespectsCap` | With `implementationCap: 1`, a second claim in the project gets nothing until the first lease ends (RFC-107) |
+| `TestCardAffinity` | A card's next run request goes to the runner that held it, not to another idle runner, until that runner is offline (RFC-107) |
+| `TestReaperRequeues` | A lease of a runner whose heartbeat stopped ends as `lost`; its open attempt is `cancelled`, its card lock is gone, affinity is cleared, the run row is open again, and the card status is unchanged (RFC-107) |
+| `TestReconcileSkipsLiveLease` | `ReconcileProject` cancels an unleased card's open attempt and keeps a leased card's attempt and lock (RFC-107) |
+| `TestLocalExecutorUnchanged` | With `jobs.executor: local` the worker runs the implement job in process; with `runners` it starts none and the run row stays open for a claim (RFC-107) |
+| `TestModelProxyBudgets` | A model request through a lease uses the lease's model whatever the request names, and a request for an ended lease is `404` (RFC-108) |
+| `TestLiveFromRunner` | A model call through the proxy publishes `turn`, `delta`, and `turn_end` frames to the card's live hub (RFC-108) |
+| `TestRunnerNeverGetsSecrets` | No runner response body contains `databaseUrl`, `tokenKey`, a model key, or the owner's token, and `start` carries the company token only as `cloneToken` (RFC-108) |
+| `TestRunnerCannotSetStatus` | A board op named `move` or `transition`, and an `event` of kind `transition` or `gate`, are `422` and change nothing (RFC-108) |
+| `TestCheckExitDecides` | A remote attempt whose check reports exit 1 returns to `in_progress` with a `local_check` note and a retry row; exit 0 after a bundle reaches `pr_open` with one `local_checks` gate (RFC-108) |
+| `TestBundleOnlyCardBranch` | A bundle with another branch, a head that is not the attempt commit, or a commit that does not descend from the attempt base is `422` and moves no ref (RFC-108) |
+| `TestSeedCardBranch` | After a fetch of the published card branch, a runner's missing `orch/<card-id>` points at it and a branch already ahead of it is kept (RFC-107) |
+| `TestRunnerLeaseScope` | A runner's job call on another runner's lease is `404`, and an op naming another card still works on its own lease card (RFC-108) |
+| `TestMCPProxyNetguard` | The job's MCP tools come from servers the control plane opens with its dialer; a private-address server is blocked there and the runner sees no URL or secret (RFC-108) |
+| `TestProtocolMismatchRefused` | A claim from protocol 0 is `409` `protocol`, and the runner lists `updateRequired: true` (RFC-109) |
+| `TestRunnerReleaseFiles` | `/runner/install.sh` and `/runner/download/{file}` are `404` with no release directory, serve the listed files from it, and refuse any other name (RFC-109) |
+| `TestRunnerChaos` | Two runners share a queue; one stops heartbeating during an attempt; the reaper requeues and the other runner takes the card to `pr_open` (REQ-094) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |

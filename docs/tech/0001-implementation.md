@@ -44,6 +44,7 @@ The harness stays in Go because that process owns the PostgreSQL board, git work
 | --- | --- | --- |
 | `orchestrator serve` | `127.0.0.1:8787` | JSON API, the worker lock, PostgreSQL, secrets, git, `gh`, sandbox, deploy |
 | `orchestrator <command>` | None | The same `internal/app` functions. `run-next` executes jobs only when `serve` is not running (RFC-043) |
+| `orchestrator runner run` | None; calls `serve` over HTTPS | Leased implement jobs on its own machine: clone, worktrees, the loop, the gating check in Podman. No database, no model key, no GitHub write token (RFC-106 to RFC-108) |
 | SvelteKit dev or preview | `127.0.0.1:4173` | Static pages that call the API with `fetch` |
 
 Rules that hold across processes:
@@ -75,11 +76,17 @@ backend/
   internal/deploy/
   internal/verify/
   internal/worker/
+  internal/runner/
   internal/app/
   internal/cli/
   internal/httpapi/
   migrations/00001_init.sql
   testdata/
+scripts/
+  install-runner.sh
+  release.sh
+deploy/systemd/
+  orchestrator-runner.service
 frontend/
   package.json
   package-lock.json
@@ -125,7 +132,7 @@ Licenses: Go is BSD-3-Clause. pgx, goose, goldmark, the GitHub CLI, `anthropic-s
 | SvelteKit server routes, form actions, `hooks.server.ts` | A second backend beside the Go API |
 | LiteLLM | Routing stays in `internal/router` |
 | LangChain, langchaingo | Tool allowlists are snapshot-tested in our own loop |
-| Temporal, Redis, NATS, Kafka | One Postgres database. One worker and one deploy lock per project (RFC-048) |
+| Temporal, Redis, NATS, Kafka | One Postgres database. One worker and one deploy lock per project (RFC-048). Remote runners claim leases with `SKIP LOCKED` in the same database (RFC-107) |
 | HTMX, Go templates | They tie the HTML to the API process |
 | A cloud provider SDK | Deploy is an operator script (RFC-038) |
 

@@ -128,6 +128,8 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 		srv.Images = app.ImagePuller{Engine: engine, Fixture: runtime.FixtureMode(paths.Repo), Run: srv.Tools.Exec}
 	}
 	srv.Catalog = mcpcatalog.New(mcpcatalog.DefaultRegistry, srv.MCP.Policy)
+	srv.Remote = app.NewRemoteJobs()
+	srv.RunnerReleases = opts.getenv("ORCHESTRATOR_RUNNER_RELEASES")
 	if os.Getenv("ORCHESTRATOR_CLOUD") == "1" {
 		srv.Cloud = true
 		srv.AllowHosts = hostAllowlist(opts.getenv)
@@ -141,6 +143,7 @@ func runServe(opts Options, repoFlag, dataFlag, addr string) error {
 	go func() {
 		defer close(done)
 		jobs := app.ImplementJobs(db, app.JobDeps{Data: paths.Data, Key: key, Tools: srv.Tools, Secrets: secrets.jobSecrets(), Live: srv.Live, MCP: app.MCPDialer{Board: guard}})
+		jobs.Reap = func(ctx context.Context) (int, error) { return app.ReapRemote(ctx, db, srv.Remote) }
 		worker.Run(ctx, db, paths.Data, 2*time.Second, jobs, func(format string, args ...any) {
 			fmt.Fprintf(opts.Stderr, format+"\n", args...)
 		})

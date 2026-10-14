@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-093`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-094`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -50,6 +50,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0043-mcp-mentions-in-requirements.md](rfc/0043-mcp-mentions-in-requirements.md) | Decisions `RFC-101` and `RFC-102`. A requirement names the MCP servers it needs with `@slug`, and its cards' jobs offer only those |
 | [rfc/0044-reviewers-before-github.md](rfc/0044-reviewers-before-github.md) | Decision `RFC-103`. A requirement names any tribe member as a reviewer, and GitHub is asked once they verify |
 | [rfc/0045-layered-conventions-and-card-context.md](rfc/0045-layered-conventions-and-card-context.md) | Decisions `RFC-104` and `RFC-105`. A tribe sets its projects' conventions, a project switches each on or off, and a person changes one card's skills, rules, and MCP servers |
+| [rfc/0046-remote-runners.md](rfc/0046-remote-runners.md) | Decisions `RFC-106` to `RFC-109`. An installed runner registers, heartbeats, and claims leased implement jobs over HTTPS, and the control plane keeps every status change and credential |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -162,6 +162,40 @@ type Config struct {
 			MaxWallMinutesPerAttempt int `yaml:"maxWallMinutesPerAttempt" json:"maxWallMinutesPerAttempt"`
 		} `yaml:"budgets" json:"budgets"`
 	} `yaml:"router" json:"router"`
+	// Jobs.Executor is where implement jobs run: local, the serve process,
+	// or runners, the remote runners (RFC-107). Empty means local.
+	Jobs struct {
+		Executor string `yaml:"executor,omitempty" json:"executor"`
+	} `yaml:"jobs,omitempty" json:"jobs"`
+}
+
+const (
+	ExecutorLocal   = "local"
+	ExecutorRunners = "runners"
+)
+
+// Executor reports where implement jobs run.
+func (c Config) Executor() string {
+	if c.Jobs.Executor == ExecutorRunners {
+		return ExecutorRunners
+	}
+	return ExecutorLocal
+}
+
+// SaveJobs stores jobs.executor in the service config.
+func SaveJobs(data, executor string) (Config, error) {
+	current, secrets, err := Load(data)
+	if err != nil {
+		return current, err
+	}
+	if executor != ExecutorLocal && executor != ExecutorRunners {
+		return current, &Invalid{Fields: map[string]string{"executor": "executor must be local or runners"}}
+	}
+	current.Jobs.Executor = executor
+	if err := write(data, current, secrets); err != nil {
+		return current, err
+	}
+	return current, nil
 }
 
 func Load(data string) (Config, Secrets, error) {

@@ -39,6 +39,11 @@ func Run(ctx context.Context, db *sql.DB, dataRoot string, interval time.Duratio
 				projectLoop(ctx, db, dataRoot, id, interval, jobs, logf)
 			}(id)
 		}
+		if n, err := reap(ctx, db, jobs); err != nil && ctx.Err() == nil {
+			logf("worker: reap runner leases: %v", err)
+		} else if n > 0 {
+			logf("worker: ended %d expired runner leases", n)
+		}
 		select {
 		case <-ctx.Done():
 			wg.Wait()
@@ -135,6 +140,14 @@ func projectLoop(ctx context.Context, db *sql.DB, dataRoot, projectID string, in
 		case <-ticker.C:
 		}
 	}
+}
+
+func reap(ctx context.Context, db *sql.DB, jobs Jobs) (int, error) {
+	if jobs.Reap != nil {
+		return jobs.Reap(ctx)
+	}
+	ended, err := board.ReapLeases(ctx, db, board.ReapFilter{Expired: true}, "lost")
+	return len(ended), err
 }
 
 func projectIDs(ctx context.Context, db *sql.DB) ([]string, error) {

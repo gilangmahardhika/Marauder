@@ -136,6 +136,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-091 | The sidebar groups the active tribe's pages and the active project's pages |
 | REQ-092 | A tribe sets the conventions of its projects, and a project switches each on or off |
 | REQ-093 | A person changes the skills, rules, and MCP servers of one card |
+| REQ-094 | An operator installs runners that claim implement jobs, and an admin sees each runner's status |
 
 ## Requirements
 
@@ -1283,6 +1284,19 @@ A person who may run a card attaches or detaches its skills and rules, and detac
 - The next attempt's pack carries an attached skill and leaves out a detached rule.
 - An attached server is offered with its allowlisted tools, a detached one is not, and a requirement edited since acceptance still offers none.
 - A `done` card's context does not change, and the card status never changes.
+
+### REQ-094 Remote runners
+
+An admin mints a registration token, and an operator installs a runner on a machine with one script. The runner claims implement jobs over HTTPS while the control plane keeps the board, every status change, and every credential that writes to GitHub or calls a model. The Runners page shows each runner as idle, busy, draining, or offline (RFC-106 to RFC-109).
+
+#### Acceptance
+
+- A registration token works once and within one hour, and the database stores only hashes of tokens and runner secrets.
+- A runner secret passes only `/api/runner/*`, and a runner reaches only the leases it holds.
+- Two runners never claim the same run request, and a project's open leases stay under its implementation cap.
+- A runner that stops heartbeating goes offline, and its card's open attempt is cancelled and its run request queued again.
+- A remote attempt reaches `pr_open` through the same transitions and gates as a local one, and a runner cannot move a card.
+- No response to a runner carries `databaseUrl`, `tokenKey`, a model key, or the owner's GitHub token.
 
 ## Non-goals
 

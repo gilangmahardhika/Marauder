@@ -990,3 +990,78 @@ Packages: frontend `CardContext`, the card page, `api.ts`, `types.ts`, and `trac
 
 Done when: the card context Vitest cases, `npm run check`, and the rest of the suite.
 
+
+## Sprint 72: Runner registration and status
+
+Goal: An admin mints a registration token, a runner registers and heartbeats, and the Runners page shows its status (RFC-106, REQ-094).
+
+Packages: migration `00028`, `internal/board`, `internal/app`, `internal/httpapi`, frontend `/admin/runners`.
+
+- `runner_registrations`, `runners`, and `runner_leases` are new, and `cards.runner_affinity` is added.
+- `POST /api/runners/tokens` mints a single-use token; `POST /api/runner/register` exchanges it for a runner secret; `POST /api/runner/heartbeat` records version, protocol, and time.
+- `Authorization: Runner <secret>` passes only `/api/runner/*`, before the user bearer.
+- `GET /api/runners` lists runners with derived status, slots, and `actions`; drain, resume, and remove.
+- The Runners page lists runners, mints a token, and shows the install command once.
+
+Done when: `TestRunnerTokenHashed`, `TestRegistrationSingleUse`, `TestRunnerAuthScope`, `TestRunnerStatusDerived`, the Runners page Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 73: Leased implement jobs
+
+Goal: With the `runners` executor, runners claim implement jobs as PostgreSQL leases, and a lost runner's work is released (RFC-107, REQ-094).
+
+Packages: `internal/board` (`lease.go`), `internal/worker`, `internal/app`, `internal/settings`, `internal/httpapi`.
+
+- `POST /api/runner/claim` long-polls and claims with `FOR UPDATE SKIP LOCKED`, under each project's cap counted from open leases, honoring `cards.runner_affinity`.
+- Heartbeats extend leases; the reaper in `serve` ends expired leases, cancels the open attempt, deletes the lease's card lock, clears affinity, and requeues the run.
+- `ReconcileProject` leaves cards with an open lease.
+- `jobs.executor` (`local` or `runners`) is a company setting; with `runners` the worker starts no implement job.
+
+Done when: `TestClaimSkipLocked`, `TestClaimRespectsCap`, `TestCardAffinity`, `TestReaperRequeues`, `TestReconcileSkipsLiveLease`, the fixture, and the rest of the suite.
+
+## Sprint 74: Remote implement loop
+
+Goal: The implement loop runs on a runner against the job API, with model calls through the control plane (RFC-108, REQ-094).
+
+Packages: `internal/loop` (`Board`), `internal/app` (`remote.go`), `internal/httpapi` (`runner_routes.go`), `internal/runner`.
+
+- `loop.Board` carries every board read and write of an attempt; `DBBoard` keeps the local path unchanged.
+- `POST /api/runner/jobs/{lease}/start` runs the preflight and returns the job context without a model key or the owner's token.
+- `POST /api/runner/jobs/{lease}/board` serves the attempt's board calls for the lease card only.
+- `POST /api/runner/jobs/{lease}/model` runs the lease's route and publishes live frames.
+
+Done when: `TestLocalExecutorUnchanged`, `TestModelProxyBudgets`, `TestLiveFromRunner`, `TestRunnerNeverGetsSecrets`, the fixture, and the rest of the suite.
+
+## Sprint 75: Remote checks and publish
+
+Goal: A runner's gating check decides the card through the control plane, which pushes and opens the pull request (RFC-108, REQ-094).
+
+Packages: `internal/app`, `internal/runtime`, `internal/httpapi`, `internal/runner`.
+
+- `POST /api/runner/jobs/{lease}/report` maps `finished` and `check` facts to `machine.Transition` with the local job's evidence.
+- `POST /api/runner/jobs/{lease}/bundle` accepts one head, `refs/heads/orch/<card-id>`, at the attempt commit and descending from its base.
+- A runner without the card's worktree seeds it from the published `orch/<card-id>`.
+
+Done when: `TestRunnerCannotSetStatus`, `TestCheckExitDecides`, `TestBundleOnlyCardBranch`, `TestRunnerLeaseScope`, the fixture, and the rest of the suite.
+
+## Sprint 76: MCP proxy and packaging
+
+Goal: Remote attempts use the tribe's MCP tools through the control plane, and an operator installs a runner with one script (RFC-108, RFC-109, REQ-094).
+
+Packages: `internal/app`, `internal/httpapi`, `internal/runner`, `internal/cli`, `scripts/`, `deploy/systemd/`.
+
+- `GET` and `POST /api/runner/jobs/{lease}/mcp` list and call the job's MCP tools opened on the control plane.
+- `orchestrator runner register|run|remove`; `scripts/install-runner.sh`, `scripts/release.sh`, and `deploy/systemd/orchestrator-runner.service`.
+- `/runner/install.sh` and `/runner/download/...` serve the release directory; a claim on another protocol is 409.
+
+Done when: `TestMCPProxyNetguard`, `TestProtocolMismatchRefused`, `shellcheck` on the scripts, the fixture, and the rest of the suite.
+
+## Sprint 77: Runner fleet drill
+
+Goal: A runner killed mid-job loses its lease, and another runner finishes the card (REQ-094).
+
+Packages: `internal/runner`, docs.
+
+- Two runners share a queue; one stops heartbeating mid-attempt; the reaper requeues; the other takes the card to `pr_open`.
+- The fleet plan's Phase C points at RFC-0046.
+
+Done when: `TestRunnerChaos`, the fixture, and the rest of the suite.

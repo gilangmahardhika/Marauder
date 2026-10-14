@@ -13,6 +13,7 @@ import type {
   ConventionChoices,
   ConventionRule,
   DeploySettings,
+  Executor,
   Intake,
   LLMSettings,
   MCPCatalogEntry,
@@ -31,6 +32,9 @@ import type {
   RequirementDraft,
   RouterSettings,
   RuleInput,
+  Runner,
+  RunnerList,
+  RunnerToken,
   SessionUser,
   Skill,
   SkillInput,
@@ -47,6 +51,9 @@ import type {
 } from "$lib/types";
 
 const base = "http://127.0.0.1:8787";
+
+/** The API origin this client calls. */
+export const apiOrigin = base;
 
 export class ApiError extends Error {
   status: number;
@@ -687,6 +694,31 @@ export function putRouter(body: Record<string, unknown>) {
   return request<RouterSettings>("/api/settings/router", {
     method: "PUT",
     body: JSON.stringify(body),
+  });
+}
+
+export function getRunners() {
+  return request<RunnerList>("/api/runners");
+}
+
+export function runnerAction(id: string, action: string) {
+  return request<Runner | Record<string, never>>(
+    `/api/runners/${encodeURIComponent(id)}/${encodeURIComponent(action)}`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function mintRunnerToken() {
+  return request<RunnerToken>("/api/runners/tokens", {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export function putJobs(executor: Executor) {
+  return request<{ executor: Executor }>("/api/settings/jobs", {
+    method: "PUT",
+    body: JSON.stringify({ executor }),
   });
 }
 

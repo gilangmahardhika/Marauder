@@ -16,6 +16,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/intake"
+	"orchestrator/backend/internal/runner"
 	"orchestrator/backend/internal/tenancy"
 )
 
@@ -256,6 +257,7 @@ func Execute(opts Options) int {
 	usage.Flags().StringVar(&usageTribe, "tribe", "", "only the projects of this tribe id")
 	usage.Flags().StringVar(&usageUser, "user", "", "only the calls of this user id")
 	root.AddCommand(usage)
+	root.AddCommand(runnerCommand(opts, &data))
 	root.SetOut(opts.Stderr)
 	root.SetErr(opts.Stderr)
 	if opts.Args != nil {
@@ -263,10 +265,17 @@ func Execute(opts Options) int {
 	}
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(opts.Stderr, err)
+		if errors.Is(err, runner.ErrRemoved) {
+			return ExitRunnerRemoved
+		}
 		return 1
 	}
 	return 0
 }
+
+// ExitRunnerRemoved is the exit status of `runner run` once the control plane
+// refuses its secret; the systemd unit does not restart on it.
+const ExitRunnerRemoved = 3
 
 func projectOr(project string) string {
 	if project == "" {

@@ -92,3 +92,5 @@ Set aside: a deploy that starts by itself when the card reaches `approved`. The 
 Consequences: `Reconcile` for a project runs only in the process that holds that project's worker lock, and it resets that project's deploy lock and that project's card locks. A second project keeps running. `POST` deploy is allowed only when `deploy` is in `actions`. The worker then runs the existing deploy job for that card.
 
 Requirements: REQ-009, REQ-033, REQ-034, REQ-050.
+
+Superseded in part by RFC-107 in [0046-remote-runners.md](0046-remote-runners.md). With the `runners` executor, a project's cap counts its open leases, and Reconcile leaves cards that a live lease holds.

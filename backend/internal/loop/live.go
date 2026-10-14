@@ -8,6 +8,15 @@ import (
 	"orchestrator/backend/internal/trace"
 )
 
+// CompleteLive sends one model request of a remote attempt and publishes its
+// turn to pub as a local attempt does, ending the turn when the reply is in
+// (RFC-108).
+func CompleteLive(ctx context.Context, p providers.Provider, req providers.Request, pub live.Publisher, cardID string, turn live.Frame, secrets []string) (providers.Response, error) {
+	resp, end, err := complete(ctx, p, req, pub, cardID, turn, secrets)
+	end()
+	return resp, err
+}
+
 // complete sends one model request. With pub set, it publishes the turn and
 // the reply text as it arrives, redacted, and a reset when the provider sends
 // the reply again (RFC-088). Only reply text is published: no reasoning and no

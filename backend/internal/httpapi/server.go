@@ -37,6 +37,14 @@ type Server struct {
 	Catalog *mcpcatalog.Catalog
 	// Images pulls and pins stdio server images (RFC-098).
 	Images app.ImagePuller
+	// JobProvider replaces the routed model of remote implement jobs in
+	// tests; nil in production.
+	JobProvider providers.Provider
+	// RunnerReleases is the directory install.sh and runner binaries are
+	// served from (RFC-109); empty serves none.
+	RunnerReleases string
+	// Remote holds the per-lease state of remote implement jobs.
+	Remote *app.RemoteJobs
 }
 
 func New() *Server {
@@ -110,6 +118,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/settings/llm/", s.llmTest)
 	mux.HandleFunc("/api/settings/router", s.routerSettings)
 	mux.HandleFunc("GET /api/usage", s.usage)
+	mux.HandleFunc("PUT /api/settings/jobs", s.jobsSettings)
+	mux.HandleFunc("GET /api/runners", s.listRunners)
+	mux.HandleFunc("POST /api/runners/tokens", s.mintRunnerToken)
+	mux.HandleFunc("POST /api/runners/{id}/{action}", s.runnerAction)
+	s.runnerRoutes(mux)
 	return s.wrap(mux)
 }
 
@@ -129,13 +142,27 @@ func (s *Server) wrap(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		limit := int64(1 << 20)
+		if isBundleRoute(r) {
+			limit = maxBundle
+		} else if isModelRoute(r) {
+			limit = maxModelBody
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(204)
 			return
 		}
 		if r.URL.Path == "/api/session" && r.Method == http.MethodPost {
 			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/runner/") || (r.URL.Path == "/api/runner/register" && r.Method == http.MethodPost) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/runner/") {
+			s.runnerAuth(next, w, r)
 			return
 		}
 		if s.DB == nil {

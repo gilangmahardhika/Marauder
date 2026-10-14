@@ -383,6 +383,40 @@ export type RouterSettings = {
   reviewIndependentPossible: boolean;
 };
 
+export type Executor = "local" | "runners";
+
+export type RunnerStatus = "idle" | "busy" | "draining" | "offline";
+
+export type RunnerLease = {
+  id: string;
+  cardId: string;
+  projectId: string;
+  since: string;
+};
+
+export type Runner = {
+  id: string;
+  name: string;
+  labels: string[];
+  slots: number;
+  busy: number;
+  status: RunnerStatus;
+  version: string;
+  protocol: number;
+  updateRequired: boolean;
+  heartbeatAt: string | null;
+  leases: RunnerLease[];
+  actions: string[];
+};
+
+export type RunnerList = {
+  executor: Executor;
+  protocol: number;
+  runners: Runner[];
+};
+
+export type RunnerToken = { token: string; expiresAt: string };
+
 export type DiffLine = { kind: "add" | "del" | "ctx" | "meta"; text: string };
 
 export type DiffFile = {

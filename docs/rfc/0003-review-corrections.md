@@ -139,3 +139,5 @@ Consequences: the CLI and the UI both work while `serve` runs. Only one of them 
 Requirements: REQ-008, REQ-009, REQ-040.
 
 Superseded in part by RFC-048 in [0005-teams-and-cloud.md](0005-teams-and-cloud.md). The lock file is per project. One service may run those workers together. Reconcile still runs only in the holder of that project's lock.
+
+Superseded in part by RFC-107 in [0046-remote-runners.md](0046-remote-runners.md). A remote attempt's card lock is held by its lease, and the lease reaper, not Reconcile, releases it.

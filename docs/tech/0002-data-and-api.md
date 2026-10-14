@@ -1207,6 +1207,134 @@ The body is optional. The card goes to `unblockTo`. With `resetAttempts: false`,
 
 Approve, deploy, and unblock insert a `runs` row with the matching trigger so the board continues without a second click. Request-changes does not: the card waits in `changes_requested` until someone presses Run. Only an AI request for changes on a `continue` card queues the next attempt by itself (RFC-071, RFC-072). Each route returns the card object. An action not listed for the card is `422` `transition_rejected`. A status change between read and write is `409` `conflict`. A role that cannot perform the action is `403`.
 
+## Runners
+
+`00028_runners.sql` adds remote runners (RFC-106, RFC-107):
+
+```sql
+CREATE TABLE runner_registrations (
+  id TEXT PRIMARY KEY,              -- rrg_ + 12 hex
+  token_hash TEXT NOT NULL UNIQUE,  -- sha256 hex of the token
+  created_by TEXT NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  runner_id TEXT
+);
+
+CREATE TABLE runners (
+  id TEXT PRIMARY KEY,              -- rnr_ + 12 hex
+  name TEXT NOT NULL,
+  labels_json TEXT NOT NULL DEFAULT '[]',
+  slots INTEGER NOT NULL CHECK (slots BETWEEN 1 AND 16),
+  version TEXT NOT NULL DEFAULT '',
+  protocol INTEGER NOT NULL DEFAULT 0,
+  secret_hash TEXT NOT NULL UNIQUE, -- sha256 hex of the runner secret
+  state TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active', 'draining', 'removed')),
+  heartbeat_at TEXT,
+  created_at TEXT NOT NULL,
+  created_by TEXT REFERENCES users(id)
+);
+
+CREATE TABLE runner_leases (
+  id TEXT PRIMARY KEY,              -- lse_ + 12 hex
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+  runner_id TEXT NOT NULL REFERENCES runners(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  attempt_id TEXT,
+  model_id TEXT NOT NULL DEFAULT '',
+  fallback_model_id TEXT NOT NULL DEFAULT '',
+  task_class TEXT NOT NULL DEFAULT '',
+  leased_until TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  ended_at TEXT,
+  outcome TEXT                      -- done, lost, removed
+);
+CREATE UNIQUE INDEX runner_leases_open_card ON runner_leases(card_id) WHERE ended_at IS NULL;
+CREATE INDEX runner_leases_open_runner ON runner_leases(runner_id) WHERE ended_at IS NULL;
+
+ALTER TABLE cards ADD COLUMN runner_affinity TEXT REFERENCES runners(id);
+```
+
+A runner's status is derived, never stored: `offline` when `heartbeat_at` is empty or older than 60 seconds, else `draining` when `state` is `draining`, else `busy` when it has an open lease, else `idle`. A removed runner is not listed.
+
+### Admin routes
+
+A company admin calls these; anyone else is `403`.
+
+`GET /api/runners`
+
+```json
+{
+  "executor": "runners",
+  "protocol": 1,
+  "runners": [{
+    "id": "rnr_a1b2c3d4e5f6", "name": "agent-1", "labels": ["podman", "cpu=16"],
+    "slots": 4, "busy": 1, "status": "busy", "version": "0.1.0", "protocol": 1,
+    "updateRequired": false, "heartbeatAt": "2026-10-14T05:00:00Z",
+    "leases": [{ "id": "lse_…", "cardId": "card_…", "projectId": "proj_…", "since": "…" }],
+    "actions": ["drain", "remove"]
+  }]
+}
+```
+
+`actions` is `drain` and `remove` for an active runner, and `resume` and `remove` for a draining one. `POST /api/runners/{id}/{action}` runs one listed action and returns the runner; an action that is not listed is `422` `transition_rejected`. `remove` sets `state = removed`, ends the runner's open leases as the reaper does, and returns `204`.
+
+`POST /api/runners/tokens` has an empty body and returns the registration token once:
+
+```json
+{ "token": "64 hex", "expiresAt": "2026-10-14T06:00:00Z" }
+```
+
+`PUT /api/settings/jobs` takes `{ "executor": "local" }` or `{ "executor": "runners" }` and returns `{ "executor": … }`. Another value is `422` with `fields.executor`. The value is `jobs.executor` in the service `config.yaml`.
+
+### Runner routes
+
+`Authorization: Runner <secret>` authenticates every `/api/runner/*` route except `register`. A missing, wrong, or removed runner's secret is `401`. A user bearer is never accepted there, and a runner secret never passes another route. Each job route names a lease the caller holds and has not ended, else `404`.
+
+| Route | Body | Response |
+| --- | --- | --- |
+| `POST /api/runner/register` | `{ "token", "name", "labels", "slots", "version", "protocol" }` | `{ "runnerId", "secret", "heartbeatSeconds": 10, "protocol": 1 }`. A used, expired, or unknown token is `401`. `name` is 1 to 64 printable chars and `slots` 1 to 16, else `422` |
+| `POST /api/runner/heartbeat` | `{ "version", "protocol" }` | `{ "state", "protocol": 1, "leases": ["lse_…"] }`, the leases still open |
+| `POST /api/runner/claim` | `{ "waitSeconds": 0 to 25 }` | `200` with `{ "leaseId", "cardId", "projectId" }`, or `204` when nothing was claimed within the wait. A draining runner gets `204`. Another protocol is `409` `protocol` |
+| `POST /api/runner/jobs/{lease}/start` | none | The job context below, or `{ "done": true, "status" }` when the preflight blocked the card or nothing can start |
+| `POST /api/runner/jobs/{lease}/board` | `{ "op", … }` | The attempt's board calls, below |
+| `POST /api/runner/jobs/{lease}/model` | `{ "attemptId", "turn", "request" }` | `{ "response" }`. A provider failure is `502` `provider_error` |
+| `GET /api/runner/jobs/{lease}/mcp` | none | `{ "tools", "servers" }` |
+| `POST /api/runner/jobs/{lease}/mcp` | `{ "name", "args" }` | `{ "text", "isError" }` |
+| `POST /api/runner/jobs/{lease}/bundle?sha=` | a git bundle, at most 64 MiB | `204`, or `422` `bundle` |
+| `POST /api/runner/jobs/{lease}/report` | `{ "fact", … }` | `{ "status", "next": "check" or "done", "attemptId", "sha" }` |
+| `POST /api/runner/jobs/{lease}/end` | none | `204`. Ends the lease with outcome `done` |
+| `POST /api/runner/jobs/{lease}/release` | none | `204`. Gives the lease back as the reaper does, with outcome `lost`: the open attempt is cancelled and the run request opens again |
+
+The job context:
+
+```json
+{
+  "cardId": "card_…", "projectId": "proj_…", "title": "…", "status": "in_progress",
+  "baseBranch": "main", "cloneUrl": "https://github.com/acme/widget.git", "cloneToken": "…",
+  "author": { "name": "grace", "email": "11+grace@users.noreply.github.com" },
+  "publishedBranch": true, "fixture": false,
+  "model": "…", "taskClass": "implement", "maxTurns": 40, "historyBudget": 16384,
+  "maxTokensPerCard": 2000000, "wallMinutes": 30,
+  "localCheck": "npm test", "allowExecutables": ["npm"], "commandExecutables": [],
+  "sandboxEngine": "podman", "sandboxImage": "…@sha256:…",
+  "mcp": { "scope": "all", "offered": [], "missing": [], "attached": [], "detached": [], "total": 0 },
+  "resume": { "attemptId": "att_…", "sha": "…" }
+}
+```
+
+`cloneToken` is the company token. `resume` is present when the card's latest attempt has a commit whose gating check never ran; the runner checks it without a model call when its worktree head is that SHA. When that attempt passed and only the publish failed, the control plane publishes from the commit it already holds and `start` returns `done`.
+
+Board ops: `card`, `lock`, `unlock`, `next_attempt`, `insert_attempt`, `finish_attempt`, `event`, `add_tokens`, `card_tokens`, `failure_note`, `add_attempt_used`, `requirements`, `decisions`, `latest_note`, `instructions`, and `conventions`. Every op works on the lease card and its project, whatever ids the body names. `lock` holds the card lock as the lease id. `insert_attempt` records the attempt on the lease. `event` takes `model_call`, `tool_call`, `budget_stop`, `job_error`, and `assertion_failed`, and any other kind is `422`. There is no op that moves a card.
+
+Report facts: `finished` with `outcome` (empty for a commit, `no_change`, `no_commit`, `budget` with `reason`, or `error` with `cause` of `wall_cap`, `provider_error`, or `other` and a `message`), `resume` with `attemptId`, `check` with `exit`, `tail`, and an `error` of `sandbox_config` or `check_error` when the check could not run, and `blocked` with `reason` `sandbox_config` and a `message`. The control plane applies each fact as the local implement job does.
+
+### Install routes
+
+`GET /runner/install.sh`, `GET /runner/download/SHA256SUMS`, and `GET /runner/download/{file}` serve files from the directory named by `ORCHESTRATOR_RUNNER_RELEASES`, with no bearer. `{file}` is `orchestrator-linux-amd64`, `orchestrator-linux-arm64`, or `orchestrator-runner.service`; any other name is `404`. An unset directory or a missing file is `404`. `scripts/release.sh [version] [out]` writes that directory: both binaries with `cli.Version` set, the systemd unit, `install-runner.sh`, and a `SHA256SUMS` over the binaries and the unit.
+
 ## Settings
 
 Secret fields are write-only.

@@ -77,112 +77,161 @@ func (d JobDeps) now() time.Time {
 // pull request when it exits 0. Every status change goes through
 // machine.Transition. A preflight failure blocks the card with its reason and
 // returns the card with a nil error.
-func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
+// preparedJob is what the implement preflight resolved for one card.
+type preparedJob struct {
+	card         board.Card
+	project      tenancy.Project
+	cfg          settings.Config
+	projectCfg   settings.ProjectConfig
+	redact       []string
+	acct         company.Account
+	companyToken string
+	owner        OwnerIdentity
+	mcpConns     []MCPConn
+	mcpScope     loop.MCPContext
+	fixture      bool
+	engine       string
+	class        string
+	model        string
+	fallback     string
+	provider     providers.Provider
+}
+
+// implementPreflight checks and resolves everything an implement attempt
+// needs, and moves a ready card to in_progress. done is true when it blocked
+// the card or the card is at its attempt cap; the card is then final for this
+// job. A remote job skips the engine probe, which its runner makes.
+func implementPreflight(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string, remote bool) (preparedJob, bool, error) {
+	var p preparedJob
 	card, err := board.GetCard(ctx, db, cardID)
+	p.card = card
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	if card.ProjectID != projectID {
-		return card, board.ErrNotFound
+		return p, false, board.ErrNotFound
 	}
 	open, err := board.OpenAttempt(ctx, db, card.ID)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	if open || !startable(card.Status) {
-		return card, ErrNotStartable
+		return p, false, ErrNotStartable
+	}
+	done := func(card board.Card, err error) (preparedJob, bool, error) {
+		p.card = card
+		return p, true, err
 	}
 	if card.AttemptsUsed >= card.MaxAttempts {
-		return AtCap(ctx, db, card.ID)
+		return done(AtCap(ctx, db, card.ID))
 	}
 	project, err := tenancy.GetProject(ctx, db, projectID)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	cfg, secrets, err := settings.Load(deps.Data)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	projectCfg, _, err := settings.LoadProject(deps.Data, projectID)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	redact := append(modelKeys(secrets), deps.Secrets...)
 
 	if card.Status == "ready" || card.Status == "changes_requested" {
 		if card, err = move(ctx, db, card, "in_progress", machine.Evidence{}, redact); err != nil {
-			return card, err
+			p.card = card
+			return p, false, err
 		}
+		p.card = card
 	}
 
 	acct, err := company.Load(ctx, db)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	companyToken, err := company.Token(ctx, db, deps.Key)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	if acct.Org == "" || acct.BotLogin == "" || companyToken == "" || project.Repo == "" || project.RepoPath == "" {
-		return BlockCard(ctx, db, card, "github_config", redact)
+		return done(BlockCard(ctx, db, card, "github_config", redact))
 	}
 	redact = append(redact, companyToken)
 
 	owner, err := OwnerGitHub(ctx, db, deps.Key, card, acct.Host)
 	if errors.Is(err, ErrOwnerGitHub) {
-		return BlockCard(ctx, db, card, "owner_github", redact)
+		return done(BlockCard(ctx, db, card, "owner_github", redact))
 	}
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	redact = append(redact, owner.Token)
 
 	mcpConns, err := LoadProjectMCP(ctx, db, deps.Key, projectID)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	redact = append(redact, MCPSecrets(mcpConns)...)
 	mcpConns, mcpScope, err := MCPScopeFor(ctx, db, projectID, card.ID, card.RequirementIDs, mcpConns)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 
 	fixture := runtime.FixtureMode(project.RepoPath)
 	if card.LocalCheck == "" && projectCfg.Checks.Local != "" {
 		if err := board.SetLocalCheck(ctx, db, card.ID, projectCfg.Checks.Local); err != nil {
-			return card, err
+			return p, false, err
 		}
 		card.LocalCheck = projectCfg.Checks.Local
+		p.card = card
 	}
 	engine := deps.Tools.Engine(projectCfg.Sandbox.Engine)
-	if !sandboxReady(card.LocalCheck, projectCfg, engine, fixture) {
-		return BlockCard(ctx, db, card, "sandbox_config", redact)
+	if !sandboxReady(card.LocalCheck, projectCfg, engine, fixture, remote) {
+		return done(BlockCard(ctx, db, card, "sandbox_config", redact))
 	}
-	if !fixture {
+	if !fixture && !remote {
 		run := deps.Tools.Exec
 		if run == nil {
 			run = execx.Command
 		}
 		if err := sandbox.ProbeEngine(ctx, engine, run); err != nil {
 			_ = jobError(ctx, db, card, "", err.Error()+"; start the podman machine or the docker daemon, then unblock the card", redact)
-			return BlockCard(ctx, db, card, "sandbox_config", redact)
+			return done(BlockCard(ctx, db, card, "sandbox_config", redact))
 		}
 	}
 
 	class, err := router.TaskClass(card.Risk, card.AttemptsUsed)
 	if err != nil {
-		return card, err
+		return p, false, err
 	}
 	route := cfg.Router.Routes[class]
 	provider := deps.Provider
 	if provider == nil {
 		if _, _, _, err := llm.ForModel(cfg, secrets, route.Model); route.Model == "" || err != nil {
-			return BlockCard(ctx, db, card, "router_config", redact)
+			return done(BlockCard(ctx, db, card, "router_config", redact))
 		}
 		provider = RoutedProvider(cfg, secrets, route.Model, route.Fallback)
 	} else if route.Model == "" {
-		return BlockCard(ctx, db, card, "router_config", redact)
+		return done(BlockCard(ctx, db, card, "router_config", redact))
 	}
+	return preparedJob{
+		card: card, project: project, cfg: cfg, projectCfg: projectCfg, redact: redact,
+		acct: acct, companyToken: companyToken, owner: owner, mcpConns: mcpConns, mcpScope: mcpScope,
+		fixture: fixture, engine: engine, class: class, model: route.Model, fallback: route.Fallback, provider: provider,
+	}, false, nil
+}
+
+func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, cardID string) (board.Card, error) {
+	p, done, err := implementPreflight(ctx, db, deps, projectID, cardID, false)
+	if done || err != nil {
+		return p.card, err
+	}
+	card, project, cfg, projectCfg, redact := p.card, p.project, p.cfg, p.projectCfg, p.redact
+	acct, companyToken, owner, mcpConns, mcpScope := p.acct, p.companyToken, p.owner, p.mcpConns, p.mcpScope
+	fixture, engine, class, provider := p.fixture, p.engine, p.class, p.provider
+	route := struct{ Model string }{Model: p.model}
 
 	git := ProjectGit(deps.Data, project, owner.Author, deps.Tools)
 	if _, err := git.EnsureCheckout(ctx, project.BaseBranch, runtime.Remote{URL: acct.CloneURL(project.Repo), Token: companyToken}); err != nil {
@@ -263,15 +312,37 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 	if err != nil {
 		return card, err
 	}
-	head := attempt.CommitSHA
-	exit, tail, err := gatingCheck(ctx, git, deps.Tools, card, projectCfg, engine, fixture, head, attempt.ID)
+	exit, tail, err := gatingCheck(ctx, git, deps.Tools, card, projectCfg, engine, fixture, attempt.CommitSHA, attempt.ID)
+	reason := ""
 	if err != nil {
-		reason := "check_error"
-		if errors.Is(err, sandbox.ErrParse) || errors.Is(err, sandbox.ErrAllow) || errors.Is(err, sandbox.ErrEmpty) ||
-			errors.Is(err, sandbox.ErrImage) || errors.Is(err, sandbox.ErrEngine) {
-			reason = "sandbox_config"
+		reason = CheckErrorReason(err)
+	}
+	return settleCheck(ctx, db, deps, git, project, card, attempt, model, redact, exit, tail, reason, err)
+}
+
+// CheckErrorReason is the block reason of a gating check that could not run:
+// sandbox_config when the command or the engine is misconfigured, else
+// check_error.
+func CheckErrorReason(err error) string {
+	if errors.Is(err, sandbox.ErrParse) || errors.Is(err, sandbox.ErrAllow) || errors.Is(err, sandbox.ErrEmpty) ||
+		errors.Is(err, sandbox.ErrImage) || errors.Is(err, sandbox.ErrEngine) {
+		return "sandbox_config"
+	}
+	return "check_error"
+}
+
+// settleCheck applies the gating check of attempt to a card in self_check:
+// a check that could not run blocks the card with reason, an engine exit of
+// 125 or 127 blocks it with sandbox_config, another non-zero exit returns it
+// to in_progress, and exit 0 opens the pull request from git's orch/<card>.
+func settleCheck(ctx context.Context, db *sql.DB, deps JobDeps, git runtime.Git, project tenancy.Project, card board.Card, attempt board.Attempt, model string, redact []string, exit int, tail, reason string, checkErr error) (board.Card, error) {
+	head := attempt.CommitSHA
+	if reason != "" {
+		message := reason
+		if checkErr != nil {
+			message = checkErr.Error()
 		}
-		_ = jobError(ctx, db, card, attempt.ID, err.Error(), redact)
+		_ = jobError(ctx, db, card, attempt.ID, message, redact)
 		return BlockCard(ctx, db, card, reason, redact)
 	}
 	if exit == 125 || exit == 127 {
@@ -293,7 +364,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			return card, err
 		}
 		code := exit
-		card, err = move(ctx, db, card, "in_progress", machine.Evidence{ExitCode: &code, AttemptID: attempt.ID}, redact)
+		card, err := move(ctx, db, card, "in_progress", machine.Evidence{ExitCode: &code, AttemptID: attempt.ID}, redact)
 		if err != nil {
 			return card, err
 		}
@@ -387,14 +458,16 @@ func startable(status string) bool {
 	return status == "ready" || status == "changes_requested" || status == "in_progress"
 }
 
-func sandboxReady(check string, cfg settings.ProjectConfig, engine string, fixture bool) bool {
+// sandboxReady reports whether the card's check can run. A remote job's
+// engine is on its runner, which probes it.
+func sandboxReady(check string, cfg settings.ProjectConfig, engine string, fixture, remote bool) bool {
 	if _, err := sandbox.ParseCheck(check, cfg.Checks.AllowExecutables); err != nil {
 		return false
 	}
 	if fixture {
 		return true
 	}
-	if sandbox.CheckEngine(engine) != nil {
+	if !remote && sandbox.CheckEngine(engine) != nil {
 		return false
 	}
 	return sandbox.PinnedImage(cfg.Sandbox.Image)

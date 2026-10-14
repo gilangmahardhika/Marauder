@@ -535,6 +535,22 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestImplementerMCPUnaccepted` | A requirement edited since acceptance offers no MCP tool to its card (RFC-102) |
 | `TestMCPScopeCardAttach` | A card attach widens the scope only to enabled servers of the tribe, and an unaccepted requirement still gives none (RFC-105) |
 | `TestCardContextRoles` | Only a Lead Developer, a tribe admin, or an admin attaches a server to a card (RFC-105) |
+| `TestRunnerTokenHashed` | Registration tokens and runner secrets are stored only as SHA-256 hex (RFC-106) |
+| `TestRunnerAuthScope` | A runner secret passes only `/api/runner/*`, and a user bearer never does (RFC-106) |
+| `TestRunnerNeverGetsSecrets` | A runner never receives `databaseUrl`, `tokenKey`, a model key, or the owner's GitHub token (RFC-108) |
+| `TestRunnerCannotSetStatus` | No runner call moves a card or appends a `transition` or `gate` event (RFC-108) |
+| `TestBundleOnlyCardBranch` | The control plane pushes only `orch/<card-id>` at the attempt commit, descending from its base (RFC-108) |
+
+## Remote runners
+
+A runner is a trusted operator binary on a machine the company runs. It is not a model. It still holds nothing that writes to GitHub or spends model budget, so a lost runner machine leaks at most the company read token of the jobs it was running (RFC-108).
+
+- The registration token is single use and expires in one hour. The runner secret is per runner and revocable by removing the runner.
+- The runner config file is mode `0600` under the service user's home. The install script refuses to write it anywhere else.
+- Every job call checks that the lease is open and held by the caller. Ids in the body never widen the lease to another card or project.
+- The bundle route is the only route with a body cap above 1 MiB, at 64 MiB. The control plane runs `git bundle list-heads` and `git bundle unbundle` in its own clone; it never runs a hook or a filter from the bundle.
+- The runner redacts the company token from every event and message it sends, and the control plane redacts again with the full job list.
+- The install script verifies the binary's and the unit's SHA-256 against `SHA256SUMS` from the same origin, over HTTPS; it accepts `http://` only on loopback. It passes the registration token to `runner register` in the environment, not on its command line.
 
 ## Operator duties
 

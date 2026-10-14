@@ -1,0 +1,22 @@
+# Installed by scripts/install-runner.sh (RFC-109). The script adds a drop-in
+# with XDG_RUNTIME_DIR for the service user so rootless Podman finds its socket.
+[Unit]
+Description=Orchestrator runner
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=orchestrator
+Group=orchestrator
+WorkingDirectory=/var/lib/orchestrator-runner
+ExecStart=/usr/local/bin/orchestrator runner run --config /var/lib/orchestrator-runner/runner.json
+Restart=on-failure
+RestartSec=15
+RestartPreventExitStatus=3
+KillMode=mixed
+TimeoutStopSec=60
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

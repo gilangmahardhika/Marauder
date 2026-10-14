@@ -101,6 +101,9 @@ frontend/
   src/routes/admin/llm/new/+page.svelte
   src/routes/admin/llm/[family]/+page.svelte
   src/routes/admin/router/+page.svelte
+  src/routes/admin/runners/+page.svelte
+  src/routes/admin/runners/new/+page.svelte
+  src/routes/admin/runners/guide/+page.svelte
   src/routes/admin/conventions/+page.svelte
   src/routes/admin/conventions/new/+page.svelte
   src/routes/admin/conventions/[id]/+page.svelte
@@ -261,6 +264,9 @@ frontend/
 | `/admin/llm/new` | Create an LLM family |
 | `/admin/llm/[family]` | Edit, test, or delete one LLM family |
 | `/admin/router` | Router for the company |
+| `/admin/runners` | Remote runners with their status, and where implement jobs run (RFC-106, RFC-107) |
+| `/admin/runners/new` | Mint a registration token and show the install command once (RFC-106) |
+| `/admin/runners/guide` | How to register, update, pause, and unregister a runner (RFC-109) |
 | `/admin/conventions` | Coding rules by Global and by stack, and a Stacks tab |
 | `/admin/conventions/new` | Add a rule, or a stack with `?kind=stack` |
 | `/admin/conventions/[id]` | Edit or delete one rule or stack |
@@ -596,6 +602,23 @@ Above the table, print the server sentence:
 The page does not calculate that flag itself.
 
 The save result line includes "Applies to the next route decision."
+
+### Runners
+
+`src/routes/admin/runners/+page.svelte` (RFC-106, RFC-107). GET `/api/runners`, polled every 5 seconds while the page is open.
+
+- A Segmented control "Implement jobs run on" with "This server" (`local`) and "Runners" (`runners`) saves through PUT `/api/settings/jobs`. With `runners` and no runner `idle` or `busy`, a note says queued cards wait until a runner connects.
+- A Table: name with labels, status Badge (`idle`, `busy`, `draining`, `offline`), slots as `busy/slots`, version with "Update required" when `updateRequired`, last heartbeat as a relative time, and the card links of its leases. Each row shows one text button per entry in the runner's `actions` from the API and nothing else; `remove` asks to confirm. The buttons sit in the row, not in a dropdown, because the Table's horizontal scroll clips a dropdown.
+- Search by name or label, and a status FilterSelect, both in the URL through `setParams`.
+- The header Button "Add runner" goes to `/admin/runners/new`, and a ghost Button "Runner guide" goes to `/admin/runners/guide`.
+
+`src/routes/admin/runners/new/+page.svelte` calls POST `/api/runners/tokens` once on a button press, then shows the install command with the API origin, the token, and the expiry, with a copy button. Leaving the page drops the token; it is never stored in the browser.
+
+`src/routes/admin/runners/guide/+page.svelte` is static and calls no route. It covers the prerequisites, registering with the install script, registering by hand with `orchestrator runner register` and `run`, updating by rerunning the script without a token, Drain and Resume, and unregistering: Remove on the Runners page first, then the commands that disable the unit and delete the `orchestrator` user, its home, and the binary. Commands use the API origin and `<token>` as a placeholder, each with a copy button.
+
+```bash
+curl -fsSL <api>/runner/install.sh | sudo bash -s -- --url <api> --token <token> --name <name> --slots 4
+```
 
 ### Conventions and skills
 

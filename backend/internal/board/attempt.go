@@ -394,11 +394,13 @@ func SetLocalCheck(ctx context.Context, q DBTX, cardID, command string) error {
 }
 
 // ReconcileProject ends the project's open attempts as cancelled and deletes
-// its card locks. Call it only when no job of the project is alive.
+// its card locks. Call it only when no local job of the project is alive. A
+// card with an open runner lease is the reaper's (RFC-107).
 func ReconcileProject(ctx context.Context, q DBTX, projectID string) (int, error) {
 	res, err := q.ExecContext(ctx, `
 		UPDATE attempts SET ended_at = $2, outcome = 'cancelled'
-		WHERE ended_at IS NULL AND card_id IN (SELECT id FROM cards WHERE project_id = $1)`,
+		WHERE ended_at IS NULL AND card_id IN (SELECT id FROM cards WHERE project_id = $1)
+			AND card_id NOT IN (SELECT card_id FROM runner_leases WHERE ended_at IS NULL)`,
 		projectID, time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		return 0, err
@@ -408,6 +410,7 @@ func ReconcileProject(ctx context.Context, q DBTX, projectID string) (int, error
 		return 0, err
 	}
 	_, err = q.ExecContext(ctx, `
-		DELETE FROM locks WHERE card_id IN (SELECT id FROM cards WHERE project_id = $1)`, projectID)
+		DELETE FROM locks WHERE card_id IN (SELECT id FROM cards WHERE project_id = $1)
+			AND card_id NOT IN (SELECT card_id FROM runner_leases WHERE ended_at IS NULL)`, projectID)
 	return int(n), err
 }

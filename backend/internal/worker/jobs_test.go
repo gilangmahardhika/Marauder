@@ -2,6 +2,7 @@ package worker_test
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/board/boardtest"
+	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/worker"
 )
 
@@ -91,6 +93,49 @@ func TestPassStartsQueuedCardsUnderCap(t *testing.T) {
 	defer gate.mu.Unlock()
 	if len(gate.started) != 3 || gate.started[2] != ids[2] {
 		t.Fatalf("started = %v, want the oldest first and %s last", gate.started, ids[2])
+	}
+}
+
+func TestLocalExecutorUnchanged(t *testing.T) {
+	db := boardtest.Open(t)
+	ctx := context.Background()
+	data := dataDir(t)
+	card, err := board.InsertCard(ctx, db, board.Card{Title: "queued", Status: "ready"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+		INSERT INTO runs (id, trigger, created_at, project_id, card_id) VALUES ('run_executor0001', 'api', '2026-10-11T00:00:00Z', $1, $2)`,
+		testProject, card.ID); err != nil {
+		t.Fatal(err)
+	}
+	gate := &gatedJobs{release: make(chan struct{})}
+	close(gate.release)
+	slots := worker.NewSlots()
+	if _, err := settings.SaveJobs(data, settings.ExecutorRunners); err != nil {
+		t.Fatal(err)
+	}
+	started, err := worker.StartQueued(ctx, db, data, testProject, gate.jobs(), slots, t.Logf)
+	if err != nil || started != 0 {
+		t.Fatalf("start with runners executor = %d %v, want 0", started, err)
+	}
+	var processed sql.NullString
+	if err := db.QueryRow(`SELECT processed_at FROM runs WHERE id = 'run_executor0001'`).Scan(&processed); err != nil {
+		t.Fatal(err)
+	}
+	if processed.Valid {
+		t.Fatal("run request was taken while runners execute jobs")
+	}
+	if _, err := settings.SaveJobs(data, settings.ExecutorLocal); err != nil {
+		t.Fatal(err)
+	}
+	started, err = worker.StartQueued(ctx, db, data, testProject, gate.jobs(), slots, t.Logf)
+	if err != nil || started != 1 {
+		t.Fatalf("start with local executor = %d %v, want 1", started, err)
+	}
+	slots.Wait()
+	if gate.count() != 1 {
+		t.Fatalf("local jobs = %d, want 1", gate.count())
 	}
 }
 
