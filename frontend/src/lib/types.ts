@@ -466,6 +466,7 @@ export type DeploySettings = {
   prdPath: string;
   rfcPath: string;
   soloApproval: boolean;
+  deployEnabled: boolean;
 };
 
 export type RuleCategory =

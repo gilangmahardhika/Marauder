@@ -1129,3 +1129,15 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestCardDiffAfterMerge`, `TestCardDiffAfterFastForward`
 - [x] `diff`, `CardChanges`, `CardPullRequest`, `CardActions`, and card page Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 79: Squash and merge when deploy is off
+
+- [x] `approved -> done` with the merge commit as evidence and no gate row; the `merge` event kind.
+- [x] `deploy.enabled` (default on) in the project config, as `deployEnabled` on the deploy settings route.
+- [x] With deploy off, an approved card lists `merge` for a Lead Developer, or the owner with solo approval, and deploy is refused.
+- [x] `POST .../merge` squash-merges with the caller's verified token, pinned to the approved SHA, and moves the card to Done.
+- [x] "Squash and merge" on the card and "Deploy approved cards" on the Deploy settings page.
+- [x] `TestApprovedToDone`, `TestDeployEnabledDefault`, `TestActionsDeployOff`
+- [x] `TestSquashMerge`, `TestSquashMergeNoToken`, `TestSquashMergeRefused`, `TestDeployRefusedWhenOff`
+- [x] `CardActions` and Deploy settings Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

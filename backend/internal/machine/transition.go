@@ -146,7 +146,7 @@ func missingEvidence(from, to string, ev Evidence) string {
 		if shaProblem(ev.SHA) {
 			return "sha"
 		}
-	case "approved->deploying_dev", "deploying_dev->verifying", "verifying->done":
+	case "approved->deploying_dev", "approved->done", "deploying_dev->verifying", "verifying->done":
 		if shaProblem(ev.SHA) {
 			return "sha"
 		}
@@ -206,7 +206,9 @@ func gateName(from, to string) string {
 	case "verifying":
 		return "dev_health"
 	case "done":
-		return "dev_tests"
+		if from == "verifying" {
+			return "dev_tests"
+		}
 	}
 	return ""
 }

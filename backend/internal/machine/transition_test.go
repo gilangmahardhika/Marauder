@@ -32,6 +32,7 @@ func TestEdgesMatchPRD(t *testing.T) {
 		{"human_review", "approved"}:          {},
 		{"human_review", "blocked"}:           {},
 		{"approved", "deploying_dev"}:         {},
+		{"approved", "done"}:                  {},
 		{"approved", "human_review"}:          {},
 		{"approved", "changes_requested"}:     {},
 		{"approved", "blocked"}:               {},
@@ -179,6 +180,24 @@ func TestAgentReviewToPROpen(t *testing.T) {
 	}
 	if n := countGates(t, db, card.ID); n != 0 {
 		t.Fatalf("gates = %d, want 0: a retried review is not a new local check", n)
+	}
+}
+
+func TestApprovedToDone(t *testing.T) {
+	db := boardtest.Open(t)
+	card := insertCard(t, db, "approved")
+	if _, err := apply(t, db, card, "done", machine.Evidence{ActorID: "usr_ada"}); !errors.Is(err, machine.ErrEvidence) {
+		t.Fatalf("err = %v, want ErrEvidence without a merge SHA", err)
+	}
+	done, err := apply(t, db, card, "done", machine.Evidence{SHA: "0123456789abcdef0123456789abcdef01234567", ActorID: "usr_ada"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if done.Status != "done" {
+		t.Fatalf("status = %s, want done", done.Status)
+	}
+	if n := countGates(t, db, card.ID); n != 0 {
+		t.Fatalf("gates = %d, want 0: a merge is not a dev test", n)
 	}
 }
 

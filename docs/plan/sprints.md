@@ -1080,3 +1080,17 @@ Packages: `internal/board`, `internal/app`, `internal/httpapi`, `migrations`, fr
 - "View trace" is a secondary button with the terminal icon.
 
 Done when: `TestLatestPRText`, `TestPublishStoresPRText`, `TestPRBodyForDisplay`, `TestCardDetailPullRequest`, `TestCardDiffAfterMerge`, `TestCardDiffAfterFastForward`, the `diff`, `CardChanges`, `CardPullRequest`, `CardActions`, and card page Vitest files, `npm run check`, and the rest of the suite.
+
+## Sprint 79: Squash and merge when deploy is off
+
+Goal: A project turns deploy off, and an approved card is then squash-merged on GitHub by a named person and moves to Done (RFC-111, REQ-033).
+
+Packages: `internal/machine`, `internal/trace`, `internal/settings`, `internal/app`, `internal/httpapi`, frontend card actions and Deploy settings.
+
+- `approved -> done` with the merge commit as `SHA` evidence and no gate row; the `merge` event kind.
+- `deploy.enabled` in the project `config.yaml`, default on, as `deployEnabled` on the deploy settings route.
+- `app.CanMerge` and `app.SquashMerge`: the caller's verified token, `PUT pulls/{n}/merge` with `squash` pinned to `approvedSha`.
+- With deploy off, `cardJSON` lists `merge` instead of `deploy`; `POST .../merge`; `POST .../deploy` is refused.
+- `CardActions` shows "Squash and merge"; the Deploy settings Board panel has "Deploy approved cards".
+
+Done when: `TestApprovedToDone`, `TestDeployEnabledDefault`, `TestActionsDeployOff`, `TestSquashMerge`, `TestSquashMergeNoToken`, `TestSquashMergeRefused`, `TestDeployRefusedWhenOff`, the `CardActions` and Deploy settings Vitest cases, `npm run check`, and the rest of the suite.

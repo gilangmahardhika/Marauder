@@ -278,6 +278,6 @@ func deployBody(d settings.Deploy, tokenSet bool) map[string]any {
 		"deployTokenSet": tokenSet, "localCheck": d.LocalCheck, "devCheck": d.DevCheck,
 		"allowExecutables": d.AllowExecutables, "commandExecutables": d.CommandExecutables, "sandboxEngine": d.SandboxEngine, "sandboxImage": d.SandboxImage,
 		"implementationCap": d.ImplementationCap, "prdPath": d.PRDPath, "rfcPath": d.RFCPath,
-		"soloApproval": d.SoloApproval,
+		"soloApproval": d.SoloApproval, "deployEnabled": d.DeployEnabled == nil || *d.DeployEnabled,
 	}
 }

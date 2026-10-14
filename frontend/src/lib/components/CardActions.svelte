@@ -4,6 +4,7 @@
     approveCard,
     deployCard,
     getCard,
+    mergeCard,
     rejectCard,
     requestChanges,
     retryReview,
@@ -154,6 +155,17 @@
         Deploy approved SHA
       </Button>
     {/if}
+    {#if actions.includes('merge')}
+      <Button
+        variant={actions.includes('approve') ? 'secondary' : 'primary'}
+        type="button"
+        disabled={busy}
+        onclick={() => void run('Squash and merge', () => mergeCard(card.id))}
+      >
+        <Icon name="git" />
+        Squash and merge
+      </Button>
+    {/if}
     {#if actions.includes('request_changes') && !asking}
       <Button type="button" disabled={busy} onclick={() => (asking = true)}>Request changes</Button>
     {/if}
@@ -203,7 +215,7 @@
       {/if}
       {#if shaError}<p class="error text-xs">{shaError}</p>{/if}
     </form>
-  {:else if actions.includes('deploy') || actions.includes('request_changes') || menuItems.length > 0}
+  {:else if actions.includes('deploy') || actions.includes('merge') || actions.includes('request_changes') || menuItems.length > 0}
     <div class="flex flex-wrap items-center gap-2">
       {@render decisions()}
     </div>

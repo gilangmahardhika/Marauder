@@ -41,7 +41,8 @@ const saved: DeploySettings = {
   implementationCap: 2,
   prdPath: 'docs/prd',
   rfcPath: 'docs/rfc',
-  soloApproval: false
+  soloApproval: false,
+  deployEnabled: true
 };
 
 beforeEach(() => {
@@ -67,6 +68,19 @@ test('allowed commands load one per line and save as a list', async () => {
   const body = api.putDeploy.mock.calls[0][0] as Record<string, unknown>;
   expect(body.commandExecutables).toEqual(['go', 'npx']);
   expect(body.allowExecutables).toEqual(['go']);
+});
+
+test('the deploy switch loads from and saves deployEnabled', async () => {
+  api.putDeploy.mockImplementation((body: Record<string, unknown>) => Promise.resolve({ ...saved, ...body }));
+  render(DeployPage);
+  const box = screen.getByRole('checkbox', { name: /Deploy approved cards/ }) as HTMLInputElement;
+  await waitFor(() => expect(box.checked).toBe(true));
+  expect(screen.getByText(/an approved card gets Squash and merge instead of Deploy/)).toBeTruthy();
+
+  await fireEvent.click(box);
+  await fireEvent.click(screen.getByRole('button', { name: /save/i }));
+  await waitFor(() => expect(api.putDeploy).toHaveBeenCalledTimes(1));
+  expect((api.putDeploy.mock.calls[0][0] as Record<string, unknown>).deployEnabled).toBe(false);
 });
 
 test('a refused command shows the field error', async () => {

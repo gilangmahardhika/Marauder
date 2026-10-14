@@ -23,6 +23,8 @@ var (
 // ProjectConfig is <data>/projects/<id>/config.yaml.
 type ProjectConfig struct {
 	Deploy struct {
+		// Enabled is nil when the key is absent, which means on (RFC-111).
+		Enabled         *bool    `yaml:"enabled,omitempty"`
 		Environment     string   `yaml:"environment"`
 		DevURL          string   `yaml:"devUrl"`
 		DevHosts        []string `yaml:"devHosts"`
@@ -76,6 +78,14 @@ type Deploy struct {
 	PRDPath            string   `json:"prdPath"`
 	RFCPath            string   `json:"rfcPath"`
 	SoloApproval       bool     `json:"soloApproval"`
+	// DeployEnabled is nil in a PUT that leaves the switch as it is.
+	DeployEnabled *bool `json:"deployEnabled"`
+}
+
+// DeployOn reports whether approved cards deploy. When it is off, an
+// approved card is squash-merged instead (RFC-111).
+func DeployOn(cfg ProjectConfig) bool {
+	return cfg.Deploy.Enabled == nil || *cfg.Deploy.Enabled
 }
 
 // ProjectPaths are the directories a deploy command must stay out of.
@@ -129,6 +139,8 @@ func DeployView(cfg ProjectConfig) Deploy {
 		RFCPath:            cfg.Paths.RFC,
 		SoloApproval:       cfg.Approval.Solo,
 	}
+	on := DeployOn(cfg)
+	d.DeployEnabled = &on
 	if d.Environment == "" {
 		d.Environment = "dev"
 	}
@@ -190,6 +202,10 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	next.Paths.PRD = d.PRDPath
 	next.Paths.RFC = d.RFCPath
 	next.Approval.Solo = d.SoloApproval
+	if d.DeployEnabled != nil {
+		on := *d.DeployEnabled
+		next.Deploy.Enabled = &on
+	}
 
 	dir := ProjectDir(data, projectID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -205,6 +221,9 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	changed := []string{"environment", "devUrl", "devHosts", "devCommand", "rollbackCommand", "healthUrl",
 		"localCheck", "devCheck", "allowExecutables", "commandExecutables", "sandboxEngine", "sandboxImage",
 		"implementationCap", "prdPath", "rfcPath", "soloApproval"}
+	if d.DeployEnabled != nil {
+		changed = append(changed, "deployEnabled")
+	}
 	if clear || token != nil {
 		if clear {
 			secrets.DeployToken = ""

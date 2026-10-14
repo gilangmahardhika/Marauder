@@ -27,6 +27,7 @@
   let prdPath = $state('docs/prd');
   let rfcPath = $state('docs/rfc');
   let soloApproval = $state(false);
+  let deployEnabled = $state(true);
   let message = $state('Loading deploy settings');
   let fields = $state<Record<string, string>>({});
   let busy = $state(false);
@@ -58,6 +59,7 @@
         prdPath = body.prdPath;
         rfcPath = body.rfcPath;
         soloApproval = body.soloApproval;
+        deployEnabled = body.deployEnabled;
         canEdit = body.canEdit;
         message = 'Deploy settings';
       })
@@ -89,6 +91,7 @@
         prdPath,
         rfcPath,
         soloApproval,
+        deployEnabled,
         ...omitEmptySecret('deployToken', token, clear)
       });
       tokenSet = saved.deployTokenSet;
@@ -162,6 +165,12 @@
           <Field label="PRD path" id="prd" width="full" mono bind:value={prdPath} />
           <Field label="RFC path" id="rfc" width="full" mono bind:value={rfcPath} />
         </div>
+        <Checkbox
+          id="deploy-enabled"
+          label="Deploy approved cards"
+          hint="When off, an approved card gets Squash and merge instead of Deploy. The merge runs on GitHub with the GitHub account of the person who presses it."
+          bind:checked={deployEnabled}
+        />
         <Checkbox
           id="solo"
           label="Solo approval"

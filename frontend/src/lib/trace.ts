@@ -23,6 +23,7 @@ const kinds: Record<string, string> = {
   route: 'Model route',
   gate: 'Gate',
   deploy: 'Deploy',
+  merge: 'Squash and merge',
   health: 'Health check',
   verify: 'Dev check',
   budget_stop: 'Budget stop',

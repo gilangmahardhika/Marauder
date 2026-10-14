@@ -60,12 +60,12 @@ A successful body never includes `error`.
 | `pr_open` | `review` | `[]` |
 | `agent_review` | `review` | `retry_review` when the latest AI review is `failed` (RFC-076), else `[]` |
 | `human_review` | `review` | `approve`, `request_changes`, `reject` |
-| `approved` | `shipping` | `request_changes`, `reject`, `deploy` |
+| `approved` | `shipping` | `request_changes`, `reject`, `deploy`; with project deploy off, `merge` instead of `deploy` (RFC-111) |
 | `deploying_dev`, `verifying` | `shipping` | `[]` |
 | `done` | `finished` | `[]` |
 | `blocked` | `stopped` | `unblock`, unless release is refused |
 
-`deploy` remains only for a Lead Developer member. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
+`deploy` remains only for a Lead Developer member. `merge` is listed for a Lead Developer member, and for the card owner when `approval.solo` is on. `approve` remains for a Lead Developer, QA Lead, or Product Owner member who is not the card owner (RFC-054). `request_changes` remains for those three plus a Senior Developer member. `reject` remains for a Lead Developer, QA Lead, or Product Owner member. `unblock` remains for a Lead Developer or Product Owner member. `run` and `retry_review` remain for a Lead Developer, Senior Developer, Developer, or QA member.
 
 After the table, every card that is not `done` also lists `instructions` for those same four roles (RFC-073). It names the instructions route, not a status change.
 
@@ -374,7 +374,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -383,6 +383,7 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `tool_call` | `name`, `ok`, `rejected`, `summary`, and `args` for the tools below (RFC-074) |
 | `transition` | `from`, `to`, `evidence`, optional `actorId` on rows written after RFC-046, plus `resetAttempts` and `maxAttempts` on release |
 | `deploy` | `requestedSha`, `previousSha`, `devUrl`, `exitCode`, `reportedSha` |
+| `merge` | `prUrl`, `approvedSha`, `mergeSha` (the squash commit GitHub made), `login` (the GitHub account that merged), `method` (`squash`). The row's `actor_id` is the person who pressed Squash and merge (RFC-111) |
 | `health` | `passed`, `status`, `bytes`, `rollbackExit` |
 | `verify` | `sha`, `mode` (`health_only` or `dev_check`), `exitCode`, `logRef` |
 | `config_changed` | `section`, `fields` |
@@ -1212,7 +1213,9 @@ After an approval that inserted a new row, the server posts with the company tok
 
 `POST /api/projects/{projectId}/cards/{id}/request-changes` takes an optional body `{ "reason": "..." }`. `POST /api/projects/{projectId}/cards/{id}/reject` has an empty body. Both work from `human_review` and `approved` when the role allows them. Request-changes clears approval and, in the same transaction, writes a failure note with source `approver`. The note is the reason with CRLF turned into LF and outer whitespace trimmed, or `changes requested` when the reason is blank. A reason over 4000 characters is `422` with `fields.reason` `Keep the reason to 4000 characters or fewer.`, and the card does not move. Reject sets `blockedReason` to `rejected`. When the card was `approved`, either one posts `orchestrator/approval` with `state: failure` and `description: Approval withdrawn` on the approved SHA (RFC-068).
 
-`POST /api/projects/{projectId}/cards/{id}/deploy` has an empty body. It is allowed when `deploy` is in `actions`. The card moves from `approved` toward `deploying_dev` through `machine.Transition`, and a `runs` row with trigger `deploy` wakes that project's worker.
+`POST /api/projects/{projectId}/cards/{id}/deploy` has an empty body. It is allowed when `deploy` is in `actions`. The card moves from `approved` toward `deploying_dev` through `machine.Transition`, and a `runs` row with trigger `deploy` wakes that project's worker. When the project's `deploy.enabled` is false it is `422` "deploy is off for this project".
+
+`POST /api/projects/{projectId}/cards/{id}/merge` has an empty body (RFC-111). It is allowed for a Lead Developer member, and for the card owner when `approval.solo` is on; anyone else gets `403`. Deploy on is `422`, and a card that is not `approved` with an approved SHA is `409`. The server sends `PUT repos/{owner}/{repo}/pulls/{n}/merge` with `{"merge_method":"squash","sha":"<approvedSha>"}` through `gh api` with the caller's verified GitHub token on the company host. No verified token is `422` "connect your GitHub account in Account to merge", with no GitHub call. A GitHub refusal, such as a head that moved or a pull request that is not mergeable, is `422` with GitHub's first line, and the card stays `approved`. On success the card moves `approved -> done` through `machine.Transition` with the merge commit as `SHA` evidence, a `merge` event is appended, and the response is the single card.
 
 `POST /api/projects/{projectId}/cards/{id}/unblock`
 
@@ -1666,6 +1669,7 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `implementationCap` | Integer from 1 to 8 |
 | `prdPath`, `rfcPath` | Relative, no `..`, inside the project's repo |
 | `soloApproval` | Boolean. Lets the card owner and the company bot login approve (RFC-067) |
+| `deployEnabled` | Boolean, default `true`. When `false`, an approved card lists `merge` instead of `deploy`, and the deploy route is refused. A `PUT` without it keeps the stored value (RFC-111) |
 
 Empty deploy fields may be saved. A deploy then blocks with `deploy_config` and runs no command. A non-empty `devCheck` with an empty `devUrl` is also `deploy_config` at deploy time. Changing `localCheck` or `devCheck` applies the rule in 0006 to existing cards.
 
@@ -1729,6 +1733,7 @@ Project `config.yaml`:
 
 ```yaml
 deploy:
+  enabled: true # absent means true (RFC-111)
   environment: dev
   devUrl: ""
   devHosts: []

@@ -50,24 +50,31 @@ func pullAPI(url string) (pull, comments string, err error) {
 // ghWrite sends payload as JSON to a GitHub REST path. The text goes in a
 // file under dir/logs, never in argv.
 func ghWrite(ctx context.Context, gh ghcli.Runner, host, token, dir, method, path string, payload map[string]string) error {
+	_, err := ghWriteOut(ctx, gh, host, token, dir, method, path, payload)
+	return err
+}
+
+// ghWriteOut is ghWrite that returns gh's output, with extra gh api flags
+// such as --jq.
+func ghWriteOut(ctx context.Context, gh ghcli.Runner, host, token, dir, method, path string, payload map[string]string, extra ...string) ([]byte, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	file, err := os.CreateTemp(filepath.Join(dir, "logs"), "gh-input-*.json")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer os.Remove(file.Name())
 	if _, err := file.Write(body); err != nil {
 		file.Close()
-		return err
+		return nil, err
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return nil, err
 	}
-	_, err = gh.Run(ctx, host, token, "api", path, "--method", method, "--input", file.Name())
-	return err
+	args := append([]string{"api", path, "--method", method, "--input", file.Name()}, extra...)
+	return gh.Run(ctx, host, token, args...)
 }
 
 // Owner is the card owner as the API shows it.

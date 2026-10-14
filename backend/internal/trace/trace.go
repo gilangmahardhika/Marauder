@@ -20,6 +20,7 @@ var kinds = map[string]struct{}{
 	"transition":          {},
 	"transition_rejected": {},
 	"deploy":              {},
+	"merge":               {},
 	"health":              {},
 	"verify":              {},
 	"budget_stop":         {},

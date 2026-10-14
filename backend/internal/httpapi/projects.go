@@ -190,6 +190,30 @@ func (s *Server) projectCards(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.boardBody(r, projectID, cards, ready))
 }
 
+// mergeCard squash-merges an approved card's pull request (RFC-111). A Lead
+// Developer may, and so may the card owner when solo approval is on.
+func (s *Server) mergeCard(w http.ResponseWriter, r *http.Request, user app.User, id string) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	card, err := board.GetCard(r.Context(), s.DB, id)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	if !app.CanMerge(user.Role, user.ID, card, s.soloApproval(card.ProjectID)) {
+		writeErr(w, 403, "forbidden", "forbidden")
+		return
+	}
+	next, err := app.SquashMerge(r.Context(), s.DB, s.jobDeps(), id, user.ID)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
 func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 	projectID, ok := s.visibleProject(w, r)
 	if !ok {
@@ -211,11 +235,19 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		s.cardContext(w, r, user, projectID, id)
 		return
 	}
+	if action == "merge" {
+		s.mergeCard(w, r, user, id)
+		return
+	}
 	if !actionAllowed(user.Role, action) {
 		writeErr(w, 403, "forbidden", "forbidden")
 		return
 	}
 	if action == "deploy" {
+		if !app.DeployEnabled(s.Data, projectID) {
+			writeAppErr(w, app.ErrDeployOff)
+			return
+		}
 		next, err := app.Deploy(r.Context(), s.DB, id, user.ID)
 		if err != nil {
 			writeAppErr(w, err)

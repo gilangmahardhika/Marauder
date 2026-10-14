@@ -305,6 +305,13 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestCardDetailPullRequest` | The single card returns `"pullRequest": null` before publish. After an attempt stores `pr_title` and `pr_body`, it returns the title, `attemptN`, `sha`, and the body without the metadata `<details>` block. The board list has no `pullRequest` (RFC-110) |
 | `TestLatestPRText` | `LatestPRText` returns nothing before publish, the newest attempt with a stored title, and nothing for another project |
 | `TestPublishStoresPRText` | `Publish` stores the title it sent and the body with the owner token redacted on its attempt, with the attempt's `n` and commit |
+| `TestApprovedToDone` | `approved -> done` without a SHA is `ErrEvidence`. With the merge SHA it moves to `done` and writes no gate row (RFC-111) |
+| `TestDeployEnabledDefault` | A project with no `deploy.enabled` key deploys. Saving `false` turns it off and lists `deployEnabled` as changed, and a later save without the key keeps it off |
+| `TestActionsDeployOff` | On an approved card, a Lead Developer gets `deploy` while deploy is on. With it off, the lead gets `merge` and not `deploy`, a QA Lead gets neither, and the card owner gets `merge` only with solo approval on |
+| `TestSquashMerge` | One `gh api repos/acme/widget/pulls/7/merge --method PUT` with `merge_method` `squash` and `sha` equal to the approved SHA. The caller's token is in `GH_TOKEN` and not in argv. The card is `done`, and the `merge` event has the merge SHA and login and no token |
+| `TestSquashMergeNoToken` | A lead with no verified GitHub token gets `422` naming Account, no GitHub call is made, and the card stays `approved` |
+| `TestSquashMergeRefused` | GitHub's "not mergeable (HTTP 405)" comes back as `422` with that text and no token, and the card stays `approved` |
+| `TestDeployRefusedWhenOff` | Merge while deploy is on is `422`. Deploy while it is off is `422` "deploy is off", the card stays `approved`, and no GitHub call is made |
 | `TestCardDiffAfterMerge` | After the card branch merges into `main` with a merge commit and `main` moves on, the diff still lists the card's files against `main` before the merge |
 | `TestCardDiffAfterFastForward` | After `main` fast-forwards to the card head, the diff lists the card's files against the first attempt's `base_sha` |
 | `TestPRBodyForDisplay` | The display body drops the "Orchestrator metadata" block, keeps the sections, undoes the `&lt;!-- orchestrator:` escape, and leaves a body without metadata trimmed and otherwise unchanged |
@@ -456,6 +463,7 @@ Run this after `orchestrator serve` and `npm run dev` are up. Use the fixture da
 | `human_review` card | Approve form shows `headSha`. Submitting another SHA shows the field error and the card stays in `human_review` |
 | `approved` card for a Lead Developer | Request changes, Reject, and Deploy |
 | `approved` card for a Product Owner | Request changes and Reject, and no Deploy |
+| `approved` card for a Lead Developer with Deploy approved cards off | Request changes, Reject, and Squash and merge, and no Deploy (RFC-111) |
 | `blocked` card with `health` | Unblock text says the card returns to human review |
 | Approve in the UI while the CLI approves the same card | One approval row. The second action gets a reload or the same card back |
 | Settings GET after a token was saved | Password field is empty. Placeholder says a value is saved. The network response has no token |

@@ -413,6 +413,7 @@ Render a control only when its name is in `actions`:
 | `request_changes` | Secondary button "Request changes", beside Approve or Deploy, opens a form. Textarea "What should change?", 4 rows, growing, hint "Optional. The next attempt gets this note. Markdown works." Buttons "Request changes" and "Cancel". The body is `{ reason }` |
 | `reject` | Item "Reject" in the "More actions" menu |
 | `deploy` | Button "Deploy approved SHA". |
+| `merge` | Button "Squash and merge" with the git icon, primary when `approve` is absent. It posts to `merge`; a refusal shows GitHub's reason in the status line (RFC-111). |
 | `unblock` | Form. Checkbox "Reset attempt counter", unchecked by default. Button "Unblock". Text above the button from `unblockTo` |
 
 `unblockTo` text:
@@ -657,7 +658,7 @@ Fields, in three fieldsets:
 | --- | --- |
 | Dev server | Dev URL, dev hosts (one per line), deploy command, rollback command, health URL, deploy token |
 | Checks | Local check, dev check, allowed executables (one per line), allowed commands (one per line, `commandExecutables`, RFC-084), sandbox engine select (`podman`, `docker`), sandbox image |
-| Board | Implementation cap (number, default 2), PRD path, RFC path, Solo approval (checkbox, default off, RFC-067) |
+| Board | Implementation cap (number, default 2), PRD path, RFC path, Deploy approved cards (checkbox `deployEnabled`, default on; off gives approved cards Squash and merge, RFC-111), Solo approval (checkbox, default off, RFC-067) |
 
 Static help text:
 

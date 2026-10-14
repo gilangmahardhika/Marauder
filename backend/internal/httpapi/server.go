@@ -294,7 +294,7 @@ func actionAllowed(role, action string) bool {
 		return role == "lead_developer" || role == "qa_lead" || role == "product_owner" || role == "senior_developer"
 	case "unblock":
 		return role == "lead_developer" || role == "product_owner"
-	case "deploy":
+	case "deploy", "merge":
 		return role == "lead_developer"
 	case "run", "instructions", "retry-review":
 		return role == "lead_developer" || role == "senior_developer" || role == "developer" || role == "qa"

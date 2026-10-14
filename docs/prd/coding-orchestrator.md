@@ -219,6 +219,7 @@ Card status changes only through the harness transition function. The legal edge
 | `human_review` | `approved` | Allowlisted approver. Approval names the current head SHA. |
 | `human_review` | `blocked` | Approver rejected the card. |
 | `approved` | `deploying_dev` | Deploy lock held. Approved SHA equals pull request head. Deploy settings complete. |
+| `approved` | `done` | Project deploy is off. A person squash-merged the pull request at the approved SHA. Merge commit SHA stored (RFC-111). |
 | `approved` | `human_review` | Pull request head no longer equals the approved SHA. Approval cleared. |
 | `approved` | `changes_requested` | Approver requested changes. Approval cleared. |
 | `approved` | `blocked` | Approver rejected the card, or deploy settings are incomplete (`deploy_config`). |

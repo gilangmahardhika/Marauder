@@ -577,6 +577,13 @@ export function deployCard(id: string) {
   });
 }
 
+export function mergeCard(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/merge`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
 export function retryReview(id: string) {
   return request<Card>(`${projectPrefix()}/cards/${id}/retry-review`, {
     method: "POST",

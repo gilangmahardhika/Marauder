@@ -509,8 +509,15 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 	if err != nil {
 		selfReview = false
 	}
-	if card.OwnerID != "" && card.OwnerID == userID && !selfReview && !s.soloApproval(card.ProjectID) {
+	solo := s.soloApproval(card.ProjectID)
+	if card.OwnerID != "" && card.OwnerID == userID && !selfReview && !solo {
 		actions = withoutAction(actions, "approve")
+	}
+	if card.Status == "approved" && !app.DeployEnabled(s.Data, card.ProjectID) {
+		actions = withoutAction(actions, "deploy")
+		if app.CanMerge(role, userID, card, solo) {
+			actions = append(actions, "merge")
+		}
 	}
 	reviewMode, err := app.CardAIReviewMode(r.Context(), s.DB, card)
 	if err != nil {
@@ -740,7 +747,8 @@ func writeAppErr(w http.ResponseWriter, err error) {
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
 	case errors.Is(err, board.ErrNotFound), errors.Is(err, intake.ErrUnknownID):
 		writeErr(w, 404, "not_found", err.Error())
-	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock):
+	case errors.Is(err, settings.ErrValidation), errors.Is(err, app.ErrSHA), errors.Is(err, app.ErrApprover), errors.Is(err, app.ErrUnblock),
+		errors.Is(err, app.ErrDeployOff), errors.Is(err, app.ErrDeployOn), errors.Is(err, app.ErrMergeToken), errors.Is(err, app.ErrMergeRefused):
 		writeErr(w, 422, "validation", err.Error())
 	case errors.Is(err, board.ErrConflict), errors.Is(err, board.ErrLocked), errors.Is(err, app.ErrNotRunnable), errors.Is(err, app.ErrCardDone),
 		errors.Is(err, app.ErrReviewNotFailed):

@@ -39,6 +39,35 @@ func TestSecretKeep(t *testing.T) {
 	}
 }
 
+func TestDeployEnabledDefault(t *testing.T) {
+	dir := t.TempDir()
+	cfg, _, err := settings.LoadProject(dir, "proj_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.DeployOn(cfg) || !*settings.DeployView(cfg).DeployEnabled {
+		t.Fatal("a project with no deploy.enabled key must deploy")
+	}
+	paths := settings.ProjectPaths{Data: dir}
+	off := false
+	_, changed, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{DeployEnabled: &off}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(changed, " "), "deployEnabled") {
+		t.Fatalf("changed = %v", changed)
+	}
+	if cfg, _, _ = settings.LoadProject(dir, "proj_a"); settings.DeployOn(cfg) {
+		t.Fatal("deploy stayed on after saving false")
+	}
+	if _, _, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{SoloApproval: true}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _, _ = settings.LoadProject(dir, "proj_a"); settings.DeployOn(cfg) {
+		t.Fatal("a save without deployEnabled turned deploy back on")
+	}
+}
+
 func TestShortSecret(t *testing.T) {
 	dir := t.TempDir()
 	writeProjectSecrets(t, dir, "deploy-super-secret-token")
