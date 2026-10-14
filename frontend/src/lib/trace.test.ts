@@ -150,6 +150,34 @@ group('describe', () => {
     expect(saved(0).detail).toBe('Cleared');
   });
 
+  it('puts compaction and the handoff between attempts into words', () => {
+    expect(words('context_compacted', { inputTokens: 96000, turnsDropped: 12, summaryBytes: 900, n: 1 })).toMatchObject({
+      label: 'Context compacted',
+      detail: 'at 96,000 tokens, 12 turns summarized',
+      meta: '',
+      tone: 'default'
+    });
+    expect(words('context_compacted', { inputTokens: 96000, turnsDropped: 3, n: 2 }).meta).toBe('#2');
+    expect(words('handoff_saved', { files: 2, patchBytes: 400, source: 'model', left: 0 })).toMatchObject({
+      label: 'Handoff saved',
+      detail: '2 uncommitted files · summary by the model',
+      tone: 'default'
+    });
+    expect(words('handoff_saved', { files: 1, source: 'harness', left: 1 }).detail).toBe(
+      '1 uncommitted file · summary by the harness · 1 file too large to keep'
+    );
+    expect(words('handoff_applied', { fromAttemptId: 'att_1', ok: true, files: 2, todos: 3 })).toMatchObject({
+      label: 'Continued from the last attempt',
+      detail: '2 files · 3 todos',
+      tone: 'default'
+    });
+    expect(words('handoff_applied', { ok: false, files: 0, todos: 1, reason: 'it conflicts with the branch as it is now' })).toMatchObject({
+      label: 'Earlier work could not be re-applied',
+      detail: 'It conflicts with the branch as it is now',
+      tone: 'amber'
+    });
+  });
+
   it('shows a card context change and the servers the card changed', () => {
     const changed = (kind: string, itemId: string, mode: string) => describe({ id: 'e', ts: '', kind: 'context_changed', payload: { kind, itemId, mode } });
     expect(changed('skill', 'skl_oauth2', 'attach')).toMatchObject({ label: 'Context changed', detail: 'Attached skill skl_oauth2' });

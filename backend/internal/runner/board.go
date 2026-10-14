@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 
 	"orchestrator/backend/internal/board"
@@ -161,6 +162,31 @@ func (b *Board) AskQuestions(ctx context.Context, attemptID, cardID string, firs
 func (b *Board) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
 	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "answers"})
 	return reply.Questions, err
+}
+
+// SaveHandoff sends the attempt's handoff with its summary redacted; the
+// control plane stores it on the lease's attempt and card.
+func (b *Board) SaveHandoff(ctx context.Context, h board.Handoff) error {
+	h.Summary = trace.Redact(h.Summary, b.Secrets)
+	_, err := b.op(ctx, runnerapi.BoardOp{Op: "save_handoff", Handoff: &h})
+	return err
+}
+
+func (b *Board) PendingHandoff(ctx context.Context, cardID string) (board.Handoff, bool, error) {
+	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "pending_handoff"})
+	if err != nil || reply.Handoff == nil {
+		return board.Handoff{}, false, err
+	}
+	return *reply.Handoff, true, nil
+}
+
+func (b *Board) MarkHandoffApplied(ctx context.Context, cardID, id string, ok bool, reason string) error {
+	_, err := b.op(ctx, runnerapi.BoardOp{Op: "handoff_applied", HandoffID: id, OK: ok, Reason: trace.Redact(reason, b.Secrets)})
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Code == "conflict" {
+		return board.ErrConflict
+	}
+	return err
 }
 
 // AppendEvent sends the event's kind and payload, redacted with the loop's

@@ -131,7 +131,7 @@ func ImplementerTools() []providers.Tool {
 		{
 			Name: "ask_user",
 			Description: "Ask the team up to 5 questions when the requirements leave a product choice open that the code and the earlier answers cannot settle. " +
-				"Ask before you edit files: on a card where a person answers, the attempt ends after this call and uncommitted edits are discarded, and the next attempt starts with the answers. " +
+				"Ask before you edit files: on a card where a person answers, the attempt ends after this call, and the next attempt starts with the answers and your uncommitted edits. " +
 				"On a card where the agent decides, your recommended answers are recorded and returned, and you go on. " +
 				"Give each question your recommended answer and why. Not available after commit.",
 			Parameters: object(map[string]any{
@@ -214,6 +214,9 @@ type Input struct {
 	// 16 KiB (RFC-081). MaxTokensPerCard of zero sets no token cap.
 	HistoryBudget    int
 	MaxTokensPerCard int
+	// ContextTokens is the routed model's context window; zero means
+	// 128,000. The attempt compacts at 75% of it (RFC-117).
+	ContextTokens int
 	// Live, when set, gets each turn's reply text as the model writes it.
 	Live live.Publisher
 	// Extra is the tribe's MCP tools for this attempt; nil offers none (RFC-094).
@@ -261,7 +264,8 @@ type MCPContext struct {
 
 // Result is how the attempt ended. Outcome is empty for a new commit,
 // no_commit, no_change for a branch already ahead of its base, budget with
-// the cap in Reason, or question when a manual card waits for answers.
+// the cap in Reason (turn_cap, token_cap, or context_full), or question when
+// a manual card waits for answers.
 type Result struct {
 	AttemptID string
 	Outcome   string
@@ -365,6 +369,10 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	workSoFar, seeded, err := applyHandoff(ctx, in, b, card, wt, base)
+	if err != nil {
+		return Result{}, err
+	}
 	system, user, systemHash, err := contextpack.BuildImplementer(contextpack.Input{
 		Card: contextpack.Card{
 			ID: card.ID, Title: card.Title, Status: card.Status, LocalCheck: card.LocalCheck,
@@ -376,6 +384,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		FailureNote:  note,
 		Instructions: instructions,
 		Answers:      answers,
+		WorkSoFar:    workSoFar,
 		Linked:       linked,
 		Conventions:  convs,
 		Secrets:      in.Secrets,
@@ -402,8 +411,8 @@ func Run(ctx context.Context, in Input) (Result, error) {
 
 	session := &session{
 		in: in, card: card, wt: wt, attemptID: attemptID,
-		system: system, user: user, linkedRoots: linkedRoots,
-		evicted: map[[2]int]bool{}, reads: map[string]readMark{},
+		system: system, user: user, pack: user, linkedRoots: linkedRoots,
+		evicted: map[[2]int]bool{}, reads: map[string]readMark{}, todos: seeded,
 	}
 	session.tools = ProfileTools(ImplementerTools(), in.Extra)
 	session.allowed = map[string]providers.Tool{}
@@ -442,10 +451,12 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		}
 	}
 	if err := session.loop(ctx); err != nil {
+		session.saveHandoff(ctx, "error", base)
 		_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 		return Result{}, err
 	}
 	if session.stop == "question" {
+		session.saveHandoff(ctx, "question", base)
 		if err := b.FinishAttempt(ctx, attemptID, "question", ""); err != nil {
 			return Result{}, err
 		}
@@ -453,6 +464,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	}
 	if session.stop == "" {
 		if err := session.autoCommit(ctx); err != nil {
+			session.saveHandoff(ctx, "error", base)
 			_ = b.FinishAttempt(context.WithoutCancel(ctx), attemptID, "error", "")
 			return Result{}, err
 		}
@@ -485,6 +497,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		if err := session.event(ctx, "budget_stop", map[string]any{"cap": stop, "turns": session.used, "maxTurns": in.MaxTurns}); err != nil {
 			return Result{}, err
 		}
+		session.saveHandoff(ctx, stop, base)
 		if err := b.AddAttemptUsed(ctx, card.ID); err != nil {
 			return Result{}, err
 		}
@@ -494,6 +507,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		return Result{AttemptID: attemptID, Outcome: "budget", Reason: stop, Status: card.Status}, nil
 	}
 	if head == baseSHA {
+		session.saveHandoff(ctx, "no_commit", base)
 		if err := b.InsertFailureNote(ctx, card.ID, attemptID, "no_commit", "no commit"); err != nil {
 			return Result{}, err
 		}

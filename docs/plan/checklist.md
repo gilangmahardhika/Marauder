@@ -1229,3 +1229,38 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] "Needs answer" status label.
 - [x] `CardQuestions`, `QuestionModeField`, card page, and `status` Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 90: Needs answer lane
+
+- [x] `Actions` puts `waiting_answer` in group `question`.
+- [x] The board's Needs answer lane between Waiting and Running, with the amber tile stripe.
+- [x] `TestActionsWaitingAnswer`
+- [x] Board Needs answer Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 91: Compaction and handoff
+
+- [x] Migration 33: `attempt_handoffs`.
+- [x] `contextTokens` in `modelOptions`, `providers.ErrContextFull`, and no retry on a full context.
+- [x] `session.compact`, its triggers, the cap, and `context_full`.
+- [x] `WorkPatch` and `ApplyPatch`, the model or harness summary, and the handoff board calls.
+- [x] `WORK SO FAR` in the implementer pack.
+- [x] `TestCompactOnContextLimit`, `TestCompactOnOverflowError`, `TestCompactCap`
+- [x] `TestHandoffSavedOnBudget`, `TestHandoffHarnessFallback`, `TestHandoffAppliedNextAttempt`, `TestHandoffConflictSkipped`
+- [x] `TestHandoffTodosSeeded`, `TestHandoffAppliedOnce`, `TestPackIncludesWorkSoFar`, `TestUnblockContinuesWork`
+- [x] `TestContextFullClassified`, `TestContextTokensRange`
+
+## Sprint 92: Handoff through a runner
+
+- [x] Board ops `save_handoff`, `pending_handoff`, and `handoff_applied`.
+- [x] `413` `context_full` on the model route.
+- [x] `cardBundle` and `GET /api/runner/jobs/{lease}/bundle`.
+- [x] `TestRunnerHandoffRoundTrip`, `TestRunnerSeedsFromControlPlaneBundle`
+- [x] `go run ./cmd/fixture` exits 0 with the `continueWork` scenario
+
+## Sprint 93: Context window setting and trace words
+
+- [x] The Context window field in `FamilyForm`.
+- [x] Words for `context_compacted`, `handoff_saved`, and `handoff_applied`.
+- [x] `FamilyForm` context window and `trace` handoff words Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

@@ -9,6 +9,7 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/identity"
+	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/settings"
 )
 
@@ -103,6 +104,8 @@ func writeRunnerErr(w http.ResponseWriter, err error) {
 		writeErr(w, 403, "forbidden", "forbidden")
 	case errors.Is(err, board.ErrNotFound):
 		writeErr(w, 404, "not_found", "not found")
+	case errors.Is(err, board.ErrConflict):
+		writeErr(w, 409, "conflict", "already done")
 	case errors.Is(err, app.ErrProtocol):
 		writeErr(w, 409, "protocol", "runner protocol does not match; update the runner")
 	case errors.Is(err, app.ErrRunnerAction):
@@ -111,6 +114,8 @@ func writeRunnerErr(w http.ResponseWriter, err error) {
 		writeErr(w, 422, "validation", err.Error())
 	case errors.Is(err, app.ErrBundle):
 		writeErr(w, 422, "bundle", err.Error())
+	case errors.Is(err, providers.ErrContextFull):
+		writeErr(w, 413, "context_full", "the request does not fit the model's context window")
 	case errors.Is(err, app.ErrProvider):
 		writeErr(w, 502, "provider_error", "model call failed")
 	default:

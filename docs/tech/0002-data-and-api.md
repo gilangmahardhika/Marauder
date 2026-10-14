@@ -55,7 +55,7 @@ A successful body never includes `error`.
 | `backlog` | `waiting` | `[]` |
 | `ready` | `waiting` | `run` when every `dependsOn` card is `done` and the card has no open run request (RFC-061) |
 | `in_progress` | `running` | `run` when the card has no open attempt, its dependencies are `done`, and it has no open run request (RFC-063) |
-| `waiting_answer` | `waiting` | `answer` (RFC-114) |
+| `waiting_answer` | `question` (RFC-116) | `answer` (RFC-114) |
 | `self_check` | `running` | `[]` |
 | `changes_requested` | `review` | `run` under the same rule as `in_progress` (RFC-063) |
 | `pr_open` | `review` | `[]` |
@@ -379,7 +379,7 @@ Column notes:
 - Review columns sit on the implementer attempt whose commit was reviewed. `reviewed_sha` is the head at review time.
 - The token cap sums `input_tokens + output_tokens` across every model call for the card, including review and triage calls, which are recorded in `model_call` events.
 
-Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`, `questions_answered`, `question_mode_changed`.
+Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`, `transition_rejected`, `deploy`, `merge`, `health`, `verify`, `budget_stop`, `config_changed`, `assertion_failed`, `reviewers_requested`, `stacks_detected`, `job_error`, `instructions_saved`, `context_changed`, `review_failed`, `questions_answered`, `question_mode_changed`, `context_compacted`, `handoff_saved`, `handoff_applied`.
 
 | Kind | Payload fields |
 | --- | --- |
@@ -402,6 +402,9 @@ Event `kind` is one of: `route`, `model_call`, `tool_call`, `gate`, `transition`
 | `context_changed` | `kind` (`skill`, `rule`, or `mcp`), `itemId`, and `mode` (`attach`, `detach`, or `inherit`). The row's `actor_id` is the person who changed the card's context (RFC-105) |
 | `review_failed` | `sha`, the head the AI review gave no verdict on. It wakes the notifier (RFC-113) |
 | `questions_answered` | `questionIds`, and `source` (`person` or `suggestion`). The row's `actor_id` is the person who answered. The answers stay in `card_questions` (RFC-114) |
+| `context_compacted` | `inputTokens` of the reply that reached the compaction point (`0` after a full-context error), `turnsDropped`, `summaryBytes`, and `n`, the compaction's number in the attempt (RFC-117) |
+| `handoff_saved` | `files` in the patch, `patchBytes`, `source` (`model` or `harness`), and `left` listing files left out of the patch. Never the summary or the patch (RFC-118) |
+| `handoff_applied` | `fromAttemptId`, `ok`, `files`, `todos`, and `reason` when the patch did not apply (RFC-118) |
 | `question_mode_changed` | `from` and `to`, each `manual` or `auto`. The row's `actor_id` is the person who changed it (RFC-115) |
 
 A `tool_call` named `ask_user` adds `questions`, the redacted questions with their kind, options, and suggestion, `mode` (`manual` or `auto`), and on an Auto card the answers it returned (RFC-114).
@@ -1005,6 +1008,30 @@ CREATE TABLE card_questions (
 CREATE INDEX card_questions_card ON card_questions (project_id, card_id);
 ```
 
+`00033_attempt_handoffs.sql` keeps what an unfinished attempt hands to the card's next attempt (RFC-118):
+
+```sql
+CREATE TABLE attempt_handoffs (
+  id TEXT PRIMARY KEY,               -- hof_ + 12 hex
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  attempt_id TEXT NOT NULL UNIQUE REFERENCES attempts(id) ON DELETE CASCADE,
+  summary TEXT NOT NULL DEFAULT '',  -- redacted, at most 8 KiB
+  summary_source TEXT NOT NULL CHECK (summary_source IN ('model', 'harness')),
+  todos_json TEXT NOT NULL DEFAULT '[]',  -- [{"text", "status"}]
+  patch TEXT NOT NULL DEFAULT '',    -- git diff --binary against patch_base_sha, at most 2 MiB
+  patch_base_sha TEXT NOT NULL DEFAULT '',
+  patch_files INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  applied_at TEXT,
+  applied_ok BOOLEAN,
+  applied_reason TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX attempt_handoffs_card ON attempt_handoffs (project_id, card_id, created_at);
+```
+
+No route returns `summary`, `todos_json`, or `patch`. The pending handoff of a card is the row of its latest attempt with `applied_at` null.
+
 `context` is the card's context (RFC-105). `rules` and `skills` list every item the card's packs carry, plus each one the card detached, with `state` `on` or `off` and `origin`: `project` or `planner` for an inherited item, `card` for one the card's context set. `mcp` lists every server of the project's tribe as `{ "id", "slug", "enabled", "toolCount", "state", "origin" }`, where `state` is whether the next attempt opens it and `origin` is `scope` or `card`. `mcpScope` is the scope the next attempt would record. The board list does not return `context`.
 
 `requirements` lists the rows of `requirementIds` in the card's project, in the card's order. An id with no row in that project is left out. `rules` lists the rules the card's packs carry, as `conventions.ForCard` reads them (RFC-055): global rules first, then each stack's rules. `label` is `global` or the stack name. The rule body is not returned.
@@ -1408,10 +1435,11 @@ A company admin calls these; anyone else is `403`.
 | `POST /api/runner/claim` | `{ "waitSeconds": 0 to 25 }` | `200` with `{ "leaseId", "cardId", "projectId" }`, or `204` when nothing was claimed within the wait. A draining runner gets `204`. Another protocol is `409` `protocol` |
 | `POST /api/runner/jobs/{lease}/start` | none | The job context below, or `{ "done": true, "status" }` when the preflight blocked the card or nothing can start |
 | `POST /api/runner/jobs/{lease}/board` | `{ "op", … }` | The attempt's board calls, below |
-| `POST /api/runner/jobs/{lease}/model` | `{ "attemptId", "turn", "request" }` | `{ "response" }`. A provider failure is `502` `provider_error` |
+| `POST /api/runner/jobs/{lease}/model` | `{ "attemptId", "turn", "request" }` | `{ "response" }`. A provider failure is `502` `provider_error`; a full context is `413` `context_full`, which the runner's loop compacts (RFC-117) |
 | `GET /api/runner/jobs/{lease}/mcp` | none | `{ "tools", "servers" }` |
 | `POST /api/runner/jobs/{lease}/mcp` | `{ "name", "args" }` | `{ "text", "isError" }` |
 | `POST /api/runner/jobs/{lease}/bundle?sha=` | a git bundle, at most 64 MiB | `204`, or `422` `bundle` |
+| `GET /api/runner/jobs/{lease}/bundle` | none | A git bundle of the control plane's `orch/<card>`, with the head SHA in `X-Card-Sha`, when that branch is ahead of the base; `404` otherwise (RFC-119) |
 | `POST /api/runner/jobs/{lease}/report` | `{ "fact", … }` | `{ "status", "next": "check" or "done", "attemptId", "sha" }` |
 | `POST /api/runner/jobs/{lease}/end` | none | `204`. Ends the lease with outcome `done` |
 | `POST /api/runner/jobs/{lease}/release` | none | `204`. Gives the lease back as the reaper does, with outcome `lost`: the open attempt is cancelled and the run request opens again |
@@ -1423,8 +1451,8 @@ The job context:
   "cardId": "card_…", "projectId": "proj_…", "title": "…", "status": "in_progress",
   "baseBranch": "main", "cloneUrl": "https://github.com/acme/widget.git", "cloneToken": "…",
   "author": { "name": "grace", "email": "11+grace@users.noreply.github.com" },
-  "publishedBranch": true, "fixture": false,
-  "model": "…", "taskClass": "implement", "maxTurns": 40, "historyBudget": 16384,
+  "publishedBranch": true, "cardBundle": false, "fixture": false,
+  "model": "…", "taskClass": "implement", "maxTurns": 40, "historyBudget": 16384, "contextTokens": 128000,
   "maxTokensPerCard": 2000000, "wallMinutes": 30,
   "localCheck": "npm test", "allowExecutables": ["npm"], "commandExecutables": [],
   "sandboxEngine": "podman", "sandboxImage": "…@sha256:…",
@@ -1433,9 +1461,9 @@ The job context:
 }
 ```
 
-`cloneToken` is the company token. `resume` is present when the card's latest attempt has a commit whose gating check never ran; the runner checks it without a model call when its worktree head is that SHA. When that attempt passed and only the publish failed, the control plane publishes from the commit it already holds and `start` returns `done`.
+`cardBundle` is true when the card has no pull request and the control plane's `orch/<card>` is ahead of the base; the runner then seeds its branch from `GET .../bundle` unless its own branch already contains that commit (RFC-119). `contextTokens` is the routed model's context window (RFC-117). `cloneToken` is the company token. `resume` is present when the card's latest attempt has a commit whose gating check never ran; the runner checks it without a model call when its worktree head is that SHA. When that attempt passed and only the publish failed, the control plane publishes from the commit it already holds and `start` returns `done`.
 
-Board ops: `card`, `lock`, `unlock`, `next_attempt`, `insert_attempt`, `finish_attempt`, `event`, `add_tokens`, `card_tokens`, `failure_note`, `add_attempt_used`, `requirements`, `decisions`, `latest_note`, `instructions`, and `conventions`. Every op works on the lease card and its project, whatever ids the body names. `lock` holds the card lock as the lease id. `insert_attempt` records the attempt on the lease. `event` takes `model_call`, `tool_call`, `budget_stop`, `job_error`, and `assertion_failed`, and any other kind is `422`. There is no op that moves a card.
+Board ops: `card`, `lock`, `unlock`, `next_attempt`, `insert_attempt`, `finish_attempt`, `event`, `add_tokens`, `card_tokens`, `failure_note`, `add_attempt_used`, `requirements`, `decisions`, `latest_note`, `instructions`, `conventions`, `ask_questions`, `answers`, `save_handoff`, `pending_handoff`, and `handoff_applied`. Every op works on the lease card and its project, whatever ids the body names. `save_handoff` stores the handoff of the lease's attempt only (RFC-118); `pending_handoff` returns the card's pending handoff with its patch, and `handoff_applied` marks it applied. `lock` holds the card lock as the lease id. `insert_attempt` records the attempt on the lease. `event` takes `model_call`, `tool_call`, `budget_stop`, `job_error`, and `assertion_failed`, and any other kind is `422`. There is no op that moves a card.
 
 Report facts: `finished` with `outcome` (empty for a commit, `no_change`, `no_commit`, `budget` with `reason`, or `error` with `cause` of `wall_cap`, `provider_error`, or `other` and a `message`), `resume` with `attemptId`, `check` with `exit`, `tail`, and an `error` of `sandbox_config` or `check_error` when the check could not run, and `blocked` with `reason` `sandbox_config` and a `message`. The control plane applies each fact as the local implement job does.
 
@@ -1663,11 +1691,12 @@ LLM APIs and the router are one company setting (RFC-052). Every signed-in user 
 | `baseUrl` | `https`, or `http` on `127.0.0.1`, `localhost`, or `::1` for a local server |
 | `models` | Non-empty strings, unique across all families, so a model id names one family |
 | `apiKey` | Optional for a loopback `baseUrl`, required for the family to be usable otherwise |
-| `modelOptions` | Optional. Keys are ids in this family's `models`. Each value has optional `thinking`, `thinkingBudget`, `effort` (RFC-079), and `historyBudgetKiB` (RFC-081). `GET` lists only models with a setting, and `{}` when none has one |
+| `modelOptions` | Optional. Keys are ids in this family's `models`. Each value has optional `thinking`, `thinkingBudget`, `effort` (RFC-079), `historyBudgetKiB` (RFC-081), and `contextTokens` (RFC-117). `GET` lists only models with a setting, and `{}` when none has one |
 | `modelOptions.*.thinking` | `""`, `enabled`, `disabled`, or `adaptive`. `adaptive` only on the `anthropic` protocol |
 | `modelOptions.*.thinkingBudget` | `0`, or 1024 to 32768 when `thinking` is `enabled` on the `anthropic` protocol. Saved as `0` otherwise. `0` with `enabled` means 8192 |
 | `modelOptions.*.effort` | `""`. On `anthropic`: `low`, `medium`, `high`, `xhigh`, `max`. On `openai`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `modelOptions.*.historyBudgetKiB` | `0`, or 4 to 512, on either protocol. How much earlier tool output an implement attempt on this model sends back. `0` means 16 |
+| `modelOptions.*.contextTokens` | `0`, or 8000 to 2000000, on either protocol. The model's context window in tokens; an implement attempt compacts at 75% of it. `0` means 128000 |
 
 A bad `modelOptions` key or value is `422` with field `modelOptions`.
 

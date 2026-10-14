@@ -16,7 +16,7 @@
   import FieldGroup from '$lib/ui/FieldGroup.svelte';
   import Select from '$lib/ui/Select.svelte';
 
-  type Control = 'thinking' | 'budget' | 'effort' | 'history';
+  type Control = 'thinking' | 'budget' | 'effort' | 'history' | 'context';
 
   let {
     family = $bindable(),
@@ -39,13 +39,15 @@
   const optionsError = $derived.by(() => {
     const message = fields.modelOptions ?? '';
     if (!message) return null;
-    const control: Control = /history/i.test(message)
-      ? 'history'
-      : /budget/i.test(message)
-        ? 'budget'
-        : /effort/i.test(message)
-          ? 'effort'
-          : 'thinking';
+    const control: Control = /context window/i.test(message)
+      ? 'context'
+      : /history/i.test(message)
+        ? 'history'
+        : /budget/i.test(message)
+          ? 'budget'
+          : /effort/i.test(message)
+            ? 'effort'
+            : 'thinking';
     const named = family.models.findIndex((model) => model.trim() !== '' && message.includes(model.trim()));
     const set = family.options.findIndex((options) => isSet(control, options));
     const row = named !== -1 ? named : set !== -1 ? set : 0;
@@ -56,6 +58,7 @@
   function isSet(control: Control, options: OptionsDraft) {
     if (control === 'budget') return usesBudget(family.protocol, options.thinking) && options.thinkingBudget !== '';
     if (control === 'history') return options.historyBudgetKiB !== '';
+    if (control === 'context') return options.contextTokens !== '';
     return options[control] !== '';
   }
 
@@ -165,6 +168,17 @@
                 placeholder="16"
                 error={optionError(index, 'history')}
                 bind:value={family.options[index].historyBudgetKiB}
+              />
+              <Field
+                label="Context window (tokens)"
+                id={`model-${index}-context`}
+                type="number"
+                width="full"
+                mono
+                placeholder="128000"
+                hint="The agent compacts its work at 75% of this."
+                error={optionError(index, 'context')}
+                bind:value={family.options[index].contextTokens}
               />
             </div>
           {/if}

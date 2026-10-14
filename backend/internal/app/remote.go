@@ -39,6 +39,7 @@ var (
 // remoteEventKinds are the event kinds a runner may append (RFC-108).
 var remoteEventKinds = map[string]bool{
 	"model_call": true, "tool_call": true, "budget_stop": true, "job_error": true, "assertion_failed": true,
+	"context_compacted": true, "handoff_saved": true, "handoff_applied": true,
 }
 
 // RemoteJobs holds what the control plane resolved for each open lease: the
@@ -230,7 +231,12 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	if err != nil {
 		return runnerapi.Job{}, err
 	}
+	cardBundle := false
+	if card.PRURL == "" {
+		_, cardBundle = controlBranchAhead(ctx, ProjectGit(deps.Data, p.project, p.owner.Author, deps.Tools), card.ID, base)
+	}
 	return runnerapi.Job{
+		CardBundle:   cardBundle,
 		QuestionMode: card.QuestionMode, QuestionRounds: rounds,
 		CardID: card.ID, ProjectID: card.ProjectID, Title: card.Title, Status: card.Status,
 		BaseBranch: base, CloneURL: p.acct.CloneURL(p.project.Repo), CloneToken: p.companyToken,
@@ -238,6 +244,7 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 		PublishedBranch: card.PRURL != "", Fixture: p.fixture,
 		Model: p.model, TaskClass: p.class, MaxTurns: budgets.MaxModelTurnsPerAttempt,
 		HistoryBudget:    llmHistory(p.cfg, p.model),
+		ContextTokens:    llm.Options(p.cfg, p.model).ContextWindow(),
 		MaxTokensPerCard: tokenCap, WallMinutes: budgets.MaxWallMinutesPerAttempt,
 		LocalCheck: card.LocalCheck, AllowExecutables: p.projectCfg.Checks.AllowExecutables,
 		CommandExecutables: p.projectCfg.Checks.CommandExecutables,
@@ -285,6 +292,9 @@ func RemoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		reply.Lines[i] = redact(reply.Lines[i])
 	}
 	reply.Text = redact(reply.Text)
+	if reply.Handoff != nil {
+		reply.Handoff.Summary = redact(reply.Handoff.Summary)
+	}
 	for i := range reply.Questions {
 		q := &reply.Questions[i]
 		q.Question, q.Why = redact(q.Question), redact(q.Why)
@@ -412,6 +422,38 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		}
 		err = board.InsertQuestions(ctx, db, card.ID, lease.AttemptID, op.First, questions, op.Auto)
 		return reply, err
+	case "save_handoff":
+		if err := needAttempt(); err != nil {
+			return reply, err
+		}
+		h, err := remoteHandoff(op.Handoff)
+		if err != nil {
+			return reply, fmt.Errorf("%w: save_handoff: %v", ErrRunnerOp, err)
+		}
+		job, err := jobs.get(ctx, db, deps, lease)
+		if err != nil {
+			return reply, err
+		}
+		h.CardID, h.AttemptID = card.ID, lease.AttemptID
+		h.Summary = trace.Redact(h.Summary, job.p.redact)
+		for i := range h.Todos {
+			h.Todos[i].Text = trace.Redact(h.Todos[i].Text, job.p.redact)
+		}
+		_, err = board.SaveHandoff(ctx, db, h)
+		return reply, err
+	case "pending_handoff":
+		h, ok, perr := board.PendingHandoff(ctx, db, card.ID)
+		if ok {
+			reply.Handoff = &h
+		}
+		err = perr
+	case "handoff_applied":
+		job, err := jobs.get(ctx, db, deps, lease)
+		if err != nil {
+			return reply, err
+		}
+		err = board.MarkHandoffApplied(ctx, db, card.ID, op.HandoffID, op.OK, trace.Clip(op.Reason, job.p.redact, trace.ArgCap))
+		return reply, err
 	case "conventions":
 		var convs []runnerapi.Convention
 		items, refs, cerr := dbBoard.Conventions(ctx, card.ProjectID, card.ID)
@@ -426,6 +468,34 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		return reply, fmt.Errorf("%w: op %q", ErrRunnerOp, op.Op)
 	}
 	return reply, err
+}
+
+// remoteHandoff checks a runner's handoff with the limits a local attempt
+// keeps: a known source, the summary cap, the patch cap, and the todo rules.
+func remoteHandoff(h *board.Handoff) (board.Handoff, error) {
+	if h == nil {
+		return board.Handoff{}, errors.New("no handoff")
+	}
+	out := *h
+	switch {
+	case out.SummarySource != "model" && out.SummarySource != "harness":
+		return out, fmt.Errorf("summary source %q", out.SummarySource)
+	case len(out.Summary) > loop.MaxHandoffSummary:
+		return out, errors.New("the summary is over 8 KiB")
+	case len(out.Patch) > runtime.MaxPatchBytes:
+		return out, errors.New("the patch is over 2 MiB")
+	case out.PatchBaseSHA != "" && (len(out.PatchBaseSHA) < 40 || strings.Trim(out.PatchBaseSHA, "0123456789abcdef") != ""):
+		return out, errors.New("the patch base is not a commit id")
+	case out.PatchFiles < 0 || len(out.Todos) > loop.MaxTodos:
+		return out, errors.New("bad file or todo count")
+	}
+	for _, todo := range out.Todos {
+		if len(todo.Text) > loop.MaxTodoText || !slices.Contains([]string{"pending", "in_progress", "done"}, todo.Status) {
+			return out, errors.New("a todo item is not valid")
+		}
+	}
+	out.Todos = slices.Clone(out.Todos)
+	return out, nil
 }
 
 // remoteQuestions checks a runner's questions with the rules ask_user
@@ -469,6 +539,9 @@ func RemoteModel(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	req.System, req.User = trace.Redact(req.System, job.p.redact), trace.Redact(req.User, job.p.redact)
 	resp, err := loop.CompleteLive(ctx, job.p.provider, req, deps.Live, lease.CardID,
 		live.Frame{AttemptID: lease.AttemptID, Turn: call.Turn, Role: "implementer"}, job.p.redact)
+	if providers.IsContextFull(err) {
+		return providers.Response{}, fmt.Errorf("%w: %v", providers.ErrContextFull, err)
+	}
 	if err != nil {
 		card, cerr := board.GetCard(ctx, db, lease.CardID)
 		if cerr == nil {
@@ -598,6 +671,53 @@ func ImportBundle(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJob
 	return nil
 }
 
+// controlBranchAhead returns the head of the control plane's orch/<card>
+// when that branch has commits its base does not (RFC-119).
+func controlBranchAhead(ctx context.Context, git runtime.Git, cardID, base string) (string, bool) {
+	head, err := git.RevParse(ctx, "refs/heads/orch/"+cardID)
+	if err != nil || git.IsAncestor(ctx, head, "refs/heads/"+base) {
+		return "", false
+	}
+	return head, true
+}
+
+// CardBundle writes a git bundle of the control plane's orch/<card> for a
+// runner that starts the card without a pull request (RFC-119), and returns
+// its head and the bundle file, which the caller removes. A branch that is
+// not ahead of its base is board.ErrNotFound.
+func CardBundle(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs, lease board.Lease) (string, string, error) {
+	job, err := jobs.get(ctx, db, deps, lease)
+	if err != nil {
+		return "", "", err
+	}
+	p := job.p
+	base := p.project.BaseBranch
+	if base == "" {
+		base = "main"
+	}
+	git := ProjectGit(deps.Data, p.project, p.owner.Author, deps.Tools)
+	head, ok := controlBranchAhead(ctx, git, lease.CardID, base)
+	if !ok {
+		return "", "", board.ErrNotFound
+	}
+	dir := filepath.Join(git.Data, "exports")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", "", err
+	}
+	file, err := os.CreateTemp(dir, "card-*.bundle")
+	if err != nil {
+		return "", "", err
+	}
+	path := file.Name()
+	file.Close()
+	os.Remove(path)
+	if err := git.BundleCard(ctx, lease.CardID, base, path); err != nil {
+		os.Remove(path)
+		return "", "", errors.New(trace.Redact(err.Error(), p.redact))
+	}
+	return head, path, nil
+}
+
 // ReportRemote applies one fact a runner reports, as the local implement job
 // does at the same step; every status change goes through machine.Transition.
 func ReportRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs, lease board.Lease, rep runnerapi.Report) (runnerapi.ReportReply, error) {
@@ -657,7 +777,7 @@ func ReportRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJob
 			if err := needLeaseAttempt(lease); err != nil {
 				return runnerapi.ReportReply{}, err
 			}
-			if rep.Reason != "turn_cap" && rep.Reason != "token_cap" {
+			if rep.Reason != "turn_cap" && rep.Reason != "token_cap" && rep.Reason != "context_full" {
 				return runnerapi.ReportReply{}, fmt.Errorf("%w: budget reason %q", ErrRunnerOp, rep.Reason)
 			}
 			return done(BlockCard(ctx, db, card, rep.Reason, p.redact))

@@ -2,10 +2,12 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -137,6 +139,43 @@ func Replay(turn Turn, model string) []Reasoning {
 // anthropic protocol, length on the openai protocol.
 func Truncated(stopReason string) bool {
 	return stopReason == "max_tokens" || stopReason == "length"
+}
+
+// ErrContextFull is a reply that the request is larger than the model's
+// context window (RFC-117). Clients wrap it, so callers test IsContextFull.
+var ErrContextFull = errors.New("context window is full")
+
+// contextFullText are the provider and harness phrases of a full context. A
+// wrapped error may reach the loop as text only, after the router or a runner.
+var contextFullText = []string{
+	ErrContextFull.Error(), "prompt is too long", "context_length_exceeded", "maximum context length",
+}
+
+// IsContextFull reports an error that says the request did not fit the
+// model's context window.
+func IsContextFull(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrContextFull) {
+		return true
+	}
+	text := strings.ToLower(err.Error())
+	for _, phrase := range contextFullText {
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
+// ContextFullStatus reports a provider status and message that mean a full
+// context: a 400 or 413 naming the window.
+func ContextFullStatus(status int, message string) bool {
+	if status != http.StatusBadRequest && status != http.StatusRequestEntityTooLarge {
+		return false
+	}
+	return IsContextFull(errors.New(message))
 }
 
 // RateLimited is a 429 reply. Wait is how long the server asked the caller to

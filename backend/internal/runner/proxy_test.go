@@ -17,7 +17,7 @@ import (
 
 // startAttempt claims and starts the card's lease and records an attempt the
 // way the loop does, asking for another model and task class.
-func startAttempt(t *testing.T, h *harness, c *runner.Client, id string) (*runner.Board, string) {
+func startAttempt(t *testing.T, _ *harness, c *runner.Client, id string) (*runner.Board, string) {
 	t.Helper()
 	ctx := context.Background()
 	claimed := claim(t, c)

@@ -40,11 +40,14 @@ type Model struct {
 // ModelOptions are the thinking and effort settings sent with every request to
 // one model (RFC-079). Empty values send nothing. HistoryBudgetKiB is how much
 // earlier tool output an implement attempt on this model sends back (RFC-081).
+// ContextTokens is the model's context window, which sets where an attempt
+// compacts (RFC-117).
 type ModelOptions struct {
 	Thinking         string `yaml:"thinking,omitempty" json:"thinking,omitempty"`
 	ThinkingBudget   int    `yaml:"thinkingBudget,omitempty" json:"thinkingBudget,omitempty"`
 	Effort           string `yaml:"effort,omitempty" json:"effort,omitempty"`
 	HistoryBudgetKiB int    `yaml:"historyBudgetKiB,omitempty" json:"historyBudgetKiB,omitempty"`
+	ContextTokens    int    `yaml:"contextTokens,omitempty" json:"contextTokens,omitempty"`
 }
 
 const (
@@ -54,6 +57,10 @@ const (
 	MaxHistoryKiB     = 512
 	// DefaultHistoryKiB is the history budget of a model that sets none.
 	DefaultHistoryKiB = 16
+	MinContextTokens  = 8000
+	MaxContextTokens  = 2000000
+	// DefaultContextTokens is the context window of a model that sets none.
+	DefaultContextTokens = 128000
 
 	// DefaultTurns and DefaultTokensPerCard apply when the router budgets
 	// leave them zero (RFC-081). MaxTurns is the most an admin may save.
@@ -68,6 +75,19 @@ func (o ModelOptions) HistoryBytes() int {
 		return DefaultHistoryKiB << 10
 	}
 	return o.HistoryBudgetKiB << 10
+}
+
+// ContextWindow is the model's context window in tokens.
+func (o ModelOptions) ContextWindow() int {
+	if o.ContextTokens <= 0 {
+		return DefaultContextTokens
+	}
+	return o.ContextTokens
+}
+
+// ContextLimit is where an implement attempt compacts: 75% of the window.
+func (o ModelOptions) ContextLimit() int {
+	return o.ContextWindow() * 3 / 4
 }
 
 var efforts = map[string][]string{
@@ -136,6 +156,9 @@ func checkOptions(protocol string, opts ModelOptions) (ModelOptions, error) {
 	}
 	if opts.HistoryBudgetKiB != 0 && (opts.HistoryBudgetKiB < MinHistoryKiB || opts.HistoryBudgetKiB > MaxHistoryKiB) {
 		return bad("the history budget must be from 4 to 512 KiB")
+	}
+	if opts.ContextTokens != 0 && (opts.ContextTokens < MinContextTokens || opts.ContextTokens > MaxContextTokens) {
+		return bad("the context window must be from 8000 to 2000000 tokens")
 	}
 	return opts, nil
 }

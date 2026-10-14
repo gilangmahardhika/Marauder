@@ -412,6 +412,8 @@ export type ModelOptions = {
   thinkingBudget?: number;
   effort?: string;
   historyBudgetKiB?: number;
+  /** The model's context window in tokens; unset means 128,000 (RFC-117). */
+  contextTokens?: number;
 };
 
 export type Family = {

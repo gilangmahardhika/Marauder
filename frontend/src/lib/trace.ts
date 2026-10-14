@@ -142,6 +142,10 @@ function lineCount(text: string) {
   return trimmed === '' ? 0 : trimmed.split('\n').length;
 }
 
+function capitalized(text: string) {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 function plural(n: number, one: string, many: string) {
   return `${count(n)} ${n === 1 ? one : many}`;
 }
@@ -398,6 +402,40 @@ export function describe(event: TraceEvent): Described {
       return { label: 'Harness assertion failed', detail: [str(p.name), str(p.detail)].filter(Boolean).join(': '), meta: '', tone: 'red', text: '' };
     case 'budget_stop':
       return { label: 'Budget stop', detail: '', meta: '', tone: 'red', text: '' };
+    case 'context_compacted':
+      return {
+        label: 'Context compacted',
+        detail: `at ${count(num(p.inputTokens))} tokens, ${plural(num(p.turnsDropped), 'turn', 'turns')} summarized`,
+        meta: num(p.n) > 1 ? `#${num(p.n)}` : '',
+        tone: 'default',
+        text: ''
+      };
+    case 'handoff_saved': {
+      const left = num(p.left);
+      return {
+        label: 'Handoff saved',
+        detail: [
+          plural(num(p.files), 'uncommitted file', 'uncommitted files'),
+          str(p.source) === 'model' ? 'summary by the model' : 'summary by the harness',
+          left > 0 ? `${plural(left, 'file', 'files')} too large to keep` : ''
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        meta: '',
+        tone: 'default',
+        text: ''
+      };
+    }
+    case 'handoff_applied':
+      return p.ok === false
+        ? { label: 'Earlier work could not be re-applied', detail: capitalized(str(p.reason)), meta: '', tone: 'amber', text: '' }
+        : {
+            label: 'Continued from the last attempt',
+            detail: [plural(num(p.files), 'file', 'files'), plural(num(p.todos), 'todo', 'todos')].join(' · '),
+            meta: '',
+            tone: 'default',
+            text: ''
+          };
     case 'context_changed': {
       const what = ({ skill: 'skill', rule: 'rule', mcp: 'MCP server' } as Record<string, string>)[str(p.kind)] ?? str(p.kind);
       const verb = ({ attach: 'Attached', detach: 'Detached', inherit: 'Restored' } as Record<string, string>)[str(p.mode)] ?? str(p.mode);

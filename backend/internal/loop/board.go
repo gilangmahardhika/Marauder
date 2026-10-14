@@ -36,6 +36,12 @@ type Board interface {
 	AskQuestions(ctx context.Context, attemptID, cardID string, first int, questions []board.Question, auto bool) error
 	// Answers lists the card's answered questions, oldest first.
 	Answers(ctx context.Context, cardID string) ([]board.Question, error)
+	// SaveHandoff stores what an attempt without a commit leaves the next
+	// one; PendingHandoff reads the card's latest attempt's handoff while it
+	// is unused, and MarkHandoffApplied uses it up (RFC-118).
+	SaveHandoff(ctx context.Context, h board.Handoff) error
+	PendingHandoff(ctx context.Context, cardID string) (board.Handoff, bool, error)
+	MarkHandoffApplied(ctx context.Context, cardID, id string, ok bool, reason string) error
 }
 
 // DBBoard is the Board of a job that runs beside the database.
@@ -113,6 +119,19 @@ func (b DBBoard) AskQuestions(ctx context.Context, attemptID, cardID string, fir
 
 func (b DBBoard) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
 	return board.AnsweredQuestions(ctx, b.DB, cardID)
+}
+
+func (b DBBoard) SaveHandoff(ctx context.Context, h board.Handoff) error {
+	_, err := board.SaveHandoff(ctx, b.DB, h)
+	return err
+}
+
+func (b DBBoard) PendingHandoff(ctx context.Context, cardID string) (board.Handoff, bool, error) {
+	return board.PendingHandoff(ctx, b.DB, cardID)
+}
+
+func (b DBBoard) MarkHandoffApplied(ctx context.Context, cardID, id string, ok bool, reason string) error {
+	return board.MarkHandoffApplied(ctx, b.DB, cardID, id, ok, reason)
 }
 
 func (b DBBoard) AppendEvent(ctx context.Context, ev trace.Event, secrets []string) error {

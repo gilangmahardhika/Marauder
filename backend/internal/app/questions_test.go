@@ -53,8 +53,8 @@ func TestAskUserParksCard(t *testing.T) {
 	if card.Status != "waiting_answer" || card.AttemptsUsed != 0 {
 		t.Fatalf("card = %s used %d, want waiting_answer used 0", card.Status, card.AttemptsUsed)
 	}
-	if n := len(provider.Prompts()); n != 1 {
-		t.Fatalf("model calls = %d, want 1", n)
+	if prompts := provider.Prompts(); len(prompts) != 2 || prompts[1].ToolChoice != "none" {
+		t.Fatalf("model calls = %d, want the ask and the handoff summary", len(prompts))
 	}
 	var outcome string
 	if err := f.db.QueryRow(`SELECT outcome FROM attempts WHERE card_id = $1`, card.ID).Scan(&outcome); err != nil || outcome != "question" {

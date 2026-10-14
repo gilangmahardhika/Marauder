@@ -62,6 +62,30 @@ test('every model row has a history budget on either protocol', async () => {
   expect(draft.options[0].historyBudgetKiB).toBe(64);
 });
 
+test('every model row has a context window that says when the agent compacts', async () => {
+  const draft = family('anthropic');
+  render(FamilyForm, { family: draft });
+  const group = screen.getByRole('group', { name: 'Settings for model-a' });
+  const context = within(group).getByLabelText('Context window (tokens)');
+  expect(context.getAttribute('placeholder')).toBe('128000');
+  expect(document.getElementById('model-0-context-hint')?.textContent).toBe('The agent compacts its work at 75% of this.');
+  await fireEvent.input(context, { target: { value: '200000' } });
+  expect(draft.options[0].contextTokens).toBe(200000);
+});
+
+test('a context window error shows under the context window field', () => {
+  const draft = family('openai');
+  draft.options = [blankOptionsWith({ contextTokens: 100, historyBudgetKiB: 64 })];
+  render(FamilyForm, {
+    family: draft,
+    fields: { modelOptions: 'the context window must be from 8000 to 2000000 tokens' }
+  });
+  const group = screen.getByRole('group', { name: 'Settings for model-a' });
+  expect(within(group).getByLabelText('Context window (tokens)').getAttribute('aria-invalid')).toBe('true');
+  expect(within(group).getByLabelText('History budget (KiB)').getAttribute('aria-invalid')).toBeNull();
+  expect(document.getElementById('model-0-context-error')?.textContent).toContain('the context window must be from 8000');
+});
+
 test('model errors show under the model row they are about', () => {
   const draft = family('anthropic');
   draft.models = ['model-a', 'model-b', 'model-a'];

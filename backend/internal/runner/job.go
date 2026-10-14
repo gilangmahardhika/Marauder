@@ -140,6 +140,13 @@ func (j *job) run(ctx context.Context) error {
 		if err := j.git.SeedCardBranch(ctx, j.ctx.CardID); err != nil {
 			return j.fail(ctx, "other", err)
 		}
+	} else if j.ctx.CardBundle {
+		if err := j.seedFromControlPlane(ctx); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return j.fail(ctx, "other", err)
+		}
 	}
 	reply, resumed, err := j.resume(ctx)
 	if err != nil {
@@ -154,6 +161,28 @@ func (j *job) run(ctx context.Context) error {
 		return j.check(ctx, reply)
 	}
 	return nil
+}
+
+// seedFromControlPlane starts orch/<card> from the control plane's copy of
+// the branch when the card has no pull request to fetch (RFC-119).
+func (j *job) seedFromControlPlane(ctx context.Context) error {
+	dir := filepath.Join(j.git.Data, "exports")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(dir, "card-*.bundle")
+	if err != nil {
+		return err
+	}
+	path := file.Name()
+	file.Close()
+	os.Remove(path)
+	defer os.Remove(path)
+	sha, err := j.r.Client.CardBundle(ctx, j.leaseID, path)
+	if err != nil {
+		return err
+	}
+	return j.git.SeedCardBundle(ctx, j.ctx.CardID, path, sha)
 }
 
 // resume reports the control plane's unchecked commit when the worktree head
@@ -205,7 +234,7 @@ func (j *job) attempt(ctx context.Context) (runnerapi.ReportReply, error) {
 		Provider: &Provider{Client: j.r.Client, Board: b}, Secrets: j.secrets,
 		Allow: j.ctx.AllowExecutables, Commands: j.ctx.CommandExecutables,
 		Engine: j.engine, Image: j.ctx.SandboxImage, Exec: j.r.Tools.Exec,
-		HistoryBudget: j.ctx.HistoryBudget, MaxTokensPerCard: j.ctx.MaxTokensPerCard,
+		HistoryBudget: j.ctx.HistoryBudget, MaxTokensPerCard: j.ctx.MaxTokensPerCard, ContextTokens: j.ctx.ContextTokens,
 		Extra: extra, MCP: scope, Board: b, Fixture: j.ctx.Fixture,
 		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds,
 	})

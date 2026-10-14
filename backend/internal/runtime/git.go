@@ -308,16 +308,21 @@ func (g Git) run(ctx context.Context, argv ...string) (execx.Result, error) {
 }
 
 func (g Git) runEnv(ctx context.Context, env []string, timeout time.Duration, argv ...string) (execx.Result, error) {
+	return g.runChild(ctx, execx.Child{Argv: argv, Env: env, Timeout: timeout, MaxOut: gitMaxOut})
+}
+
+// runIn runs git from dir, for a command such as apply whose paths are
+// relative to the directory it starts in.
+func (g Git) runIn(ctx context.Context, dir string, argv ...string) (execx.Result, error) {
+	return g.runChild(ctx, execx.Child{Argv: argv, Env: gitEnv(g.Bin, g.Data), Dir: dir, Timeout: gitTimeout, MaxOut: gitMaxOut})
+}
+
+func (g Git) runChild(ctx context.Context, child execx.Child) (execx.Result, error) {
 	run := g.Exec
 	if run == nil {
 		run = execx.Command
 	}
-	res, err := run(ctx, execx.Child{
-		Argv:    argv,
-		Env:     env,
-		Timeout: timeout,
-		MaxOut:  gitMaxOut,
-	})
+	res, err := run(ctx, child)
 	if err != nil {
 		return res, err
 	}

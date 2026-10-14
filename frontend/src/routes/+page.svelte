@@ -19,6 +19,7 @@
 
   const labels = [
     ['waiting', 'Waiting'],
+    ['question', 'Needs answer'],
     ['running', 'Running'],
     ['review', 'Review'],
     ['shipping', 'Shipping'],

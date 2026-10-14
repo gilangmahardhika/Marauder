@@ -3,6 +3,7 @@ package anthropic_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -348,6 +349,25 @@ func TestAnthropicCacheBreakpoints(t *testing.T) {
 	note, _ := last[len(last)-1].(map[string]any)
 	if note["type"] != "text" || note["text"] != "Your todo list:\n[pending] commit" {
 		t.Fatalf("the note is not after the breakpoint: %v", last)
+	}
+}
+
+func TestContextFullClassified(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens > 200000 maximum"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	_, err := anthropic.New(srv.URL, key).Complete(context.Background(), providers.Request{Model: "claude-test", User: "hi"})
+	if !errors.Is(err, providers.ErrContextFull) || !providers.IsContextFull(err) {
+		t.Fatalf("err = %v, want ErrContextFull", err)
+	}
+	if !providers.IsContextFull(fmt.Errorf("provider_error: %s", err.Error())) {
+		t.Fatal("the text of a wrapped full context was not recognised")
+	}
+	if providers.IsContextFull(errors.New("status 413: Request too large")) {
+		t.Fatal("a plain request-size error was taken for a full context")
 	}
 }
 

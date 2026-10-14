@@ -3,6 +3,7 @@ package openai_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -313,5 +314,18 @@ func TestOpenAIToolChoiceNone(t *testing.T) {
 	}
 	if got["tool_choice"] != "none" {
 		t.Fatalf("tool_choice = %v", got["tool_choice"])
+	}
+}
+
+func TestContextFullClassified(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"This model's context is 128000 tokens.","type":"invalid_request_error","code":"context_length_exceeded"}}`)
+	}))
+	t.Cleanup(srv.Close)
+	_, err := openai.New(srv.URL, key).Complete(context.Background(), providers.Request{Model: "m", User: "hi"})
+	if !errors.Is(err, providers.ErrContextFull) {
+		t.Fatalf("err = %v, want ErrContextFull", err)
 	}
 }

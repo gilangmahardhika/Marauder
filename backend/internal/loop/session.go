@@ -42,8 +42,9 @@ type session struct {
 	// used counts model calls; outOfTurns is set when every turn was used.
 	used       int
 	outOfTurns bool
-	// stop is what ended the attempt early: token_cap, question when a manual
-	// card asked (RFC-114), or empty.
+	// stop is what ended the attempt early: token_cap, context_full when it
+	// could not compact again (RFC-117), question when a manual card asked
+	// (RFC-114), or empty.
 	stop string
 	// todos is the model's current todo_write list.
 	todos []todoItem
@@ -61,6 +62,19 @@ type session struct {
 	asks     int
 	asked    int
 	askEvent map[string]any
+	// pack is the user message the attempt started with; a compaction puts
+	// its summary after it (RFC-117). compactNext is set when the last reply's
+	// input reached the context limit, and lastSummary is the newest summary.
+	pack        string
+	lastInput   int
+	compactNext bool
+	compactions int
+	lastSummary string
+	// checked, checkExit, and checkTail are the last run_local_check, for a
+	// harness-written handoff (RFC-118).
+	checked   bool
+	checkExit int
+	checkTail string
 }
 
 // readOnly are the tools that change nothing, so the calls of one reply that
@@ -239,15 +253,34 @@ func (s *session) loop(ctx context.Context) error {
 			s.stop = "token_cap"
 			return nil
 		}
-		turns := withNote(withTodos(s.history(), s.todos), s.in.MaxTurns-turn, s.in.MaxTurns)
-		resp, endTurn, err := complete(ctx, s.in.Provider, providers.Request{
-			Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
-			Tools: s.profile(), TaskClass: s.in.TaskClass,
-		}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets)
+		if s.compactNext {
+			if err := s.compact(ctx, s.lastInput); err != nil {
+				return err
+			}
+			if s.stop != "" {
+				return nil
+			}
+		}
+		resp, endTurn, err := s.request(ctx, turn)
+		if providers.IsContextFull(err) {
+			if err := s.compact(ctx, s.lastInput); err != nil {
+				return err
+			}
+			if s.stop != "" {
+				return nil
+			}
+			resp, endTurn, err = s.request(ctx, turn)
+			if providers.IsContextFull(err) {
+				s.stop = "context_full"
+				return nil
+			}
+		}
 		if err != nil {
 			return err
 		}
 		s.used = turn + 1
+		s.lastInput = resp.InputTokens + resp.CachedInputTokens
+		s.compactNext = s.lastInput >= s.contextLimit()
 		if err := s.in.board().AddAttemptTokens(ctx, s.attemptID, resp.InputTokens, resp.OutputTokens, resp.CachedInputTokens); err != nil {
 			return err
 		}
@@ -320,6 +353,15 @@ func (s *session) loop(ctx context.Context) error {
 	}
 	s.outOfTurns = true
 	return nil
+}
+
+// request sends the attempt's next turn.
+func (s *session) request(ctx context.Context, turn int) (providers.Response, func(), error) {
+	turns := withNote(withTodos(s.history(), s.todos), s.in.MaxTurns-turn, s.in.MaxTurns)
+	return complete(ctx, s.in.Provider, providers.Request{
+		Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
+		Tools: s.profile(), TaskClass: s.in.TaskClass,
+	}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets)
 }
 
 // overTokens reports whether the card has used its token cap (RFC-081).
@@ -533,7 +575,9 @@ func (s *session) localCheck(ctx context.Context) (int, string, error) {
 	if res.Exit == 0 {
 		s.passTree = tree
 	}
-	return res.Exit, lastLines(string(res.Out), 200), nil
+	tail := lastLines(string(res.Out), 200)
+	s.checked, s.checkExit, s.checkTail = true, res.Exit, trace.Redact(tail, s.in.Secrets)
+	return res.Exit, tail, nil
 }
 
 func (s *session) exec() func(context.Context, execx.Child) (execx.Result, error) {

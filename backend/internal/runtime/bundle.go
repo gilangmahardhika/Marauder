@@ -64,6 +64,21 @@ func (g Git) ImportCardBundle(ctx context.Context, cardID, file, sha, baseSHA st
 		return ErrBundle
 	}
 	ref := "refs/heads/orch/" + cardID
+	if err := g.unbundleCard(ctx, ref, file, sha); err != nil {
+		return err
+	}
+	if baseSHA != "" {
+		if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "merge-base", "--is-ancestor", baseSHA, sha)...); err != nil {
+			return ErrBundle
+		}
+	}
+	_, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "update-ref", ref, sha)...)
+	return err
+}
+
+// unbundleCard checks that a bundle lists one head, ref at sha, and writes
+// its objects without setting any ref.
+func (g Git) unbundleCard(ctx context.Context, ref, file, sha string) error {
 	res, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "bundle", "list-heads", file)...)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrBundle, err)
@@ -78,11 +93,26 @@ func (g Git) ImportCardBundle(ctx context.Context, cardID, file, sha, baseSHA st
 	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "bundle", "unbundle", file)...); err != nil {
 		return fmt.Errorf("%w: %v", ErrBundle, err)
 	}
-	if baseSHA != "" {
-		if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "merge-base", "--is-ancestor", baseSHA, sha)...); err != nil {
-			return ErrBundle
-		}
+	return nil
+}
+
+// SeedCardBundle points orch/<cardID> at sha from the control plane's bundle
+// of the card branch, unless the local branch already contains it (RFC-119).
+// The bundle is checked as ImportCardBundle checks a runner's.
+func (g Git) SeedCardBundle(ctx context.Context, cardID, file, sha string) error {
+	if err := validCardID(cardID); err != nil {
+		return err
 	}
-	_, err = g.run(ctx, append(g.prefix(), "-C", g.Repo, "update-ref", ref, sha)...)
+	if len(sha) < 40 || strings.Trim(sha, "0123456789abcdef") != "" {
+		return ErrBundle
+	}
+	ref := "refs/heads/orch/" + cardID
+	if err := g.unbundleCard(ctx, ref, file, sha); err != nil {
+		return err
+	}
+	if _, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "merge-base", "--is-ancestor", sha, ref)...); err == nil {
+		return nil
+	}
+	_, err := g.run(ctx, append(g.prefix(), "-C", g.Repo, "update-ref", ref, sha)...)
 	return err
 }

@@ -68,7 +68,7 @@ function card(questions: CardQuestion[], actions = ['answer', 'question_mode']):
     id: 'card_0123456789ab',
     title: 'Export orders',
     status: 'waiting_answer',
-    group: 'waiting',
+    group: 'question',
     actions,
     unblockTo: null,
     owner: null,

@@ -24,6 +24,18 @@ func TestActionsApproved(t *testing.T) {
 	}
 }
 
+func TestActionsWaitingAnswer(t *testing.T) {
+	for _, role := range []string{"lead_developer", "developer", "product_owner"} {
+		group, actions, unblock := httpapi.Actions("waiting_answer", "", false, role)
+		if group != "question" || len(actions) != 0 || unblock != nil {
+			t.Fatalf("%s: group = %q actions = %v unblock = %v", role, group, actions, unblock)
+		}
+	}
+	if group, _, _ := httpapi.Actions("ready", "", false, "developer"); group != "waiting" {
+		t.Fatalf("ready group = %q", group)
+	}
+}
+
 func TestCORS(t *testing.T) {
 	rec := request(t, "/api/cards", "127.0.0.1:8787", "http://127.0.0.1:9999", "")
 	if rec.Code != 403 {

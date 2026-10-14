@@ -98,6 +98,12 @@ type Job struct {
 	// attempts that ended with a question (RFC-114, RFC-115).
 	QuestionMode   string `json:"questionMode,omitempty"`
 	QuestionRounds int    `json:"questionRounds,omitempty"`
+	// CardBundle means the control plane holds orch/<card> ahead of the base
+	// and the card has no pull request: the runner seeds the branch from
+	// GET .../bundle (RFC-119). ContextTokens is the routed model's context
+	// window (RFC-117).
+	CardBundle    bool `json:"cardBundle"`
+	ContextTokens int  `json:"contextTokens,omitempty"`
 }
 
 // BoardOp is one board call of an attempt. Only the fields of Op are read.
@@ -120,6 +126,12 @@ type BoardOp struct {
 	Questions []board.Question `json:"questions,omitempty"`
 	First     int              `json:"first,omitempty"`
 	Auto      bool             `json:"auto,omitempty"`
+	// Handoff is the save_handoff op; HandoffID, OK, and Reason are the
+	// handoff_applied op (RFC-118).
+	Handoff   *board.Handoff `json:"handoff,omitempty"`
+	HandoffID string         `json:"handoffId,omitempty"`
+	OK        bool           `json:"ok,omitempty"`
+	Reason    string         `json:"reason,omitempty"`
 }
 
 type Attempt struct {
@@ -169,6 +181,7 @@ type BoardReply struct {
 	Conventions []Convention     `json:"conventions,omitempty"`
 	Items       []map[string]any `json:"items,omitempty"`
 	Questions   []board.Question `json:"questions,omitempty"`
+	Handoff     *board.Handoff   `json:"handoff,omitempty"`
 }
 
 type ModelCall struct {

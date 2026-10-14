@@ -70,8 +70,8 @@ describe('LLM model options', () => {
   it('toDraft and fromDraft round-trip the options', () => {
     const draft = toDraft(claude);
     expect(draft.options).toEqual([
-      { thinking: 'enabled', thinkingBudget: 4096, effort: 'high', historyBudgetKiB: '' },
-      { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '' }
+      { thinking: 'enabled', thinkingBudget: 4096, effort: 'high', historyBudgetKiB: '', contextTokens: '' },
+      { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '', contextTokens: '' }
     ]);
     expect(fromDraft(draft).modelOptions).toEqual(claude.modelOptions);
   });
@@ -79,7 +79,7 @@ describe('LLM model options', () => {
   it('fromDraft drops empty settings, removed models, and unused budgets', () => {
     const draft = toDraft(claude);
     draft.models[1] = ' claude-c ';
-    draft.options[1] = { thinking: 'adaptive', thinkingBudget: 2048, effort: '', historyBudgetKiB: '' };
+    draft.options[1] = { thinking: 'adaptive', thinkingBudget: 2048, effort: '', historyBudgetKiB: '', contextTokens: '' };
     expect(fromDraft(draft).modelOptions).toEqual({
       'claude-a': { thinking: 'enabled', thinkingBudget: 4096, effort: 'high' },
       'claude-c': { thinking: 'adaptive' }
@@ -89,15 +89,15 @@ describe('LLM model options', () => {
     draft.options = [draft.options[1]];
     expect(Object.keys(fromDraft(draft).modelOptions)).toEqual(['claude-c']);
 
-    draft.options[0] = { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '' };
+    draft.options[0] = { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '', contextTokens: '' };
     expect(fromDraft(draft).modelOptions).toEqual({});
   });
 
   it('fromDraft keeps only what the protocol takes', () => {
     const draft = toDraft(claude);
     draft.protocol = 'openai';
-    draft.options[0] = { thinking: 'adaptive', thinkingBudget: 4096, effort: 'max', historyBudgetKiB: '' };
-    draft.options[1] = { thinking: 'enabled', thinkingBudget: 4096, effort: 'minimal', historyBudgetKiB: '' };
+    draft.options[0] = { thinking: 'adaptive', thinkingBudget: 4096, effort: 'max', historyBudgetKiB: '', contextTokens: '' };
+    draft.options[1] = { thinking: 'enabled', thinkingBudget: 4096, effort: 'minimal', historyBudgetKiB: '', contextTokens: '' };
     expect(fromDraft(draft).modelOptions).toEqual({ 'claude-b': { thinking: 'enabled', effort: 'minimal' } });
   });
 
@@ -112,5 +112,14 @@ describe('LLM model options', () => {
     });
     draft.options[1].historyBudgetKiB = '';
     expect(fromDraft(draft).modelOptions).toEqual({ 'claude-a': { historyBudgetKiB: 128 } });
+  });
+
+  it('round-trips the context window and leaves it out when empty', () => {
+    const draft = toDraft({ ...claude, modelOptions: { 'claude-a': { contextTokens: 200000 } } });
+    expect(draft.options[0].contextTokens).toBe(200000);
+    expect(draft.options[1].contextTokens).toBe('');
+    expect(fromDraft(draft).modelOptions).toEqual({ 'claude-a': { contextTokens: 200000 } });
+    draft.options[0].contextTokens = '';
+    expect(fromDraft(draft).modelOptions).toEqual({});
   });
 });

@@ -3,7 +3,9 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,8 +22,16 @@ const maxBundle = 64 << 20
 // whole history.
 const maxModelBody = 16 << 20
 
+// maxBoardBody caps a runner's board op, which may carry a 2 MiB handoff
+// patch (RFC-118).
+const maxBoardBody = 8 << 20
+
 func isBundleRoute(r *http.Request) bool {
 	return strings.HasPrefix(r.URL.Path, "/api/runner/jobs/") && strings.HasSuffix(r.URL.Path, "/bundle")
+}
+
+func isBoardRoute(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/api/runner/jobs/") && strings.HasSuffix(r.URL.Path, "/board")
 }
 
 func isModelRoute(r *http.Request) bool {
@@ -64,6 +74,7 @@ func (s *Server) runnerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/runner/jobs/{lease}/mcp", s.leaseRoute(s.runnerMCPTools))
 	mux.HandleFunc("POST /api/runner/jobs/{lease}/mcp", s.leaseRoute(s.runnerMCPCall))
 	mux.HandleFunc("POST /api/runner/jobs/{lease}/bundle", s.leaseRoute(s.runnerBundle))
+	mux.HandleFunc("GET /api/runner/jobs/{lease}/bundle", s.leaseRoute(s.runnerCardBundle))
 	mux.HandleFunc("POST /api/runner/jobs/{lease}/report", s.leaseRoute(s.runnerReport))
 	mux.HandleFunc("POST /api/runner/jobs/{lease}/end", s.leaseRoute(s.runnerEnd))
 	mux.HandleFunc("POST /api/runner/jobs/{lease}/release", s.leaseRoute(s.runnerRelease))
@@ -235,6 +246,27 @@ func (s *Server) runnerBundle(w http.ResponseWriter, r *http.Request, lease boar
 		return
 	}
 	w.WriteHeader(204)
+}
+
+// runnerCardBundle sends the control plane's orch/<card> as a git bundle,
+// with its head in X-Card-Sha (RFC-119).
+func (s *Server) runnerCardBundle(w http.ResponseWriter, r *http.Request, lease board.Lease) {
+	sha, path, err := app.CardBundle(r.Context(), s.DB, s.remoteDeps(), s.Remote, lease)
+	if err != nil {
+		writeRunnerErr(w, err)
+		return
+	}
+	defer os.Remove(path)
+	file, err := os.Open(path)
+	if err != nil {
+		writeRunnerErr(w, err)
+		return
+	}
+	defer file.Close()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Card-Sha", sha)
+	w.WriteHeader(200)
+	_, _ = io.Copy(w, file)
 }
 
 func (s *Server) runnerReport(w http.ResponseWriter, r *http.Request, lease board.Lease) {

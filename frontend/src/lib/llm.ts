@@ -7,6 +7,7 @@ export type OptionsDraft = {
   thinkingBudget: number | string;
   effort: string;
   historyBudgetKiB: number | string;
+  contextTokens: number | string;
 };
 
 export type FamilyDraft = {
@@ -21,7 +22,7 @@ export type FamilyDraft = {
 };
 
 export function blankOptions(): OptionsDraft {
-  return { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '' };
+  return { thinking: '', thinkingBudget: '', effort: '', historyBudgetKiB: '', contextTokens: '' };
 }
 
 export function blankFamily(): FamilyDraft {
@@ -42,7 +43,8 @@ function toOptionsDraft(options: ModelOptions | undefined): OptionsDraft {
     thinking: options?.thinking ?? '',
     thinkingBudget: options?.thinkingBudget || '',
     effort: options?.effort ?? '',
-    historyBudgetKiB: options?.historyBudgetKiB || ''
+    historyBudgetKiB: options?.historyBudgetKiB || '',
+    contextTokens: options?.contextTokens || ''
   };
 }
 
@@ -133,6 +135,10 @@ export function cleanOptions(protocol: string, draft: OptionsDraft): ModelOption
   const history = Number(draft.historyBudgetKiB);
   if (draft.historyBudgetKiB !== '' && Number.isFinite(history) && history > 0) {
     out.historyBudgetKiB = history;
+  }
+  const context = Number(draft.contextTokens);
+  if (draft.contextTokens !== '' && Number.isFinite(context) && context > 0) {
+    out.contextTokens = context;
   }
   return Object.keys(out).length ? out : null;
 }

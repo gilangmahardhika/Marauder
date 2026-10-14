@@ -201,7 +201,7 @@ test('open questions replace the next step controls, and Details starts with the
   api.getCard.mockResolvedValue({
     ...card,
     status: 'waiting_answer',
-    group: 'waiting',
+    group: 'question',
     actions: ['answer', 'question_mode', 'context'],
     questions: [question]
   });

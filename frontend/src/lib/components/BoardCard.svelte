@@ -13,7 +13,7 @@
   function tone() {
     if (card.status === 'blocked' || card.group === 'stopped') return 'bg-red-600';
     if (card.group === 'running' || card.group === 'shipping') return 'bg-sky-600';
-    if (card.group === 'review') return 'bg-amber-500';
+    if (card.group === 'review' || card.group === 'question') return 'bg-amber-500';
     if (card.group === 'finished') return 'bg-emerald-600';
     return 'bg-ink/30';
   }

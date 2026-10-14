@@ -140,6 +140,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-095 | People who must act on a card are notified, and open pages update without polling |
 | REQ-096 | Feedback appears where the person acts |
 | REQ-097 | The implementer asks the team questions, and each card chooses whether a person or the agent answers |
+| REQ-098 | A new attempt continues the card's unfinished work, and a long attempt compacts its context instead of overflowing it |
 
 ## Requirements
 
@@ -1342,6 +1343,18 @@ The implementer asks the team up to five questions when the card leaves a choice
 - An Auto card records the agent's suggestion as the answer, marked Auto, and the attempt continues.
 - A person who may run the card changes its answer mode; another role gets `403`, and the change applies from the next attempt.
 - The agent cannot ask after it commits, nor more than three times on a Manual card.
+
+### REQ-098 Continue unfinished work
+
+An attempt that ends without a commit hands its progress to the card's next attempt: a short summary, its uncommitted changes, and its todo list. The next attempt, including one after Unblock, starts with those changes in the worktree and the summary in its pack. A long attempt whose context nears the model's window has the model summarize its work and goes on from the summary. A runner that never ran the card starts from the commits the control plane holds (RFC-117, RFC-118, RFC-119).
+
+#### Acceptance
+
+- After an attempt stops at a cap with uncommitted edits, the next attempt's worktree has those edits, its pack has a `WORK SO FAR` block, and it starts with the same todo list.
+- A handoff is applied once; a patch that no longer applies is skipped and the pack says so.
+- A reply that reaches 75% of the model's `contextTokens`, or a full-context error, compacts the attempt and it continues; a fourth compaction ends it with `budget` and reason `context_full`.
+- The patch and the summary never appear in an API response, and the summary is redacted.
+- A runner that starts a card without a pull request has the card branch's commits from the control plane.
 
 ## Non-goals
 

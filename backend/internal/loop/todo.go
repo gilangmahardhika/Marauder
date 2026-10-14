@@ -12,6 +12,10 @@ import (
 const (
 	maxTodos    = 30
 	maxTodoText = 200
+	// MaxTodos and MaxTodoText are the todo_write limits, which a runner's
+	// handoff is held to (RFC-118).
+	MaxTodos    = maxTodos
+	MaxTodoText = maxTodoText
 )
 
 var todoStatuses = []string{"pending", "in_progress", "done"}

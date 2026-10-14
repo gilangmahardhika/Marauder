@@ -157,6 +157,35 @@ func TestSaveLLMModelOptions(t *testing.T) {
 	}
 }
 
+func TestContextTokensRange(t *testing.T) {
+	family := func(tokens int) []settings.Family {
+		return []settings.Family{{ID: "f", Protocol: "anthropic", BaseURL: "http://127.0.0.1:1",
+			Models: []settings.Model{{ID: "m", ModelOptions: settings.ModelOptions{ContextTokens: tokens}}}}}
+	}
+	for _, tokens := range []int{7999, 2000001} {
+		_, err := settings.SaveLLM(t.TempDir(), family(tokens), nil)
+		var invalid *settings.Invalid
+		if !errors.As(err, &invalid) || !strings.Contains(invalid.Fields["modelOptions"], "context window") {
+			t.Fatalf("%d: err = %v", tokens, err)
+		}
+	}
+	dir := t.TempDir()
+	if _, err := settings.SaveLLM(dir, family(200000), nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := settings.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := cfg.LLM.Families[0].Models[0].ModelOptions
+	if opts.ContextWindow() != 200000 || opts.ContextLimit() != 150000 {
+		t.Fatalf("window %d limit %d, want 200000 and 150000", opts.ContextWindow(), opts.ContextLimit())
+	}
+	if none := (settings.ModelOptions{}); none.ContextWindow() != 128000 || none.ContextLimit() != 96000 {
+		t.Fatalf("default window %d limit %d, want 128000 and 96000", none.ContextWindow(), none.ContextLimit())
+	}
+}
+
 func TestConfigEvent(t *testing.T) {
 	payload := map[string]any{"section": "github", "fields": []string{"owner", "approvers"}}
 	raw, err := json.Marshal(payload)

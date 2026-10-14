@@ -1221,3 +1221,52 @@ Packages: frontend `lib/types.ts`, `lib/api.ts`, `lib/status.ts`, `lib/component
 - "Needs answer" status label.
 
 Done when: the `CardQuestions`, `QuestionModeField`, card page, and `status` Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 90: Needs answer lane
+
+Goal: A card waiting for an answer has its own board lane (RFC-116, REQ-097).
+
+Packages: `internal/httpapi`, frontend board page and `BoardCard`.
+
+- `Actions` puts `waiting_answer` in group `question`.
+- The board's Needs answer lane between Waiting and Running, with the amber tile stripe.
+
+Done when: `TestActionsWaitingAnswer`, the board Needs answer Vitest case, `npm run check`, and the rest of the suite.
+
+## Sprint 91: Compaction and handoff
+
+Goal: A long attempt compacts its context, and an unfinished attempt hands its edits, plan, and summary to the next one (RFC-117, RFC-118, REQ-098).
+
+Packages: `internal/settings`, `internal/providers`, `internal/loop`, `internal/runtime`, `internal/board`, `internal/contextpack`, `internal/app`, `internal/trace`.
+
+- Migration 33: `attempt_handoffs`.
+- `contextTokens` in `modelOptions`, `providers.ErrContextFull`, and no retry on a full context.
+- `session.compact`, its triggers, the cap, and `context_full`.
+- `WorkPatch` and `ApplyPatch`, the model or harness summary, `Board.SaveHandoff`, `PendingHandoff`, and `MarkHandoffApplied`.
+- `WORK SO FAR` in the implementer pack.
+
+Done when: `TestCompactOnContextLimit`, `TestCompactOnOverflowError`, `TestCompactCap`, `TestHandoffSavedOnBudget`, `TestHandoffHarnessFallback`, `TestHandoffAppliedNextAttempt`, `TestHandoffConflictSkipped`, `TestHandoffTodosSeeded`, `TestHandoffAppliedOnce`, `TestPackIncludesWorkSoFar`, `TestUnblockContinuesWork`, `TestContextFullClassified`, `TestContextTokensRange`, and the rest of the suite.
+
+## Sprint 92: Handoff through a runner
+
+Goal: A remote runner saves and applies handoffs, and starts a card without a pull request from the control plane's branch (RFC-118, RFC-119).
+
+Packages: `internal/runnerapi`, `internal/runner`, `internal/app`, `internal/httpapi`.
+
+- Board ops `save_handoff`, `pending_handoff`, and `handoff_applied`.
+- `413` `context_full` on the model route.
+- `cardBundle` and `GET /api/runner/jobs/{lease}/bundle`.
+- The `continueWork` fixture scenario.
+
+Done when: `TestRunnerHandoffRoundTrip`, `TestRunnerSeedsFromControlPlaneBundle`, `go run ./cmd/fixture`, and the rest of the suite.
+
+## Sprint 93: Context window setting and trace words
+
+Goal: An admin sets a model's context window, and the trace explains compaction and handoffs (RFC-117, RFC-118).
+
+Packages: frontend `lib/llm.ts`, `lib/types.ts`, `lib/trace.ts`, `FamilyForm.svelte`.
+
+- The Context window field in `FamilyForm`.
+- Words for `context_compacted`, `handoff_saved`, and `handoff_applied`.
+
+Done when: the `FamilyForm` context window and `trace` handoff words Vitest cases, `npm run check`, and the rest of the suite.

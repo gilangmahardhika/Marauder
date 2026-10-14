@@ -174,6 +174,24 @@ test('pushed frames move cards and update the run button', async () => {
   expect(api.getCards).toHaveBeenCalledTimes(1);
 });
 
+test('a card waiting for an answer sits in the Needs answer lane, between Waiting and Running', async () => {
+  api.getCards.mockResolvedValue({
+    ...board,
+    cards: [
+      card('card_1', 'Export CSV', 'in_progress', 'running'),
+      card('card_2', 'Import CSV', 'waiting_answer', 'question')
+    ]
+  });
+  render(BoardPage);
+  await vi.advanceTimersByTimeAsync(0);
+  const lane = screen.getByRole('region', { name: 'Needs answer' });
+  expect(lane.textContent).toContain('Import CSV');
+  expect(lane.textContent).toContain('Needs answer');
+  expect(screen.getByRole('region', { name: 'Waiting' }).textContent).not.toContain('Import CSV');
+  const lanes = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'));
+  expect(lanes.slice(0, 3)).toEqual(['Waiting', 'Needs answer', 'Running']);
+});
+
 test('the board polls every 3 seconds while the stream is down and work runs', async () => {
   stream.connected = false;
   render(BoardPage);

@@ -93,10 +93,10 @@ func (p routedProvider) Complete(ctx context.Context, req providers.Request) (pr
 			resp, err = client.Complete(ctx, next)
 		}
 		resp.Model = model
-		return err
+		return noRetryFull(err)
 	})
 	if err != nil && ctx.Err() == nil {
-		return resp, fmt.Errorf("%w: %s", ErrProvider, strings.TrimPrefix(err.Error(), "provider_error: "))
+		return resp, providerErr(err)
 	}
 	return resp, err
 }
@@ -141,10 +141,10 @@ func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, o
 		if err != nil && sent {
 			return router.ErrNoRetry{Err: err}
 		}
-		return err
+		return noRetryFull(err)
 	})
 	if err != nil && ctx.Err() == nil {
-		return resp, fmt.Errorf("%w: %s", ErrProvider, strings.TrimPrefix(err.Error(), "provider_error: "))
+		return resp, providerErr(err)
 	}
 	return resp, err
 }
@@ -183,12 +183,31 @@ func (p routedProvider) StreamRestart(ctx context.Context, req providers.Request
 			resp, err = send(client, next)
 		}
 		resp.Model = model
-		return err
+		return noRetryFull(err)
 	})
 	if err != nil && ctx.Err() == nil {
-		return resp, fmt.Errorf("%w: %s", ErrProvider, strings.TrimPrefix(err.Error(), "provider_error: "))
+		return resp, providerErr(err)
 	}
 	return resp, err
+}
+
+// noRetryFull stops the retry and the fallback for a full context: the same
+// request would not fit again, and the loop compacts instead (RFC-117).
+func noRetryFull(err error) error {
+	if providers.IsContextFull(err) {
+		return router.ErrNoRetry{Err: err}
+	}
+	return err
+}
+
+// providerErr is the error after both models failed. A full context keeps
+// providers.ErrContextFull so the loop can compact.
+func providerErr(err error) error {
+	msg := strings.TrimPrefix(err.Error(), "provider_error: ")
+	if providers.IsContextFull(err) {
+		return fmt.Errorf("%w: %w: %s", ErrProvider, providers.ErrContextFull, msg)
+	}
+	return fmt.Errorf("%w: %s", ErrProvider, msg)
 }
 
 // stream sends req through the client's Stream, or through Complete as one

@@ -153,6 +153,9 @@ func run() error {
 	if err := questions(ctx, db, g); err != nil {
 		return err
 	}
+	if err := continueWork(ctx, db, g); err != nil {
+		return err
+	}
 	out, err := exec.Command(gitBin, "-C", repo, "status", "--porcelain").Output()
 	if err != nil {
 		return err
@@ -632,8 +635,8 @@ func questions(ctx context.Context, db *sql.DB, g runtime.Git) error {
 	if err != nil {
 		return fmt.Errorf("questions: %w", err)
 	}
-	if result.Outcome != "question" || len(ask.Prompts()) != 1 {
-		return fmt.Errorf("questions: attempt ended %q after %d model calls", result.Outcome, len(ask.Prompts()))
+	if result.Outcome != "question" || len(ask.Prompts()) != 2 {
+		return fmt.Errorf("questions: attempt ended %q after %d model calls, want the ask and the handoff summary", result.Outcome, len(ask.Prompts()))
 	}
 	if card, err = board.GetCard(ctx, db, card.ID); err != nil {
 		return err
@@ -666,6 +669,77 @@ func questions(ctx context.Context, db *sql.DB, g runtime.Git) error {
 	user := next.Prompts()[0].User
 	if !strings.Contains(user, contextpack.AnswersHeading) || !strings.Contains(user, "answer: CSV\nsource: suggestion") {
 		return errors.New("questions: the next pack lacks the answer")
+	}
+	return nil
+}
+
+// continueWork stops an attempt at its turn cap with an uncommitted edit,
+// unblocks the card, and checks that the next attempt finds the edit in its
+// worktree and WORK SO FAR in its pack, and commits it (RFC-118).
+func continueWork(ctx context.Context, db *sql.DB, g runtime.Git) error {
+	card, err := board.InsertCard(ctx, db, board.Card{Title: "Continue the greeting", Status: "backlog", LocalCheck: "check.sh"})
+	if err != nil {
+		return err
+	}
+	for _, to := range []string{"ready", "in_progress"} {
+		if card, err = walk(ctx, db, card, to, machine.Evidence{}); err != nil {
+			return fmt.Errorf("continue work: %w", err)
+		}
+	}
+	defer removeWorktree(g, card.ID)
+	first, err := fake.Load([]byte(`{"implement":[{"tool":"edit_file","path":"hello.txt","text":"continued\n"},
+		{"tool":"list_files","path":"."},{"tool":"list_files","path":"."},
+		{"text":"Goal: say continued\nDone: hello.txt says continued\nNext steps: commit"}]}`))
+	if err != nil {
+		return err
+	}
+	in := loop.Input{DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement", MaxTurns: 3,
+		Provider: first, Allow: []string{"true", "false"}}
+	result, err := app.RunImplementer(ctx, in)
+	if err != nil {
+		return fmt.Errorf("continue work: %w", err)
+	}
+	if result.Outcome != "budget" || result.Reason != "turn_cap" {
+		return fmt.Errorf("continue work: the first attempt ended %q %q", result.Outcome, result.Reason)
+	}
+	var files int
+	var source string
+	if err := db.QueryRowContext(ctx, `SELECT patch_files, summary_source FROM attempt_handoffs WHERE card_id = $1`, card.ID).Scan(&files, &source); err != nil {
+		return fmt.Errorf("continue work: handoff: %w", err)
+	}
+	if files != 1 || source != "model" {
+		return fmt.Errorf("continue work: handoff has %d files from %s", files, source)
+	}
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil {
+		return err
+	}
+	if card, err = app.BlockCard(ctx, db, card, result.Reason, nil); err != nil {
+		return fmt.Errorf("continue work: %w", err)
+	}
+	if card, err = app.Unblock(ctx, db, card.ID, false); err != nil {
+		return fmt.Errorf("continue work: %w", err)
+	}
+	if card, err = walk(ctx, db, card, "in_progress", machine.Evidence{}); err != nil {
+		return fmt.Errorf("continue work: %w", err)
+	}
+	next, err := fake.Load([]byte(`{"implement":[{"tool":"commit","message":"Say continued"}]}`))
+	if err != nil {
+		return err
+	}
+	in.Provider = next
+	if result, err = app.RunImplementer(ctx, in); err != nil {
+		return fmt.Errorf("continue work: %w", err)
+	}
+	if result.Outcome != "" {
+		return fmt.Errorf("continue work: the next attempt ended %q", result.Outcome)
+	}
+	user := next.Prompts()[0].User
+	if !strings.Contains(user, contextpack.WorkSoFarHeading) || !strings.Contains(user, "Done: hello.txt says continued") {
+		return errors.New("continue work: the next pack lacks WORK SO FAR")
+	}
+	out, err := exec.Command(g.Bin, "-C", g.Repo, "show", "refs/heads/orch/"+card.ID+":hello.txt").Output()
+	if err != nil || string(out) != "continued\n" {
+		return fmt.Errorf("continue work: committed hello.txt = %q %v", out, err)
 	}
 	return nil
 }

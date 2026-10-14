@@ -163,6 +163,8 @@ func (s *Server) wrap(next http.Handler) http.Handler {
 			limit = maxBundle
 		} else if isModelRoute(r) {
 			limit = maxModelBody
+		} else if isBoardRoute(r) {
+			limit = maxBoardBody
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, limit)
 		if r.Method == http.MethodOptions {
@@ -264,8 +266,10 @@ func Actions(status, reason string, open bool, role string) (string, []string, a
 	var actions []string
 	var unblock any
 	switch status {
-	case "backlog", "ready", "waiting_answer":
+	case "backlog", "ready":
 		group, actions, unblock = "waiting", []string{}, nil
+	case "waiting_answer":
+		group, actions, unblock = "question", []string{}, nil
 	case "in_progress", "self_check":
 		group, actions, unblock = "running", []string{}, nil
 	case "human_review":

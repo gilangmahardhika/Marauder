@@ -211,6 +211,9 @@ func (c *Client) wrap(err error) error {
 		if apiErr.StatusCode == http.StatusTooManyRequests && apiErr.Response != nil {
 			return &providers.RateLimited{Message: trace.Redact(msg, []string{c.key}), Wait: providers.RetryWait(apiErr.Response.Header)}
 		}
+		if providers.ContextFullStatus(apiErr.StatusCode, msg+" "+apiErr.Code) {
+			return fmt.Errorf("%w: %s", providers.ErrContextFull, trace.Redact(msg, []string{c.key}))
+		}
 	}
 	return errors.New(trace.Redact(msg, []string{c.key}))
 }

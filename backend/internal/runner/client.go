@@ -13,9 +13,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
+	"orchestrator/backend/internal/providers"
 	"orchestrator/backend/internal/runnerapi"
 )
 
@@ -151,7 +153,10 @@ func (c *Client) Board(ctx context.Context, leaseID string, op runnerapi.BoardOp
 func (c *Client) Model(ctx context.Context, leaseID string, call runnerapi.ModelCall) (runnerapi.ModelReply, error) {
 	var out runnerapi.ModelReply
 	_, err := c.do(ctx, http.MethodPost, jobPath(leaseID, "model"), call, &out)
-	if StatusOf(err) == http.StatusBadGateway {
+	switch StatusOf(err) {
+	case http.StatusRequestEntityTooLarge:
+		return out, fmt.Errorf("%w: %v", providers.ErrContextFull, err)
+	case http.StatusBadGateway:
 		return out, fmt.Errorf("%w: %v", ErrProvider, err)
 	}
 	return out, err
@@ -174,6 +179,45 @@ func (c *Client) Bundle(ctx context.Context, leaseID, sha string, bundle io.Read
 	_, err := c.do(ctx, http.MethodPost, jobPath(leaseID, "bundle")+"?sha="+url.QueryEscape(sha), bundle, nil)
 	return err
 }
+
+// CardBundle downloads the control plane's bundle of the card branch to
+// dest and returns the head it names (RFC-119).
+func (c *Client) CardBundle(ctx context.Context, leaseID, dest string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+jobPath(leaseID, "bundle"), nil)
+	if err != nil {
+		return "", err
+	}
+	if c.Secret != "" {
+		req.Header.Set("Authorization", "Runner "+c.Secret)
+	}
+	resp, err := c.http().Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", &APIError{Status: resp.StatusCode, Code: "bundle"}
+	}
+	file, err := os.OpenFile(dest, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(file, io.LimitReader(resp.Body, maxCardBundle+1)); err != nil {
+		file.Close()
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	if info, err := os.Stat(dest); err != nil || info.Size() > maxCardBundle {
+		return "", fmt.Errorf("the card bundle is over %d bytes", maxCardBundle)
+	}
+	return resp.Header.Get("X-Card-Sha"), nil
+}
+
+// maxCardBundle caps the card bundle a runner downloads, as the control
+// plane caps the one it takes.
+const maxCardBundle = 64 << 20
 
 func (c *Client) Report(ctx context.Context, leaseID string, rep runnerapi.Report) (runnerapi.ReportReply, error) {
 	var out runnerapi.ReportReply

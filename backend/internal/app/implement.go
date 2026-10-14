@@ -287,7 +287,8 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,
 			HistoryBudget: llm.Options(cfg, route.Model).HistoryBytes(), MaxTokensPerCard: tokenCap,
-			Extra: extra, MCP: &mcpScope,
+			ContextTokens: llm.Options(cfg, route.Model).ContextWindow(),
+			Extra:         extra, MCP: &mcpScope,
 		})
 		if err != nil {
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)

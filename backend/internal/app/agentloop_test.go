@@ -97,8 +97,9 @@ func TestTextReplyNudged(t *testing.T) {
 	other := loopCard(t, db, "true")
 	defer cleanupWorktree(t, repo, data, other.ID)
 	result, provider = runLoop(t, db, repo, data, other.ID, `{"implement":[{"text":"done"}]}`, 8)
-	if result.Outcome != "no_commit" || len(provider.Prompts()) != 3 {
-		t.Fatalf("result = %+v after %d calls, want no_commit after 1 reply and 2 nudges", result, len(provider.Prompts()))
+	prompts = provider.Prompts()
+	if result.Outcome != "no_commit" || len(prompts) != 4 || prompts[3].ToolChoice != "none" {
+		t.Fatalf("result = %+v after %d calls, want no_commit after 1 reply, 2 nudges, and the handoff summary", result, len(prompts))
 	}
 }
 

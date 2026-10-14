@@ -392,9 +392,25 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestPackIncludesAnswers` | The next attempt's pack holds `ANSWERS FROM THE TEAM` with each answered question, its answer, and its source, inside the untrusted markers, and an open question is not in it (RFC-114) |
 | `TestQuestionNotifiesOwner` | `-> waiting_answer` gives the owner one `question` notification titled "Agent has a question" with push on, and no one else (RFC-114) |
 | `TestRunnerQuestionOutcome` | A runner's report with outcome `question` moves its lease card to `waiting_answer` without counting the attempt; the questions op writes rows only for the lease's attempt and card (RFC-114) |
+| `TestCompactOnContextLimit` | A reply whose input tokens reach 75% of `contextTokens` is followed by one no-tool summary call; the next request has no earlier turns, its user message ends with `WORK SO FAR` and the summary, the todo list is kept, and a `context_compacted` event is appended (RFC-117) |
+| `TestCompactOnOverflowError` | A model call that returns `providers.ErrContextFull` compacts and sends the turn again, and the attempt goes on to commit (RFC-117) |
+| `TestCompactCap` | A fourth compaction ends the attempt with outcome `budget` and reason `context_full`, and a handoff is saved (RFC-117) |
+| `TestHandoffSavedOnBudget` | An attempt that stops at the turn cap with uncommitted edits saves a handoff with the model's summary, a patch naming the edited files, and the todo list; the trace has `handoff_saved` with counts and no patch text (RFC-118) |
+| `TestHandoffHarnessFallback` | An attempt stopped at the token cap saves a harness summary listing the todo items, the changed files, and the last check exit, with no extra model call (RFC-118) |
+| `TestHandoffAppliedNextAttempt` | The next attempt's worktree has the earlier edits after the reset, its pack has `WORK SO FAR` with the summary and the patch result, and `handoff_applied` has `ok: true` (RFC-118) |
+| `TestHandoffConflictSkipped` | A patch that no longer applies is skipped, the handoff is marked applied with `ok: false`, and the pack says the work could not be re-applied (RFC-118) |
+| `TestHandoffTodosSeeded` | The next attempt's first request carries the handoff's todo list (RFC-118) |
+| `TestHandoffAppliedOnce` | A third attempt does not apply the same handoff again (RFC-118) |
+| `TestPackIncludesWorkSoFar` | The implementer pack has the `WORK SO FAR` block inside the untrusted markers, with copies of its marker lines stripped from the summary (RFC-118) |
+| `TestUnblockContinuesWork` | A card blocked at the attempt cap with uncommitted work is unblocked and run: the worktree has the edit, the pack has the summary, and the attempt count follows `Unblock` (RFC-118) |
+| `TestContextFullClassified` | `providers.IsContextFull` is true for anthropic "prompt is too long", openai `context_length_exceeded`, and the wrapped `ErrProvider` text, and false for a rate limit (RFC-117) |
+| `TestContextTokensRange` | `contextTokens` of 0 or 8000 to 2000000 saves, another value is `422` on `modelOptions`, and zero reads as 128000 (RFC-117) |
+| `TestRunnerHandoffRoundTrip` | A runner's `save_handoff` stores the handoff for the lease's attempt and card whatever ids it names, and `pending_handoff` and `handoff_applied` work on the lease card only (RFC-118) |
+| `TestRunnerSeedsFromControlPlaneBundle` | A job for a card without a pull request whose control-plane branch is ahead has `cardBundle: true`, and the runner's branch is at that commit after the seed (RFC-119) |
 | `TestConfigEvent` | `config_changed` payload has section and field names and not the token |
 | `TestSnapshot` | A router save during a running attempt does not change that attempt's model |
 | `TestActionsEmpty` | Card JSON for `in_progress` has `"actions": []` |
+| `TestActionsWaitingAnswer` | `waiting_answer` is in group `question` with no status actions (RFC-116) |
 | `TestActionsApproved` | Card JSON for `approved` has `request_changes` and `reject` only |
 | `TestApproveSha` | Wrong SHA returns `422` and `approved_sha` stays null |
 | `TestApproveIdempotent` | The same SHA twice inserts one `approvals` row |
