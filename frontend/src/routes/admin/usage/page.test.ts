@@ -1,7 +1,6 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { shell } from '$lib/shell.svelte';
 import type { UsageRow } from '$lib/types';
 
 const api = vi.hoisted(() => ({ ApiError: class ApiError extends Error {}, getUsage: vi.fn() }));
@@ -147,10 +146,10 @@ test('shows the empty state when the range has no calls', async () => {
 test('a member who is not an admin sees the refusal', async () => {
   api.getUsage.mockRejectedValue(new api.ApiError('forbidden'));
   render(UsagePage);
-  await waitFor(() => expect(shell.message).toBe('forbidden'));
+  expect((await screen.findByRole('alert')).textContent).toContain('forbidden');
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
   expect(screen.queryByLabelText('Totals')).toBeNull();
 });
-
 test('groups by card and filters by source', async () => {
   route.search = '?by=card';
   const { unmount } = render(UsagePage);

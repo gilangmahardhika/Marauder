@@ -138,6 +138,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-093 | A person changes the skills, rules, and MCP servers of one card |
 | REQ-094 | An operator installs runners that claim implement jobs, and an admin sees each runner's status |
 | REQ-095 | People who must act on a card are notified, and open pages update without polling |
+| REQ-096 | Feedback appears where the person acts |
 
 ## Requirements
 
@@ -1314,6 +1315,19 @@ The server pushes changes to open pages instead of the pages polling, and tells 
 - One event never notifies the same person twice, even with two `serve` processes.
 - A browser notification carries only a title, the card title and project name, and a link. It never carries a reason, note, code, log, or token.
 - A subscription endpoint that is not `https` on a known push service is refused, and the VAPID private key is never returned by the API.
+
+### REQ-096 Feedback where the person acts
+
+A person sees the result of what they did next to where they did it. A form that fails says why at the top of the form and under each field it blames, and moves focus there. A button shows that its request is running. An outcome with no form, such as a saved setting, a queued run, or a failed deploy, shows as a toast that closes by itself. The top bar carries no status text.
+
+#### Acceptance
+
+- A failed form submit shows the message in an alert at the top of the form, each field error under its field, and focuses the first invalid field, else the alert.
+- Every field error the API returns is shown, under its field or listed in the form's alert.
+- A wrong email or password on the login page says "Email or password is wrong." and clears the password.
+- A wrong current password on the Account page is a field error and does not sign the person out.
+- A success or an error from an action with no form shows as a toast, announced to screen readers, that the person can dismiss.
+- Every control and toast button is at least 44px tall, and an icon on a button never changes its accessible name.
 
 ## Non-goals
 

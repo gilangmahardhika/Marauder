@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { toast } from '$lib/toast.svelte';
 import type { ConventionCatalog } from '$lib/types';
 
 const api = vi.hoisted(() => ({
@@ -44,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  toast.clear();
 });
 
 test('a member reads the tribe conventions without controls', async () => {
@@ -65,4 +67,16 @@ test('a tribe admin switches a rule off and saves the tribe layer', async () => 
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   await waitFor(() => expect(api.putTribeConventions).toHaveBeenCalled());
   expect(api.putTribeConventions).toHaveBeenCalledWith('tribe_a', { stackIds: ['stk_go'], skillIds: ['skl_oauth2'], rulesOff: ['rule_go'] });
+  await waitFor(() => expect(toast.items.map((item) => item.text)).toEqual(['Conventions saved']));
+});
+
+test('a refused rules list shows in the form alert', async () => {
+  api.getTribeConventions.mockResolvedValue({ stackIds: [], skillIds: [], rulesOff: [], canEdit: true });
+  api.putTribeConventions.mockRejectedValue(
+    Object.assign(new Error('validation failed'), { fields: { rulesOff: 'not enabled: rule_gone' } })
+  );
+  render(TribeConventionsPage);
+  await fireEvent.click(await screen.findByRole('button', { name: 'Save' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('not enabled: rule_gone');
 });

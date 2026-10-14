@@ -3,7 +3,6 @@
   import { page } from '$app/stores';
   import type { Snippet } from 'svelte';
   import { closeSession, getMe, getProjects, getTribes } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
   import NotificationBell from '$lib/components/NotificationBell.svelte';
   import { displayName } from '$lib/people';
   import { initials, roleLabel } from '$lib/roles';
@@ -14,6 +13,7 @@
   import Icon from '$lib/ui/Icon.svelte';
   import Menu from '$lib/ui/Menu.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
+  import Toaster from '$lib/ui/Toaster.svelte';
   import type { IconName } from '$lib/ui/icons';
   import '../app.css';
 
@@ -274,7 +274,10 @@
             <p class="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-widest text-muted">Account</p>
             <a href="/account" class="flex h-11 items-center rounded-control px-3 text-sm hover:bg-surface" onclick={() => (mobile = false)}>Account</a>
             <a href="/account/usage" class="flex h-11 items-center rounded-control px-3 text-sm hover:bg-surface" onclick={() => (mobile = false)}>My token usage</a>
-            <button type="button" class="flex h-11 items-center rounded-control px-3 text-left text-sm hover:bg-surface" onclick={() => void signOut()}>Sign out</button>
+            <button type="button" class="flex h-11 items-center gap-3 rounded-control px-3 text-left text-sm hover:bg-surface" onclick={() => void signOut()}>
+              <Icon name="log-out" />
+              Sign out
+            </button>
           </nav>
         </div>
       </div>
@@ -296,15 +299,15 @@
           <span class="hidden text-line-strong lg:inline" aria-hidden="true">/</span>
           <span class="hidden truncate font-medium text-ink lg:inline">{projectName}</span>
         </p>
-        <div class="ml-auto min-w-0 text-right">
-          <Live class="truncate text-[13px]" message={shell.message === shell.title ? '' : shell.message} />
+        <div class="ml-auto">
+          <NotificationBell />
         </div>
-        <NotificationBell />
       </header>
       <main id="main" class="flex-1 px-6 py-6 lg:px-8 lg:py-8">{@render children()}</main>
     </div>
   </div>
 {/if}
+<Toaster />
 
 {#snippet tribeRow()}
   <div class="mb-1 flex items-center justify-between gap-2">

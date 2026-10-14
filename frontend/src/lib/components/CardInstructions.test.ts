@@ -2,10 +2,12 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, expect, test, vi } from 'vitest';
 import CardInstructions from './CardInstructions.svelte';
 import { session } from '$lib/session';
+import { toast } from '$lib/toast.svelte';
 import type { Card } from '$lib/types';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  toast.clear();
 });
 
 function card(instructions: string | null): Card {
@@ -84,11 +86,15 @@ test('instructions render markdown and save through the API', async () => {
   await fireEvent.input(box, { target: { value: 'Run the lint script and keep tsc.' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByText('Keep them short.')).toBeTruthy();
+  expect(box.getAttribute('aria-invalid')).toBe('true');
+  expect(document.activeElement).toBe(box);
+  expect(toast.items).toEqual([]);
 
   await fireEvent.input(box, { target: { value: 'Keep tsc.' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(await screen.findByText('Keep tsc.')).toBeTruthy();
   expect(screen.queryByLabelText('Instructions for later attempts')).toBeNull();
+  expect(toast.items.map((item) => item.text)).toEqual(['Instructions saved']);
   expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
     'PUT http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/instructions',
     'PUT http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/instructions'

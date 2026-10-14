@@ -1,5 +1,8 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import Button from "./Button.svelte";
+  import Icon from "./Icon.svelte";
+  import Spinner from "./Spinner.svelte";
 
   let {
     title,
@@ -7,6 +10,9 @@
     meta,
     summary,
     actions,
+    loading = "",
+    error = "",
+    onretry,
     children,
   }: {
     title: string;
@@ -15,6 +21,11 @@
     /** A line under the title, after `description`. */
     summary?: Snippet;
     actions?: Snippet;
+    /** While set, such as "Loading board", a spinner row replaces the body. */
+    loading?: string;
+    /** A load failure; replaces the body with the message and "Try again" when `onretry` is set. */
+    error?: string;
+    onretry?: () => void;
     children: Snippet;
   } = $props();
 </script>
@@ -41,5 +52,27 @@
         {@render actions()}
       </div>{/if}
   </div>
-  {@render children()}
+  {#if error}
+    <div
+      class="flex max-w-2xl items-start gap-3 rounded-panel border border-red-200 bg-red-50 p-4"
+      role="alert"
+    >
+      <Icon name="alert" class="mt-0.5 size-4 shrink-0 text-danger" />
+      <div class="min-w-0 flex-1">
+        <p class="wrap-break-word text-sm text-red-900">{error}</p>
+        {#if onretry}
+          <div class="mt-3">
+            <Button icon="refresh" onclick={onretry}>Try again</Button>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {:else if loading}
+    <p class="flex items-center gap-2 py-6 text-sm text-muted" role="status">
+      <Spinner />
+      {loading}
+    </p>
+  {:else}
+    {@render children()}
+  {/if}
 </div>

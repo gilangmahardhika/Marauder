@@ -1,7 +1,9 @@
 <script lang="ts">
-  import { ApiError, setAIReviewMode, setReviewers, setSelfReview, unreachable } from '$lib/api';
+  import { setAIReviewMode, setReviewers, setSelfReview } from '$lib/api';
   import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
+  import { failureText, formFailure } from '$lib/forms';
   import { reviewerChoices } from '$lib/requirements';
+  import { toast } from '$lib/toast.svelte';
   import type { AIReviewMode, Intake, Requirement, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
@@ -11,19 +13,17 @@
   let {
     requirement,
     options,
-    onsaved,
-    onmessage
+    onsaved
   }: {
     requirement: Requirement;
     options: Reviewer[];
     onsaved: (intake: Intake) => void;
-    onmessage: (message: string) => void;
   } = $props();
 
   let values = $state<string[]>([]);
   let self = $state(false);
   let mode = $state<AIReviewMode>('continue');
-  let error = $state('');
+  let fields = $state<Record<string, string>>({});
   let busy = $state(false);
 
   const choices = $derived(reviewerChoices(options, requirement.createdBy, requirement.reviewers));
@@ -41,18 +41,17 @@
 
   async function save() {
     busy = true;
-    error = '';
-    onmessage('Saving reviewers');
+    fields = {};
     try {
       let intake: Intake | null = null;
       if (requirement.canEditReviewers && reviewersDirty) intake = await setReviewers(requirement.id, values);
       if (requirement.canSetSelfReview && selfDirty) intake = await setSelfReview(requirement.id, self);
       if (requirement.canSetSelfReview && modeDirty) intake = await setAIReviewMode(requirement.id, mode);
       if (intake) onsaved(intake);
-      onmessage('Reviewers saved');
-    } catch (failure) {
-      error = failure instanceof ApiError ? (failure.fields.userIds ?? failure.message) : unreachable();
-      onmessage(failure instanceof ApiError ? failure.message : unreachable());
+      toast.success('Reviewers saved');
+    } catch (error) {
+      fields = formFailure(error).fields;
+      toast.error(failureText(error));
     } finally {
       busy = false;
     }
@@ -63,7 +62,9 @@
   <Button
     variant="primary"
     type="button"
-    disabled={busy || !(reviewersDirty || selfDirty || modeDirty)}
+    icon="save"
+    loading={busy}
+    disabled={!(reviewersDirty || selfDirty || modeDirty)}
     onclick={() => void save()}
   >
     Save reviewers
@@ -85,7 +86,7 @@
       options={choices}
       placeholder={choices.length === 0 ? 'No other tribe members yet' : 'Search by name, login, or email'}
       max={15}
-      {error}
+      error={fields.userIds}
       bind:values
     />
   {:else if requirement.reviewers.length > 0}
@@ -98,9 +99,10 @@
       id="requirement-self-review"
       label="Self review"
       hint="The owner of this requirement's cards reviews and approves them alone. The approval is recorded as not independent."
+      error={fields.selfReview}
       bind:checked={self}
     />
-    <AIReviewModeField bind:value={mode} />
+    <AIReviewModeField error={fields.aiReviewMode} bind:value={mode} />
   {:else}
     {#if requirement.selfReview}
       <p class="text-sm text-ink">Self review: on. The card owner approves alone.</p>

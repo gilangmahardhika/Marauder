@@ -27,6 +27,6 @@
   {load}
 >
   {#snippet actions()}
-    <Button href={`/tribes/${id}`}>Back to tribe</Button>
+    <Button href={`/tribes/${id}`} icon="arrow-left">Back to tribe</Button>
   {/snippet}
 </UsageDashboard>

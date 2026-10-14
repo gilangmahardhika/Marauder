@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { toast } from '$lib/toast.svelte';
 import type { Runner } from '$lib/types';
 
 const api = vi.hoisted(() => ({
@@ -61,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  toast.clear();
 });
 
 test('lists runners with status, slots, cards, and an update badge', async () => {
@@ -94,6 +96,15 @@ test('remove asks to confirm first', async () => {
   expect(screen.getByText(/Remove agent-1\?/)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
   expect(api.runnerAction).toHaveBeenCalledWith('rnr_a', 'remove');
+  await waitFor(() => expect(toast.items.map((t) => t.text)).toEqual(['agent-1 removed']));
+});
+
+test('a failed action shows an error toast', async () => {
+  api.runnerAction.mockRejectedValue(new api.ApiError('runner is busy'));
+  render(RunnersPage);
+  const table = await screen.findByRole('table', { name: 'Runners' });
+  await fireEvent.click(within(table).getByRole('button', { name: 'Resume old-box' }));
+  await waitFor(() => expect(toast.items.map((t) => [t.tone, t.text])).toEqual([['error', 'runner is busy']]));
 });
 
 test('switching where jobs run saves the executor', async () => {
@@ -103,6 +114,7 @@ test('switching where jobs run saves the executor', async () => {
   expect(within(group).getByRole('button', { name: 'Runners' }).getAttribute('aria-pressed')).toBe('true');
   await fireEvent.click(within(group).getByRole('button', { name: 'This server' }));
   await waitFor(() => expect(api.putJobs).toHaveBeenCalledWith('local'));
+  await waitFor(() => expect(toast.items.map((t) => t.text)).toEqual(['Implement jobs now run on this server.']));
 });
 
 test('warns when runners take jobs and none is online', async () => {

@@ -2,6 +2,7 @@
   import Icon from './Icon.svelte';
   import SearchSelect, { type SearchOption } from './SearchSelect.svelte';
   import { labelClass, type Width } from './control';
+  import FieldError from './FieldError.svelte';
 
   let {
     label,
@@ -53,19 +54,19 @@
     <SearchSelect {label} {id} {width} {error} {placeholder} options={remaining} bind:value={pick} onchange={add} />
   {:else}
     <p class={labelClass}>{label}</p>
-    {#if error}<p class="error text-xs">{error}</p>{/if}
+    <FieldError {id} {error} />
   {/if}
   {#if chosen.length > 0}
     <ul class="flex flex-wrap gap-2" aria-label="{label} chosen">
       {#each chosen as option (option.value)}
         <li
-          class="inline-flex min-h-8 items-center gap-1 rounded-control border border-line bg-ground py-0.5 pl-2.5 pr-1 text-sm text-ink"
+          class="inline-flex min-h-8 items-center gap-0.5 rounded-control border border-line bg-ground pl-2.5 text-sm text-ink"
         >
           <span class="truncate">{option.label}</span>
           {#if !disabled}
             <button
               type="button"
-              class="inline-flex size-7 items-center justify-center rounded-control text-muted hover:bg-surface hover:text-ink"
+              class="relative inline-flex size-8 items-center justify-center rounded-control text-muted transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:bg-surface hover:text-ink"
               aria-label="Remove {option.label}"
               onclick={() => remove(option.value)}
             >

@@ -1,15 +1,18 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getConventions, getTribeConventions, getTribes, putTribeConventions, unreachable } from '$lib/api';
+  import { getConventions, getTribeConventions, getTribes, putTribeConventions } from '$lib/api';
   import { categories, categoryLabel, categoryOptions } from '$lib/conventions';
   import { matchText, pickParam } from '$lib/filter';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { ConventionCatalog, TribeConventions } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import FilterSelect from '$lib/ui/FilterSelect.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
@@ -19,6 +22,8 @@
   import Table from '$lib/ui/Table.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
+  const shownFields = ['stackIds', 'skillIds'];
+
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
   let canEdit = $state(false);
   let stackIds = $state<string[]>([]);
@@ -26,14 +31,16 @@
   let rulesOff = $state<string[]>([]);
   let tribeName = $state('');
   let loaded = $state(false);
-  let fields = $state<Record<string, string>>({});
+  let failure = $state(noFailure);
   let busy = $state(false);
-  let message = $state('Loading conventions');
+  let loading = $state('Loading conventions');
+  let loadError = $state('');
+  let form = $state<HTMLFormElement>();
 
   const id = $derived($page.params.id ?? '');
   const title = $derived(tribeName ? `Conventions: ${tribeName}` : 'Conventions');
 
-  showShell(() => ({ title, message }));
+  showShell(() => ({ title }));
 
   const stackNames = $derived(new Map(catalog.stacks.map((stack) => [stack.id, stack.name])));
   const stackOptions = $derived(
@@ -77,16 +84,18 @@
   }
 
   async function load(tribeId: string) {
+    loading = 'Loading conventions';
+    loadError = '';
     try {
       const [layer, body, tribes] = await Promise.all([getTribeConventions(tribeId), getConventions(), getTribes()]);
       catalog = body;
       apply(layer);
       tribeName = tribes.tribes.find((tribe) => tribe.id === tribeId)?.name ?? '';
-      message = 'Conventions';
-    } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
       loaded = true;
+    } catch (error) {
+      loadError = failureText(error);
+    } finally {
+      loading = '';
     }
   }
 
@@ -97,14 +106,13 @@
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = 'Saving conventions';
+    failure = noFailure;
     try {
       apply(await putTribeConventions(id, { stackIds, skillIds, rulesOff }));
-      message = 'Conventions saved';
+      toast.success('Conventions saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shownFields);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -114,9 +122,13 @@
 <Page
   {title}
   description="Company stacks and skills every project of this tribe starts with, and the company rules it switches off. A project can change each one."
+  {loading}
+  error={loadError}
+  onretry={() => id && load(id)}
 >
-  <form onsubmit={save}>
+  <form onsubmit={save} bind:this={form} novalidate>
     <div class="flex flex-col gap-6">
+      <FormAlert message={failure.message} extra={failure.extra} />
       <Panel title="Stacks for every project" hint="Their rules apply to each project, as if Sync had detected them.">
         <MultiSearchSelect
           label="Stacks"
@@ -127,7 +139,7 @@
           options={stackOptions}
           bind:values={stackIds}
           disabled={!canEdit}
-          error={fields.stackIds ?? ''}
+          error={failure.fields.stackIds ?? ''}
         />
       </Panel>
       <Panel title="Skills for every project" hint="The planner may attach these skills to the cards of every project.">
@@ -140,7 +152,7 @@
           options={skillOptions}
           bind:values={skillIds}
           disabled={!canEdit}
-          error={fields.skillIds ?? ''}
+          error={failure.fields.skillIds ?? ''}
         />
       </Panel>
       <Panel title="Rules" hint="Company rules are on unless the tribe switches them off. A stack rule applies only to projects with that stack.">
@@ -155,7 +167,7 @@
             {#if shown.length === 0}
               <div class="flex flex-wrap items-center gap-3">
                 <p class="text-sm text-muted">No rules match.</p>
-                <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
+                <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
               </div>
             {:else}
               <Table label="Rules">
@@ -187,7 +199,6 @@
                 </tbody>
               </Table>
             {/if}
-            {#if fields.rulesOff}<p class="text-sm text-red-800">{fields.rulesOff}</p>{/if}
           </div>
         {/if}
       </Panel>

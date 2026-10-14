@@ -1,7 +1,13 @@
 export const controlBase =
-  'w-full rounded-control border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/60 hover:border-line-strong disabled:bg-ground disabled:text-muted';
+  'w-full rounded-control border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/60 hover:border-line-strong disabled:bg-ground disabled:text-muted aria-invalid:border-red-400 aria-invalid:hover:border-red-500 aria-invalid:focus-visible:outline-danger';
 
 export const control = `${controlBase} h-11`;
+
+/** The `aria-describedby` of a control with an optional hint and error, ids `{id}-hint` and `{id}-error`. */
+export function describedBy(id: string, hint?: string, error?: string) {
+  const ids = [hint ? `${id}-hint` : '', error ? `${id}-error` : ''].filter(Boolean).join(' ');
+  return ids || undefined;
+}
 
 export const labelClass = 'text-[13px] font-medium text-ink';
 

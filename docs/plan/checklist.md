@@ -1185,3 +1185,25 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestWebPushEncrypt`, `TestVAPIDJWT`, `TestPushEndpointGuard`, `TestPushGone`, `TestVAPIDKeySecret`
 - [x] Account notifications Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 85: Toasts and page states
+
+- [x] Toast store and `Toaster` with `status` and `alert` regions on every page.
+- [x] `Page` loading and error states and `Spinner`.
+- [x] No header status line; every page uses `Page` states, toasts, or nothing.
+- [x] `toast`, `Toaster`, and `Page` states Vitest
+
+## Sprint 86: Form errors and login
+
+- [x] Field primitives in label, hint, control, error order with `aria-invalid` and `aria-describedby`.
+- [x] `FormAlert`, `formFailure`, and `focusInvalid` on every form, and no API field error left unshown.
+- [x] Login alert for `401`, `429`, and a network failure.
+- [x] `TestChangePasswordWrongCurrent`
+- [x] `forms`, `FormAlert`, `Field` error, and login page Vitest
+
+## Sprint 87: Buttons and scrollbars
+
+- [x] `Button` icon, trailing, and loading; icons on action buttons per 0004.
+- [x] Themed scrollbars.
+- [x] `Button` Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

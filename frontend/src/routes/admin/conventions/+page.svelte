@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getConventions, unreachable } from '$lib/api';
+  import { getConventions } from '$lib/api';
   import {
     appliesOptions,
     categories,
@@ -12,6 +12,7 @@
     ruleGroups
   } from '$lib/conventions';
   import { pickParam } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
   import type { ConventionCatalog } from '$lib/types';
@@ -27,9 +28,10 @@
 
   let catalog = $state<ConventionCatalog>({ rules: [], stacks: [], skills: [] });
   let loaded = $state(false);
-  let message = $state('Loading conventions');
+  let loading = $state('Loading conventions');
+  let loadError = $state('');
 
-  showShell(() => ({ title: 'Conventions', message }));
+  showShell(() => ({ title: 'Conventions' }));
 
   const params = $derived($page.url.searchParams);
   const tab = $derived(params.get('tab') === 'stacks' ? 'stacks' : 'rules');
@@ -51,16 +53,24 @@
     { key: 'stacks', label: 'Stacks', href: '/admin/conventions?tab=stacks' }
   ];
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading conventions';
+    loadError = '';
     void getConventions()
       .then((body) => {
         catalog = body;
         loaded = true;
-        message = 'Conventions';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 
   const link = 'inline-flex min-h-11 items-center px-2 text-sm font-medium text-accent hover:underline';
@@ -69,12 +79,15 @@
 <Page
   title="Conventions"
   description="Company coding rules. Global rules reach every project. Stack rules reach projects whose repository uses that stack, detected on Sync or added by a Lead Developer."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
     {#if tab === 'stacks'}
-      <Button variant="primary" href="/admin/conventions/new?kind=stack">Add stack</Button>
+      <Button variant="primary" href="/admin/conventions/new?kind=stack" icon="plus">Add stack</Button>
     {:else}
-      <Button variant="primary" href="/admin/conventions/new">Add rule</Button>
+      <Button variant="primary" href="/admin/conventions/new" icon="plus">Add rule</Button>
     {/if}
   {/snippet}
 
@@ -96,7 +109,7 @@
   {#if tab === 'rules'}
     {#if loaded && catalog.rules.length === 0}
       <EmptyState title="No rules yet" description="Add a global rule for naming or database columns, or a rule for one stack.">
-        <Button variant="primary" href="/admin/conventions/new">Add rule</Button>
+        <Button variant="primary" href="/admin/conventions/new" icon="plus">Add rule</Button>
       </EmptyState>
     {:else if catalog.rules.length > 0}
       <div class="flex flex-col gap-6">
@@ -107,7 +120,7 @@
         </Toolbar>
         {#if ruleMatches === 0}
           <EmptyState title="No rules match" description="Change the search or filters to see more rules.">
-            <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '', applies: '' })}>Clear filters</Button>
+            <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', category: '', applies: '' })}>Clear filters</Button>
           </EmptyState>
         {:else}
           <div class="flex flex-col gap-8">
@@ -161,14 +174,14 @@
     {/if}
   {:else if loaded && catalog.stacks.length === 0}
     <EmptyState title="No stacks yet" description="A stack is a language or framework, with the files and dependencies that identify it.">
-      <Button variant="primary" href="/admin/conventions/new?kind=stack">Add stack</Button>
+      <Button variant="primary" href="/admin/conventions/new?kind=stack" icon="plus">Add stack</Button>
     </EmptyState>
   {:else if catalog.stacks.length > 0}
     <div class="flex flex-col gap-4">
       <SearchBox label="Search stacks" value={filter.q} placeholder="Search name or marker, such as go.mod" />
       {#if stacks.length === 0}
         <EmptyState title="No stacks match" description="Change the search to see more stacks.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '' })}>Clear search</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '' })}>Clear search</Button>
         </EmptyState>
       {:else}
         <Table label="Stacks">

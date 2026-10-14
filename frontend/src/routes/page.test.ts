@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { ApiError } from '$lib/api';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 import type { Board, Card } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getCards: vi.fn(), runCard: vi.fn(), startRun: vi.fn() }));
@@ -28,8 +30,15 @@ vi.mock('$lib/stream.svelte', () => ({
   }
 }));
 vi.mock('$lib/api', () => ({
-  ApiError: class ApiError extends Error {},
-  unreachable: () => 'API unreachable',
+  ApiError: class ApiError extends Error {
+    constructor(
+      public status: number,
+      public code: string,
+      message: string
+    ) {
+      super(message);
+    }
+  },
   getCards: api.getCards,
   runCard: api.runCard,
   startRun: api.startRun
@@ -100,6 +109,42 @@ afterEach(() => {
   shell.projectId = '';
   stream.connected = true;
   stream.handlers = [];
+  toast.clear();
+});
+
+test('the first read shows a loading row, and a failed read offers Try again', async () => {
+  api.getCards.mockRejectedValueOnce(new Error('board read failed'));
+  render(BoardPage);
+  expect(screen.getByRole('status').textContent).toContain('Loading board');
+  await vi.advanceTimersByTimeAsync(0);
+  expect(screen.getByRole('alert').textContent).toContain('board read failed');
+  await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(screen.getByText('Export CSV')).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('Run ready cards queues and says how many in a toast', async () => {
+  api.getCards.mockResolvedValue({ ...board, readyCount: 2, running: false });
+  api.startRun.mockResolvedValue({ queued: 2 });
+  render(BoardPage);
+  await vi.advanceTimersByTimeAsync(0);
+  await fireEvent.click(screen.getByRole('button', { name: 'Run ready cards (2)' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api.startRun).toHaveBeenCalledOnce();
+  expect(toast.items.map((item) => [item.tone, item.text])).toEqual([['success', 'Queued 2 cards.']]);
+});
+
+test('a 409 on a card Run reloads the board with an info toast', async () => {
+  const ready = { ...card('card_2', 'Import CSV', 'ready', 'waiting'), actions: ['run'] };
+  api.getCards.mockResolvedValue({ ...board, readyCount: 1, running: false, cards: [ready] });
+  api.runCard.mockRejectedValue(new ApiError(409, 'conflict', 'card changed'));
+  render(BoardPage);
+  await vi.advanceTimersByTimeAsync(0);
+  await fireEvent.click(screen.getByRole('button', { name: 'Run' }));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(api.getCards).toHaveBeenCalledTimes(2);
+  expect(toast.items.map((item) => [item.tone, item.text])).toEqual([['info', 'Card changed. Reloaded.']]);
 });
 
 test('the board reads once and does not poll while the stream is open', async () => {

@@ -1,3 +1,4 @@
+import { apiOrigin, unreachableMessage } from "$lib/origin";
 import { session } from "$lib/session";
 import type {
   AccountGitHub,
@@ -52,10 +53,9 @@ import type {
   UsageResponse,
 } from "$lib/types";
 
-const base = "http://127.0.0.1:8787";
+const base = apiOrigin;
 
-/** The API origin this client calls. */
-export const apiOrigin = base;
+export { apiOrigin };
 
 export class ApiError extends Error {
   status: number;
@@ -91,11 +91,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     response = await fetch(base + path, { ...init, headers });
   } catch (error) {
     if (init.signal?.aborted) throw error;
-    throw new ApiError(
-      0,
-      "network",
-      "API unreachable at http://127.0.0.1:8787",
-    );
+    throw new ApiError(0, "network", unreachableMessage);
   }
   if (response.status === 401 && path !== "/api/session") {
     session.clear();
@@ -870,5 +866,5 @@ export function putTribeConventions(tribeId: string, body: TribeLayer) {
 }
 
 export function unreachable() {
-  return "API unreachable at http://127.0.0.1:8787";
+  return unreachableMessage;
 }

@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { ApiError, getConventions, setCardContext, unreachable } from '$lib/api';
+  import { getConventions, setCardContext } from '$lib/api';
   import { categoryLabel } from '$lib/conventions';
-  import { shell } from '$lib/shell.svelte';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
+  import { toast } from '$lib/toast.svelte';
   import type { Card, CardContext, CardContextChange, ConventionCatalog } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
 
@@ -14,8 +16,14 @@
 
   let catalog = $state<ConventionCatalog | null>(null);
   let adding = $state<Record<Kind, string>>({ skill: '', rule: '', mcp: '' });
-  let busy = $state(false);
-  let error = $state('');
+  /** The change in flight as "kind:id"; its button shows the spinner. */
+  let pending = $state('');
+  let failure = $state(noFailure);
+  /** The attach control whose change failed, which shows `fields.itemId`. */
+  let failedAttach = $state<Kind | ''>('');
+  let body = $state<HTMLElement>();
+
+  const busy = $derived(pending !== '');
 
   const context = $derived<CardContext>(card.context ?? { rules: [], skills: [], mcp: [], mcpScope: 'all' });
   const canChange = $derived((card.actions ?? []).includes('context'));
@@ -46,19 +54,30 @@
       .catch(() => (catalog = { rules: [], stacks: [], skills: [] }));
   });
 
+  /** A failure with field errors shows in the panel's alert; any other failure is an error toast. */
   async function change(kind: Kind, itemId: string, mode: CardContextChange['mode']) {
-    busy = true;
-    error = '';
-    shell.message = 'Saving the card context';
+    pending = `${kind}:${itemId}`;
+    failure = noFailure;
+    failedAttach = '';
     try {
       card = await setCardContext(card.id, { kind, itemId, mode });
-      shell.message = 'Card context saved';
-    } catch (failure) {
-      error = failure instanceof ApiError ? (failure.fields.itemId ?? failure.message) : unreachable();
-      shell.message = failure instanceof ApiError ? failure.message : unreachable();
+      toast.success('Card context saved');
+    } catch (error) {
+      const next = formFailure(error, mode === 'attach' ? ['itemId'] : []);
+      if (Object.keys(next.fields).length === 0) {
+        toast.error(failureText(error));
+      } else {
+        failure = next;
+        failedAttach = mode === 'attach' ? kind : '';
+        void focusInvalid(body);
+      }
     } finally {
-      busy = false;
+      pending = '';
     }
+  }
+
+  function attachError(kind: Kind) {
+    return failedAttach === kind ? (failure.fields.itemId ?? '') : '';
   }
 
   function attach(kind: Kind, id: string) {
@@ -70,11 +89,24 @@
 {#snippet control(kind: Kind, id: string, label: string, state: 'on' | 'off', origin: string)}
   {#if canChange}
     {#if origin === 'card'}
-      <Button type="button" variant="ghost" disabled={busy} onclick={() => change(kind, id, 'inherit')}>
+      <Button
+        type="button"
+        variant="ghost"
+        icon={state === 'on' ? 'trash' : undefined}
+        disabled={busy}
+        loading={pending === `${kind}:${id}`}
+        onclick={() => change(kind, id, 'inherit')}
+      >
         {state === 'on' ? 'Remove' : 'Restore'}<span class="sr-only"> {label}</span>
       </Button>
     {:else if state === 'on'}
-      <Button type="button" variant="ghost" disabled={busy} onclick={() => change(kind, id, 'detach')}>
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={busy}
+        loading={pending === `${kind}:${id}`}
+        onclick={() => change(kind, id, 'detach')}
+      >
         Detach<span class="sr-only"> {label}</span>
       </Button>
     {/if}
@@ -87,7 +119,8 @@
 {/snippet}
 
 <Panel title="Context" hint="The rules, skills, and MCP servers this card's attempts carry. Changes apply from the next attempt.">
-  <div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-6" bind:this={body}>
+    <FormAlert message={failure.message} extra={failure.extra} />
     <section aria-labelledby="context-rules">
       <h3 id="context-rules" class="text-xs font-semibold uppercase tracking-wider text-muted">Rules</h3>
       {#if context.rules.length === 0}
@@ -115,6 +148,7 @@
             width="lg"
             placeholder={ruleOptions.length === 0 ? 'No other enabled rules' : 'Attach a rule'}
             options={ruleOptions}
+            error={attachError('rule')}
             bind:value={adding.rule}
             onchange={(id) => attach('rule', id)}
           />
@@ -150,6 +184,7 @@
             width="lg"
             placeholder={skillOptions.length === 0 ? 'No other enabled skills' : 'Attach a skill'}
             options={skillOptions}
+            error={attachError('skill')}
             bind:value={adding.skill}
             onchange={(id) => attach('skill', id)}
           />
@@ -193,13 +228,13 @@
             width="lg"
             placeholder="Attach an MCP server"
             options={serverOptions}
+            error={attachError('mcp')}
             bind:value={adding.mcp}
             onchange={(id) => attach('mcp', id)}
           />
         </div>
       {/if}
     </section>
-    {#if error}<p class="text-sm text-red-800" role="alert">{error}</p>{/if}
   </div>
   {#snippet footer()}
     <Button href="/settings/conventions">Project conventions</Button>

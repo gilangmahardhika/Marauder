@@ -1,11 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { expect, test } from 'vitest';
-import { blankFamily, type FamilyDraft } from '$lib/llm';
+import { blankFamily, blankOptions, type FamilyDraft, type OptionsDraft } from '$lib/llm';
 import FamilyForm from './FamilyForm.svelte';
 
 function family(protocol: string): FamilyDraft {
   const draft = $state({ ...blankFamily(), id: 'f', protocol, models: ['model-a'] });
   return draft;
+}
+
+function blankOptionsWith(over: Partial<OptionsDraft>): OptionsDraft {
+  return { ...blankOptions(), ...over };
 }
 
 function optionLabels(select: HTMLElement) {
@@ -56,6 +60,21 @@ test('every model row has a history budget on either protocol', async () => {
   const history = within(group).getByLabelText('History budget (KiB)');
   await fireEvent.input(history, { target: { value: '64' } });
   expect(draft.options[0].historyBudgetKiB).toBe(64);
+});
+
+test('model errors show under the model row they are about', () => {
+  const draft = family('anthropic');
+  draft.models = ['model-a', 'model-b', 'model-a'];
+  draft.options = [blankOptionsWith({}), blankOptionsWith({ historyBudgetKiB: 2 }), blankOptionsWith({})];
+  render(FamilyForm, {
+    family: draft,
+    fields: { models: 'model ids must be unique', modelOptions: 'the history budget must be from 4 to 512 KiB' }
+  });
+  expect(screen.getByLabelText('Model 3').getAttribute('aria-invalid')).toBe('true');
+  expect(screen.getByLabelText('Model 1').getAttribute('aria-invalid')).toBeNull();
+  const history = within(screen.getByRole('group', { name: 'Settings for model-b' })).getByLabelText('History budget (KiB)');
+  expect(history.getAttribute('aria-invalid')).toBe('true');
+  expect(document.getElementById('model-1-history-error')?.textContent).toContain('the history budget must be from 4 to 512 KiB');
 });
 
 test('Add model adds a settings row, and removing a model removes its settings', async () => {

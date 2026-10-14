@@ -160,7 +160,11 @@ frontend/
   src/lib/trace.ts
   src/lib/terminal.ts
   src/lib/format.ts
-  src/lib/components/Live.svelte
+  src/lib/toast.svelte.ts
+  src/lib/forms.ts
+  src/lib/ui/Toaster.svelte
+  src/lib/ui/FormAlert.svelte
+  src/lib/ui/Spinner.svelte
   src/lib/components/SecretField.svelte
   src/lib/components/CardActions.svelte
   src/lib/components/CardChanges.svelte
@@ -296,7 +300,7 @@ frontend/
 
 `+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Deploy, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Members and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
-The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the live status line. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
+The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the notification bell. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
 
 A card link with `?project={id}` (from a notification) that names a project other than the stored one makes `+layout.ts` read `GET /api/projects`, then store that project and its tribe before the page loads. An id the caller cannot see is left alone, and the card page shows its `404`.
 
@@ -304,7 +308,7 @@ A card link with `?project={id}` (from a notification) that names a project othe
 
 `src/lib/stream.svelte.ts` exports `live`, one stream per tab (RFC-113). `+layout.svelte` calls `live.start(projectId)` when the shell shows and a bearer is stored, so it restarts when the project changes, and `live.wake()` when the tab becomes visible. `openStream` in `api.ts` reads `GET /api/stream` through `fetch` with the bearer header and `parseEvents`. `live.connected` turns true on the `ready` frame. A dropped stream reconnects after 1 second, doubling up to 30; `wake` reconnects at once. After a reconnect, `live` hands handlers a `resync` before the next frames. Pages subscribe with `live.on(handler)`, which returns the unsubscribe.
 
-`NotificationBell.svelte` sits in the top bar after the live status line. The 44px button's label is "Notifications, N unread", with a badge showing the count (99+ past 99). It opens a panel, a group named "Notifications", that loads `GET /api/notifications` each time it opens and on `resync`. Each row links to the row's `url` when it is a path starting with a single `/`, else to `/`, and shows the title, body, and time; unread rows are bold with a dot. Following a row marks it read; a row in another project does a full page load so the project switches. "Mark all read" posts `{ "all": true }`. A `notification` frame sets the count, adds the row to the list, and shows "title: body" in a `role="status"` toast for 6 seconds. Escape (focus returns to the bell) and a click outside close the panel.
+`NotificationBell.svelte` sits at the right end of the top bar. The 44px button's label is "Notifications, N unread", with a badge showing the count (99+ past 99). It opens a panel, a group named "Notifications", that loads `GET /api/notifications` each time it opens and on `resync`. Each row links to the row's `url` when it is a path starting with a single `/`, else to `/`, and shows the title, body, and time; unread rows are bold with a dot. Following a row marks it read; a row in another project does a full page load so the project switches. "Mark all read" posts `{ "all": true }`. A `notification` frame sets the count, adds the row to the list, and shows an info toast "title: body" with an "Open" link to the row's `url`. Escape (focus returns to the bell) and a click outside close the panel.
 
 Create and edit forms are their own routes. They are not dialogs.
 
@@ -320,7 +324,7 @@ Unknown paths use SvelteKit's default error page with a link to `/`.
 4. On `401`, clears the stored bearer and sends the browser to `/login`.
 5. Does not log the request body. Secret fields must not reach `console`.
 
-Base URL is `http://127.0.0.1:8787` unless the build is given the cloud API origin. A failed `fetch` throws a network error the page shows as "API unreachable at http://127.0.0.1:8787", using the configured origin in cloud mode. The page does not invent cards or settings in that case. Project routes include the selected project id. A `404` on those routes sets the live message to "That project is not available."
+Base URL is `http://127.0.0.1:8787` unless the build is given the cloud API origin. A failed `fetch` throws a network error with code `network`, which `formFailure` shows as "Can't reach the API at http://127.0.0.1:8787. Check that it is running.", using the configured origin in cloud mode. The page does not invent cards or settings in that case. Project routes include the selected project id. A `404` on those routes shows "That project is not available." in the page's error panel.
 
 ## Markup rules
 
@@ -330,13 +334,62 @@ A requirement statement is markdown, and so is a card note with source `review` 
 
 Buttons that submit a form use `type="submit"`. Buttons that do not submit use `type="button"`. Every input has a `<label for>`.
 
-`Live.svelte` is one paragraph:
+### Feedback (REQ-096)
 
-```svelte
-<p role="status">{message}</p>
-```
+Feedback appears where the person acted. The top bar has no status line.
 
-Pages set `message` to "Loading board", "Queueing ready cards", "Saving GitHub settings", or the error string. The paragraph stays in the page so the text change is announced.
+| What happened | Where it shows |
+| --- | --- |
+| A page is loading | `Page` with `loading`: a spinner row "Loading {thing}" (`role="status"`) in the body |
+| A page failed to load | `Page` with `error`: a danger panel with the message and "Try again" (`onretry`) |
+| A request is in flight | The button that started it has `loading`: a spinner, disabled, `aria-busy`. The label does not change |
+| A form submit failed | `FormAlert` at the top of the form, field errors under their inputs, focus on the first invalid input, else on the alert |
+| An action with no form failed (Run, Deploy, Remove, a 409) | An error toast, or an info toast for "Card changed. Reloaded." |
+| Something succeeded | A success toast, such as "Name saved" or "Queued 3 cards." |
+| A notification arrived | An info toast "title: body" with an "Open" link |
+
+`src/lib/toast.svelte.ts` holds the toasts: `toast.success(text)`, `toast.error(text)`, `toast.info(text, { href, label })`, `toast.dismiss(id)`, and `toast.items`. Success and info toasts close after 5 seconds and errors after 8; hovering or focusing a toast pauses its timer. At most 3 show, the oldest leaves first, and the same text and tone as the newest toast only restarts its timer. `Toaster.svelte`, rendered once by `+layout.svelte` on every page including `/login`, keeps two regions in the page: `role="status"` for success and info and `role="alert"` for errors. Each toast has a tone icon, the text, an optional link, and a 44px "Dismiss" button. It slides in from below, without motion when `prefers-reduced-motion` is set. It sits bottom right, and full width at the bottom below 640px.
+
+Field errors (`Field`, `Select`, `SearchSelect`, `MultiSearchSelect`, `MentionTextarea`, `SecretField`, `Checkbox`, `AIReviewModeField`) render in one order: label, hint, control, error. The error is `<p id="{id}-error">` with the alert icon in red. The control gets `aria-invalid="true"`, a red border and focus ring, and `aria-describedby` with the hint id and the error id. `FormAlert.svelte` is a red panel with the alert icon, `role="alert"`, and `tabindex="-1"`. It shows the general message and lists any field error whose key no control on the form shows, so no message from the API is lost. `src/lib/forms.ts` has `formFailure(error, shown)`, which returns `{ message, fields, extra }` (the message is "Check the fields marked below." when a shown field is blamed) and turns a network failure into "Can't reach the API at {origin}. Check that it is running."; `failureText(error)`, the text for a toast or page error, which uses the field errors when the request carried any, since a row action has no input to show them; and `focusInvalid(form)`, which after `tick()` focuses the first `[aria-invalid="true"]` control, else the form's alert.
+
+A status line inside a panel, such as the Refine stream or the MCP Registry search, is a `role="status"` paragraph in that panel.
+
+### Buttons
+
+`Button` takes `icon` (a leading `IconName`), `trailing` (an icon after the label, for a chevron or external link), `loading`, `aria-label`, and `title`. Icons are `aria-hidden`, so they never change the accessible name. Primary and secondary have a hairline shadow; every variant eases its colours and moves 1px down while pressed; disabled shows `cursor-not-allowed` at half opacity. Danger is red text on an outline that fills pale red on hover. The primary hover is `--color-accent-strong`.
+
+Only action buttons carry an icon. Cancel, Show more, Expand all, and filter toggles stay text only.
+
+| Action | Icon |
+| --- | --- |
+| Save, Save X, Change password | `save` |
+| Create, Add, New | `plus` |
+| Delete, Remove | `trash` |
+| Run, Run ready cards | `play` |
+| Approve | `check` |
+| Request changes | `message` |
+| Deploy approved SHA | `upload` |
+| Squash and merge | `git` |
+| Unblock | `unlock` |
+| Won't fix, Close as won't fix | `ban` |
+| Reopen, Retry AI review, Sync, Try again | `refresh` |
+| Test connection | `zap` |
+| Discover tools | `search` |
+| Copy | `copy` |
+| Refine | `spark` |
+| Turn on | `bell` |
+| Turn off | `bell-off` |
+| Send a test | `send` |
+| Edit | `pencil` |
+| Sign in | `log-in` |
+| Sign out | `log-out` |
+| Back, "All X" links | `arrow-left` |
+| Open pull request | `external`, trailing |
+| Clear filters, Clear search | `close` |
+
+### Scrollbars
+
+Scrollbars are thin and use the theme: `scrollbar-color` is `--color-line-strong` on a transparent track, and WebKit gets a 10px bar whose rounded thumb sits 2px in from the edge and turns `--color-muted` on hover. `.scrollbar-dark` is the same shape in stone grey for the dark terminal view. `html` has `scrollbar-gutter: stable`.
 
 ## Search and filters
 
@@ -367,9 +420,9 @@ Router, Company GitHub, Linked projects, and Account have no toolbar. Their list
 
 ## Login
 
-`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/choose-tribe')`. Failure leaves the typed password out of the live region and sets the live message to `error.message`. A `429` says to wait one minute. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
+`src/routes/login/+page.svelte`. Email and password fields, and a submit button "Sign in". Submit calls `POST /api/session` with `{ email, password }`. Success stores the bearer and `goto('/choose-tribe')`. An empty email or password shows "Enter your email" or "Enter your password" under the field and focuses the first empty one, without a request. A `401` shows `FormAlert` "Email or password is wrong.", marks neither field, clears the password, and focuses the alert. A `429` shows "Too many attempts. Wait one minute." in the alert, and a network failure the unreachable text. The submit button shows a spinner while the request runs. The password input is a `Field type="password"` with `autocomplete="current-password"`; its eye toggle shows or hides the typed password.
 
-`src/routes/choose-tribe/+page.svelte` opens after every sign-in, even for a member of one tribe, without the sidebar. It lists the tribes from `GET /api/tribes` (an admin gets every tribe) as buttons at least 44px tall, each with its name and "N projects" counted from `GET /api/projects`, and marks the stored tribe as current. Picking a tribe stores its id and the id of its first project, or an empty project when it has none, and loads `/`. With no tribe it says "You are not in a tribe yet. Ask an admin to add you.", and an admin also gets a "Create a tribe" link to `/tribes/new`. A ghost "Sign out" button ends the session. A failed load shows the API error in the live region.
+`src/routes/choose-tribe/+page.svelte` opens after every sign-in, even for a member of one tribe, without the sidebar. It lists the tribes from `GET /api/tribes` (an admin gets every tribe) as buttons at least 44px tall, each with its name and "N projects" counted from `GET /api/projects`, and marks the stored tribe as current. Picking a tribe stores its id and the id of its first project, or an empty project when it has none, and loads `/`. With no tribe it says "You are not in a tribe yet. Ask an admin to add you.", and an admin also gets a "Create a tribe" link to `/tribes/new`. A ghost "Sign out" button ends the session. A failed load shows the API error in a danger panel with "Try again".
 
 ## Board
 
@@ -391,7 +444,7 @@ Empty `cards`: one paragraph, "No cards yet", and a link "Ingest requirements" t
 
 ## Card
 
-`src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page. It loads the card again, without clearing the page or the live message, when a `full` `cards` frame arrives or a frame names its id.
+`src/routes/cards/[id]/+page.svelte` loads `GET /api/cards/{id}` using the `params.id` from the page. It loads the card again, without clearing the page, when a `full` `cards` frame arrives or a frame names its id.
 
 The header shows the title and a badge with `statusLabel`, with the raw status in `title`. A line under the title shows the owner's avatar and display name ("No owner" when `null`), "Attempt {attemptsUsed} of {maxAttempts}", and `branch` in monospace when set. The header buttons are "Open pull request" (secondary) when `prUrl` passes the link rule, and "View trace" (secondary, with the terminal icon) (RFC-110).
 
@@ -423,7 +476,7 @@ Render a control only when its name is in `actions`:
 | `request_changes` | Secondary button "Request changes", beside Approve or Deploy, opens a form. Textarea "What should change?", 4 rows, growing, hint "Optional. The next attempt gets this note. Markdown works." Buttons "Request changes" and "Cancel". The body is `{ reason }` |
 | `reject` | Item "Reject" in the "More actions" menu |
 | `deploy` | Button "Deploy approved SHA". |
-| `merge` | Button "Squash and merge" with the git icon, primary when `approve` is absent. It posts to `merge`; a refusal shows GitHub's reason in the status line (RFC-111). |
+| `merge` | Button "Squash and merge" with the git icon, primary when `approve` is absent. It posts to `merge`; a refusal shows GitHub's reason in an error toast (RFC-111). |
 | `unblock` | Form. Checkbox "Reset attempt counter", unchecked by default. Button "Unblock". Text above the button from `unblockTo` |
 | `wont_fix` | Secondary button "Won't fix" beside Unblock, or alone when release is refused, so Unblock stays primary. It opens a form: textarea "Why won't this be fixed?", 3 rows, growing, hint "Shown in the trace. An open pull request gets this as a comment and is closed." Buttons "Close as won't fix" (danger, disabled while the trimmed reason is empty) and "Cancel". The body is `{ reason }` trimmed; a `fields.reason` error shows on the textarea (RFC-112) |
 | `reopen` | Primary button "Reopen" with "Reopen returns this card to Blocked." It POSTs `reopen` with `{}` (RFC-112) |
@@ -440,7 +493,7 @@ These controls live in `CardActions.svelte`, which takes the card object as its 
 
 `{#if actions.includes('approve')}` is the pattern. Do not also check `status` in the template. The API list is the source.
 
-After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` under the SHA input, `fields.reason` under the reason, `fields.instructions` under the instructions, or `error.message` in the live region. A successful Request changes closes and clears the reason form. A successful Run closes the instructions form. On `409`, reload the card and set the live message to "Card changed. Reloaded."
+After a successful POST, replace the page state with the returned card. On `422`, keep the form values and show `fields.sha` on the SHA input (which opens it), `fields.reason` under the reason of the form that sent it, `fields.instructions` under the instructions, and `error.message` in the form's `FormAlert`. An action with no form shows its error in an error toast. A successful Request changes closes and clears the reason form. A successful Run closes the instructions form. On `409`, reload the card and show the info toast "Card changed. Reloaded."
 
 A link "Trace" goes to `/cards/{id}/trace`.
 
@@ -480,7 +533,7 @@ Self review (RFC-070) is a `Checkbox` under the reviewer picker. On `/intake/new
 
 The AI review mode (RFC-072) sits under Self review in both places and follows the same rule for who sees it. `AIReviewModeField` is a `Segmented` control labelled "When the AI review asks for changes" with "Run the next attempt" (`continue`) and "A person reviews" (`manual`), from `reviewModes` in `$lib/requirements`, and a hint under it that explains the chosen option. On `/intake/new` the POST sends `aiReviewMode`, and `continue` when the caller cannot choose. In the Reviewers panel "Save reviewers" also PUTs `ai-review-mode` with `{ aiReviewMode }` when the choice changed. A caller who cannot change it sees "When the AI review asks for changes, a person reviews before another attempt." when the row is `manual`, and nothing for `continue`.
 
-While `draftPending` is true, the live message is "Planner is drafting requirement ids" and the page polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. The live message distinguishes "Reading docs/prd and docs/rfc" from "Accepting 3 requirements".
+While `draftPending` is true, the page shows "Planner is drafting requirement ids" under the heading with a spinner and polls `GET /api/intake` every 3 seconds. When `planError` is set, show it under the heading as text. Ingest and Accept show a spinner on their button; Accept ends with the success toast "Accepted. Cards appear on the board shortly."
 
 ## Trace
 
@@ -491,7 +544,7 @@ While the response's `live` is true and the tab is visible, the page holds one t
 The page reads as a timeline, oldest first:
 
 - Header: "Trace", the card title as the description, and the status badge in `meta`, with a sky "Live" badge while `live` is true, titled "This page shows output as it arrives".
-- Now running: while `live` is true, a strip above the summary shows "Attempt N" (or "Waiting for the worker" before an attempt opens), the phase from the newest status change, the elapsed time from `startedAt` ticking each second, "Turn X of Y" from the attempt's implementer model calls and `maxTurns`, the attempt's tokens, and the newest event's label, detail, and age, or "The model is writing…" while a reply streams. The live region announces only when an attempt ends, such as "Attempt 2 ended: Checks passed".
+- Now running: while `live` is true, a strip above the summary shows "Attempt N" (or "Waiting for the worker" before an attempt opens), the phase from the newest status change, the elapsed time from `startedAt` ticking each second, "Turn X of Y" from the attempt's implementer model calls and `maxTurns`, the attempt's tokens, and the newest event's label, detail, and age, or "The model is writing…" while a reply streams. An info toast announces only when an attempt ends, such as "Attempt 2 ended: Checks passed".
 - Follow latest: a toolbar checkbox shown while `live` is true, on by default. When a poll adds rows, the page scrolls the newest entry into view. When every timeline entry was shown, new entries show too (`pager.follow`); a block that showed every row keeps showing every row as rows arrive, and a block keeps its open state.
 - Summary: a strip shows attempts, events, total model tokens, errors (a link to `?kind=job_error` when above zero), and the first and last event time.
 - Day headers split the timeline where the local day changes.
@@ -522,9 +575,9 @@ ANSI color codes and control characters are stripped before `cleanText`, with no
 2. If the GET flag (`tokenSet`, `keySet`, or `deployTokenSet`) is true, placeholder "A value is saved".
 3. Empty input on submit means the JSON omits that secret field.
 4. A "Remove" button sets `clear: true` and omits the secret string.
-5. The value is never written to the live message or the console.
+5. The value is never written to a toast, an alert, or the console.
 
-Disable the submit button and set the live message while the PUT is in flight. On `422`, paint `fields` under the matching inputs and keep what the operator typed.
+The submit button shows a spinner while the PUT is in flight. On `422`, paint `fields` under the matching inputs, show the message in `FormAlert`, focus the first invalid input, and keep what the operator typed.
 
 The four project settings pages (Repository, Linked projects, Deploy, Conventions) read `canEdit` from their GET body (RFC-059). When it is false, the fields sit in a disabled `fieldset`, or the pickers get `disabled`, and `SaveBar` gets `disabled`. Its note reads "Only a Lead Developer, a tribe admin, or an admin can change these settings." When it is true, the note names no role. The client never decides `canEdit` from the role itself.
 
@@ -534,7 +587,7 @@ The four project settings pages (Repository, Linked projects, Deploy, Convention
 
 The first panel is Name. "Save name" calls `PUT /api/me` and is disabled while the name is unchanged. A `422` shows on the field. After a save the sidebar menu shows the new name. The page title is the name, or the email when unnamed.
 
-Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`.
+Password fieldset: current password, new password, button "Change password", `PUT /api/me/password`. A wrong current password shows "Current password is wrong." under that field and keeps the person signed in.
 
 GitHub fieldset: host, login, token. The help text says this is the caller's own account, and that cards built from requirements the caller brought in are committed, pushed, and opened as pull requests with this token (RFC-054). Clones and fetches still use the company account. The panel header shows a "Verified" or "Not verified" badge from `verified`. "Test connection" calls `POST /api/me/github/test`. Disable it when `tokenSet` is false and the token input is empty. Show `login` on success. Show `message` on `ok: false`. After the test, reload `GET /api/me/github` so the login and badge show what GitHub reported.
 
@@ -544,13 +597,13 @@ Browser notifications (`NotificationsPanel.svelte`, RFC-113) is the last panel. 
 - `enablePush` asks for permission, reads `GET /api/push/key`, registers `/service-worker.js` (as a module in dev), waits for `ready`, replaces a subscription made with another key, subscribes with `userVisibleOnly: true`, and posts it.
 - `disablePush` unsubscribes and then sends `DELETE /api/push/subscriptions` with the endpoint.
 
-The header badge reads On, Off, or "Blocked in browser settings". Off shows "Turn on". On shows "Send a test" (`POST /api/push/test`; `sent: 0` says no browser took it) and "Turn off". Blocked tells the person to allow notifications in the browser's site settings and shows no button. The hint says a notification shows the card title and project only. Results go to a `role="status"` line.
+The header badge reads On, Off, or "Blocked in browser settings". Off shows "Turn on". On shows "Send a test" (`POST /api/push/test`; `sent: 0` says no browser took it) and "Turn off". Blocked tells the person to allow notifications in the browser's site settings and shows no button. The hint says a notification shows the card title and project only. Results go to toasts: success for on, off, and a sent test, and an error toast for a failure or a test no browser took.
 
 `src/service-worker.ts` is built by SvelteKit with `serviceWorker.register: false`, so only the panel registers it. On `push` it shows the payload's `title` and `body` with `tag` and `data.url`. On `notificationclick` it focuses a window of this origin and navigates it to the URL, or opens a new window. A URL that is not a single-slash path becomes `/`. It caches nothing, handles no `fetch`, and calls no API.
 
 ### Users and tribes
 
-`src/routes/admin/users/+page.svelte` lists users. Each row shows the name with the email under it, or the email alone when unnamed. Create is `/admin/users/new` (name, email, password, role, admin) and calls `POST /api/users`. The name is required. Edit is `/admin/users/[id]` with a Name panel and calls `PUT /api/users/{id}`. It sends `name` unless the field is blank and the user never had one, so changing the role of an unnamed user still saves. A `403` sets the live message from `error.message`.
+`src/routes/admin/users/+page.svelte` lists users. Each row shows the name with the email under it, or the email alone when unnamed. Create is `/admin/users/new` (name, email, password, role, admin) and calls `POST /api/users`. The name is required. Edit is `/admin/users/[id]` with a Name panel and calls `PUT /api/users/{id}`. It sends `name` unless the field is blank and the user never had one, so changing the role of an unnamed user still saves. A `403` shows `error.message` in the page's error panel or the form's alert.
 
 `src/routes/tribes/+page.svelte` lists tribes. Create is `/tribes/new` with a name. `/tribes/[id]` lists members from `GET /api/tribes/{id}/members` and adds one by picking a user from `GET /api/tribes/{id}/candidates` in a `SearchSelect` searched by name or email, labelled by name with the email and role as the detail line. Member rows show the name with the email under it. The request still sends `userId`. A tribe admin has a "Tribe admin" badge. "Make tribe admin" and "Remove tribe admin" call `PUT /api/tribes/{id}/members/{userId}`. Remove asks on the row, then calls `DELETE /api/tribes/{id}/members/{userId}`. A tribe admin who is not an admin sees no flag or remove control on their own row. The tribes list shows "Manage" and member counts only for tribes the user can manage. `src/routes/projects/+page.svelte` lists the active tribe's projects: those from `GET /api/projects` whose `tribeId` is the stored tribe. This holds for a company admin too, who receives every project from the API. The description reads "Projects in {tribe}. Switch tribe in the sidebar to see another tribe's projects." With no active tribe the page says "Choose a tribe to see its projects." with a link to `/choose-tribe`, and an active tribe with no project says "No projects in this tribe yet." Each row shows the name and repository. Each row has "Settings", which selects the project and opens its Repository settings, and "Open board". The page shows "New project" to an admin or a tribe admin. Create is `/projects/new` with tribe, name, a repository `SearchSelect` filled from `GET /api/settings/github/repos`, base branch, and "Linked projects". The tribe select lists only tribes the user can manage, and starts on the active tribe when the user can manage it, else on the first of them. Picking a repository fills the base branch with its default branch. The repository can only be picked from that list (RFC-060). Archived repositories are listed as disabled options. When the list cannot load, the picker stays empty and its error line says why. "Create project" is disabled until a repository is picked. "Linked projects" is a `MultiSearchSelect` of the chosen tribe's projects with the repository as the detail line. Changing the tribe drops picks from the old tribe. Shared paths are added later on Linked projects. "Create project" sends `links` with empty `sharedPaths`.
 
@@ -586,7 +639,7 @@ Values typed in a secret field are never shown again or logged.
 - **Tokens per day**: one CSS bar per day of the range, a day with no calls included, each with a `title`. The bars are `aria-hidden` and a visually hidden table gives the same numbers. No chart library.
 - **Table**: the groups with calls, input, output, cached, total, and share of the filtered total as a bar and a percent. The name and number headers are 44px buttons with `aria-sort`; a first click sorts numbers largest first and names A to Z, and a second click reverses (`?sort= &dir=`, default total, largest first). `ShowMore` after 50 groups.
 
-An empty range shows "No model calls in this range"; filters that keep nothing show "No calls match" with Clear filters. A `403` sets the live message from `error.message`.
+An empty range shows "No model calls in this range"; filters that keep nothing show "No calls match" with Clear filters. A `403` shows `error.message` in the page's error panel or the form's alert.
 
 The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with props `title`, `description`, `load(from, to)`, `dimensions` (all five by default), and an optional `actions` snippet. A dimension not listed is left out of the filters and Group by, and its URL parameters are ignored; `?by=` falls back to model. The data is read again when `load` or the range changes. Three routes use it:
 
@@ -604,7 +657,7 @@ The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with prop
 
 ### Linked projects
 
-`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. Projects from other tribes that the user can see follow as disabled options with "Other tribe: name" as the detail, so a search explains why they cannot be picked. The hint names the tribe. The picker clears after a pick. When the projects do not load, a notice says so. The save note says links are one way. The page explains that linked context is read only.
+`src/routes/settings/links/+page.svelte`. GET and PUT `/api/projects/{id}/settings/links`. Each link is a panel with the project name, its repository, a list of shared paths with "Add path" and a remove button per row, and "Remove link". "Add link" is a `SearchSelect` of projects in the same tribe that are not this project and not linked yet. Projects from other tribes that the user can see follow as disabled options with "Other tribe: name" as the detail, so a search explains why they cannot be picked. The hint names the tribe. The picker clears after a pick. When the projects do not load, the page's error panel says so with "Try again". The save note says links are one way. The page explains that linked context is read only.
 
 ### LLM APIs
 
@@ -660,7 +713,7 @@ curl -fsSL <api>/runner/install.sh | sudo bash -s -- --url <api> --token <token>
 
 `RuleForm.svelte` has "Applies to" (every project or one stack), the stack, category, title, the rule body as a monospace `Field type="textarea"`, and Disabled. `StackForm.svelte` has the name and the marker files, npm dependencies, and Python dependencies as comma separated fields. `/admin/conventions/[id]` picks the form from the id prefix (`stk_` is a stack), shows the version and "Last edited by" the email and time, saves with PUT, and has a delete panel behind an inline confirm. Delete says a stack still named by a rule or project is disabled instead.
 
-`src/routes/admin/skills/+page.svelte` lists skills from the same GET (RFC-056): title, slug, "use when", version. `SkillForm.svelte` has slug, title, "Use when", the procedure as a monospace textarea, and Disabled. New and edit pages follow the rule pages. Field errors come from the API `fields`. A `403` sets the live message.
+`src/routes/admin/skills/+page.svelte` lists skills from the same GET (RFC-056): title, slug, "use when", version. `SkillForm.svelte` has slug, title, "Use when", the procedure as a monospace textarea, and Disabled. New and edit pages follow the rule pages. Field errors come from the API `fields`. A `403` shows in the form's alert.
 
 ### Tribe conventions
 
@@ -672,7 +725,7 @@ curl -fsSL <api>/runner/install.sh | sudo bash -s -- --url <api> --token <token>
 
 ### Deploy and checks
 
-`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/projects/{id}/settings/deploy`. These settings belong to the selected project (RFC-050). Any member can read them. Save is for a Lead Developer member, and a `403` shows in the live message.
+`src/routes/settings/deploy/+page.svelte`. GET and PUT `/api/projects/{id}/settings/deploy`. These settings belong to the selected project (RFC-050). Any member can read them. Save is for a Lead Developer member, and a `403` shows in the form's alert.
 
 Fields, in three fieldsets:
 
@@ -700,7 +753,7 @@ Shared controls live in `src/lib/ui/`. One primary button on a page. `.danger` i
 
 The theme also defines the layout scale. Page padding is 24px, and 32px from 1024px. Every signed-in page body is full width at every breakpoint, so `Page` has no width prop. A page description stays at `max-w-2xl` for line length, and the login card stays centered. Field widths are `sm` 10rem, `md` 20rem, `lg` 32rem, and `full`. A `Field` textarea with `grow` uses the `autogrow` action, which sets its height from `scrollHeight` through the CSSOM on mount, input, and value change, and is `resize-none`. `Field`, `Select`, and `SecretField` take a `width` prop that defaults to `md`. Inside a two-column grid a field uses `full`. Every password or secret input is a `PasswordInput`: `Field type="password"` and `SecretField` both render it. It starts masked, and an eye button inside the right edge (a 44px `type="button"` with `aria-pressed` and "Show {label}" or "Hide {label}") reveals only what was typed. It masks again when the value is cleared or the input is disabled.
 
-Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the live status line. It holds no page actions.
+Every page body starts with `Page`: the `h1`, an optional description, an optional `meta` snippet beside the title, and an `actions` snippet aligned right on the same row. A hairline separates the header from the content. The top bar is a 48px strip with the menu button below 1024px, the current project, and the notification bell. It holds no page actions or status text.
 
 Buttons size to their label and never stretch. `full` is only for the login submit. `Panel` has a title row with an optional `actions` snippet and an optional `footer` snippet. The footer is a right-aligned action bar. Admin settings pages (Company GitHub, Router, and an LLM family) put the primary Save in the last panel's footer, after "Test connection" where the page has one. Project settings pages and the user edit page end in `SaveBar`, a bar that sticks to the bottom of the viewport with the primary Save. `FieldGroup` groups related controls under one legend. `Row` is one entry in a bordered list, such as one model id, with a remove button. Tables use `Table` and the `th`, `tr`, and `td` classes from `src/lib/ui/control.ts`: an 11px uppercase header and 48px rows.
 
@@ -716,13 +769,15 @@ System font stack: `system-ui, sans-serif`. Below 720px board groups stack in on
 | --- | --- |
 | No bearer | Redirect to `/login` |
 | Board empty | "No cards yet" and the intake link |
-| Loading | Live region names the page |
-| In flight | Submit disabled, live region names the action |
-| `422` | Field errors, typed secrets kept |
-| `409` | Reload, "Card changed. Reloaded." |
+| Loading | `Page` spinner row names the page |
+| Load failed | `Page` danger panel with "Try again" |
+| Project settings page with no project | `Page` danger panel "Choose a project in the sidebar first." |
+| In flight | The button that started it shows a spinner and is disabled |
+| `422` | `FormAlert`, field errors under their inputs, focus on the first invalid input, typed secrets kept |
+| `409` | Reload, info toast "Card changed. Reloaded." |
 | `401` | Bearer cleared, redirect to `/login` |
-| `429` on login | "Too many attempts. Wait one minute." |
-| Network failure | "API unreachable" and the base URL |
+| `429` on login | `FormAlert` "Too many attempts. Wait one minute." |
+| Network failure | "Can't reach the API at" the base URL, in the form's alert, the page's error panel, or an error toast |
 | Unknown card | "Card not found" and a link back to the board |
 
 ## Build
@@ -844,5 +899,13 @@ npm run build
 | Layout load `?project=` | `/cards/x?project=proj_b` stores `proj_b` and its tribe from `GET /api/projects`; an unknown id changes nothing |
 | `NotificationBell` | The label counts unread, opening lists rows with unread marked, a row links to its path and marks it read, "Mark all read" posts `{ all: true }`, a `notification` frame raises the count and shows the toast, and a URL that is not a single-slash path links to `/` (RFC-113) |
 | `push` | `enablePush` subscribes with the 65-byte server key and `userVisibleOnly`, saves the subscription, and replaces one made with another key. A denied permission is `blocked` and subscribes nothing. `syncPush` sends a held subscription again. `disablePush` unsubscribes and deletes the endpoint (RFC-113) |
-| `NotificationsPanel` | Off shows "Turn on", which turns it On with "Send a test" and "Turn off". A test reports a send, or that no browser took it. Blocked shows the site settings hint and no button. Unsupported says so (RFC-113) |
+| `NotificationsPanel` | Off shows "Turn on", which turns it On with "Send a test" and "Turn off". A test reports a send, or that no browser took it, in a toast. Blocked shows the site settings hint and no button. Unsupported says so (RFC-113) |
+| `toast` | `success` and `info` close after 5 seconds and `error` after 8; `pause` holds the timer and `resume` restarts it; a fourth toast drops the oldest; the same text and tone as the newest toast adds nothing; `dismiss` removes one (REQ-096) |
+| `Toaster` | Success and info render in the `status` region and errors in the `alert` region, both present while empty; a toast with `href` shows its link; "Dismiss" removes it (REQ-096) |
+| `Page` states | `loading` shows "Loading {thing}" in a `role="status"` row instead of the body; `error` shows the message and "Try again", which calls `onretry` (REQ-096) |
+| `forms` | `formFailure` returns the message and fields of a `422`, lists fields not in `shown` as `extra`, and turns a network error into "Can't reach the API at" the origin; `focusInvalid` focuses the first `aria-invalid` control, else the `[role=alert]` (REQ-096) |
+| `FormAlert` | Shows the message and one line per extra field, has `role="alert"` and `tabindex="-1"`, and renders nothing when both are empty (REQ-096) |
+| `Field` error | The error paragraph follows the control with id `{id}-error`; the control has `aria-invalid="true"` and `aria-describedby` naming the hint and the error (REQ-096) |
+| Login page | An empty submit shows "Enter your email" and focuses email without a request; a `401` shows "Email or password is wrong." in the alert, clears the password, and focuses the alert; a `429` shows the wait message (REQ-096) |
+| `Button` | `icon` renders an `aria-hidden` svg before the label without changing the name; `loading` disables the button, sets `aria-busy`, and keeps the label; `aria-label` passes through (REQ-096) |
 | Built `build/index.html` | Contains a CSP meta tag with `script-src 'self'` and a hash, and no `unsafe-inline` |

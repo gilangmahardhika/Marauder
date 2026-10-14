@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** The API field keys an input on this form shows. */
+  export const stackFields = ['name', 'detect.files', 'detect.npmDeps', 'detect.pyDeps', 'disabled'];
+</script>
+
 <script lang="ts">
   import type { StackDraft } from '$lib/conventions';
   import Checkbox from '$lib/ui/Checkbox.svelte';
@@ -42,6 +47,7 @@
     id="stack-disabled"
     label="Disabled"
     hint="A disabled stack is not detected and its rules leave every pack."
+    error={fields.disabled ?? ''}
     bind:checked={stack.disabled}
   />
 </div>

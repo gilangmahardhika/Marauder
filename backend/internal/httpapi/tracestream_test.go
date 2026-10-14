@@ -28,6 +28,9 @@ type traceStream struct {
 	resp   *http.Response
 	frames chan streamFrame
 	pings  atomic.Int32
+	// err is written before frames closes, so read it only after a receive
+	// reports the channel closed.
+	err error
 }
 
 // openTraceStream connects to path on a real listener, so the test reads the
@@ -70,6 +73,7 @@ func openTraceStream(t *testing.T, srv *httpapi.Server, path, token string) *tra
 				s.frames <- streamFrame{kind: kind, data: data}
 			}
 		}
+		s.err = scanner.Err()
 	}()
 	return s
 }
@@ -79,7 +83,7 @@ func (s *traceStream) next(t *testing.T) streamFrame {
 	select {
 	case f, ok := <-s.frames:
 		if !ok {
-			t.Fatal("the stream ended")
+			t.Fatalf("the stream ended: %v", s.err)
 		}
 		return f
 	case <-time.After(5 * time.Second):
@@ -104,6 +108,9 @@ func (s *traceStream) ended(t *testing.T) {
 	case f, ok := <-s.frames:
 		if ok {
 			t.Fatalf("frame after the end: %+v", f)
+		}
+		if s.err != nil {
+			t.Fatalf("read the stream: %v", s.err)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the stream stayed open")

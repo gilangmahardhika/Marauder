@@ -1,16 +1,16 @@
 <script lang="ts">
   import { apiOrigin } from '$lib/api';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Icon from '$lib/ui/Icon.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
 
-  let message = $state('Runner guide');
   let copied = $state('');
 
-  showShell(() => ({ title: 'Runner guide', message }));
+  showShell(() => ({ title: 'Runner guide' }));
 
   const origin = apiOrigin.replace(/\/+$/, '');
   const unit = 'orchestrator-runner';
@@ -37,9 +37,9 @@
     try {
       await navigator.clipboard.writeText(commands[key]);
       copied = key;
-      message = 'Command copied';
+      toast.success('Command copied');
     } catch {
-      message = 'Select the command and copy it.';
+      toast.error('Select the command and copy it.');
     }
   }
 </script>
@@ -61,8 +61,8 @@
 
 <Page title="Runner guide" description="How to register a machine as a runner, keep it up to date, pause it, and unregister it.">
   {#snippet actions()}
-    <Button variant="ghost" href="/admin/runners">Back to runners</Button>
-    <Button variant="primary" href="/admin/runners/new">Add runner</Button>
+    <Button variant="ghost" href="/admin/runners" icon="arrow-left">Back to runners</Button>
+    <Button variant="primary" href="/admin/runners/new" icon="plus">Add runner</Button>
   {/snippet}
   <div class="flex max-w-3xl flex-col gap-6 text-sm text-ink">
     <Panel title="Before you start">

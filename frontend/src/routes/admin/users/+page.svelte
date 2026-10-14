@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getUsers, unreachable } from '$lib/api';
+  import { getUsers } from '$lib/api';
   import { pickParam } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
   import { accessOptions, accessValues, displayName, filterUsers, roleOptions } from '$lib/people';
@@ -23,9 +24,10 @@
 
   let users = $state<SessionUser[]>([]);
   let loaded = $state(false);
-  let message = $state('Loading users');
+  let loading = $state('Loading users');
+  let loadError = $state('');
 
-  showShell(() => ({ title: 'Users', message }));
+  showShell(() => ({ title: 'Users' }));
 
   const params = $derived($page.url.searchParams);
   const filter = $derived({
@@ -36,22 +38,30 @@
   const shown = $derived(filterUsers(users, filter));
   const paging = pager(() => `${filter.q}|${filter.role}|${filter.access}`);
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading users';
+    loadError = '';
     void getUsers()
       .then((body) => {
         users = body.users;
         loaded = true;
-        message = 'Users';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 </script>
 
-<Page title="Users" description="People who can sign in. Admin access is separate from job role.">
+<Page title="Users" description="People who can sign in. Admin access is separate from job role." {loading} error={loadError} onretry={load}>
   {#snippet actions()}
-    {#if shell.admin}<Button variant="primary" href="/admin/users/new">New user</Button>{/if}
+    {#if shell.admin}<Button variant="primary" href="/admin/users/new" icon="plus">New user</Button>{/if}
   {/snippet}
   {#if loaded && users.length === 0}
     <EmptyState title="No users yet" />
@@ -69,7 +79,7 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No users match" description="Change the search or filters to see more users.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', role: '', access: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', role: '', access: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <Table label="Users">

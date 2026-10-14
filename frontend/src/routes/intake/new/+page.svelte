@@ -1,13 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, addRequirement, getIntake, setReviewers, streamRefine, unreachable } from '$lib/api';
+  import { addRequirement, getIntake, setReviewers, streamRefine } from '$lib/api';
   import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { canSetSelfReview, reviewerChoices, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { AIReviewMode, MCPServerMention, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
@@ -21,14 +24,21 @@
   let options = $state<Reviewer[]>([]);
   let known = $state<string[]>([]);
   let servers = $state<MCPServerMention[]>([]);
-  let fields = $state<Record<string, string>>({});
-  let message = $state('New requirement');
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
   let busy = $state(false);
 
   const choices = $derived(reviewerChoices(options, shell.email));
   const mayChooseSelfReview = $derived(canSetSelfReview(shell.role, shell.admin));
+  const shown = $derived([
+    'id',
+    'statement',
+    'acceptance',
+    'userIds',
+    ...(mayChooseSelfReview ? ['selfReview', 'aiReviewMode'] : [])
+  ]);
 
-  showShell(() => ({ title: 'New requirement', message }));
+  showShell(() => ({ title: 'New requirement' }));
 
   $effect(() => {
     if (shell.projectId === '') return;
@@ -45,13 +55,13 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
-    fields = {};
+    failure = noFailure;
     if (statement.trim() === '') {
-      fields = { statement: 'Enter a statement.' };
+      failure = { ...noFailure, fields: { statement: 'Enter a statement.' } };
+      void focusInvalid(form);
       return;
     }
     busy = true;
-    message = 'Adding requirement';
     let added = '';
     try {
       const body = await addRequirement({
@@ -62,19 +72,17 @@
         aiReviewMode: mayChooseSelfReview ? aiReviewMode : 'continue'
       });
       added = id.trim() || (body.requirements.find((requirement) => !known.includes(requirement.id))?.id ?? '');
-      if (reviewers.length > 0 && added !== '') {
-        message = 'Saving reviewers';
-        await setReviewers(added, reviewers);
-      }
-      message = 'Requirement added';
+      if (reviewers.length > 0 && added !== '') await setReviewers(added, reviewers);
+      toast.success('Requirement added');
       await goto('/intake');
     } catch (error) {
       if (added !== '') {
+        toast.error(`${added} was added, but its reviewers were not saved. ${failureText(error)}`);
         await goto(`/intake/${encodeURIComponent(added)}`);
         return;
       }
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -85,13 +93,14 @@
   title="New requirement"
   description="Added to this project's intake. It is not accepted until a senior member accepts it."
 >
-  <form onsubmit={submit}>
+  <form onsubmit={submit} bind:this={form} novalidate>
     <Panel title="Requirement">
+      <FormAlert message={failure.message} extra={failure.extra} />
       <RequirementForm
         bind:id
         bind:statement
         bind:acceptance
-        {fields}
+        fields={failure.fields}
         {servers}
         refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId: id.trim() }, onEvent, signal)}
       />
@@ -102,7 +111,7 @@
         options={choices}
         placeholder={choices.length === 0 ? 'No other tribe members yet' : 'Search by name, login, or email'}
         max={15}
-        error={fields.userIds}
+        error={failure.fields.userIds}
         bind:values={reviewers}
       />
       <p class="text-xs text-muted">Someone without a verified GitHub login is asked to review on GitHub after they verify.</p>
@@ -111,13 +120,14 @@
           id="requirement-self-review"
           label="Self review"
           hint="You review and approve this requirement's cards yourself. The approval is recorded as not independent."
+          error={failure.fields.selfReview}
           bind:checked={selfReview}
         />
-        <AIReviewModeField bind:value={aiReviewMode} />
+        <AIReviewModeField error={failure.fields.aiReviewMode} bind:value={aiReviewMode} />
       {/if}
       {#snippet footer()}
         <Button variant="ghost" href="/intake">Cancel</Button>
-        <Button variant="primary" type="submit" disabled={busy}>Add requirement</Button>
+        <Button variant="primary" type="submit" icon="plus" loading={busy}>Add requirement</Button>
       {/snippet}
     </Panel>
   </form>

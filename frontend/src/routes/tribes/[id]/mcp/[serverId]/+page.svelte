@@ -1,31 +1,34 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getMCPServers, unreachable } from '$lib/api';
+  import { getMCPServers } from '$lib/api';
   import MCPServerForm from '$lib/components/MCPServerForm.svelte';
+  import { failureText } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
   import type { MCPServer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
-  import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
 
   let server = $state<MCPServer | null>(null);
-  let missing = $state(false);
-  let message = $state('Loading MCP server');
+  let loading = $state('Loading MCP server');
+  let loadError = $state('');
   const id = $derived($page.params.id ?? '');
   const serverId = $derived($page.params.serverId ?? '');
   const autoDiscover = $derived($page.url.searchParams.get('discover') === '1');
   const title = $derived(server ? `MCP server: ${server.slug}` : 'MCP server');
 
-  showShell(() => ({ title, message }));
+  showShell(() => ({ title }));
 
   async function load(tribeId: string, wanted: string) {
+    loading = 'Loading MCP server';
+    loadError = '';
     try {
       const body = await getMCPServers(tribeId);
       server = body.servers.find((item) => item.id === wanted) ?? null;
-      missing = server === null;
-      message = server ? title : 'MCP server not found';
+      if (!server) loadError = 'MCP server not found. It may have been deleted.';
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      loadError = failureText(error);
+    } finally {
+      loading = '';
     }
   }
 
@@ -34,15 +37,19 @@
   });
 </script>
 
-<Page {title} description="Changes apply to jobs that start after you save.">
+<Page
+  {title}
+  description="Changes apply to jobs that start after you save."
+  {loading}
+  error={loadError}
+  onretry={() => void load(id, serverId)}
+>
   {#snippet actions()}
-    <Button href={`/tribes/${id}/mcp`}>All servers</Button>
+    <Button href={`/tribes/${id}/mcp`} icon="arrow-left">All servers</Button>
   {/snippet}
   {#if server}
     {#key server.id}
-      <MCPServerForm tribeId={id} {server} {autoDiscover} onmessage={(text) => (message = text)} />
+      <MCPServerForm tribeId={id} {server} {autoDiscover} />
     {/key}
-  {:else if missing}
-    <EmptyState title="MCP server not found" description="It may have been deleted." />
   {/if}
 </Page>

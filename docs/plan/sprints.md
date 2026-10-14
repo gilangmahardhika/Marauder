@@ -1156,3 +1156,40 @@ Packages: `internal/webpush`, `internal/notify`, `internal/httpapi`, `internal/c
 - `src/service-worker.ts` and the Account Notifications panel.
 
 Done when: `TestWebPushEncrypt`, `TestVAPIDJWT`, `TestPushEndpointGuard`, `TestPushGone`, `TestVAPIDKeySecret`, the Account notifications Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 85: Toasts and page states
+
+Goal: Outcomes show as toasts and loading shows in the page body, and the top bar carries no status text (REQ-096).
+
+Packages: frontend `lib/toast.svelte.ts`, `lib/ui`, layout, every page that set the header message.
+
+- `toast.svelte.ts` and `Toaster.svelte` in the root layout, with a `status` and an `alert` region.
+- `Page` `loading`, `error`, and `onretry`, and `Spinner.svelte`.
+- The header `Live` line and `shell.message` removed; each page moves its loading text to `Page`, its success to a success toast, and the error of an action with no form to an error toast. The bell and the Account Notifications panel use toasts.
+
+Done when: the `toast`, `Toaster`, and `Page` states Vitest cases, the updated page tests, `npm run check`, and the rest of the suite.
+
+## Sprint 86: Form errors and login
+
+Goal: A failed form says why at the top and under each field, and moves focus there (REQ-096).
+
+Packages: frontend `lib/forms.ts`, `lib/ui`, every form, login; `internal/httpapi`.
+
+- `invalid` control styles, label, hint, control, error order, `aria-invalid` and `aria-describedby` in every field primitive, and an `error` prop on `Checkbox` and `AIReviewModeField`.
+- `FormAlert.svelte`, `formFailure`, and `focusInvalid`, wired into every form; the field errors no input showed get one.
+- Login checks empty fields, shows the alert for `401`, `429`, and a network failure, and clears the password.
+- `PUT /api/me/password` answers a wrong current password with `422` on `currentPassword`.
+
+Done when: `TestChangePasswordWrongCurrent`, the `forms`, `FormAlert`, `Field` error, and login page Vitest cases, the updated form tests, `npm run check`, and the rest of the suite.
+
+## Sprint 87: Buttons and scrollbars
+
+Goal: Action buttons carry an icon and a loading state, and scrollbars follow the theme (REQ-096).
+
+Packages: frontend `lib/ui/Button.svelte`, `lib/ui/icons.ts`, `app.css`, every page with an action button.
+
+- `Button` `icon`, `trailing`, `loading`, `aria-label`, and `title`; colour easing, pressed offset, and the accent hover token.
+- The icons in the 0004 table on every action button; a 44px chip remove.
+- Thin themed scrollbars, `.scrollbar-dark` for the terminal view, and a stable gutter.
+
+Done when: the `Button` Vitest cases, `npm run check`, the rest of the suite, and a browser pass over the board, a card, a form error, and a toast.

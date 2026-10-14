@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getLLM, unreachable } from '$lib/api';
+  import { getLLM } from '$lib/api';
   import { pickParam } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { filterFamilies, keyFilters, keyOptions, protocolFilters, protocolLabel, protocolOptions } from '$lib/llm';
   import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
@@ -18,9 +19,10 @@
 
   let families = $state<Family[]>([]);
   let loaded = $state(false);
-  let message = $state('Loading LLM settings');
+  let loading = $state('Loading LLM APIs');
+  let loadError = $state('');
 
-  showShell(() => ({ title: 'LLM APIs', message }));
+  showShell(() => ({ title: 'LLM APIs' }));
 
   const params = $derived($page.url.searchParams);
   const filter = $derived({
@@ -30,16 +32,24 @@
   });
   const shown = $derived(filterFamilies(families, filter));
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading LLM APIs';
+    loadError = '';
     void getLLM()
       .then((body) => {
         families = body.families;
         loaded = true;
-        message = 'LLM APIs';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 
   function models(list: string[]) {
@@ -52,13 +62,16 @@
 <Page
   title="LLM APIs"
   description="Model families every project can route work to. Each family has one endpoint, one key, and any number of models."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
-    <Button variant="primary" href="/admin/llm/new">Add family</Button>
+    <Button variant="primary" href="/admin/llm/new" icon="plus">Add family</Button>
   {/snippet}
   {#if loaded && families.length === 0}
     <EmptyState title="No LLM families yet" description="Add a family for each provider endpoint, then list the models it serves.">
-      <Button variant="primary" href="/admin/llm/new">Add family</Button>
+      <Button variant="primary" href="/admin/llm/new" icon="plus">Add family</Button>
     </EmptyState>
   {:else if families.length > 0}
     <div class="flex flex-col gap-4">
@@ -74,7 +87,7 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No families match" description="Change the search or filters to see more families.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', protocol: '', key: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', protocol: '', key: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <Table label="LLM families">

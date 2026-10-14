@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getRunners, putJobs, runnerAction, unreachable } from '$lib/api';
+  import { getRunners, putJobs, runnerAction } from '$lib/api';
   import { pickParam } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { actionLabel, filterRunners, since, statusLabel, statusOptions, statusTone, statusValues, waitingForRunners } from '$lib/runners';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Executor, Runner } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -23,11 +25,12 @@
   let executor = $state<Executor>('local');
   let loaded = $state(false);
   let busy = $state(false);
-  let message = $state('Loading runners');
+  let loading = $state('Loading runners');
+  let loadError = $state('');
   let confirming = $state('');
   let now = $state(Date.now());
 
-  showShell(() => ({ title: 'Runners', message }));
+  showShell(() => ({ title: 'Runners' }));
 
   const params = $derived($page.url.searchParams);
   const filter = $derived({
@@ -49,11 +52,20 @@
       runners = body.runners;
       executor = body.executor;
       loaded = true;
+      loadError = '';
       now = Date.now();
-      if (!busy) message = 'Runners';
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      if (loaded) toast.error(failureText(error));
+      else loadError = failureText(error);
+    } finally {
+      loading = '';
     }
+  }
+
+  function retry() {
+    loading = 'Loading runners';
+    loadError = '';
+    void load();
   }
 
   $effect(() => {
@@ -65,13 +77,12 @@
   async function saveExecutor(next: string) {
     if (next === executor || busy) return;
     busy = true;
-    message = 'Saving where jobs run';
     try {
       const body = await putJobs(next as Executor);
       executor = body.executor;
-      message = body.executor === 'runners' ? 'Implement jobs now go to runners.' : 'Implement jobs now run on this server.';
+      toast.success(body.executor === 'runners' ? 'Implement jobs now go to runners.' : 'Implement jobs now run on this server.');
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
       busy = false;
     }
@@ -83,14 +94,13 @@
       return;
     }
     busy = true;
-    message = `${actionLabel(action)} ${runner.name}`;
     try {
       await runnerAction(runner.id, action);
       confirming = '';
-      message = action === 'remove' ? `${runner.name} removed` : `${runner.name}: ${actionLabel(action).toLowerCase()} done`;
+      toast.success(action === 'remove' ? `${runner.name} removed` : `${runner.name}: ${actionLabel(action).toLowerCase()} done`);
       await load();
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
       await load();
     } finally {
       busy = false;
@@ -98,10 +108,16 @@
   }
 </script>
 
-<Page title="Runners" description="Machines that run implement jobs. A runner calls this server over HTTPS and never holds the database or model keys.">
+<Page
+  title="Runners"
+  description="Machines that run implement jobs. A runner calls this server over HTTPS and never holds the database or model keys."
+  {loading}
+  error={loadError}
+  onretry={retry}
+>
   {#snippet actions()}
     <Button variant="ghost" href="/admin/runners/guide">Runner guide</Button>
-    <Button variant="primary" href="/admin/runners/new">Add runner</Button>
+    <Button variant="primary" href="/admin/runners/new" icon="plus">Add runner</Button>
   {/snippet}
   <div class="flex flex-col gap-6">
     <Panel title="Implement jobs run on" hint="Review, deploy, and verify always run on this server.">
@@ -118,7 +134,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <span>Remove {removing.name}? Its open jobs go back to the queue, and its secret stops working.</span>
           <Button type="button" variant="ghost" disabled={busy} onclick={() => (confirming = '')}>Cancel</Button>
-          <Button type="button" variant="danger" disabled={busy} onclick={() => void act(removing, 'remove')}>Remove</Button>
+          <Button type="button" variant="danger" icon="trash" loading={busy} onclick={() => void act(removing, 'remove')}>Remove</Button>
         </div>
       </Notice>
     {/if}
@@ -132,7 +148,7 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No runners match" description="Change the search or filters to see more runners.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', status: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', status: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <Table label="Runners">

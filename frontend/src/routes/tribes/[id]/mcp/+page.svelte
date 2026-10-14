@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getMCPServers, getTribes, unreachable } from '$lib/api';
+  import { getMCPServers, getTribes } from '$lib/api';
+  import { failureText } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
   import type { MCPServer } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
@@ -13,22 +14,25 @@
   let tribeName = $state('');
   let servers = $state<MCPServer[]>([]);
   let loaded = $state(false);
-  let message = $state('Loading MCP servers');
+  let loading = $state('Loading MCP servers');
+  let loadError = $state('');
   const id = $derived($page.params.id ?? '');
   const title = $derived(tribeName ? `MCP servers: ${tribeName}` : 'MCP servers');
 
-  showShell(() => ({ title, message }));
+  showShell(() => ({ title }));
 
   async function load(tribeId: string) {
+    loading = 'Loading MCP servers';
+    loadError = '';
     try {
       const [body, tribes] = await Promise.all([getMCPServers(tribeId), getTribes()]);
       servers = body.servers;
       tribeName = tribes.tribes.find((tribe) => tribe.id === tribeId)?.name ?? '';
-      message = 'MCP servers';
-    } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
       loaded = true;
+    } catch (error) {
+      loadError = failureText(error);
+    } finally {
+      loading = '';
     }
   }
 
@@ -42,10 +46,16 @@
   }
 </script>
 
-<Page {title} description="Read-only tools the implementer and requirement refine of this tribe's projects can call.">
+<Page
+  {title}
+  description="Read-only tools the implementer and requirement refine of this tribe's projects can call."
+  {loading}
+  error={loadError}
+  onretry={() => void load(id)}
+>
   {#snippet actions()}
-    <Button href={`/tribes/${id}`}>Back to tribe</Button>
-    <Button href={`/tribes/${id}/mcp/new`}>Add manually</Button>
+    <Button href={`/tribes/${id}`} icon="arrow-left">Back to tribe</Button>
+    <Button href={`/tribes/${id}/mcp/new`} icon="plus">Add manually</Button>
     <Button variant="primary" href={`/tribes/${id}/mcp/catalog`}>Browse catalog</Button>
   {/snippet}
   {#if servers.length > 0}

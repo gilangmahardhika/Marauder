@@ -1,26 +1,35 @@
 <script lang="ts">
-  import { ApiError, getCompanyRepos, getRepository, putRepository, syncRepository, unreachable } from '$lib/api';
+  import { session } from '$lib/session';
+  import { getCompanyRepos, getRepository, putRepository, syncRepository } from '$lib/api';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { CompanyRepo, Repository } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
 
+  const shown = ['repo', 'baseBranch'];
+
   let view = $state<Repository | null>(null);
   let repos = $state<CompanyRepo[] | null>(null);
   let reposError = $state('');
   let repo = $state('');
   let baseBranch = $state('main');
-  let fields = $state<Record<string, string>>({});
-  let message = $state('Loading repository');
+  let loading = $state('Loading repository');
+  let loadError = $state('');
+  let failure = $state(noFailure);
   let busy = $state(false);
+  let syncing = $state(false);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: 'Repository', message }));
+  showShell(() => ({ title: 'Repository' }));
 
   const locked = $derived(view !== null && !view.canEdit);
   const canSync = $derived(
@@ -37,7 +46,7 @@
     }))
   );
   const repoError = $derived(
-    fields.repo ||
+    failure.fields.repo ||
       (locked
         ? ''
         : reposError
@@ -62,23 +71,35 @@
     baseBranch = next.baseBranch || 'main';
   }
 
-  $effect(() => {
-    if (shell.projectId === '') return;
+  function load() {
+    loading = 'Loading repository';
+    loadError = '';
     void getRepository()
-      .then((body) => {
-        show(body);
-        message = 'Repository';
-      })
+      .then(show)
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    if (shell.projectId === '') {
+      if (session.project() === '') {
+        loading = '';
+        loadError = 'Choose a project in the sidebar first.';
+      }
+      return;
+    }
+    load();
     void getCompanyRepos()
       .then((body) => {
         repos = body.repos;
       })
       .catch((error: unknown) => {
         repos = null;
-        reposError = error instanceof ApiError ? error.message : unreachable();
+        reposError = failureText(error);
       });
   });
 
@@ -91,31 +112,27 @@
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = 'Saving repository';
+    failure = noFailure;
     try {
       show(await putRepository({ repo, baseBranch }));
-      message = 'Repository saved';
+      toast.success('Repository saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
   }
 
   async function sync() {
-    busy = true;
-    fields = {};
-    message = 'Syncing';
+    syncing = true;
     try {
       show(await syncRepository());
-      message = 'Synced';
+      toast.success('Synced');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      syncing = false;
     }
   }
 </script>
@@ -123,6 +140,9 @@
 <Page
   title="Repository"
   description="The one repository this project works in. The service clones it with the company GitHub account."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#if view && view.org === ''}
     <div class="mb-6">
@@ -132,8 +152,9 @@
       </Notice>
     </div>
   {/if}
-  <form onsubmit={save}>
+  <form onsubmit={save} bind:this={form} novalidate>
     <div class="flex flex-col gap-6">
+      <FormAlert message={failure.message} extra={failure.extra} />
       <Panel title="Source" hint={view ? `${view.host} / ${view.org || 'no organization'}` : ''}>
         <fieldset class="flex min-w-0 flex-col gap-5" disabled={locked}>
           <div class="flex flex-col gap-1.5">
@@ -156,7 +177,7 @@
             id="base"
             width="sm"
             mono
-            error={fields.baseBranch}
+            error={failure.fields.baseBranch}
             hint="Card branches start here, and Sync resets the clone to it. It must exist on GitHub."
             bind:value={baseBranch}
           />
@@ -172,9 +193,15 @@
           <dt class="text-muted">Head</dt>
           <dd class="truncate font-mono text-ink">{view?.headSha ?? 'none'}</dd>
         </dl>
-        {#if fields.token}<p class="error text-xs">{fields.token}</p>{/if}
         {#snippet footer()}
-          <Button type="button" variant="secondary" disabled={busy || !canSync || view?.repo === ''} onclick={() => void sync()}>
+          <Button
+            type="button"
+            variant="secondary"
+            icon="refresh"
+            loading={syncing}
+            disabled={busy || !canSync || view?.repo === ''}
+            onclick={() => void sync()}
+          >
             Sync
           </Button>
         {/snippet}
@@ -182,7 +209,7 @@
     </div>
     <SaveBar
       {busy}
-      disabled={locked}
+      disabled={locked || syncing}
       note={locked ? 'Only a Lead Developer, a tribe admin, or an admin can change these settings.' : ''}
     />
   </form>

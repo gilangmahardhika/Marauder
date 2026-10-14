@@ -5,6 +5,7 @@ import { goto } from '$app/navigation';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { session } from '$lib/session';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 
 const api = vi.hoisted(() => ({
   getMe: vi.fn(),
@@ -226,4 +227,22 @@ test('the mobile menu shows the section headings', async () => {
   const navs = screen.getAllByRole('navigation', { name: 'Sections' });
   expect(navs).toHaveLength(2);
   expect(headings(navs[1])).toEqual(['Workspace', 'Project · Shop', 'Tribe · Alpha', 'Account']);
+});
+
+test('toasts show on bare pages and the top bar has no status line', async () => {
+  location.path = '/login';
+  render(Layout, { children });
+  toast.success('Signed out');
+  expect(await screen.findByText('Signed out')).toBeTruthy();
+  expect(document.querySelector('header')).toBeNull();
+  toast.clear();
+});
+
+test('the top bar holds the bell and no status text', async () => {
+  api.getProjects.mockResolvedValue({ projects: [] });
+  api.getMe.mockResolvedValue(me(false));
+  render(Layout, { children });
+  const header = document.querySelector('header');
+  expect(header?.querySelector('[role="status"]')).toBeNull();
+  expect(await screen.findByRole('button', { name: /Notifications/ })).toBeTruthy();
 });

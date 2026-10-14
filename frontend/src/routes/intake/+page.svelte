@@ -1,9 +1,10 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { page } from '$app/stores';
-  import { ApiError, acceptRequirements, getIntake, ingest, unreachable } from '$lib/api';
+  import { acceptRequirements, getIntake, ingest } from '$lib/api';
   import IntakeActions from '$lib/components/IntakeActions.svelte';
   import RequirementRow from '$lib/components/RequirementRow.svelte';
+  import { failureText } from '$lib/forms';
   import {
     acceptableIds,
     filterDecisions,
@@ -17,6 +18,7 @@
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Intake } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
@@ -28,28 +30,38 @@
   import SearchBox from '$lib/ui/SearchBox.svelte';
   import Segmented from '$lib/ui/Segmented.svelte';
   import ShowMore from '$lib/ui/ShowMore.svelte';
+  import Spinner from '$lib/ui/Spinner.svelte';
   import Table from '$lib/ui/Table.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
   let intake = $state<Intake | null>(null);
   let skipped = $state<string[]>([]);
-  let message = $state('Loading intake');
-  let busy = $state(false);
+  let loading = $state('Loading intake');
+  let loadError = $state('');
+  let pending = $state<'' | 'ingest' | 'all' | 'selected'>('');
   let selected = $state<string[]>([]);
 
-  async function load() {
+  const busy = $derived(pending !== '');
+
+  async function load(first = false) {
+    if (first) {
+      loading = 'Loading intake';
+      loadError = '';
+    }
     try {
       intake = await getIntake();
-      if (intake.draftPending) message = 'Planner is drafting requirement ids';
-      else if (message === 'Loading intake') message = 'Intake';
+      loadError = '';
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      if (intake) toast.error(failureText(error));
+      else loadError = failureText(error);
+    } finally {
+      loading = '';
     }
   }
 
   $effect(() => {
     if (shell.projectId === '') return;
-    void load();
+    void load(true);
   });
 
   $effect(() => {
@@ -109,41 +121,49 @@
   }
 
   async function readDocs() {
-    busy = true;
-    message = 'Reading docs/prd and docs/rfc';
+    pending = 'ingest';
     try {
       intake = await ingest();
       skipped = intake.skipped ?? [];
-      message = 'Intake';
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      pending = '';
     }
   }
 
-  async function accept(ids: string[]) {
+  async function accept(ids: string[], from: 'all' | 'selected') {
     if (ids.length === 0) return;
-    busy = true;
-    message = `Accepting ${ids.length} ${ids.length === 1 ? 'requirement' : 'requirements'}`;
+    pending = from;
     try {
       intake = await acceptRequirements(ids);
       selected = [];
-      message = 'Accepted. Cards appear on the board shortly.';
+      toast.success('Accepted. Cards appear on the board shortly.');
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      pending = '';
     }
   }
 
-  showShell(() => ({ title: 'Intake', message }));
+  showShell(() => ({ title: 'Intake' }));
 </script>
 
 <Page
   title="Intake"
   description="Requirements read from the PRD and RFCs, or added by hand, and the decisions from the RFCs. Cards are built only from accepted requirements."
+  {loading}
+  error={loadError}
+  onretry={() => void load(true)}
 >
+  {#snippet summary()}
+    {#if intake?.draftPending}
+      <p class="flex items-center gap-2 text-sm text-muted" role="status">
+        <Spinner />
+        Planner is drafting requirement ids. This page refreshes on its own.
+      </p>
+    {/if}
+  {/snippet}
   {#snippet meta()}
     {#if requirements.length > 0}
       <Badge tone={counts.accepted === counts.all ? 'green' : 'default'}>
@@ -152,12 +172,11 @@
     {/if}
   {/snippet}
   {#snippet actions()}
-    <IntakeActions {busy} selecting={selected.length > 0} oningest={() => void readDocs()} />
+    <IntakeActions {busy} ingesting={pending === 'ingest'} selecting={selected.length > 0} oningest={() => void readDocs()} />
   {/snippet}
 
   <div class="flex flex-col gap-4">
     {#if intake?.planError}<Notice tone="danger">{intake.planError}</Notice>{/if}
-    {#if intake?.draftPending}<Notice>The planner is drafting requirement ids. This page refreshes on its own.</Notice>{/if}
     {#if skipped.length > 0}
       <Notice>
         {skipped.join(', ')}
@@ -210,8 +229,9 @@
               <Button
                 type="button"
                 variant="secondary"
+                loading={pending === 'all'}
                 disabled={busy || Boolean(intake.draftPending)}
-                onclick={() => void accept(acceptable)}
+                onclick={() => void accept(acceptable, 'all')}
               >
                 Accept all shown ({acceptable.length})
               </Button>
@@ -305,7 +325,13 @@
       </p>
       <div class="flex gap-2">
         <Button type="button" variant="ghost" disabled={busy} onclick={() => (selected = [])}>Clear</Button>
-        <Button type="button" variant="primary" disabled={busy || Boolean(intake?.draftPending)} onclick={() => void accept(selected)}>
+        <Button
+          type="button"
+          variant="primary"
+          loading={pending === 'selected'}
+          disabled={busy || Boolean(intake?.draftPending)}
+          onclick={() => void accept(selected, 'selected')}
+        >
           Accept selected
         </Button>
       </div>

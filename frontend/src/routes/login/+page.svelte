@@ -1,17 +1,20 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, openSession } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
+  import { openSession } from '$lib/api';
+  import { failureText, focusInvalid } from '$lib/forms';
   import { session } from '$lib/session';
   import { showShell } from '$lib/shell.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Icon from '$lib/ui/Icon.svelte';
 
   let email = $state('');
   let password = $state('');
-  let message = $state('');
+  let problem = $state('');
+  let fields = $state<{ email?: string; password?: string }>({});
   let busy = $state(false);
+  let form = $state<HTMLFormElement>();
 
   const facts = [
     'Requirements stay accepted before code.',
@@ -21,17 +24,33 @@
 
   showShell(() => ({ title: 'Sign in' }));
 
+  function signInFailure(error: unknown) {
+    const status = (error as { status?: number } | null)?.status;
+    if (status === 401) return 'Email or password is wrong.';
+    if (status === 429) return 'Too many attempts. Wait one minute.';
+    return failureText(error);
+  }
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
+    problem = '';
+    fields = {
+      ...(email.trim() === '' ? { email: 'Enter your email' } : {}),
+      ...(password === '' ? { password: 'Enter your password' } : {})
+    };
+    if (fields.email || fields.password) {
+      void focusInvalid(form);
+      return;
+    }
     busy = true;
-    message = 'Signing in';
     try {
-      const body = await openSession(email, password);
+      const body = await openSession(email.trim(), password);
       session.set(body.bearer);
       await goto('/choose-tribe');
     } catch (error) {
-      if (error instanceof ApiError && error.status === 429) message = 'Too many attempts. Wait one minute.';
-      else message = error instanceof Error ? error.message : 'API unreachable at http://127.0.0.1:8787';
+      problem = signInFailure(error);
+      password = '';
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -65,21 +84,28 @@
       </div>
       <h1 class="text-xl font-semibold">Sign in</h1>
       <p class="mt-1 text-sm text-muted">Use the email and password an admin gave you.</p>
-      <form class="mt-6 flex flex-col gap-4" onsubmit={submit}>
-        <Field label="Email" id="email" type="email" width="full" autocomplete="email" bind:value={email} />
+      <form class="mt-6 flex flex-col gap-4" onsubmit={submit} bind:this={form} novalidate>
+        <FormAlert message={problem} />
+        <Field
+          label="Email"
+          id="email"
+          type="email"
+          width="full"
+          autocomplete="email"
+          error={fields.email}
+          bind:value={email}
+        />
         <Field
           label="Password"
           id="password"
           type="password"
           width="full"
           autocomplete="current-password"
+          error={fields.password}
           bind:value={password}
         />
-        <Button variant="primary" type="submit" full disabled={busy}>{busy ? 'Signing in' : 'Sign in'}</Button>
+        <Button variant="primary" type="submit" full icon="log-in" loading={busy}>Sign in</Button>
       </form>
-      <div class="mt-4">
-        <Live {message} />
-      </div>
     </div>
   </section>
 </div>

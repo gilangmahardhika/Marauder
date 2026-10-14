@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 import type { TraceAttempt, TraceEvent, TraceStreamEvent } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getTrace: vi.fn(), getCard: vi.fn(), streamTrace: vi.fn() }));
@@ -103,6 +104,7 @@ afterEach(() => {
   shell.projectId = '';
   route.search = '';
   setVisibility('visible');
+  toast.clear();
 });
 
 test('streams while live: merges stored events, shows the reply as it is written, and stops when the card is done', async () => {
@@ -155,12 +157,28 @@ test('streams while live: merges stored events, shows the reply as it is written
     { kind: 'trace', attempts: [{ ...attempt, endedAt: '2026-10-12T10:00:20Z', outcome: 'checks_passed' }], events: [], live: false },
     { kind: 'done', live: false }
   );
+  expect(toast.items.map((item) => `${item.tone}: ${item.text}`)).toEqual(['info: Attempt 1 ended: Checks passed']);
   stream.end();
   await vi.advanceTimersByTimeAsync(10000);
   expect(screen.queryByText('Live')).toBeNull();
-  expect(shell.message).toBe('Attempt 1 ended: Checks passed');
   expect(api.getTrace).toHaveBeenCalledTimes(1);
   expect(api.streamTrace).toHaveBeenCalledTimes(1);
+});
+
+test('a failed first load shows the error with Try again', async () => {
+  api.getTrace.mockRejectedValueOnce(new Error('The trace is unavailable.'));
+  render(TracePage);
+  expect(screen.getByRole('status').textContent).toContain('Loading trace');
+  await vi.advanceTimersByTimeAsync(0);
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('The trace is unavailable.');
+
+  api.getTrace.mockResolvedValue({ attempts: [], events: [first], live: false });
+  alert.querySelector('button')?.click();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByRole('list', { name: 'Events, oldest first' })).toBeTruthy();
+  expect(api.getTrace).toHaveBeenCalledTimes(2);
 });
 
 test('a filter that hides model calls hides the reply being written', async () => {

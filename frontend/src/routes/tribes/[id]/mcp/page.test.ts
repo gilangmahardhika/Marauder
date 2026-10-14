@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { toast } from '$lib/toast.svelte';
 import type { MCPCatalogEntry, MCPServer } from '$lib/types';
 
 const api = vi.hoisted(() => ({
@@ -66,6 +67,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  toast.clear();
   nav.href = 'http://127.0.0.1:4173/tribes/tribe_gadget/mcp';
 });
 
@@ -106,6 +108,7 @@ test('keeps a saved header, and allows a discovered tool', async () => {
   expect(body.secrets).toEqual({});
   expect(body.clear).toEqual([]);
   expect(body.tools).toEqual([{ name: 'lookup', description: 'Find a ticket', schema: { type: 'object' } }]);
+  await waitFor(() => expect(toast.items.map((item) => item.text)).toEqual(['Saved tickets']));
 });
 
 test('shows a failed discovery as its fixed message', async () => {
@@ -141,6 +144,28 @@ test('creates a stdio server with an environment secret', async () => {
     tools: []
   });
   await waitFor(() => expect(nav.goto).toHaveBeenCalledWith('/tribes/tribe_gadget/mcp/mcp_2?discover=1'));
+  expect(toast.items.map((item) => item.text)).toEqual(['Added docs']);
+});
+
+test('a refused secret name shows on its row and a connection error in the alert', async () => {
+  const { ApiError } = await import('$lib/api');
+  const refused = new ApiError(400, 'validation', 'validation');
+  refused.fields = {
+    secrets: 'secret name bad name is not a valid header, environment, or PASSWORD name',
+    tools: 'a server has at most 32 tools'
+  };
+  api.createMCPServer.mockRejectedValueOnce(refused);
+  render(NewPage);
+  await fireEvent.input(screen.getByLabelText('Slug'), { target: { value: 'docs' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add header' }));
+  await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'bad name' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Add server' }));
+  expect(await screen.findByText(/secret name bad name is not a valid header/)).toBeTruthy();
+  expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBe('true');
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('Check the fields marked below.');
+  expect(alert.textContent).toContain('a server has at most 32 tools');
+  expect(alert.textContent).not.toContain('secret name bad name');
 });
 
 const dbTools = [
@@ -319,6 +344,9 @@ test('sets up Postgres from the catalog with its fixed tools and a read-only log
   await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'reader-password' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Add server' }));
   expect(await screen.findByText('confirm that this login can only read')).toBeTruthy();
+  expect(screen.getByLabelText(/This login can only read/).getAttribute('aria-invalid')).toBe('true');
+  expect(screen.getByRole('alert').textContent).toContain('Check the fields marked below.');
+  expect((screen.getByLabelText('Password') as HTMLInputElement).value).toBe('reader-password');
 
   await fireEvent.click(screen.getByLabelText(/This login can only read/));
   await fireEvent.click(screen.getByRole('button', { name: 'Add server' }));

@@ -1,6 +1,5 @@
 export const shell = $state({
   title: 'Marauder',
-  message: '',
   admin: false,
   name: '',
   email: '',
@@ -18,10 +17,8 @@ export function managesAnyTribe() {
   return shell.admin || shell.tribeAdminOf.length > 0;
 }
 
-export function showShell(get: () => { title: string; message?: string }) {
+export function showShell(get: () => { title: string }) {
   $effect(() => {
-    const next = get();
-    shell.title = next.title;
-    shell.message = next.message ?? '';
+    shell.title = get().title;
   });
 }

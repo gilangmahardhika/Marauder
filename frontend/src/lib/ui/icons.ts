@@ -24,9 +24,45 @@ export type IconName =
   | 'mcp'
   | 'server'
   | 'copy'
-  | 'bell';
+  | 'bell'
+  | 'trash'
+  | 'save'
+  | 'play'
+  | 'refresh'
+  | 'send'
+  | 'pencil'
+  | 'arrow-left'
+  | 'external'
+  | 'log-in'
+  | 'log-out'
+  | 'unlock'
+  | 'ban'
+  | 'upload'
+  | 'zap'
+  | 'search'
+  | 'info'
+  | 'bell-off'
+  | 'message';
 
 export const iconPaths: Record<IconName, string[]> = {
+  trash: ['M4 7h16', 'M10 11v6', 'M14 11v6', 'M6 7l1 13h10l1-13', 'M9 7V4h6v3'],
+  save: ['M5 4h11l3 3v13H5z', 'M8 4v5h7V4', 'M8 20v-6h8v6'],
+  play: ['M8 5v14l11-7z'],
+  refresh: ['M20 11a8 8 0 00-14.3-4.9L4 8', 'M4 4v4h4', 'M4 13a8 8 0 0014.3 4.9L20 16', 'M20 20v-4h-4'],
+  send: ['M21 3L10 14', 'M21 3l-7 18-4-7-7-4z'],
+  pencil: ['M15.5 4.5l4 4L8 20H4v-4z', 'M13.5 6.5l4 4'],
+  'arrow-left': ['M19 12H5', 'M11 6l-6 6 6 6'],
+  external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v6H4V6h6'],
+  'log-in': ['M14 4h5v16h-5', 'M3 12h11', 'M10 8l4 4-4 4'],
+  'log-out': ['M10 4H5v16h5', 'M21 12H10', 'M17 8l4 4-4 4'],
+  unlock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 017.7-1.5', 'M12 15v2'],
+  ban: ['M12 21a9 9 0 100-18 9 9 0 000 18', 'M5.6 5.6l12.8 12.8'],
+  upload: ['M12 15V4', 'M7 9l5-5 5 5', 'M4 15v5h16v-5'],
+  zap: ['M13 3L5 14h6l-1 7 8-11h-6z'],
+  search: ['M11 18a7 7 0 100-14 7 7 0 000 14', 'M16 16l4.5 4.5'],
+  info: ['M12 21a9 9 0 100-18 9 9 0 000 18', 'M12 11v5', 'M12 7.5h.01'],
+  'bell-off': ['M4 4l16 16', 'M8.5 5.3A6 6 0 0118 11v3.5', 'M6 11v5l-1.5 2H16', 'M10 20.5a2 2 0 004 0'],
+  message: ['M4 5h16v11H9l-5 4z', 'M8 9.5h8', 'M8 12.5h5'],
   copy: ['M9 9h11v11H9z', 'M15 9V4H4v11h5'],
   bell: ['M6 16v-5a6 6 0 0112 0v5l1.5 2h-15z', 'M10 20.5a2 2 0 004 0'],
   alert: ['M12 3.5L21.5 20h-19z', 'M12 10v4.5', 'M12 17.5h.01'],

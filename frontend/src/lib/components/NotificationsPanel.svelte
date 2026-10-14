@@ -1,13 +1,14 @@
 <script lang="ts">
-  import { ApiError, testPush, unreachable } from '$lib/api';
+  import { testPush } from '$lib/api';
+  import { failureText } from '$lib/forms';
   import { disablePush, enablePush, syncPush, type PushState } from '$lib/push';
+  import { toast } from '$lib/toast.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Panel from '$lib/ui/Panel.svelte';
 
   let mode = $state<PushState | 'loading'>('loading');
-  let busy = $state(false);
-  let result = $state('');
+  let pending = $state<'' | 'on' | 'off' | 'test'>('');
 
   const hints: Record<PushState | 'loading', string> = {
     loading: 'Checking this browser.',
@@ -23,34 +24,34 @@
       .catch(() => (mode = 'off'));
   });
 
-  async function run(action: () => Promise<PushState>, done: string) {
-    busy = true;
-    result = '';
+  async function run(which: 'on' | 'off', action: () => Promise<PushState>, done: string) {
+    pending = which;
     try {
       mode = await action();
-      result = mode === 'blocked' ? 'Notifications are blocked in browser settings.' : done;
+      if (mode === 'blocked') toast.error('Notifications are blocked in browser settings.');
+      else toast.success(done);
     } catch (error) {
-      result = error instanceof ApiError ? error.message : error instanceof Error ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      pending = '';
     }
   }
 
   async function sendTest() {
-    busy = true;
-    result = '';
+    pending = 'test';
     try {
       const { sent } = await testPush();
-      result = sent > 0 ? 'Test sent. It should appear in a few seconds.' : 'No browser took the test. Turn notifications off and on again.';
+      if (sent > 0) toast.success('Test sent. It should appear in a few seconds.');
+      else toast.error('No browser took the test. Turn notifications off and on again.');
     } catch (error) {
-      result = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      pending = '';
     }
   }
 </script>
 
-<Panel title="Browser notifications" hint={hints[mode]}>
+<Panel title="Browser notifications">
   {#snippet actions()}
     {#if mode === 'on'}
       <Badge tone="green">On</Badge>
@@ -60,17 +61,31 @@
       <Badge>Off</Badge>
     {/if}
   {/snippet}
-  <p class="text-sm text-muted" role="status">{result}</p>
+  <p class="text-sm text-muted">{hints[mode]}</p>
   {#snippet footer()}
     {#if mode === 'on'}
-      <Button variant="secondary" disabled={busy} onclick={() => void sendTest()}>Send a test</Button>
-      <Button variant="secondary" disabled={busy} onclick={() => void run(disablePush, 'Notifications are off for this browser.')}>
-        Turn off
-      </Button>
+      <Button
+        variant="secondary"
+        icon="send"
+        loading={pending === 'test'}
+        disabled={pending !== ''}
+        onclick={() => void sendTest()}>Send a test</Button
+      >
+      <Button
+        variant="secondary"
+        icon="bell-off"
+        loading={pending === 'off'}
+        disabled={pending !== ''}
+        onclick={() => void run('off', disablePush, 'Notifications are off for this browser.')}>Turn off</Button
+      >
     {:else if mode === 'off'}
-      <Button variant="primary" disabled={busy} onclick={() => void run(enablePush, 'Notifications are on for this browser.')}>
-        Turn on
-      </Button>
+      <Button
+        variant="primary"
+        icon="bell"
+        loading={pending === 'on'}
+        disabled={pending !== ''}
+        onclick={() => void run('on', enablePush, 'Notifications are on for this browser.')}>Turn on</Button
+      >
     {/if}
   {/snippet}
 </Panel>

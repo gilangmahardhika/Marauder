@@ -5,6 +5,7 @@
   import type { RefineEvent, RefineField, RefineStream } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
 
   let {
     field,
@@ -129,7 +130,7 @@
       {#if phase === 'streaming'}
         <Button onclick={stop}>Stop</Button>
       {:else}
-        <Button onclick={() => void ask()}>{phase === 'error' ? 'Try again' : 'Refine'}</Button>
+        <Button icon={phase === 'error' ? 'refresh' : 'spark'} onclick={() => void ask()}>{phase === 'error' ? 'Try again' : 'Refine'}</Button>
       {/if}
     </div>
   {/if}
@@ -148,7 +149,7 @@
       {text}<span class="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 bg-ink motion-safe:animate-pulse" aria-hidden="true"></span>
     </div>
   {:else if phase === 'error'}
-    <p class="error text-sm" role="alert">{error}</p>
+    <FormAlert message={error} />
   {:else if phase === 'done'}
     <RefineCompare
       {field}

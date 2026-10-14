@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { ApiError } from '$lib/api';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 import type { Intake, RefineEvent, Requirement } from '$lib/types';
 
 const api = vi.hoisted(() => ({
@@ -16,8 +18,16 @@ vi.mock('$app/stores', () => ({
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api', () => ({
-  ApiError: class ApiError extends Error {},
-  unreachable: () => 'API unreachable',
+  ApiError: class ApiError extends Error {
+    constructor(
+      public status: number,
+      public code: string,
+      message: string,
+      public fields: Record<string, string> = {}
+    ) {
+      super(message);
+    }
+  },
   getIntake: api.getIntake,
   updateRequirement: api.updateRequirement,
   streamRefine: api.streamRefine,
@@ -56,6 +66,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   shell.projectId = '';
+  toast.clear();
 });
 
 test('refining acceptance, Apply, and Save send the new acceptance with the statement unchanged', async () => {
@@ -91,7 +102,32 @@ test('refining acceptance, Apply, and Save send the new acceptance with the stat
       acceptance: ['The export has one row per card.']
     })
   );
-  await waitFor(() => expect(shell.message).toBe('Requirement saved. It needs acceptance again.'));
+  await waitFor(() =>
+    expect(toast.items.map((item) => [item.tone, item.text])).toEqual([['success', 'Requirement saved. It needs acceptance again.']])
+  );
+});
+
+test('a rejected save shows the field error under the statement and keeps the text', async () => {
+  api.updateRequirement.mockRejectedValue(
+    new ApiError(422, 'invalid', 'validation failed', { statement: 'Keep the statement to 4000 characters or fewer.' })
+  );
+  render(RequirementPage);
+  const statement = (await screen.findByLabelText('Statement')) as HTMLTextAreaElement;
+  await waitFor(() => expect(statement.value).toBe('Export the board.'));
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(statement.getAttribute('aria-invalid')).toBe('true'));
+  expect(screen.getByText('Keep the statement to 4000 characters or fewer.')).toBeTruthy();
+  expect(screen.getByRole('alert').textContent).toContain('Check the fields marked below.');
+  expect(statement.value).toBe('Export the board.');
+  expect(toast.items).toEqual([]);
+});
+
+test('a failed load shows the error with Try again', async () => {
+  api.getIntake.mockRejectedValueOnce(new Error('intake read failed'));
+  render(RequirementPage);
+  expect((await screen.findByRole('alert')).textContent).toContain('intake read failed');
+  await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByLabelText('Statement')).toBeTruthy();
 });
 
 test('a PRD row has no refine button', async () => {

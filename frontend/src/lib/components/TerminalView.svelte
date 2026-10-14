@@ -65,7 +65,7 @@
     aria-label="Terminal output, oldest first"
     aria-busy={writing ? 'true' : undefined}
     tabindex="0"
-    class="max-h-[75vh] overflow-auto rounded-panel bg-ink px-4 py-3 font-mono text-xs leading-5 text-ground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+    class="scrollbar-dark max-h-[75vh] overflow-auto rounded-panel bg-ink px-4 py-3 font-mono text-xs leading-5 text-ground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
   >
     {#if start > 0}
       <button

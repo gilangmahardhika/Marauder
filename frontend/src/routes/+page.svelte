@@ -1,13 +1,15 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getCards, runCard, startRun, unreachable } from '$lib/api';
+  import { ApiError, getCards, runCard, startRun } from '$lib/api';
   import { filterCards, mergeCards, ownerChoices, parseOwners } from '$lib/board';
   import BoardCard from '$lib/components/BoardCard.svelte';
   import OwnerFilter from '$lib/components/OwnerFilter.svelte';
+  import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { session } from '$lib/session';
   import { shell, showShell } from '$lib/shell.svelte';
   import { live } from '$lib/stream.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -31,10 +33,16 @@
   let running = $state(false);
   let loaded = $state(false);
   let unavailable = $state(false);
-  let message = $state('Loading board');
+  let loading = $state('Loading board');
+  let loadError = $state('');
+  let queueing = $state(false);
   let busy = $state(false);
 
-  async function load() {
+  async function load(first = false) {
+    if (first) {
+      loading = 'Loading board';
+      loadError = '';
+    }
     try {
       const board = await getCards();
       cards = board.cards;
@@ -43,18 +51,19 @@
       running = board.running;
       loaded = true;
       unavailable = false;
-      if (message === 'Loading board') message = 'Board';
+      loadError = '';
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404) {
-        unavailable = true;
-        message = 'That project is not available.';
-      } else message = error instanceof ApiError ? error.message : unreachable();
+      if (error instanceof ApiError && error.status === 404) unavailable = true;
+      else if (loaded) toast.error(failureText(error));
+      else loadError = failureText(error);
+    } finally {
+      loading = '';
     }
   }
 
   $effect(() => {
     if (shell.projectId === '') return;
-    void load();
+    void load(true);
   });
 
   $effect(() =>
@@ -63,7 +72,7 @@
         cards = mergeCards(cards, event);
         loaded = true;
         unavailable = false;
-        if (message === 'Loading board') message = 'Board';
+        loading = '';
       } else if (event.kind === 'board') {
         canRun = event.canRun;
         readyCount = event.readyCount;
@@ -86,32 +95,30 @@
   });
 
   async function run() {
-    busy = true;
-    message = 'Queueing ready cards';
+    queueing = true;
     try {
       const result = await startRun();
       await load();
-      message = `Queued ${result.queued} ${result.queued === 1 ? 'card' : 'cards'}.`;
+      toast.success(`Queued ${result.queued} ${result.queued === 1 ? 'card' : 'cards'}.`);
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      queueing = false;
     }
   }
 
   async function runOne(card: Card) {
     busy = true;
-    message = `Queueing ${card.title}`;
     try {
       const next = await runCard(card.id);
       cards = cards.map((item) => (item.id === next.id ? { ...item, ...next } : item));
       readyCount = Math.max(0, readyCount - 1);
-      message = `Queued ${next.title}.`;
+      toast.success(`Queued ${next.title}.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         await load();
-        message = 'Card changed. Reloaded.';
-      } else message = error instanceof ApiError ? error.message : unreachable();
+        toast.info('Card changed. Reloaded.');
+      } else toast.error(failureText(error));
     } finally {
       busy = false;
     }
@@ -147,18 +154,31 @@
       : `${visible.length} ${visible.length === 1 ? 'card' : 'cards'}${running ? ' · worker running' : ''}`
   );
 
-  showShell(() => ({ title: 'Board', message }));
+  const noProject = $derived(shell.projectId === '' && session.project() === '');
+
+  showShell(() => ({ title: 'Board' }));
 </script>
 
-<Page title="Board" description={summary}>
+<Page
+  title="Board"
+  description={summary}
+  loading={noProject ? '' : loading}
+  error={loadError}
+  onretry={() => void load(true)}
+>
   {#snippet actions()}
     <span title={runHint}>
-      <Button variant="primary" type="button" disabled={!canRun || readyCount === 0 || busy} onclick={() => void run()}
-        >Run ready cards ({readyCount})</Button
+      <Button
+        variant="primary"
+        type="button"
+        icon="play"
+        loading={queueing}
+        disabled={!canRun || readyCount === 0 || busy}
+        onclick={() => void run()}>Run ready cards ({readyCount})</Button
       >
     </span>
   {/snippet}
-  {#if shell.projectId === '' && session.project() === ''}
+  {#if noProject}
     <EmptyState
       title="This tribe has no projects yet."
       description="An admin or a tribe admin adds projects. Switch tribe in the sidebar to work in another one."
@@ -224,7 +244,7 @@
             </h2>
             <div class="flex flex-col gap-2">
               {#each column as card (card.id)}
-                <BoardCard {card} {busy} onrun={(next) => void runOne(next)} />
+                <BoardCard {card} busy={busy || queueing} onrun={(next) => void runOne(next)} />
               {:else}
                 <p class="rounded-control border border-dashed border-line-strong px-3 py-4 text-xs text-muted">No cards</p>
               {/each}

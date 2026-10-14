@@ -217,3 +217,30 @@ func getAuth(t *testing.T, srv *httpapi.Server, path, token string) *httptest.Re
 	srv.Handler().ServeHTTP(rec, req)
 	return rec
 }
+
+func TestChangePasswordWrongCurrent(t *testing.T) {
+	srv := accountServer(t)
+	seedUser(t, srv, "ada@example.com", "password-long-1", "developer", false)
+	login := postJSON(t, srv, "/api/session", "", map[string]string{"email": "ada@example.com", "password": "password-long-1"})
+	var session struct {
+		Bearer string `json:"bearer"`
+	}
+	if err := json.Unmarshal(login.Body.Bytes(), &session); err != nil || session.Bearer == "" {
+		t.Fatalf("login = %d %s", login.Code, login.Body.String())
+	}
+	rec := putJSON(t, srv, "/api/me/password", session.Bearer, map[string]string{
+		"currentPassword": "not-the-password", "newPassword": "password-long-2",
+	})
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), `"currentPassword":"Current password is wrong."`) {
+		t.Fatalf("status = %d %s", rec.Code, rec.Body.String())
+	}
+	if me := getAuth(t, srv, "/api/me", session.Bearer); me.Code != 200 {
+		t.Fatalf("session ended: me = %d", me.Code)
+	}
+	ok := putJSON(t, srv, "/api/me/password", session.Bearer, map[string]string{
+		"currentPassword": "password-long-1", "newPassword": "password-long-2",
+	})
+	if ok.Code != 204 {
+		t.Fatalf("change = %d %s", ok.Code, ok.Body.String())
+	}
+}

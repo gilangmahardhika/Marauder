@@ -701,7 +701,7 @@ A wrong password is `401`. Five wrong passwords for that email pause further att
 { "currentPassword": "a long passphrase", "newPassword": "another long passphrase" }
 ```
 
-A wrong current password is `401`. A short new password is `422` on `newPassword`.
+A wrong current password is `422` on `currentPassword` with "Current password is wrong.", not `401`, because a `401` signs the client out. A short new password is `422` on `newPassword`.
 
 `GET /api/me/usage?from=&to=` is `GET /api/usage` for the caller's own calls: calls on cards they own and refines they ran, in any project (RFC-090). Any signed-in user may call it. Every row has the caller's `userId`.
 

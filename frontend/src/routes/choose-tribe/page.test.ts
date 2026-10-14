@@ -8,7 +8,6 @@ const api = vi.hoisted(() => ({ getTribes: vi.fn(), getProjects: vi.fn(), getMe:
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/api', () => ({
   ApiError: class ApiError extends Error {},
-  unreachable: () => 'API unreachable',
   ...api
 }));
 
@@ -68,4 +67,15 @@ test('with no tribe a member is told to ask an admin, and an admin can create on
   api.getMe.mockResolvedValue({ admin: true });
   render(ChooseTribePage);
   expect((await screen.findByRole('link', { name: 'Create a tribe' })).getAttribute('href')).toBe('/tribes/new');
+});
+
+test('a failed load shows the error with Try again, and Try again reads the tribes again', async () => {
+  api.getTribes.mockRejectedValueOnce(new Error('tribes read failed'));
+  render(ChooseTribePage);
+  expect(screen.getByRole('status').textContent).toContain('Loading tribes');
+  expect((await screen.findByRole('alert')).textContent).toContain('tribes read failed');
+  await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByRole('button', { name: /Alpha/ })).toBeTruthy();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(api.getTribes).toHaveBeenCalledTimes(2);
 });

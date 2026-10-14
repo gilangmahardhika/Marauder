@@ -1,39 +1,43 @@
 <script lang="ts">
-  import { ApiError, setInstructions, unreachable } from '$lib/api';
-  import { shell } from '$lib/shell.svelte';
+  import { setInstructions } from '$lib/api';
+  import { focusInvalid, formFailure, noFailure } from '$lib/forms';
+  import { toast } from '$lib/toast.svelte';
   import type { Card } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import Markdown from './Markdown.svelte';
+
+  const shown = ['instructions'];
 
   let { card = $bindable() }: { card: Card } = $props();
 
   let editing = $state(false);
   let text = $state('');
-  let error = $state('');
+  let failure = $state(noFailure);
   let busy = $state(false);
+  let form = $state<HTMLFormElement>();
 
   const current = $derived(card.instructions ?? '');
 
   function edit() {
     text = current;
-    error = '';
+    failure = noFailure;
     editing = true;
   }
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    error = '';
-    shell.message = 'Saving instructions';
+    failure = noFailure;
     try {
       card = await setInstructions(card.id, text);
       editing = false;
-      shell.message = 'Instructions saved';
-    } catch (failure) {
-      error = failure instanceof ApiError ? (failure.fields.instructions ?? failure.message) : unreachable();
-      shell.message = failure instanceof ApiError ? failure.message : unreachable();
+      toast.success('Instructions saved');
+    } catch (error) {
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -41,7 +45,7 @@
 </script>
 
 {#snippet editButton()}
-  <Button type="button" variant="secondary" onclick={edit}>Edit</Button>
+  <Button type="button" variant="secondary" icon="pencil" onclick={edit}>Edit</Button>
 {/snippet}
 
 <Panel
@@ -50,7 +54,8 @@
   actions={editing ? undefined : editButton}
 >
   {#if editing}
-    <form class="flex flex-col items-start gap-3" onsubmit={save}>
+    <form class="flex flex-col items-start gap-3" onsubmit={save} bind:this={form} novalidate>
+      <FormAlert message={failure.message} extra={failure.extra} />
       <Field
         label="Instructions for later attempts"
         id="card-instructions"
@@ -59,11 +64,11 @@
         rows={4}
         grow
         hint="Leave it empty to clear them. Markdown works."
-        {error}
+        error={failure.fields.instructions}
         bind:value={text}
       />
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="primary" type="submit" disabled={busy}>Save</Button>
+        <Button variant="primary" type="submit" icon="save" loading={busy}>Save</Button>
         <Button variant="ghost" type="button" disabled={busy} onclick={() => (editing = false)}>Cancel</Button>
       </div>
     </form>

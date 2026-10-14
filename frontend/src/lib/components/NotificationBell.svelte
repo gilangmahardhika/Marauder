@@ -3,17 +3,14 @@
   import { stamp } from '$lib/format';
   import { session } from '$lib/session';
   import { live } from '$lib/stream.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { AppNotification } from '$lib/types';
   import Icon from '$lib/ui/Icon.svelte';
-
-  /** How long a new notification's message stays under the bell. */
-  const toastFor = 6000;
 
   let items = $state<AppNotification[]>([]);
   let unread = $state(0);
   let failed = $state(false);
   let open = $state(false);
-  let toast = $state('');
   let root = $state<HTMLDivElement | undefined>();
   let trigger = $state<HTMLButtonElement | undefined>();
 
@@ -47,16 +44,10 @@
         const note = event.notification;
         items = [note, ...items.filter((item) => item.id !== note.id)].slice(0, 50);
         unread = event.unread;
-        toast = `${note.title}: ${note.body}`;
+        toast.info(`${note.title}: ${note.body}`, { href: target(note.url), label: 'Open' });
       }
     })
   );
-
-  $effect(() => {
-    if (toast === '') return;
-    const timer = setTimeout(() => (toast = ''), toastFor);
-    return () => clearTimeout(timer);
-  });
 
   async function markRead(note: AppNotification) {
     open = false;
@@ -132,15 +123,6 @@
       >
     {/if}
   </button>
-  <p
-    role="status"
-    class="pointer-events-none absolute right-0 top-full z-20 mt-2 w-72 max-w-[calc(100vw-1rem)] rounded-control bg-ink px-3 py-2 text-[13px] text-surface shadow-lg {toast &&
-    !open
-      ? ''
-      : 'sr-only'}"
-  >
-    {toast}
-  </p>
   {#if open}
     <div
       role="group"

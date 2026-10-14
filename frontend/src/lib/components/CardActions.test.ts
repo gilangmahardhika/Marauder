@@ -2,11 +2,17 @@ import { fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, expect, test, vi } from 'vitest';
 import CardActions from './CardActions.svelte';
 import { session } from '$lib/session';
+import { toast } from '$lib/toast.svelte';
 import type { Card } from '$lib/types';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  toast.clear();
 });
+
+function toasts() {
+  return toast.items.map((item) => `${item.tone}: ${item.text}`);
+}
 
 function card(partial: Partial<Card>): Card {
   return {
@@ -104,6 +110,71 @@ test('approve names the head SHA and shows the AI review beside it', async () =>
   await fireEvent.input(field, { target: { value: 'bbbbbbb2222222' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Approve bbbbbbb' }));
   await vi.waitFor(() => expect(bodies).toEqual([{ sha: 'bbbbbbb2222222' }]));
+  await vi.waitFor(() => expect(toasts()).toEqual(['success: Approved']));
+});
+
+test('a SHA error opens the SHA input and shows under it', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ error: { code: 'validation', message: 'bad sha', fields: { sha: 'Use a full 40 character SHA.' } } }),
+          { status: 422 }
+        )
+    )
+  );
+  render(CardActions, {
+    card: card({ status: 'human_review', group: 'review', actions: ['approve'], headSha: 'ae5d4418f1f5c54e02c2ced82de2a5b66ba65753' })
+  });
+  expect(screen.queryByLabelText('SHA')).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Approve ae5d441' }));
+  expect(await screen.findByText('Use a full 40 character SHA.')).toBeTruthy();
+  const field = screen.getByLabelText('SHA');
+  expect(field.getAttribute('aria-invalid')).toBe('true');
+  expect(screen.getByRole('button', { name: 'Approve a different SHA' }).getAttribute('aria-expanded')).toBe('true');
+  expect(screen.getByRole('alert').textContent).toContain('Check the fields marked below.');
+  expect(toasts()).toEqual([]);
+});
+
+test('a 409 reloads the card and says so in an info toast', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  const calls: string[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push(`${init.method ?? 'GET'} ${url}`);
+      if (init.method === 'POST') {
+        return new Response(JSON.stringify({ error: { code: 'conflict', message: 'status changed' } }), { status: 409 });
+      }
+      return new Response(JSON.stringify(card({ status: 'done', group: 'finished', actions: [] })), { status: 200 });
+    })
+  );
+  render(CardActions, { card: card({ status: 'approved', group: 'shipping', actions: ['deploy'] }) });
+  await fireEvent.click(screen.getByRole('button', { name: 'Deploy approved SHA' }));
+  await vi.waitFor(() => expect(screen.queryByRole('button', { name: 'Deploy approved SHA' })).toBeNull());
+  expect(calls).toEqual([
+    'POST http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/deploy',
+    'GET http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab'
+  ]);
+  expect(toasts()).toEqual(['info: Card changed. Reloaded.']);
+});
+
+test('a failed action with no form shows an error toast', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ error: { code: 'deploy', message: 'Deploy command failed.' } }), { status: 502 }))
+  );
+  render(CardActions, { card: card({ status: 'approved', group: 'shipping', actions: ['deploy'] }) });
+  await fireEvent.click(screen.getByRole('button', { name: 'Deploy approved SHA' }));
+  await vi.waitFor(() => expect(toasts()).toEqual(['error: Deploy command failed.']));
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect((screen.getByRole('button', { name: 'Deploy approved SHA' }) as HTMLButtonElement).disabled).toBe(false);
 });
 
 test('approve without a head SHA shows the SHA field', () => {
@@ -145,9 +216,13 @@ test('request changes asks for a reason and sends it', async () => {
   await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
   expect(await screen.findByText('Keep the reason to 10 characters.')).toBeTruthy();
 
+  expect(box.getAttribute('aria-invalid')).toBe('true');
+  expect(document.activeElement).toBe(box);
+
   await fireEvent.input(box, { target: { value: 'Use lint.' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
   await vi.waitFor(() => expect(screen.queryByLabelText('What should change?')).toBeNull());
+  expect(toasts()).toEqual(['success: Changes requested']);
   expect(calls.map((call) => call.url)).toEqual([
     'http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/request-changes',
     'http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/request-changes'
@@ -278,6 +353,30 @@ test("won't fix asks for a reason beside the primary Unblock and posts it", asyn
       body: JSON.stringify({ reason: 'Superseded by REQ-009' })
     }
   ]);
+});
+
+test("a won't fix reason error stays on the won't fix form", async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: { code: 'validation', message: 'bad', fields: { reason: 'Say which requirement.' } } }), {
+          status: 422
+        })
+    )
+  );
+  render(CardActions, {
+    card: card({ status: 'blocked', group: 'stopped', actions: ['request_changes', 'wont_fix'], unblockTo: null })
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
+  await fireEvent.click(screen.getByRole('button', { name: "Won't fix" }));
+  await fireEvent.input(screen.getByLabelText("Why won't this be fixed?"), { target: { value: 'Dup' } });
+  await fireEvent.click(screen.getByRole('button', { name: "Close as won't fix" }));
+  expect(await screen.findByText('Say which requirement.')).toBeTruthy();
+  expect(screen.getByLabelText("Why won't this be fixed?").getAttribute('aria-invalid')).toBe('true');
+  expect(screen.getByLabelText('What should change?').getAttribute('aria-invalid')).toBeNull();
 });
 
 test('reopen posts to reopen', async () => {

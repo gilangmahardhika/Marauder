@@ -50,7 +50,7 @@
     <div class="flex items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs text-muted">
       {#if canRun}
         <span>Ready to start</span>
-        <Button type="button" disabled={busy} onclick={() => onrun(card)}>Run</Button>
+        <Button type="button" icon="play" disabled={busy} onclick={() => onrun(card)}>Run</Button>
       {:else if card.queued}
         <span class="rounded-full bg-sky-50 px-2 py-0.5 font-medium text-sky-800">Queued</span>
       {:else}

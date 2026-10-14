@@ -1,6 +1,16 @@
+<script lang="ts" module>
+  import type { RuleInput } from '$lib/types';
+
+  /** The API field keys an input on this form shows. */
+  export function ruleFields(rule: RuleInput) {
+    const base = ['scope', 'category', 'title', 'body', 'disabled'];
+    return rule.scope === 'stack' ? [...base, 'stackId'] : base;
+  }
+</script>
+
 <script lang="ts">
   import { categories } from '$lib/conventions';
-  import type { RuleInput, Stack } from '$lib/types';
+  import type { Stack } from '$lib/types';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import Field from '$lib/ui/Field.svelte';
   import Select from '$lib/ui/Select.svelte';
@@ -44,5 +54,11 @@
     bind:value={rule.body}
     error={fields.body ?? ''}
   />
-  <Checkbox id="rule-disabled" label="Disabled" hint="A disabled rule stays in the catalog and leaves every pack." bind:checked={rule.disabled} />
+  <Checkbox
+    id="rule-disabled"
+    label="Disabled"
+    hint="A disabled rule stays in the catalog and leaves every pack."
+    error={fields.disabled ?? ''}
+    bind:checked={rule.disabled}
+  />
 </div>

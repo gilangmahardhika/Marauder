@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { ApiError, getLinks, getProjects, getTribes, putLinks, unreachable } from '$lib/api';
+  import { session } from '$lib/session';
+  import { getLinks, getProjects, getTribes, putLinks } from '$lib/api';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { ProjectLink, ProjectRecord, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import { labelClass } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Icon from '$lib/ui/Icon.svelte';
-  import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import Row from '$lib/ui/Row.svelte';
@@ -17,14 +20,15 @@
   let projects = $state<ProjectRecord[]>([]);
   let tribes = $state<TribeRecord[]>([]);
   let loaded = $state(false);
+  let loading = $state('Loading linked projects');
   let loadError = $state('');
   let adding = $state('');
-  let fields = $state<Record<string, string>>({});
-  let message = $state('Loading linked projects');
+  let failure = $state(noFailure);
   let busy = $state(false);
   let canEdit = $state(true);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: 'Linked projects', message }));
+  showShell(() => ({ title: 'Linked projects' }));
 
   const self = $derived(projects.find((project) => project.id === shell.projectId));
   const tribeName = $derived(tribes.find((tribe) => tribe.id === self?.tribeId)?.name ?? 'this tribe');
@@ -44,8 +48,8 @@
       }))
   ]);
 
-  $effect(() => {
-    if (shell.projectId === '') return;
+  function load() {
+    loading = 'Loading linked projects';
     loadError = '';
     void Promise.all([getLinks(), getProjects(), getTribes().catch(() => ({ tribes: [] }))])
       .then(([linkBody, projectBody, tribeBody]) => {
@@ -54,12 +58,24 @@
         projects = projectBody.projects;
         tribes = tribeBody.tribes;
         loaded = true;
-        message = 'Linked projects';
       })
       .catch((error: unknown) => {
-        loadError = error instanceof ApiError ? error.message : unreachable();
-        message = loadError;
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    if (shell.projectId === '') {
+      if (session.project() === '') {
+        loading = '';
+        loadError = 'Choose a project in the sidebar first.';
+      }
+      return;
+    }
+    load();
   });
 
   function addLink(id: string) {
@@ -84,8 +100,7 @@
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = 'Saving linked projects';
+    failure = noFailure;
     try {
       const saved = await putLinks(
         links.map((link) => ({
@@ -95,10 +110,10 @@
       );
       links = saved.links;
       canEdit = saved.canEdit;
-      message = 'Linked projects saved';
+      toast.success('Linked projects saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -108,22 +123,20 @@
 <Page
   title="Linked projects"
   description="Projects in the same tribe whose context this project reads. The implementer sees their accepted requirements, decisions, and shared paths, read only."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
-  <form onsubmit={save}>
+  <form onsubmit={save} bind:this={form} novalidate>
     <fieldset class="flex min-w-0 flex-col gap-6" disabled={!canEdit}>
-      {#if loadError}
-        <Notice tone="danger">The projects did not load: {loadError}</Notice>
-      {/if}
-      {#if fields.links || fields.sharedPaths}
-        <Notice tone="danger">{fields.links ?? fields.sharedPaths}</Notice>
-      {/if}
+      <FormAlert message={failure.message} extra={failure.extra} />
       {#if loaded && links.length === 0}
         <EmptyState title="No linked projects" description="Link a project to share its requirements and files with this one." />
       {/if}
       {#each links as link, index (link.projectId)}
         <Panel title={link.name} hint={link.repo}>
           {#snippet actions()}
-            <Button type="button" variant="ghost" disabled={busy} onclick={() => removeLink(index)}>Remove link</Button>
+            <Button type="button" variant="ghost" icon="trash" disabled={busy} onclick={() => removeLink(index)}>Remove link</Button>
           {/snippet}
           <div class="flex flex-col gap-1.5">
             <p class={labelClass}>Shared paths</p>

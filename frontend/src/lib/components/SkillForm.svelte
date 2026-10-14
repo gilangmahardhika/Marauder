@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** The API field keys an input on this form shows. */
+  export const skillFields = ['slug', 'title', 'useWhen', 'body', 'disabled'];
+</script>
+
 <script lang="ts">
   import type { SkillInput } from '$lib/types';
   import Checkbox from '$lib/ui/Checkbox.svelte';
@@ -45,6 +50,7 @@
     id="skill-disabled"
     label="Disabled"
     hint="A disabled skill cannot be enabled or attached and leaves every pack."
+    error={fields.disabled ?? ''}
     bind:checked={skill.disabled}
   />
 </div>

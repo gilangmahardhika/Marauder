@@ -101,6 +101,11 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request) {
 			writeFields(w, 422, "validation", ve.Error(), fields)
 			return
 		}
+		// A 401 here would sign the caller out of a session that is still valid.
+		if errors.Is(err, app.ErrUnauthenticated) {
+			writeFields(w, 422, "validation", "current password", map[string]string{"currentPassword": "Current password is wrong."})
+			return
+		}
 		writeAccountErr(w, err)
 		return
 	}

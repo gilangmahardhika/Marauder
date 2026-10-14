@@ -2,7 +2,8 @@
   import type { Snippet } from 'svelte';
   import type { HTMLInputAttributes } from 'svelte/elements';
   import { autogrow } from './autogrow';
-  import { control, controlBase, labelClass, widths, type Width } from './control';
+  import { control, controlBase, describedBy, labelClass, widths, type Width } from './control';
+  import FieldError from './FieldError.svelte';
   import PasswordInput from './PasswordInput.svelte';
 
   let {
@@ -39,7 +40,8 @@
   } = $props();
 
   const font = $derived(mono ? 'font-mono text-[13px]' : '');
-  const described = $derived(hint ? `${id}-hint` : undefined);
+  const described = $derived(describedBy(id, hint, error));
+  const invalid = $derived(error ? true : undefined);
 </script>
 
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
@@ -51,6 +53,7 @@
   {:else}
     <label for={id} class={labelClass}>{label}</label>
   {/if}
+  {#if hint}<p id="{id}-hint" class="text-xs text-muted">{hint}</p>{/if}
   {#if type === 'textarea'}
     <textarea
       {id}
@@ -58,12 +61,13 @@
       {placeholder}
       {rows}
       aria-describedby={described}
+      aria-invalid={invalid}
       class="{controlBase} py-2.5 {font} {grow ? 'resize-none overflow-hidden' : ''}"
       use:autogrow={{ on: grow, value }}
       bind:value
     ></textarea>
   {:else if type === 'password'}
-    <PasswordInput {id} {label} {autocomplete} {disabled} {placeholder} describedby={described} bind:value />
+    <PasswordInput {id} {label} {autocomplete} {disabled} {placeholder} describedby={described} {invalid} bind:value />
   {:else}
     <input
       {id}
@@ -72,10 +76,10 @@
       {disabled}
       {placeholder}
       aria-describedby={described}
+      aria-invalid={invalid}
       class="{control} {font}"
       bind:value
     />
   {/if}
-  {#if hint}<p id={described} class="text-xs text-muted">{hint}</p>{/if}
-  {#if error}<p class="error text-xs">{error}</p>{/if}
+  <FieldError {id} {error} />
 </div>

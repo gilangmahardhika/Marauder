@@ -1,19 +1,21 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, closeSession, getMe, getProjects, getTribes, unreachable } from '$lib/api';
-  import Live from '$lib/components/Live.svelte';
+  import { closeSession, getMe, getProjects, getTribes } from '$lib/api';
+  import { failureText } from '$lib/forms';
   import { session } from '$lib/session';
   import { showShell } from '$lib/shell.svelte';
   import type { ProjectRecord, TribeRecord } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Icon from '$lib/ui/Icon.svelte';
+  import Spinner from '$lib/ui/Spinner.svelte';
 
   let tribes = $state<TribeRecord[]>([]);
   let projects = $state<ProjectRecord[]>([]);
   let admin = $state(false);
   let loaded = $state(false);
-  let message = $state('Loading tribes');
+  let loading = $state(true);
+  let loadError = $state('');
 
   const current = session.tribe();
 
@@ -39,17 +41,25 @@
     window.location.assign('/login');
   }
 
-  $effect(() => {
+  function load() {
+    loading = true;
+    loadError = '';
     void Promise.all([getTribes(), getProjects()])
       .then(([tribeBody, projectBody]) => {
         tribes = tribeBody.tribes;
         projects = projectBody.projects;
         loaded = true;
-        message = '';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = false;
       });
+  }
+
+  $effect(() => {
+    load();
     void getMe()
       .then((me) => (admin = me.admin))
       .catch(() => (admin = false));
@@ -65,11 +75,28 @@
     <h1 class="text-xl font-semibold">Choose a tribe</h1>
     <p class="mt-1 text-sm text-muted">The board and the project switcher show this tribe's projects.</p>
 
-    {#if loaded && tribes.length === 0}
+    {#if loadError}
+      <div class="mt-6 flex items-start gap-3 rounded-panel border border-red-200 bg-red-50 p-4" role="alert">
+        <Icon name="alert" class="mt-0.5 size-4 shrink-0 text-danger" />
+        <div class="min-w-0 flex-1">
+          <p class="wrap-break-word text-sm text-red-900">{loadError}</p>
+          <div class="mt-3">
+            <Button icon="refresh" onclick={load}>Try again</Button>
+          </div>
+        </div>
+      </div>
+    {:else if loading}
+      <p class="mt-6 flex items-center gap-2 text-sm text-muted" role="status">
+        <Spinner />
+        Loading tribes
+      </p>
+    {:else if loaded && tribes.length === 0}
       <div class="mt-6 rounded-panel border border-dashed border-line-strong bg-surface px-5 py-6">
         <p class="text-sm text-ink">You are not in a tribe yet. Ask an admin to add you.</p>
         {#if admin}
-          <a class="mt-3 inline-flex min-h-11 items-center text-sm font-medium text-accent underline" href="/tribes/new">Create a tribe</a>
+          <div class="mt-3">
+            <Button href="/tribes/new" icon="plus">Create a tribe</Button>
+          </div>
         {/if}
       </div>
     {:else if tribes.length > 0}
@@ -95,11 +122,8 @@
       </ul>
     {/if}
 
-    <div class="mt-4">
-      <Live {message} />
-    </div>
     <div class="mt-6 border-t border-line pt-4">
-      <Button variant="ghost" onclick={() => void signOut()}>Sign out</Button>
+      <Button variant="ghost" icon="log-out" onclick={() => void signOut()}>Sign out</Button>
     </div>
   </div>
 </div>

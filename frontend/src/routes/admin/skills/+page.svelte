@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getConventions, unreachable } from '$lib/api';
+  import { getConventions } from '$lib/api';
   import { filterSkills, skillStateOptions, skillStates } from '$lib/conventions';
   import { pickParam } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
   import type { Skill } from '$lib/types';
@@ -18,37 +19,49 @@
 
   let skills = $state<Skill[]>([]);
   let loaded = $state(false);
-  let message = $state('Loading skills');
+  let loading = $state('Loading skills');
+  let loadError = $state('');
 
-  showShell(() => ({ title: 'Skills', message }));
+  showShell(() => ({ title: 'Skills' }));
 
   const params = $derived($page.url.searchParams);
   const filter = $derived({ q: params.get('q') ?? '', state: pickParam(params.get('state'), skillStates, 'all') });
   const shown = $derived(filterSkills(skills, filter));
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading skills';
+    loadError = '';
     void getConventions()
       .then((body) => {
         skills = body.skills;
         loaded = true;
-        message = 'Skills';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 </script>
 
 <Page
   title="Skills"
   description="Written procedures for one kind of integration, such as OAuth. A Lead Developer enables skills for a project, and the planner attaches them to the cards that need them."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
-    <Button variant="primary" href="/admin/skills/new">Add skill</Button>
+    <Button variant="primary" href="/admin/skills/new" icon="plus">Add skill</Button>
   {/snippet}
   {#if loaded && skills.length === 0}
     <EmptyState title="No skills yet" description="Write the steps, configuration, security rules, and test checklist for an integration.">
-      <Button variant="primary" href="/admin/skills/new">Add skill</Button>
+      <Button variant="primary" href="/admin/skills/new" icon="plus">Add skill</Button>
     </EmptyState>
   {:else if skills.length > 0}
     <div class="flex flex-col gap-4">
@@ -63,7 +76,7 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No skills match" description="Change the search or state to see more skills.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', state: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', state: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <Table label="Skills">

@@ -12,6 +12,13 @@ test('header offers ingest and add, and no accept button', () => {
   expect(screen.queryByRole('button', { name: /accept/i })).toBeNull();
 });
 
+test('Ingest keeps its name and shows a busy spinner while it runs', () => {
+  render(IntakeActions, { oningest: noop, busy: true, ingesting: true });
+  const ingest = screen.getByRole('button', { name: 'Ingest' }) as HTMLButtonElement;
+  expect(ingest.disabled).toBe(true);
+  expect(ingest.getAttribute('aria-busy')).toBe('true');
+});
+
 test('acceptance lines drop blanks and trim', () => {
   expect(toLines('  One row per card. \n\n Two \n')).toEqual(['One row per card.', 'Two']);
   expect(toLines('- a\n* b\n+ c\n1. d\n2) e\n- [ ] f\n- [x] g\n-\n\n**h** label\n-1 prose')).toEqual([

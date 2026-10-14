@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getMCPCatalog, unreachable } from '$lib/api';
+  import { getMCPCatalog } from '$lib/api';
+  import { failureText } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
   import type { MCPCatalogEntry } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
@@ -27,16 +28,8 @@
   const id = $derived($page.params.id ?? '');
   const featured = $derived(local.filter((e) => e.source === 'featured'));
   const builtins = $derived(local.filter((e) => e.source === 'builtin'));
-  const message = $derived(
-    localError ||
-      (registryBusy ? 'Searching the MCP Registry' : `${local.length + registry.length} ${local.length + registry.length === 1 ? 'server' : 'servers'} listed`)
-  );
 
-  showShell(() => ({ title: 'MCP catalog', message }));
-
-  function failure(error: unknown) {
-    return error instanceof ApiError ? error.message : unreachable();
-  }
+  showShell(() => ({ title: 'MCP catalog' }));
 
   async function loadLocal(tribeId: string, query: string, signal: AbortSignal) {
     try {
@@ -45,7 +38,7 @@
       local = body.entries;
       localError = '';
     } catch (error) {
-      if (!signal.aborted) localError = failure(error);
+      if (!signal.aborted) localError = failureText(error);
     }
   }
 
@@ -59,7 +52,7 @@
       registryError = body.registryError ?? '';
     } catch (error) {
       if (signal.aborted) return;
-      registryError = failure(error);
+      registryError = failureText(error);
     } finally {
       if (!signal.aborted) {
         registryBusy = false;
@@ -140,8 +133,8 @@
 
 <Page title="MCP catalog" description="Featured servers and built-in database connectors, then the official MCP Registry.">
   {#snippet actions()}
-    <Button href={`/tribes/${id}/mcp/new`}>Add manually</Button>
-    <Button href={`/tribes/${id}/mcp`}>All servers</Button>
+    <Button href={`/tribes/${id}/mcp/new`} icon="plus">Add manually</Button>
+    <Button href={`/tribes/${id}/mcp`} icon="arrow-left">All servers</Button>
   {/snippet}
   <div class="flex flex-col gap-8">
     <Field label="Search" id="mcp-catalog-q" width="lg" placeholder="github, docs, postgres, payments" bind:value={q} />

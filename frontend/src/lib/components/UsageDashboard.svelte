@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { page } from '$app/stores';
-  import { ApiError, unreachable } from '$lib/api';
   import { pickParam } from '$lib/filter';
   import { count, day, tokens } from '$lib/format';
+  import { failureText } from '$lib/forms';
   import { pager } from '$lib/pager.svelte';
   import { setParams } from '$lib/params';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { UsageResponse } from '$lib/types';
   import {
     dailyTotals,
@@ -52,9 +53,11 @@
   } = $props();
 
   let report = $state<UsageResponse | null>(null);
-  let message = $state('Loading token usage');
+  let loading = $state('Loading token usage');
+  let loadError = $state('');
+  let attempt = $state(0);
 
-  showShell(() => ({ title, message }));
+  showShell(() => ({ title }));
 
   const params = $derived($page.url.searchParams);
   const range = $derived(pickParam(params.get('range'), rangeValues, '30'));
@@ -104,19 +107,28 @@
     return `${Math.round(part * 100)}%`;
   }
 
+  function retry() {
+    loading = 'Loading token usage';
+    loadError = '';
+    attempt += 1;
+  }
+
   $effect(() => {
+    void attempt;
     const { from, to } = rangeWindow(Number(range), new Date());
     let current = true;
-    message = 'Loading token usage';
     void load(from, to)
       .then((body) => {
         if (!current) return;
         report = body;
-        message = 'Token usage';
       })
       .catch((error: unknown) => {
         if (!current) return;
-        message = error instanceof ApiError ? error.message : unreachable();
+        if (report) toast.error(failureText(error));
+        else loadError = failureText(error);
+      })
+      .finally(() => {
+        if (current) loading = '';
       });
     return () => {
       current = false;
@@ -124,7 +136,7 @@
   });
 </script>
 
-<Page {title} {description} {actions}>
+<Page {title} {description} {actions} {loading} error={loadError} onretry={retry}>
   <div class="flex flex-col gap-4">
     <Toolbar>
       <Segmented label="Range" options={rangeOptions} value={range} onchange={(next) => setParams({ range: next === '30' ? '' : next })} />
@@ -143,12 +155,22 @@
           />
         {/each}
         {#if filtered}
-          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button>
+          <Button
+            type="button"
+            variant="secondary"
+            icon="close"
+            onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button
+          >
         {/if}
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No calls match" description="Change the filters to see more calls.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button>
+          <Button
+            type="button"
+            variant="secondary"
+            icon="close"
+            onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button
+          >
         </EmptyState>
       {:else}
         <dl class="flex flex-wrap gap-x-6 gap-y-2 rounded-panel border border-line bg-surface px-4 py-3 text-sm" aria-label="Totals">

@@ -12,6 +12,7 @@
     disabled = false,
     placeholder = '',
     describedby,
+    invalid,
     oninput,
     class: className = ''
   }: {
@@ -23,6 +24,7 @@
     disabled?: boolean;
     placeholder?: string;
     describedby?: string;
+    invalid?: boolean;
     oninput?: (event: Event) => void;
     class?: string;
   } = $props();
@@ -43,6 +45,7 @@
     {disabled}
     {placeholder}
     aria-describedby={describedby}
+    aria-invalid={invalid || undefined}
     class="{control} pr-11"
     bind:value
     {oninput}

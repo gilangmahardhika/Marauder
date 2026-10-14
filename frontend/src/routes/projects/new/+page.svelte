@@ -1,16 +1,21 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { ApiError, createProject, getCompanyRepos, getProjects, getTribes, unreachable } from '$lib/api';
+  import { createProject, getCompanyRepos, getProjects, getTribes } from '$lib/api';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { session } from '$lib/session';
   import { canManageTribe, shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { CompanyRepo, ProjectRecord, TribeRecord } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import MultiSearchSelect from '$lib/ui/MultiSearchSelect.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
   import Select from '$lib/ui/Select.svelte';
+
+  const shown = ['tribeId', 'repo', 'name', 'baseBranch', 'links', 'sharedPaths'];
 
   let tribes = $state<TribeRecord[]>([]);
   let projects = $state<ProjectRecord[]>([]);
@@ -21,11 +26,12 @@
   let name = $state('');
   let repo = $state('');
   let baseBranch = $state('main');
-  let fields = $state<Record<string, string>>({});
-  let message = $state('New project');
+  let loadError = $state('');
+  let failure = $state(noFailure);
   let busy = $state(false);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: 'New project', message }));
+  showShell(() => ({ title: 'New project' }));
 
   const manageable = $derived(tribes.filter((tribe) => canManageTribe(tribe.id)));
   const linkOptions = $derived(
@@ -53,7 +59,7 @@
     }))
   );
   const repoError = $derived(
-    fields.repo ||
+    failure.fields.repo ||
       (reposError
         ? `The repository list did not load: ${reposError}`
         : repos?.length === 0
@@ -70,14 +76,19 @@
         : 'Search repositories'
   );
 
-  $effect(() => {
+  function loadTribes() {
+    loadError = '';
     void getTribes()
       .then((body) => {
         tribes = body.tribes;
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
       });
+  }
+
+  $effect(() => {
+    loadTribes();
     void getProjects()
       .then((body) => {
         projects = body.projects;
@@ -90,7 +101,7 @@
         repos = body.repos;
       })
       .catch((error: unknown) => {
-        reposError = error instanceof ApiError ? error.message : unreachable();
+        reposError = failureText(error);
       });
   });
 
@@ -104,8 +115,7 @@
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = 'Creating project';
+    failure = noFailure;
     try {
       const project = await createProject({
         tribeId,
@@ -115,11 +125,11 @@
         links: links.map((projectId) => ({ projectId, sharedPaths: [] }))
       });
       session.setProject(project.id);
-      message = 'Project created';
+      toast.success('Project created');
       await goto('/settings/repository');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -129,10 +139,13 @@
 <Page
   title="New project"
   description="A project is one repository in the company GitHub organization. Members of its tribe can see its board."
+  error={loadError}
+  onretry={loadTribes}
 >
-  <form onsubmit={submit}>
+  <form onsubmit={submit} bind:this={form} novalidate>
     <Panel title="Project">
-      <Select label="Tribe" id="tribe" error={fields.tribeId} bind:value={tribeId}>
+      <FormAlert message={failure.message} extra={failure.extra} />
+      <Select label="Tribe" id="tribe" error={failure.fields.tribeId} bind:value={tribeId}>
         {#each manageable as tribe (tribe.id)}
           <option value={tribe.id}>{tribe.name}</option>
         {/each}
@@ -152,13 +165,13 @@
           <a class="inline-flex min-h-11 items-center self-start text-xs font-medium text-accent hover:underline" href="/admin/github">Check Company GitHub</a>
         {/if}
       </div>
-      <Field label="Name" id="name" error={fields.name} bind:value={name} />
+      <Field label="Name" id="name" error={failure.fields.name} bind:value={name} />
       <Field
         label="Base branch"
         id="base"
         width="sm"
         mono
-        error={fields.baseBranch}
+        error={failure.fields.baseBranch}
         hint="Card branches start here. It must exist on GitHub."
         bind:value={baseBranch}
       />
@@ -170,7 +183,7 @@
           placeholder={linkOptions.length === 0 ? `No other projects in ${tribeName}` : 'Search projects'}
           options={linkOptions}
           bind:values={links}
-          error={fields.links ?? fields.sharedPaths ?? ''}
+          error={failure.fields.links ?? failure.fields.sharedPaths ?? ''}
         />
         <p class="text-xs text-muted">
           The new project reads requirements, decisions, and files from these projects. Add shared paths later in Linked projects.
@@ -178,7 +191,7 @@
       </div>
       {#snippet footer()}
         <Button variant="ghost" href="/projects">Cancel</Button>
-        <Button variant="primary" type="submit" disabled={busy || repo === ''}>Create project</Button>
+        <Button variant="primary" type="submit" icon="plus" loading={busy} disabled={repo === ''}>Create project</Button>
       {/snippet}
     </Panel>
   </form>

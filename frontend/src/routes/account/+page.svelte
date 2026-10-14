@@ -1,14 +1,19 @@
 <script lang="ts">
-  import { ApiError, changePassword, getMe, getMyGitHub, putMe, putMyGitHub, testMyGitHub, unreachable } from '$lib/api';
+  import { changePassword, getMe, getMyGitHub, putMe, putMyGitHub, testMyGitHub } from '$lib/api';
   import NotificationsPanel from '$lib/components/NotificationsPanel.svelte';
   import SecretField, { omitEmptySecret } from '$lib/components/SecretField.svelte';
+  import { failureText, focusInvalid, formFailure, noFailure, type FormFailure } from '$lib/forms';
   import { roleLabel } from '$lib/roles';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
+
+  type FormName = 'name' | 'password' | 'github';
 
   let email = $state('');
   let name = $state('');
@@ -23,14 +28,18 @@
   let clear = $state(false);
   let tokenSet = $state(false);
   let verified = $state(false);
-  let message = $state('Loading account');
+  let loading = $state('Loading account');
+  let loadError = $state('');
   let result = $state('');
-  let busy = $state(false);
-  let fields = $state<Record<string, string>>({});
+  let busy = $state<FormName | 'test' | ''>('');
+  let failures = $state<Record<FormName, FormFailure>>({ name: noFailure, password: noFailure, github: noFailure });
+  let forms = $state<Partial<Record<FormName, HTMLFormElement>>>({});
 
-  showShell(() => ({ title: 'Account', message }));
+  showShell(() => ({ title: 'Account' }));
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading account';
+    loadError = '';
     void Promise.all([getMe(), getMyGitHub()])
       .then(([me, github]) => {
         email = me.email;
@@ -42,84 +51,78 @@
         login = github.login;
         tokenSet = github.tokenSet;
         verified = github.verified;
-        message = 'Account';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
-  });
+  }
 
-  async function saveName(event: SubmitEvent) {
-    event.preventDefault();
-    busy = true;
-    message = 'Saving name';
-    fields = {};
+  $effect(load);
+
+  async function run(form: FormName, shown: string[], work: () => Promise<void>) {
+    busy = form;
+    failures[form] = noFailure;
     try {
+      await work();
+    } catch (error) {
+      failures[form] = formFailure(error, shown);
+      void focusInvalid(forms[form]);
+    } finally {
+      busy = '';
+    }
+  }
+
+  function saveName(event: SubmitEvent) {
+    event.preventDefault();
+    void run('name', ['name'], async () => {
       const me = await putMe({ name });
       name = me.name;
       savedName = me.name;
       shell.name = me.name;
-      message = 'Name saved';
-    } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
-      busy = false;
-    }
+      toast.success('Name saved');
+    });
   }
 
-  async function savePassword(event: SubmitEvent) {
+  function savePassword(event: SubmitEvent) {
     event.preventDefault();
-    busy = true;
-    message = 'Changing password';
-    fields = {};
-    try {
+    void run('password', ['currentPassword', 'newPassword'], async () => {
       await changePassword(currentPassword, newPassword);
       currentPassword = '';
       newPassword = '';
-      message = 'Password changed';
-    } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
-      busy = false;
-    }
+      toast.success('Password changed');
+    });
   }
 
-  async function saveGitHub(event: SubmitEvent) {
+  function saveGitHub(event: SubmitEvent) {
     event.preventDefault();
-    busy = true;
-    message = 'Saving GitHub settings';
-    fields = {};
-    try {
+    void run('github', ['host', 'login', 'token'], async () => {
       const saved = await putMyGitHub({ host, login, ...omitEmptySecret('token', token, clear) });
       tokenSet = saved.tokenSet;
       verified = saved.verified;
       login = saved.login;
       token = '';
       clear = false;
-      message = 'GitHub settings';
-    } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
-    } finally {
-      busy = false;
-    }
+      toast.success('GitHub settings saved');
+    });
   }
 
   async function test() {
-    busy = true;
+    busy = 'test';
     try {
       const outcome = await testMyGitHub();
       result = outcome.ok ? `Signed in as ${outcome.login ?? 'ok'}` : (outcome.message ?? 'authentication failed');
-      message = result;
+      if (outcome.ok) toast.success(result);
+      else toast.error(`GitHub: ${result}`);
       const github = await getMyGitHub();
       login = github.login;
       verified = github.verified;
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      busy = '';
     }
   }
 </script>
@@ -127,31 +130,42 @@
 <Page
   title={savedName || email || 'Account'}
   description="Your sign-in and your own GitHub identity. Project bot and deploy tokens live in project settings."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
-    <Button href="/account/usage">Token usage</Button>
+    <Button href="/account/usage" icon="chart">Token usage</Button>
   {/snippet}
   {#snippet meta()}
     {#if role}<Badge>{roleLabel(role)}</Badge>{/if}
     {#if admin}<Badge tone="green">Admin</Badge>{/if}
   {/snippet}
   <div class="flex flex-col gap-6">
-    <form onsubmit={saveName}>
+    <form onsubmit={saveName} bind:this={forms.name} novalidate>
       <Panel title="Name" hint={`Shown on the board, cards, and member lists instead of your email. You sign in with ${email || 'your email'}.`}>
-        <Field label="Name" id="name" autocomplete="name" error={fields.name} bind:value={name} />
+        <FormAlert message={failures.name.message} extra={failures.name.extra} />
+        <Field label="Name" id="name" autocomplete="name" error={failures.name.fields.name} bind:value={name} />
         {#snippet footer()}
-          <Button variant="secondary" type="submit" disabled={busy || name.trim() === savedName}>Save name</Button>
+          <Button
+            variant="secondary"
+            type="submit"
+            icon="save"
+            loading={busy === 'name'}
+            disabled={busy !== '' || name.trim() === savedName}>Save name</Button
+          >
         {/snippet}
       </Panel>
     </form>
-    <form onsubmit={savePassword}>
+    <form onsubmit={savePassword} bind:this={forms.password} novalidate>
       <Panel title="Password" hint="Use at least 12 characters.">
+        <FormAlert message={failures.password.message} extra={failures.password.extra} />
         <Field
           label="Current password"
           id="current"
           type="password"
           autocomplete="current-password"
-          error={fields.currentPassword}
+          error={failures.password.fields.currentPassword}
           bind:value={currentPassword}
         />
         <Field
@@ -159,15 +173,21 @@
           id="next"
           type="password"
           autocomplete="new-password"
-          error={fields.newPassword}
+          error={failures.password.fields.newPassword}
           bind:value={newPassword}
         />
         {#snippet footer()}
-          <Button variant="secondary" type="submit" disabled={busy}>Change password</Button>
+          <Button
+            variant="secondary"
+            type="submit"
+            icon="save"
+            loading={busy === 'password'}
+            disabled={busy !== ''}>Change password</Button
+          >
         {/snippet}
       </Panel>
     </form>
-    <form onsubmit={saveGitHub}>
+    <form onsubmit={saveGitHub} bind:this={forms.github} novalidate>
       <Panel
         title="GitHub"
         hint="Your own account. Cards built from requirements you bring in are committed, pushed, and opened as pull requests with this token. Test connection records the login GitHub reports."
@@ -175,17 +195,34 @@
         {#snippet actions()}
           <Badge tone={verified ? 'green' : 'amber'}>{verified ? 'Verified' : 'Not verified'}</Badge>
         {/snippet}
+        <FormAlert message={failures.github.message} extra={failures.github.extra} />
         <div class="grid gap-5 sm:grid-cols-2">
-          <Field label="Host" id="host" width="full" error={fields.host} bind:value={host} />
-          <Field label="Login" id="login" width="full" bind:value={login} />
+          <Field label="Host" id="host" width="full" error={failures.github.fields.host} bind:value={host} />
+          <Field label="Login" id="login" width="full" error={failures.github.fields.login} bind:value={login} />
         </div>
-        <SecretField label="Token" name="token" saved={tokenSet} error={fields.token} bind:value={token} bind:clear />
+        <SecretField
+          label="Token"
+          name="token"
+          saved={tokenSet}
+          error={failures.github.fields.token}
+          bind:value={token}
+          bind:clear
+        />
         {#snippet footer()}
           {#if result}<span class="mr-auto text-sm text-muted">{result}</span>{/if}
-          <Button type="button" variant="secondary" disabled={busy || (!tokenSet && token === '')} onclick={() => void test()}>
+          <Button
+            type="button"
+            variant="secondary"
+            icon="zap"
+            loading={busy === 'test'}
+            disabled={busy !== '' || (!tokenSet && token === '')}
+            onclick={() => void test()}
+          >
             Test connection
           </Button>
-          <Button variant="primary" type="submit" disabled={busy}>Save GitHub settings</Button>
+          <Button variant="primary" type="submit" icon="save" loading={busy === 'github'} disabled={busy !== ''}
+            >Save GitHub settings</Button
+          >
         {/snippet}
       </Panel>
     </form>

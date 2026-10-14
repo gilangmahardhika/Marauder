@@ -1,15 +1,25 @@
 <script lang="ts">
-  import { ApiError, getLLM, getRouter, putRouter, unreachable } from '$lib/api';
+  import { getLLM, getRouter, putRouter } from '$lib/api';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Family, RouteChoice } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SearchSelect, { type SearchOption } from '$lib/ui/SearchSelect.svelte';
 
   const names = ['plan', 'implement', 'implement_hard', 'review', 'triage'];
+  const shown = [
+    ...names.flatMap((name) => [`routes.${name}.model`, `routes.${name}.fallback`]),
+    'maxAttempts',
+    'maxModelTurnsPerAttempt',
+    'maxTokensPerCard',
+    'maxWallMinutesPerAttempt'
+  ];
   let routes = $state<Record<string, RouteChoice>>({
     plan: { model: '', fallback: '' },
     implement: { model: '', fallback: '' },
@@ -37,13 +47,18 @@
   let maxTokens = $state(2000000);
   let maxMinutes = $state(30);
   let independent = $state(false);
-  let message = $state('Loading router');
+  let loading = $state('Loading router');
+  let loadError = $state('');
   let result = $state('');
   let busy = $state(false);
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: 'Router', message }));
+  showShell(() => ({ title: 'Router' }));
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading router';
+    loadError = '';
     void Promise.all([getRouter(), getLLM()])
       .then(([router, llm]) => {
         routes = router.routes;
@@ -53,17 +68,23 @@
         maxMinutes = router.budgets.maxWallMinutesPerAttempt || 30;
         independent = router.reviewIndependentPossible;
         families = llm.families;
-        message = 'Router';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    message = 'Saving router';
+    failure = noFailure;
     try {
       const saved = await putRouter({
         routes,
@@ -76,18 +97,27 @@
       });
       independent = saved.reviewIndependentPossible;
       result = 'Applies to the next route decision.';
-      message = 'Router';
+      toast.success('Router saved');
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      result = '';
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
   }
 </script>
 
-<Page title="Router" description="Which model handles each class of work, and how much each card may spend. Applies to every project.">
-  <form onsubmit={save}>
+<Page
+  title="Router"
+  description="Which model handles each class of work, and how much each card may spend. Applies to every project."
+  {loading}
+  error={loadError}
+  onretry={load}
+>
+  <form onsubmit={save} bind:this={form} novalidate>
     <div class="flex flex-col gap-6">
+      <FormAlert message={failure.message} extra={failure.extra} />
       <Notice>
         {independent
           ? 'Review can use a second family.'
@@ -116,6 +146,7 @@
                 emptyLabel="None"
                 placeholder="Search models"
                 options={optionsFor(name, 'model')}
+                error={failure.fields[`routes.${name}.model`]}
                 bind:value={routes[name].model}
               />
               <SearchSelect
@@ -126,6 +157,7 @@
                 emptyLabel="None"
                 placeholder="Search models"
                 options={optionsFor(name, 'fallback')}
+                error={failure.fields[`routes.${name}.fallback`]}
                 bind:value={routes[name].fallback}
               />
             </li>
@@ -134,14 +166,45 @@
       </Panel>
       <Panel title="Budgets" hint="Limits per card and per attempt.">
         <div class="grid gap-5 sm:grid-cols-2">
-          <Field label="Max attempts" id="attempts" type="number" width="sm" bind:value={maxAttempts} />
-          <Field label="Max model turns" id="turns" type="number" width="sm" hint="Per attempt" bind:value={maxTurns} />
-          <Field label="Max tokens" id="tokens" type="number" width="sm" hint="Per card" bind:value={maxTokens} />
-          <Field label="Max wall minutes" id="minutes" type="number" width="sm" hint="Per attempt" bind:value={maxMinutes} />
+          <Field
+            label="Max attempts"
+            id="attempts"
+            type="number"
+            width="sm"
+            error={failure.fields.maxAttempts}
+            bind:value={maxAttempts}
+          />
+          <Field
+            label="Max model turns"
+            id="turns"
+            type="number"
+            width="sm"
+            hint="Per attempt"
+            error={failure.fields.maxModelTurnsPerAttempt}
+            bind:value={maxTurns}
+          />
+          <Field
+            label="Max tokens"
+            id="tokens"
+            type="number"
+            width="sm"
+            hint="Per card"
+            error={failure.fields.maxTokensPerCard}
+            bind:value={maxTokens}
+          />
+          <Field
+            label="Max wall minutes"
+            id="minutes"
+            type="number"
+            width="sm"
+            hint="Per attempt"
+            error={failure.fields.maxWallMinutesPerAttempt}
+            bind:value={maxMinutes}
+          />
         </div>
         {#snippet footer()}
           {#if result}<span class="mr-auto text-sm text-muted">{result}</span>{/if}
-          <Button variant="primary" type="submit" disabled={busy}>Save</Button>
+          <Button variant="primary" type="submit" icon="save" loading={busy}>Save</Button>
         {/snippet}
       </Panel>
     </div>

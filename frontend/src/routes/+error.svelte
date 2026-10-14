@@ -4,7 +4,7 @@
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Page from '$lib/ui/Page.svelte';
 
-  showShell(() => ({ title: String($page.status), message: '' }));
+  showShell(() => ({ title: String($page.status) }));
 </script>
 
 <Page title="Something went wrong" description={`Error ${$page.status}`}>

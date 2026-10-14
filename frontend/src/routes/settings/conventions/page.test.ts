@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/sve
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 import type { ConventionCatalog, ProjectConventions } from '$lib/types';
 
 const api = vi.hoisted(() => ({
@@ -61,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  toast.clear();
   shell.projectId = '';
 });
 
@@ -92,6 +94,20 @@ test('the project switches items on and off and saves its choices', async () => 
     skills: { on: [], off: ['skl_oauth2'] },
     rules: { on: ['rule_naming'], off: [] }
   });
+  await waitFor(() => expect(toast.items.map((item) => item.text)).toEqual(['Conventions saved']));
+});
+
+test('a refused list shows its error on the add picker', async () => {
+  api.getProjectConventions.mockResolvedValue(view);
+  api.putProjectConventions.mockRejectedValue(
+    Object.assign(new Error('validation failed'), { fields: { 'skills.on': 'not enabled: skl_gone' } })
+  );
+  render(ProjectConventionsPage);
+  await waitFor(() => expect(screen.getByText('Go', { selector: 'span.font-medium' })).toBeTruthy());
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByText('not enabled: skl_gone')).toBeTruthy();
+  expect(document.getElementById('add-skills')?.getAttribute('aria-invalid')).toBe('true');
+  expect(screen.getByRole('alert').textContent).toContain('Check the fields marked below.');
 });
 
 test('without canEdit the controls are disabled and there are no add pickers', async () => {

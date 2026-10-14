@@ -13,70 +13,106 @@
     unblockCard,
     wontFixCard
   } from '$lib/api';
-  import { shell } from '$lib/shell.svelte';
+  import { failureText, focusInvalid, formFailure, noFailure, type FormFailure } from '$lib/forms';
+  import { toast } from '$lib/toast.svelte';
   import { verdictLabel, verdictTone } from '$lib/trace';
   import type { Card } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Icon from '$lib/ui/Icon.svelte';
   import Menu from '$lib/ui/Menu.svelte';
   import Notice from '$lib/ui/Notice.svelte';
 
+  type FormName = 'approve' | 'changes' | 'wontfix' | 'run';
+
+  const shownFields: Record<FormName, string[]> = {
+    approve: ['sha'],
+    changes: ['reason'],
+    wontfix: ['reason'],
+    run: ['instructions']
+  };
+
   let { card = $bindable() }: { card: Card } = $props();
   let sha = $state(card.headSha ?? '');
   let reset = $state(false);
-  let shaError = $state('');
-  let busy = $state(false);
+  /** The action in flight, such as "approve"; its button shows the spinner. */
+  let pending = $state('');
   let asking = $state(false);
   let reason = $state('');
-  let reasonError = $state('');
   let starting = $state(false);
   let instructions = $state('');
-  let instructionsError = $state('');
   let closing = $state(false);
   let closeReason = $state('');
+  let failures = $state<Record<FormName, FormFailure>>({
+    approve: noFailure,
+    changes: noFailure,
+    wontfix: noFailure,
+    run: noFailure
+  });
+  let forms = $state<Record<FormName, HTMLFormElement | undefined>>({
+    approve: undefined,
+    changes: undefined,
+    wontfix: undefined,
+    run: undefined
+  });
 
   let choosing = $state(false);
 
+  const busy = $derived(pending !== '');
   const actions = $derived(card.actions ?? []);
   const menuItems = $derived(
-    actions.includes('reject') ? [{ label: 'Reject', onclick: () => void run('Reject', () => rejectCard(card.id)) }] : []
+    actions.includes('reject')
+      ? [{ label: 'Reject', onclick: () => void act('reject', 'Rejected', () => rejectCard(card.id)) }]
+      : []
   );
 
   function short(value: string) {
     return value.slice(0, 7);
   }
 
-  async function run(action: string, work: () => Promise<Card>) {
-    busy = true;
-    shaError = '';
-    reasonError = '';
-    instructionsError = '';
-    shell.message = action;
+  async function reload() {
+    try {
+      card = await getCard(card.id);
+      toast.info('Card changed. Reloaded.');
+    } catch (error) {
+      toast.error(failureText(error));
+    }
+  }
+
+  /**
+   * Sends one action. A failure from a form shows in that form; any other failure is an error toast.
+   */
+  async function act(name: string, done: string, work: () => Promise<Card>, form?: FormName) {
+    pending = name;
+    if (form) failures[form] = noFailure;
     try {
       card = await work();
       sha = card.headSha ?? sha;
+      toast.success(done);
       return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        card = await getCard(card.id);
-        shell.message = 'Card changed. Reloaded.';
+        await reload();
         return false;
       }
-      if (error instanceof ApiError && error.fields.sha) shaError = error.fields.sha;
-      if (error instanceof ApiError && error.fields.reason) reasonError = error.fields.reason;
-      if (error instanceof ApiError && error.fields.instructions) instructionsError = error.fields.instructions;
-      shell.message = error instanceof Error ? error.message : 'API unreachable at http://127.0.0.1:8787';
+      if (form) {
+        failures[form] = formFailure(error, shownFields[form]);
+        if (form === 'approve' && failures.approve.fields.sha) choosing = true;
+        void focusInvalid(forms[form]);
+      } else {
+        toast.error(failureText(error));
+      }
       return false;
     } finally {
-      busy = false;
+      pending = '';
     }
   }
 
   async function sendChanges() {
-    if (await run('Request changes', () => requestChanges(card.id, reason))) {
+    if (await act('request_changes', 'Changes requested', () => requestChanges(card.id, reason), 'changes')) {
       asking = false;
       reason = '';
     }
@@ -85,11 +121,11 @@
   function cancelChanges() {
     asking = false;
     reason = '';
-    reasonError = '';
+    failures.changes = noFailure;
   }
 
   async function sendWontFix() {
-    if (await run("Close as won't fix", () => wontFixCard(card.id, closeReason.trim()))) {
+    if (await act('wont_fix', "Closed as won't fix", () => wontFixCard(card.id, closeReason.trim()), 'wontfix')) {
       closing = false;
       closeReason = '';
     }
@@ -98,18 +134,18 @@
   function cancelWontFix() {
     closing = false;
     closeReason = '';
-    reasonError = '';
+    failures.wontfix = noFailure;
   }
 
   function openRun() {
     instructions = card.instructions ?? '';
-    instructionsError = '';
+    failures.run = noFailure;
     starting = true;
   }
 
   async function sendRun() {
     const changed = instructions.trim() !== (card.instructions ?? '');
-    if (await run('Queue run', () => runCard(card.id, changed ? instructions : undefined))) {
+    if (await act('run', 'Queued', () => runCard(card.id, changed ? instructions : undefined), 'run')) {
       starting = false;
     }
   }
@@ -119,11 +155,14 @@
   {#if actions.includes('run') && starting}
     <form
       class="flex flex-col items-start gap-3"
+      bind:this={forms.run}
+      novalidate
       onsubmit={(event) => {
         event.preventDefault();
         void sendRun();
       }}
     >
+      <FormAlert message={failures.run.message} extra={failures.run.extra} />
       <Field
         label="Instructions for the next attempt"
         id="instructions"
@@ -132,17 +171,17 @@
         rows={4}
         grow
         hint="Optional. Every later attempt reads these with the newest note, until you change them. Markdown works."
-        error={instructionsError}
+        error={failures.run.fields.instructions}
         bind:value={instructions}
       />
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="primary" type="submit" disabled={busy}>Run</Button>
+        <Button variant="primary" type="submit" icon="play" disabled={busy} loading={pending === 'run'}>Run</Button>
         <Button variant="ghost" type="button" disabled={busy} onclick={() => (starting = false)}>Cancel</Button>
       </div>
     </form>
   {:else if actions.includes('run')}
     <div class="flex flex-wrap items-center gap-3">
-      <Button variant="primary" type="button" disabled={busy} onclick={openRun}>Run</Button>
+      <Button variant="primary" type="button" icon="play" disabled={busy} onclick={openRun}>Run</Button>
       <p class="text-sm text-muted">Queues this card for the worker. You can add instructions first.</p>
     </div>
   {:else if card.queued}
@@ -153,8 +192,10 @@
       <Button
         variant="primary"
         type="button"
+        icon="refresh"
         disabled={busy}
-        onclick={() => void run('Retry AI review', () => retryReview(card.id))}
+        loading={pending === 'retry_review'}
+        onclick={() => void act('retry_review', 'AI review queued', () => retryReview(card.id))}
       >
         Retry AI review
       </Button>
@@ -166,8 +207,10 @@
       <Button
         variant={actions.includes('approve') ? 'secondary' : 'primary'}
         type="button"
+        icon="upload"
         disabled={busy}
-        onclick={() => void run('Deploy approved SHA', () => deployCard(card.id))}
+        loading={pending === 'deploy'}
+        onclick={() => void act('deploy', 'Deploy started', () => deployCard(card.id))}
       >
         Deploy approved SHA
       </Button>
@@ -176,15 +219,16 @@
       <Button
         variant={actions.includes('approve') ? 'secondary' : 'primary'}
         type="button"
+        icon="git"
         disabled={busy}
-        onclick={() => void run('Squash and merge', () => mergeCard(card.id))}
+        loading={pending === 'merge'}
+        onclick={() => void act('merge', 'Merged', () => mergeCard(card.id))}
       >
-        <Icon name="git" />
         Squash and merge
       </Button>
     {/if}
     {#if actions.includes('request_changes') && !asking}
-      <Button type="button" disabled={busy} onclick={() => (asking = true)}>Request changes</Button>
+      <Button type="button" icon="message" disabled={busy} onclick={() => (asking = true)}>Request changes</Button>
     {/if}
     {#if menuItems.length > 0}
       <Menu label="More actions" block={false} items={menuItems} />
@@ -193,11 +237,14 @@
   {#if actions.includes('approve')}
     <form
       class="flex flex-col gap-3"
+      bind:this={forms.approve}
+      novalidate
       onsubmit={(event) => {
         event.preventDefault();
-        void run('Approve SHA', () => approveCard(card.id, sha));
+        void act('approve', 'Approved', () => approveCard(card.id, sha), 'approve');
       }}
     >
+      <FormAlert message={failures.approve.message} extra={failures.approve.extra} />
       {#if card.reviewVerdict}
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
           <Badge tone={verdictTone(card.reviewVerdict)}>AI review: {verdictLabel(card.reviewVerdict)}</Badge>
@@ -210,7 +257,9 @@
         </p>
       {/if}
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="primary" type="submit" disabled={busy}>{sha.trim() ? `Approve ${short(sha.trim())}` : 'Approve SHA'}</Button>
+        <Button variant="primary" type="submit" icon="check" disabled={busy} loading={pending === 'approve'}>
+          {sha.trim() ? `Approve ${short(sha.trim())}` : 'Approve SHA'}
+        </Button>
         {@render decisions()}
       </div>
       {#if card.headSha}
@@ -225,12 +274,19 @@
           Approve a different SHA
         </button>
       {/if}
-      {#if choosing || !card.headSha}
+      {#if choosing || !card.headSha || failures.approve.fields.sha}
         <div id="approve-sha">
-          <Field label="SHA" id="sha" width="md" mono hint="The full commit SHA a person approves." bind:value={sha} />
+          <Field
+            label="SHA"
+            id="sha"
+            width="md"
+            mono
+            hint="The full commit SHA a person approves."
+            error={failures.approve.fields.sha}
+            bind:value={sha}
+          />
         </div>
       {/if}
-      {#if shaError}<p class="error text-xs">{shaError}</p>{/if}
     </form>
   {:else if actions.includes('deploy') || actions.includes('merge') || actions.includes('request_changes') || menuItems.length > 0}
     <div class="flex flex-wrap items-center gap-2">
@@ -240,11 +296,14 @@
   {#if asking && actions.includes('request_changes')}
     <form
       class="flex flex-col items-start gap-3"
+      bind:this={forms.changes}
+      novalidate
       onsubmit={(event) => {
         event.preventDefault();
         void sendChanges();
       }}
     >
+      <FormAlert message={failures.changes.message} extra={failures.changes.extra} />
       <Field
         label="What should change?"
         id="reason"
@@ -253,11 +312,13 @@
         rows={4}
         grow
         hint="Optional. The next attempt gets this note. Markdown works."
-        error={reasonError}
+        error={failures.changes.fields.reason}
         bind:value={reason}
       />
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="primary" type="submit" disabled={busy}>Request changes</Button>
+        <Button variant="primary" type="submit" icon="message" disabled={busy} loading={pending === 'request_changes'}>
+          Request changes
+        </Button>
         <Button variant="ghost" type="button" disabled={busy} onclick={cancelChanges}>Cancel</Button>
       </div>
     </form>
@@ -267,7 +328,7 @@
       class="flex flex-col items-start gap-2"
       onsubmit={(event) => {
         event.preventDefault();
-        void run('Unblock', () => unblockCard(card.id, reset));
+        void act('unblock', 'Unblocked', () => unblockCard(card.id, reset));
       }}
     >
       <p class="text-sm text-ink">
@@ -279,27 +340,36 @@
       </p>
       <Checkbox id="reset" label="Reset attempt counter" bind:checked={reset} />
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant={actions.includes('approve') || actions.includes('deploy') ? 'secondary' : 'primary'} type="submit" disabled={busy}>
+        <Button
+          variant={actions.includes('approve') || actions.includes('deploy') ? 'secondary' : 'primary'}
+          type="submit"
+          icon="unlock"
+          disabled={busy}
+          loading={pending === 'unblock'}
+        >
           Unblock
         </Button>
         {#if actions.includes('wont_fix') && !closing}
-          <Button type="button" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
+          <Button type="button" icon="ban" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
         {/if}
       </div>
     </form>
   {:else if actions.includes('wont_fix') && !closing}
     <div class="flex flex-wrap items-center gap-2">
-      <Button type="button" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
+      <Button type="button" icon="ban" disabled={busy} onclick={() => (closing = true)}>Won't fix</Button>
     </div>
   {/if}
   {#if closing && actions.includes('wont_fix')}
     <form
       class="flex flex-col items-start gap-3"
+      bind:this={forms.wontfix}
+      novalidate
       onsubmit={(event) => {
         event.preventDefault();
         void sendWontFix();
       }}
     >
+      <FormAlert message={failures.wontfix.message} extra={failures.wontfix.extra} />
       <Field
         label="Why won't this be fixed?"
         id="wont-fix-reason"
@@ -308,11 +378,19 @@
         rows={3}
         grow
         hint="Shown in the trace. An open pull request gets this as a comment and is closed."
-        error={reasonError}
+        error={failures.wontfix.fields.reason}
         bind:value={closeReason}
       />
       <div class="flex flex-wrap items-center gap-2">
-        <Button variant="danger" type="submit" disabled={busy || closeReason.trim() === ''}>Close as won't fix</Button>
+        <Button
+          variant="danger"
+          type="submit"
+          icon="ban"
+          disabled={busy || closeReason.trim() === ''}
+          loading={pending === 'wont_fix'}
+        >
+          Close as won't fix
+        </Button>
         <Button variant="ghost" type="button" disabled={busy} onclick={cancelWontFix}>Cancel</Button>
       </div>
     </form>
@@ -322,7 +400,14 @@
   {/if}
   {#if actions.includes('reopen')}
     <div class="flex flex-wrap items-center gap-3">
-      <Button variant="primary" type="button" disabled={busy} onclick={() => void run('Reopen', () => reopenCard(card.id))}>
+      <Button
+        variant="primary"
+        type="button"
+        icon="refresh"
+        disabled={busy}
+        loading={pending === 'reopen'}
+        onclick={() => void act('reopen', 'Reopened', () => reopenCard(card.id))}
+      >
         Reopen
       </Button>
       <p class="text-sm text-muted">Reopen returns this card to Blocked.</p>

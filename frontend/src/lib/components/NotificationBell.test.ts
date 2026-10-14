@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { session } from '$lib/session';
+import { toast } from '$lib/toast.svelte';
 import type { AppNotification } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getNotifications: vi.fn(), readNotifications: vi.fn() }));
@@ -51,6 +52,7 @@ afterEach(() => {
   vi.clearAllMocks();
   stream.handlers = [];
   sessionStorage.clear();
+  toast.clear();
 });
 
 test('the bell shows the unread count and lists notifications as links', async () => {
@@ -70,7 +72,9 @@ test('a pushed notification raises the count, joins the top of the list, and is 
   await screen.findByRole('button', { name: 'Notifications, 1 unread' });
   push({ kind: 'notification', notification: note('ntf_3', 'Changes requested'), unread: 2 });
   expect(await screen.findByRole('button', { name: 'Notifications, 2 unread' })).toBeTruthy();
-  expect(screen.getByRole('status').textContent).toContain('Changes requested: Export CSV · Widget');
+  expect(toast.items.map(({ tone, text, href, label }) => ({ tone, text, href, label }))).toEqual([
+    { tone: 'info', text: 'Changes requested: Export CSV · Widget', href: '/cards/card_1?project=proj_a', label: 'Open' }
+  ]);
   api.getNotifications.mockReturnValue(new Promise(() => {}));
   await fireEvent.click(screen.getByRole('button', { name: 'Notifications, 2 unread' }));
   const links = within(screen.getByRole('group', { name: 'Notifications' })).getAllByRole('link');
@@ -113,4 +117,11 @@ test('a resync reads the list again, and a link off this site is not followed', 
   await waitFor(() =>
     expect(within(screen.getByRole('group', { name: 'Notifications' })).getAllByRole('link')[0].getAttribute('href')).toBe('/')
   );
+});
+
+test('a pushed notification with a link off this site opens / from its toast', async () => {
+  render(NotificationBell);
+  await screen.findByRole('button', { name: 'Notifications, 1 unread' });
+  push({ kind: 'notification', notification: { ...note('ntf_4', 'Blocked'), url: '//evil.example/x' }, unread: 2 });
+  expect(toast.items.map((item) => item.href)).toEqual(['/']);
 });

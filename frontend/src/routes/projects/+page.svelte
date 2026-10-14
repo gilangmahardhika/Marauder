@@ -1,7 +1,8 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getProjects, getTribes, unreachable } from '$lib/api';
+  import { getProjects, getTribes } from '$lib/api';
   import { matchText } from '$lib/filter';
+  import { failureText } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { session } from '$lib/session';
   import { managesAnyTribe, shell, showShell } from '$lib/shell.svelte';
@@ -18,11 +19,12 @@
   let projects = $state<ProjectRecord[]>([]);
   let tribes = $state<TribeRecord[]>([]);
   let loaded = $state(false);
-  let message = $state('Loading projects');
+  let loading = $state('Loading projects');
+  let loadError = $state('');
 
   const tribeId = session.tribe();
 
-  showShell(() => ({ title: 'Projects', message }));
+  showShell(() => ({ title: 'Projects' }));
 
   const params = $derived($page.url.searchParams);
   const q = $derived(params.get('q') ?? '');
@@ -35,17 +37,25 @@
     window.location.assign(path);
   }
 
-  $effect(() => {
+  function load() {
+    loading = 'Loading projects';
+    loadError = '';
     void Promise.all([getProjects(), getTribes()])
       .then(([projectBody, tribeBody]) => {
         projects = projectBody.projects;
         tribes = tribeBody.tribes;
         loaded = true;
-        message = 'Projects';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    load();
   });
 </script>
 
@@ -54,9 +64,12 @@
   description={tribeId === ''
     ? 'Each project is one repository with its own board and settings.'
     : `Projects in ${tribeName}. Switch tribe in the sidebar to see another tribe's projects.`}
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
-    {#if managesAnyTribe()}<Button variant="primary" href="/projects/new">New project</Button>{/if}
+    {#if managesAnyTribe()}<Button variant="primary" href="/projects/new" icon="plus">New project</Button>{/if}
   {/snippet}
   {#if tribeId === ''}
     <EmptyState title="Choose a tribe to see its projects." href="/choose-tribe" link="Choose a tribe" />
@@ -69,7 +82,7 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No projects match" description="Change the search to see more projects.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '' })}>Clear filters</Button>
         </EmptyState>
       {:else}
         <Table label="Projects">

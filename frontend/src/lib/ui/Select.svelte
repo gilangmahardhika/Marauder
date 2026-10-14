@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { control, labelClass, widths, type Width } from './control';
+  import { control, describedBy, labelClass, widths, type Width } from './control';
+  import FieldError from './FieldError.svelte';
 
   let {
     label,
@@ -21,8 +22,14 @@
 
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
   <label for={id} class={labelClass}>{label}</label>
-  <select {id} class={control} bind:value>
+  <select
+    {id}
+    class={control}
+    aria-invalid={error ? true : undefined}
+    aria-describedby={describedBy(id, '', error)}
+    bind:value
+  >
     {@render children()}
   </select>
-  {#if error}<p class="error text-xs">{error}</p>{/if}
+  <FieldError {id} {error} />
 </div>

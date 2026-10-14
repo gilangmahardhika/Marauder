@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
-  import { ApiError, getConventions, getProjectConventions, putProjectConventions, unreachable } from '$lib/api';
+  import { getConventions, getProjectConventions, putProjectConventions } from '$lib/api';
   import {
     categories,
     categoryLabel,
@@ -13,14 +13,17 @@
     type LayerRow
   } from '$lib/conventions';
   import { matchText, pickParam } from '$lib/filter';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { setParams } from '$lib/params';
   import { session } from '$lib/session';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { ConventionCatalog, ConventionChoices, ProjectConventions } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import FilterSelect from '$lib/ui/FilterSelect.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
@@ -31,6 +34,8 @@
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
   type Kind = keyof ConventionChoices;
+
+  const shown = ['stacks.on', 'stacks.off', 'skills.on', 'skills.off', 'rules.on', 'rules.off'];
 
   let view = $state<ProjectConventions>({
     tribe: { stackIds: [], skillIds: [], rulesOff: [] },
@@ -45,11 +50,13 @@
   let draft = $state<ConventionChoices>(emptyChoices());
   let adding = $state<Record<Kind, string>>({ stacks: '', skills: '', rules: '' });
   let loaded = $state(false);
-  let fields = $state<Record<string, string>>({});
+  let failure = $state(noFailure);
   let busy = $state(false);
-  let message = $state('Loading conventions');
+  let loading = $state('Loading conventions');
+  let loadError = $state('');
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: 'Conventions', message }));
+  showShell(() => ({ title: 'Conventions' }));
 
   const locked = $derived(!view.canEdit);
   const tribeId = $derived(shell.projectId ? session.tribe() : '');
@@ -99,34 +106,47 @@
   }
 
   function fieldError(kind: Kind) {
-    return fields[`${kind}.on`] ?? fields[`${kind}.off`] ?? '';
+    return [failure.fields[`${kind}.on`], failure.fields[`${kind}.off`]].filter(Boolean).join(' ');
   }
 
-  $effect(() => {
-    if (shell.projectId === '') return;
+  function load() {
+    loading = 'Loading conventions';
+    loadError = '';
     void Promise.all([getProjectConventions(), getConventions()])
       .then(([project, body]) => {
         catalog = body;
         apply(project);
         loaded = true;
-        message = 'Conventions';
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    if (shell.projectId === '') {
+      if (session.project() === '') {
+        loading = '';
+        loadError = 'Choose a project in the sidebar first.';
+      }
+      return;
+    }
+    load();
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = 'Saving conventions';
+    failure = noFailure;
     try {
       apply(await putProjectConventions(draft));
-      message = 'Conventions saved';
+      toast.success('Conventions saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -136,14 +156,18 @@
 <Page
   title="Conventions"
   description="This project starts from its tribe's conventions. Switch a stack, skill, or rule on or off here, or inherit it from the tribe."
+  {loading}
+  error={loadError}
+  onretry={load}
 >
   {#snippet actions()}
     {#if tribeId}
       <Button href={`/tribes/${tribeId}/conventions`}>Tribe conventions</Button>
     {/if}
   {/snippet}
-  <form onsubmit={save}>
+  <form onsubmit={save} bind:this={form} novalidate>
     <div class="flex flex-col gap-6">
+      <FormAlert message={failure.message} extra={failure.extra} />
       <Panel title="Stacks" hint="Sync detects stacks from the repository. The tribe adds stacks for all its projects. A stack's rules apply while it is on.">
         {@render layer('stacks', 'Stacks', rows.stacks, 'No stacks yet. Sync the repository, or add one.')}
       </Panel>
@@ -166,7 +190,7 @@
           {#if rows.rules.length > 0 && shownRules.length === 0}
             <div class="flex flex-wrap items-center gap-3">
               <p class="text-sm text-muted">No rules match.</p>
-              <Button type="button" variant="secondary" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
+              <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', category: '' })}>Clear filters</Button>
             </div>
           {:else}
             {@render layer('rules', 'Rules', shownRules, 'No rules apply yet.')}
@@ -230,7 +254,6 @@
         </tbody>
       </Table>
     {/if}
-    {#if fieldError(kind)}<p class="text-sm text-red-800">{fieldError(kind)}</p>{/if}
     {#if !locked}
       <SearchSelect
         label={`Add ${kind === 'rules' ? 'rule' : kind === 'skills' ? 'skill' : 'stack'}`}
@@ -238,6 +261,7 @@
         width="lg"
         placeholder={addOptions[kind].length === 0 ? 'Nothing else in the catalog' : `Add ${kind === 'rules' ? 'a rule' : kind === 'skills' ? 'a skill' : 'a stack'}`}
         options={addOptions[kind]}
+        error={fieldError(kind)}
         bind:value={adding[kind]}
         onchange={(id) => add(kind, id)}
       />

@@ -8,6 +8,7 @@
   import type { MCPServerMention, RefineField, RefineStream } from '$lib/types';
   import { labelClass } from '$lib/ui/control';
   import Field from '$lib/ui/Field.svelte';
+  import FieldError from '$lib/ui/FieldError.svelte';
   import Icon from '$lib/ui/Icon.svelte';
   import MentionTextarea from '$lib/ui/MentionTextarea.svelte';
   import Segmented from '$lib/ui/Segmented.svelte';
@@ -156,6 +157,6 @@
         {@render body()}
       {/if}
     </div>
-    {#if error}<p class="error text-xs">{error}</p>{/if}
+    <FieldError id={`requirement-${label.toLowerCase()}-preview`} {error} />
   </div>
 {/snippet}

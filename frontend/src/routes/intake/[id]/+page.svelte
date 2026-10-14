@@ -1,18 +1,23 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, deleteRequirement, getIntake, streamRefine, unreachable, updateRequirement } from '$lib/api';
+  import { deleteRequirement, getIntake, streamRefine, updateRequirement } from '$lib/api';
   import MentionList from '$lib/components/MentionList.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { fromLines, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Intake, MCPServerMention, Requirement, Reviewer } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
+
+  const shown = ['id', 'statement', 'acceptance'];
 
   let requirement = $state<Requirement | null>(null);
   let reviewerOptions = $state<Reviewer[]>([]);
@@ -20,14 +25,17 @@
   let missing = $state(false);
   let statement = $state('');
   let acceptance = $state('');
-  let fields = $state<Record<string, string>>({});
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
   let confirming = $state(false);
-  let message = $state('Loading requirement');
-  let busy = $state(false);
+  let loading = $state('Loading requirement');
+  let loadError = $state('');
+  let saving = $state(false);
+  let deleting = $state(false);
 
   const requirementId = $derived($page.params.id ?? '');
 
-  showShell(() => ({ title: requirementId || 'Requirement', message }));
+  showShell(() => ({ title: requirementId || 'Requirement' }));
 
   function pick(intake: Intake) {
     const found = intake.requirements.find((item) => item.id === requirementId) ?? null;
@@ -41,48 +49,51 @@
     }
   }
 
-  $effect(() => {
-    const id = requirementId;
-    if (id === '' || shell.projectId === '') return;
+  function load() {
+    loading = 'Loading requirement';
+    loadError = '';
     void getIntake()
-      .then((body) => {
-        pick(body);
-        message = missing ? 'Requirement not found' : id;
-      })
+      .then(pick)
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    if (requirementId === '' || shell.projectId === '') return;
+    load();
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
-    busy = true;
-    fields = {};
-    message = 'Saving requirement';
+    saving = true;
+    failure = noFailure;
     const wasAccepted = Boolean(requirement?.accepted);
     try {
       const saved = await updateRequirement(requirementId, { statement, acceptance: toLines(acceptance) });
       pick(saved);
-      message = wasAccepted && !requirement?.accepted ? 'Requirement saved. It needs acceptance again.' : 'Requirement saved';
+      toast.success(wasAccepted && !requirement?.accepted ? 'Requirement saved. It needs acceptance again.' : 'Requirement saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, shown);
+      void focusInvalid(form);
     } finally {
-      busy = false;
+      saving = false;
     }
   }
 
   async function remove() {
-    busy = true;
-    message = 'Deleting requirement';
+    deleting = true;
     try {
       await deleteRequirement(requirementId);
-      message = 'Requirement deleted';
+      toast.success('Requirement deleted');
       await goto('/intake');
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      deleting = false;
       confirming = false;
     }
   }
@@ -95,7 +106,7 @@
 {:else if requirement && requirement.sourceKind !== 'manual'}
   <Page title={requirementId}>
     {#snippet actions()}
-      <Button href="/intake">Intake</Button>
+      <Button href="/intake" icon="arrow-left">Intake</Button>
     {/snippet}
     <div class="flex flex-col gap-6">
       <EmptyState
@@ -109,7 +120,7 @@
           <MentionList mentions={requirement.mentions ?? []} {servers} />
         </Panel>
       {/if}
-      <ReviewersPanel {requirement} options={reviewerOptions} onsaved={pick} onmessage={(text) => (message = text)} />
+      <ReviewersPanel {requirement} options={reviewerOptions} onsaved={pick} />
     </div>
   </Page>
 {:else if requirement}
@@ -119,37 +130,42 @@
       <Badge tone={requirement!.accepted ? 'green' : 'default'}>{requirement!.accepted ? 'Accepted' : 'Not accepted'}</Badge>
     {/snippet}
     {#snippet actions()}
-      <Button href="/intake">Intake</Button>
+      <Button href="/intake" icon="arrow-left">Intake</Button>
     {/snippet}
     <div class="flex flex-col gap-6">
-      <form onsubmit={save}>
+      <form onsubmit={save} bind:this={form} novalidate>
         <Panel title="Requirement" hint="Changing the text, by hand or with the refine buttons, clears acceptance when you save.">
+          <FormAlert message={failure.message} extra={failure.extra} />
           <RequirementForm
             id={requirementId}
             idLocked
             bind:statement
             bind:acceptance
-            {fields}
+            fields={failure.fields}
             {servers}
             refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId }, onEvent, signal)}
           />
           {#snippet footer()}
-            <Button variant="primary" type="submit" disabled={busy}>Save</Button>
+            <Button variant="primary" type="submit" icon="save" loading={saving} disabled={deleting}>Save</Button>
           {/snippet}
         </Panel>
       </form>
-      <ReviewersPanel requirement={requirement!} options={reviewerOptions} onsaved={pick} onmessage={(text) => (message = text)} />
+      <ReviewersPanel requirement={requirement!} options={reviewerOptions} onsaved={pick} />
       <Panel title="Delete requirement" hint="A requirement that a card lists cannot be deleted.">
         {#if confirming}
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm text-ink">Delete {requirementId}?</span>
-            <Button type="button" variant="ghost" disabled={busy} onclick={() => (confirming = false)}>Cancel</Button>
-            <Button type="button" variant="danger" disabled={busy} onclick={() => void remove()}>Delete</Button>
+            <Button type="button" variant="ghost" disabled={deleting} onclick={() => (confirming = false)}>Cancel</Button>
+            <Button type="button" variant="danger" icon="trash" loading={deleting} onclick={() => void remove()}>Delete</Button>
           </div>
         {:else}
-          <Button type="button" variant="danger" disabled={busy} onclick={() => (confirming = true)}>Delete requirement</Button>
+          <Button type="button" variant="danger" icon="trash" disabled={saving} onclick={() => (confirming = true)}>Delete requirement</Button>
         {/if}
       </Panel>
     </div>
+  </Page>
+{:else}
+  <Page title={requirementId || 'Requirement'} {loading} error={loadError} onretry={load}>
+    <EmptyState title={`There is no requirement ${requirementId} in this project.`} href="/intake" link="Intake" />
   </Page>
 {/if}

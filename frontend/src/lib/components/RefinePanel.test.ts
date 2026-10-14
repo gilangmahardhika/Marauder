@@ -90,7 +90,7 @@ test('a rejected request shows its message and an empty statement sends nothing'
   const stream = vi.fn().mockRejectedValue(new Error('set a model for the implement route in Router settings to refine requirements'));
   const { rerender } = render(RefinePanel, { ...props, statement: '  ', stream, onapply: vi.fn() });
   await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
-  expect(screen.getByRole('alert').textContent).toBe('Write a statement first, then refine it.');
+  expect(screen.getByRole('alert').textContent?.trim()).toBe('Write a statement first, then refine it.');
   expect(stream).not.toHaveBeenCalled();
 
   await rerender({ ...props, stream, onapply: vi.fn() });

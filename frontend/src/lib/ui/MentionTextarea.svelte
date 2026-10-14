@@ -4,6 +4,7 @@
   import type { MCPServerMention } from '$lib/types';
   import { autogrow } from './autogrow';
   import { controlBase, labelClass, widths, type Width } from './control';
+  import FieldError from './FieldError.svelte';
 
   let {
     label,
@@ -104,13 +105,15 @@
   {:else}
     <label for={id} class={labelClass}>{label}</label>
   {/if}
+  <p id={hintId} class="text-xs text-muted">{fullHint}</p>
   <div class="relative">
     <!-- svelte-ignore a11y_role_supports_aria_props_implicit -->
     <textarea
       {id}
       {rows}
       bind:this={area}
-      aria-describedby={hintId}
+      aria-describedby={error ? `${hintId} ${id}-error` : hintId}
+      aria-invalid={error ? true : undefined}
       aria-autocomplete="list"
       aria-controls={listId}
       aria-expanded={open}
@@ -154,6 +157,5 @@
       </ul>
     {/if}
   </div>
-  <p id={hintId} class="text-xs text-muted">{fullHint}</p>
-  {#if error}<p class="error text-xs">{error}</p>{/if}
+  <FieldError {id} {error} />
 </div>

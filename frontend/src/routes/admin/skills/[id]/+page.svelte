@@ -1,14 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, deleteConvention, getConventions, saveSkill, unreachable } from '$lib/api';
-  import SkillForm from '$lib/components/SkillForm.svelte';
+  import { deleteConvention, getConventions, saveSkill } from '$lib/api';
+  import SkillForm, { skillFields } from '$lib/components/SkillForm.svelte';
   import { editedBy, skillInput } from '$lib/conventions';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Skill, SkillInput } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
-  import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
@@ -17,93 +19,99 @@
 
   let current = $state<Skill | null>(null);
   let skill = $state<SkillInput | null>(null);
-  let missing = $state(false);
-  let fields = $state<Record<string, string>>({});
-  let busy = $state(false);
+  let saving = $state(false);
+  let deleting = $state(false);
   let confirming = $state(false);
-  let message = $state('Loading skill');
+  let loading = $state('Loading skill');
+  let loadError = $state('');
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: current?.title ?? 'Skill', message }));
+  showShell(() => ({ title: current?.title ?? 'Skill' }));
 
-  $effect(() => {
-    if (id === '') return;
+  function load(skillId: string) {
+    loading = 'Loading skill';
+    loadError = '';
     void getConventions()
       .then((body) => {
-        current = body.skills.find((item) => item.id === id) ?? null;
+        current = body.skills.find((item) => item.id === skillId) ?? null;
         skill = current ? skillInput(current) : null;
-        missing = current === null;
-        message = current?.title ?? 'Skill not found';
+        if (!current) loadError = `There is no skill with id ${skillId}.`;
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
       });
+  }
+
+  $effect(() => {
+    if (id !== '') load(id);
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     if (!skill) return;
-    busy = true;
-    fields = {};
-    message = 'Saving skill';
+    saving = true;
+    failure = noFailure;
     try {
       current = await saveSkill(id, skill);
       skill = skillInput(current);
-      message = 'Skill saved';
+      toast.success('Skill saved');
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, skillFields);
+      void focusInvalid(form);
     } finally {
-      busy = false;
+      saving = false;
     }
   }
 
   async function remove() {
-    busy = true;
-    message = 'Deleting skill';
+    deleting = true;
     try {
       await deleteConvention('skills', id);
-      message = 'Skill deleted';
+      toast.success('Skill deleted');
       await goto('/admin/skills');
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      deleting = false;
       confirming = false;
     }
   }
 </script>
 
-{#if missing}
-  <Page title="Skill not found">
-    <EmptyState title={`There is no skill with id ${id}.`} href="/admin/skills" link="All skills" />
-  </Page>
-{:else if current && skill}
-  <Page title={current.title}>
-    {#snippet meta()}
-      <Badge>v{current!.version}</Badge>
-      {#if current!.disabled}<Badge tone="amber">Disabled</Badge>{/if}
-    {/snippet}
-    {#snippet actions()}
-      <Button href="/admin/skills">All skills</Button>
-    {/snippet}
+<Page title={current?.title ?? 'Skill'} {loading} error={loadError} onretry={() => id && load(id)}>
+  {#snippet meta()}
+    {#if current}
+      <Badge>v{current.version}</Badge>
+      {#if current.disabled}<Badge tone="amber">Disabled</Badge>{/if}
+    {/if}
+  {/snippet}
+  {#snippet actions()}
+    <Button href="/admin/skills" icon="arrow-left">All skills</Button>
+  {/snippet}
+  {#if current && skill}
     <div class="flex flex-col gap-6">
-      <form onsubmit={save}>
+      <form onsubmit={save} bind:this={form} novalidate>
         <Panel title="Skill" hint={editedBy(current)}>
-          <SkillForm bind:skill={skill!} {fields} />
+          <FormAlert message={failure.message} extra={failure.extra} />
+          <SkillForm bind:skill={skill!} fields={failure.fields} />
         </Panel>
-        <SaveBar {busy} note="Changing the text makes a new version. Earlier versions stay in the revision history." />
+        <SaveBar busy={saving} disabled={deleting} note="Changing the text makes a new version. Earlier versions stay in the revision history." />
       </form>
       <Panel title="Delete skill" hint="A skill that a project or card still names is disabled instead.">
         {#if confirming}
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm text-ink">Delete {current.title}?</span>
-            <Button type="button" variant="ghost" disabled={busy} onclick={() => (confirming = false)}>Cancel</Button>
-            <Button type="button" variant="danger" disabled={busy} onclick={() => void remove()}>Delete</Button>
+            <Button type="button" variant="ghost" disabled={deleting} onclick={() => (confirming = false)}>Cancel</Button>
+            <Button type="button" variant="danger" icon="trash" loading={deleting} disabled={saving} onclick={() => void remove()}>Delete</Button>
           </div>
         {:else}
-          <Button type="button" variant="danger" disabled={busy} onclick={() => (confirming = true)}>Delete skill</Button>
+          <Button type="button" variant="danger" icon="trash" disabled={saving || deleting} onclick={() => (confirming = true)}>Delete skill</Button>
         {/if}
       </Panel>
     </div>
-  </Page>
-{/if}
+  {/if}
+</Page>

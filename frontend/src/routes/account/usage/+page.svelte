@@ -14,6 +14,6 @@
   {dimensions}
 >
   {#snippet actions()}
-    <Button href="/account">Account</Button>
+    <Button href="/account" icon="arrow-left">Account</Button>
   {/snippet}
 </UsageDashboard>

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { toast } from '$lib/toast.svelte';
 import type { Card, CardContext as Context } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getConventions: vi.fn(), setCardContext: vi.fn() }));
@@ -87,6 +88,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  toast.clear();
 });
 
 test('without the context action the panel only lists the context', () => {
@@ -108,8 +110,34 @@ test('detach and restore call the API and replace the card', async () => {
   await fireEvent.click(within(rowOf('Naming')).getByRole('button', { name: /Detach\s*Naming/ }));
   expect(api.setCardContext).toHaveBeenCalledWith('card_1', { kind: 'rule', itemId: 'rule_naming', mode: 'detach' });
   await waitFor(() => expect(within(rowOf('Naming')).getByText('Detached')).toBeTruthy());
+  expect(toast.items.map((item) => `${item.tone}: ${item.text}`)).toEqual(['success: Card context saved']);
   await fireEvent.click(within(rowOf('Tables')).getByRole('button', { name: /Restore\s*Tables/ }));
   expect(api.setCardContext).toHaveBeenLastCalledWith('card_1', { kind: 'rule', itemId: 'rule_db', mode: 'inherit' });
+});
+
+test('a failed detach with no field errors shows an error toast', async () => {
+  api.setCardContext.mockRejectedValueOnce(new Error('The card is running.'));
+  render(CardContext, { card: card(['context']) });
+  await fireEvent.click(within(rowOf('Naming')).getByRole('button', { name: /Detach\s*Naming/ }));
+  await waitFor(() => expect(toast.items.map((item) => `${item.tone}: ${item.text}`)).toEqual(['error: The card is running.']));
+  expect(screen.queryByRole('alert')).toBeNull();
+});
+
+test('an attach field error shows on that attach control and in the panel alert', async () => {
+  api.setCardContext.mockRejectedValueOnce(
+    Object.assign(new Error('validation'), { fields: { itemId: 'That skill is disabled.', mode: 'Pick attach or detach.' } })
+  );
+  render(CardContext, { card: card(['context']) });
+  await waitFor(() => expect(api.getConventions).toHaveBeenCalled());
+  await fireEvent.click(document.getElementById('attach-skill') as HTMLElement);
+  await fireEvent.click((await screen.findAllByRole('option'))[0]);
+  expect(await screen.findByText('That skill is disabled.')).toBeTruthy();
+  expect(document.getElementById('attach-skill')?.getAttribute('aria-invalid')).toBe('true');
+  expect(document.getElementById('attach-rule')?.getAttribute('aria-invalid')).toBeNull();
+  const alert = screen.getByRole('alert');
+  expect(alert.textContent).toContain('Check the fields marked below.');
+  expect(alert.textContent).toContain('Pick attach or detach.');
+  expect(toast.items).toEqual([]);
 });
 
 test('attach skill lists enabled skills the card lacks, and attach server needs attach-mcp', async () => {

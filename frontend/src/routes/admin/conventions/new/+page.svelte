@@ -1,13 +1,16 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, getConventions, saveRule, saveStack, unreachable } from '$lib/api';
-  import RuleForm from '$lib/components/RuleForm.svelte';
-  import StackForm from '$lib/components/StackForm.svelte';
+  import { getConventions, saveRule, saveStack } from '$lib/api';
+  import RuleForm, { ruleFields } from '$lib/components/RuleForm.svelte';
+  import StackForm, { stackFields } from '$lib/components/StackForm.svelte';
   import { ruleBody, ruleInput, stackDraft, stackInput } from '$lib/conventions';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { Stack } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
@@ -16,11 +19,11 @@
   let rule = $state(ruleInput(undefined, $page.url.searchParams.get('stack') ?? ''));
   let stack = $state(stackDraft());
   let stacks = $state<Stack[]>([]);
-  let fields = $state<Record<string, string>>({});
   let busy = $state(false);
-  let message = $state('New convention');
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
 
-  showShell(() => ({ title: kind === 'stack' ? 'New stack' : 'New rule', message }));
+  showShell(() => ({ title: kind === 'stack' ? 'New stack' : 'New rule' }));
 
   $effect(() => {
     void getConventions()
@@ -28,28 +31,27 @@
         stacks = body.stacks;
       })
       .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
+        toast.error(failureText(error));
       });
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
-    fields = {};
-    message = kind === 'stack' ? 'Saving stack' : 'Saving rule';
+    failure = noFailure;
     try {
       if (kind === 'stack') {
         await saveStack('', stackInput(stack));
-        message = 'Stack saved';
+        toast.success('Stack saved');
         await goto('/admin/conventions?tab=stacks');
       } else {
         const saved = await saveRule('', ruleBody(rule));
-        message = 'Rule saved';
+        toast.success('Rule saved');
         await goto(`/admin/conventions/${encodeURIComponent(saved.id)}`);
       }
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, kind === 'stack' ? stackFields : ruleFields(rule));
+      void focusInvalid(form);
     } finally {
       busy = false;
     }
@@ -65,14 +67,15 @@
   {#snippet actions()}
     <Button href={kind === 'stack' ? '/admin/conventions?tab=stacks' : '/admin/conventions'}>Cancel</Button>
   {/snippet}
-  <form onsubmit={save}>
+  <form onsubmit={save} bind:this={form} novalidate>
     <Panel title={kind === 'stack' ? 'Stack' : 'Rule'}>
+      <FormAlert message={failure.message} extra={failure.extra} />
       {#if kind === 'stack'}
-        <StackForm bind:stack {fields} />
+        <StackForm bind:stack fields={failure.fields} />
       {:else}
-        <RuleForm bind:rule {stacks} {fields} />
+        <RuleForm bind:rule {stacks} fields={failure.fields} />
       {/if}
     </Panel>
-    <SaveBar {busy} label={kind === 'stack' ? 'Add stack' : 'Add rule'} note="Only an admin can change the catalog. Each save is versioned." />
+    <SaveBar {busy} label={kind === 'stack' ? 'Add stack' : 'Add rule'} icon="plus" note="Only an admin can change the catalog. Each save is versioned." />
   </form>
 </Page>

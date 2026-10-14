@@ -1,7 +1,8 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
+import { toast } from '$lib/toast.svelte';
 import type { Card, CardDiff } from '$lib/types';
 
 const api = vi.hoisted(() => ({ getCard: vi.fn(), getCardDiff: vi.fn() }));
@@ -103,6 +104,34 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   shell.projectId = '';
+  toast.clear();
+});
+
+test('the first load shows a loading row, then the card', async () => {
+  render(CardPage);
+  expect(screen.getByRole('status').textContent).toContain('Loading card');
+  expect(await screen.findByRole('heading', { level: 1, name: 'Change login label' })).toBeTruthy();
+  expect(screen.queryByText('Loading card')).toBeNull();
+});
+
+test('a failed load shows the error with Try again', async () => {
+  api.getCard.mockRejectedValueOnce(new Error('The board is down.'));
+  render(CardPage);
+  const alert = await screen.findByRole('alert');
+  expect(alert.textContent).toContain('The board is down.');
+  await fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByRole('heading', { level: 1, name: 'Change login label' })).toBeTruthy();
+  expect(api.getCard).toHaveBeenCalledTimes(2);
+});
+
+test('a failed reload keeps the card on screen and shows an error toast', async () => {
+  render(CardPage);
+  await screen.findByRole('heading', { level: 1, name: 'Change login label' });
+  api.getCard.mockRejectedValueOnce(new Error('The board is down.'));
+  for (const handler of stream.handlers) handler({ kind: 'cards', full: true, cards: [], removed: [] });
+  await vi.waitFor(() => expect(toast.items.map((item) => `${item.tone}: ${item.text}`)).toEqual(['error: The board is down.']));
+  expect(screen.getByRole('heading', { level: 1, name: 'Change login label' })).toBeTruthy();
+  expect(screen.queryByText('Loading card')).toBeNull();
 });
 
 test('orders the main column by priority and puts facts in the sidebar', async () => {

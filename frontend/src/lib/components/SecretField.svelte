@@ -8,6 +8,7 @@
 
 <script lang="ts">
   import { labelClass, widths, type Width } from '$lib/ui/control';
+  import FieldError from '$lib/ui/FieldError.svelte';
   import PasswordInput from '$lib/ui/PasswordInput.svelte';
 
   let {
@@ -38,6 +39,8 @@
       {label}
       {name}
       autocomplete="off"
+      describedby={error ? `${inputId}-error` : undefined}
+      invalid={error !== ''}
       placeholder={clear ? 'Removed when you save' : saved ? 'A value is saved' : ''}
       class="min-w-0 flex-1"
       bind:value
@@ -54,5 +57,5 @@
       >
     {/if}
   </div>
-  {#if error}<p class="error text-xs">{error}</p>{/if}
+  <FieldError id={inputId} {error} />
 </div>

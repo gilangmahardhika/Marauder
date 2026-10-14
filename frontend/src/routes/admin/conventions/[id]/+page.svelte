@@ -1,38 +1,43 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { ApiError, deleteConvention, getConventions, saveRule, saveStack, unreachable } from '$lib/api';
-  import RuleForm from '$lib/components/RuleForm.svelte';
-  import StackForm from '$lib/components/StackForm.svelte';
+  import { deleteConvention, getConventions, saveRule, saveStack } from '$lib/api';
+  import RuleForm, { ruleFields } from '$lib/components/RuleForm.svelte';
+  import StackForm, { stackFields } from '$lib/components/StackForm.svelte';
   import { editedBy, ruleBody, ruleInput, stackDraft, stackInput, type StackDraft } from '$lib/conventions';
+  import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
   import { showShell } from '$lib/shell.svelte';
+  import { toast } from '$lib/toast.svelte';
   import type { ConventionRule, RuleInput, Stack } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
-  import EmptyState from '$lib/ui/EmptyState.svelte';
+  import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
   import SaveBar from '$lib/ui/SaveBar.svelte';
 
   const id = $derived($page.params.id ?? '');
   const kind = $derived(id.startsWith('stk_') ? 'stack' : 'rule');
+  const noun = $derived(kind === 'stack' ? 'Stack' : 'Rule');
 
   let current = $state<ConventionRule | Stack | null>(null);
   let rule = $state<RuleInput | null>(null);
   let stack = $state<StackDraft | null>(null);
   let stacks = $state<Stack[]>([]);
-  let missing = $state(false);
-  let fields = $state<Record<string, string>>({});
-  let busy = $state(false);
+  let saving = $state(false);
+  let deleting = $state(false);
   let confirming = $state(false);
-  let message = $state('Loading');
+  let loading = $state('Loading convention');
+  let loadError = $state('');
+  let failure = $state(noFailure);
+  let form = $state<HTMLFormElement>();
 
   const title = $derived(current ? ('name' in current ? current.name : current.title) : 'Convention');
   const back = $derived(kind === 'stack' ? '/admin/conventions?tab=stacks' : '/admin/conventions');
 
-  showShell(() => ({ title, message }));
+  showShell(() => ({ title }));
 
-  function load(body: { rules: ConventionRule[]; stacks: Stack[] }) {
+  function pick(body: { rules: ConventionRule[]; stacks: Stack[] }) {
     stacks = body.stacks;
     if (kind === 'stack') {
       const found = body.stacks.find((item) => item.id === id) ?? null;
@@ -43,26 +48,30 @@
       current = found;
       rule = found ? ruleInput(found) : null;
     }
-    missing = current === null;
+    if (current === null) loadError = `There is no rule or stack with id ${id}.`;
+  }
+
+  function load() {
+    loading = 'Loading convention';
+    loadError = '';
+    void getConventions()
+      .then(pick)
+      .catch((error: unknown) => {
+        loadError = failureText(error);
+      })
+      .finally(() => {
+        loading = '';
+      });
   }
 
   $effect(() => {
-    if (id === '') return;
-    void getConventions()
-      .then((body) => {
-        load(body);
-        message = missing ? 'Not found' : title;
-      })
-      .catch((error: unknown) => {
-        message = error instanceof ApiError ? error.message : unreachable();
-      });
+    if (id !== '') load();
   });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
-    busy = true;
-    fields = {};
-    message = 'Saving';
+    saving = true;
+    failure = noFailure;
     try {
       if (kind === 'stack' && stack) {
         current = await saveStack(id, stackInput(stack));
@@ -71,54 +80,52 @@
         current = await saveRule(id, ruleBody(rule));
         rule = ruleInput(current as ConventionRule);
       }
-      message = 'Saved';
+      toast.success(`${noun} saved`);
     } catch (error) {
-      fields = error instanceof ApiError ? error.fields : {};
-      message = error instanceof ApiError ? error.message : unreachable();
+      failure = formFailure(error, kind === 'stack' ? stackFields : rule ? ruleFields(rule) : []);
+      void focusInvalid(form);
     } finally {
-      busy = false;
+      saving = false;
     }
   }
 
   async function remove() {
-    busy = true;
-    message = 'Deleting';
+    deleting = true;
     try {
       await deleteConvention(kind === 'stack' ? 'stacks' : 'rules', id);
-      message = 'Deleted';
+      toast.success(`${noun} deleted`);
       await goto(back);
     } catch (error) {
-      message = error instanceof ApiError ? error.message : unreachable();
+      toast.error(failureText(error));
     } finally {
-      busy = false;
+      deleting = false;
       confirming = false;
     }
   }
 </script>
 
-{#if missing}
-  <Page title="Not found">
-    <EmptyState title={`There is no rule or stack with id ${id}.`} href="/admin/conventions" link="All conventions" />
-  </Page>
-{:else if current}
-  <Page title={title}>
-    {#snippet meta()}
-      <Badge>v{current!.version}</Badge>
-      {#if current!.disabled}<Badge tone="amber">Disabled</Badge>{/if}
-    {/snippet}
-    {#snippet actions()}
-      <Button href={back}>All {kind === 'stack' ? 'stacks' : 'rules'}</Button>
-    {/snippet}
+<Page {title} {loading} error={loadError} onretry={load}>
+  {#snippet meta()}
+    {#if current}
+      <Badge>v{current.version}</Badge>
+      {#if current.disabled}<Badge tone="amber">Disabled</Badge>{/if}
+    {/if}
+  {/snippet}
+  {#snippet actions()}
+    <Button href={back} icon="arrow-left">All {kind === 'stack' ? 'stacks' : 'rules'}</Button>
+  {/snippet}
+  {#if current}
     <div class="flex flex-col gap-6">
-      <form onsubmit={save}>
-        <Panel title={kind === 'stack' ? 'Stack' : 'Rule'} hint={editedBy(current)}>
+      <form onsubmit={save} bind:this={form} novalidate>
+        <Panel title={noun} hint={editedBy(current)}>
+          <FormAlert message={failure.message} extra={failure.extra} />
           {#if kind === 'stack' && stack}
-            <StackForm bind:stack={stack!} {fields} />
+            <StackForm bind:stack={stack!} fields={failure.fields} />
           {:else if rule}
-            <RuleForm bind:rule={rule!} {stacks} {fields} />
+            <RuleForm bind:rule={rule!} {stacks} fields={failure.fields} />
           {/if}
         </Panel>
-        <SaveBar {busy} note="Changing the text makes a new version. Earlier versions stay in the revision history." />
+        <SaveBar busy={saving} disabled={deleting} note="Changing the text makes a new version. Earlier versions stay in the revision history." />
       </form>
       <Panel
         title={kind === 'stack' ? 'Delete stack' : 'Delete rule'}
@@ -129,15 +136,15 @@
         {#if confirming}
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm text-ink">Delete {title}?</span>
-            <Button type="button" variant="ghost" disabled={busy} onclick={() => (confirming = false)}>Cancel</Button>
-            <Button type="button" variant="danger" disabled={busy} onclick={() => void remove()}>Delete</Button>
+            <Button type="button" variant="ghost" disabled={deleting} onclick={() => (confirming = false)}>Cancel</Button>
+            <Button type="button" variant="danger" icon="trash" loading={deleting} disabled={saving} onclick={() => void remove()}>Delete</Button>
           </div>
         {:else}
-          <Button type="button" variant="danger" disabled={busy} onclick={() => (confirming = true)}>
+          <Button type="button" variant="danger" icon="trash" disabled={saving || deleting} onclick={() => (confirming = true)}>
             {kind === 'stack' ? 'Delete stack' : 'Delete rule'}
           </Button>
         {/if}
       </Panel>
     </div>
-  </Page>
-{/if}
+  {/if}
+</Page>

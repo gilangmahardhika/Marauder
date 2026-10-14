@@ -1,16 +1,18 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte';
   import { page } from '$app/stores';
-  import { ApiError, getCard, getTrace, streamTrace, unreachable } from '$lib/api';
+  import { getCard, getTrace, streamTrace } from '$lib/api';
   import TerminalView from '$lib/components/TerminalView.svelte';
   import TraceBlock from '$lib/components/TraceBlock.svelte';
   import TraceRow from '$lib/components/TraceRow.svelte';
   import { count, day, duration, stamp, tokens } from '$lib/format';
+  import { failureText } from '$lib/forms';
   import { pager } from '$lib/pager.svelte';
   import type { PendingReply } from '$lib/terminal';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import { cardTone, statusLabel } from '$lib/status';
+  import { toast } from '$lib/toast.svelte';
   import {
     attemptOptions,
     buildTimeline,
@@ -45,7 +47,8 @@
   let live = $state(false);
   let follow = $state(true);
   let now = $state(Date.now());
-  let message = $state('Loading trace');
+  let loading = $state('Loading trace');
+  let loadError = $state('');
   let list = $state<HTMLOListElement | null>(null);
   /** The reply the model is writing, from the trace stream; the stored model call replaces it. */
   let pending = $state<PendingReply | null>(null);
@@ -66,7 +69,7 @@
 
   const cardId = $derived($page.params.id ?? '');
 
-  showShell(() => ({ title: 'Trace', message }));
+  showShell(() => ({ title: 'Trace' }));
 
   const params = $derived($page.url.searchParams);
   const view = $derived(params.get('view') === 'terminal' ? 'terminal' : 'structured');
@@ -184,7 +187,7 @@
     ) {
       clearPending();
     }
-    if (done.length > 0) message = done.map((attempt) => `Attempt ${attempt.n} ended: ${outcomeLabel(attempt)}`).join('. ');
+    if (done.length > 0) toast.info(done.map((attempt) => `Attempt ${attempt.n} ended: ${outcomeLabel(attempt)}`).join('. '));
     if (merged && follow && view === 'structured' && next.length > before.length) void showLatest();
     if (merged && (done.length > 0 || wasLive !== live)) {
       void getCard(id)
@@ -194,19 +197,33 @@
     return done.length > 0;
   }
 
-  /** Reads the trace; with `since`, merges the new events into the ones shown. A failed poll keeps the last good data. */
+  /**
+   * Reads the trace; with `since`, merges the new events into the ones shown. A failed poll keeps the last good
+   * data; a failed full read shows the load error, or a toast once rows are shown.
+   */
   async function load(id: string, since = '') {
     if (inFlight === id) return;
     inFlight = id;
     try {
       const body = await getTrace(id, since || undefined);
       if (id !== current) return;
-      if (!apply(id, body, since !== '') && !since) message = 'Trace';
+      apply(id, body, since !== '');
     } catch (error: unknown) {
-      if (id === current && !since) message = error instanceof ApiError ? error.message : unreachable();
+      if (id !== current || since) return;
+      if (loaded) toast.error(failureText(error));
+      else loadError = failureText(error);
     } finally {
       if (inFlight === id) inFlight = '';
+      if (id === current) loading = '';
     }
+  }
+
+  function reload() {
+    const id = cardId;
+    if (!id) return;
+    loading = 'Loading trace';
+    loadError = '';
+    void load(id);
   }
 
   function clearPending() {
@@ -278,6 +295,8 @@
     attempts = [];
     live = false;
     loaded = false;
+    loading = 'Loading trace';
+    loadError = '';
     clearPending();
     clearTimeout(retry);
     streamFailed = false;
@@ -340,7 +359,13 @@
   });
 </script>
 
-<Page title="Trace" description={card ? card.title : `Events for ${cardId}, oldest first.`}>
+<Page
+  title="Trace"
+  description={card ? card.title : `Events for ${cardId}, oldest first.`}
+  {loading}
+  error={loadError}
+  onretry={reload}
+>
   {#snippet meta()}
     {#if card}
       <span title={card.status}><Badge tone={cardTone(card)}>{statusLabel(card.status)}</Badge></span>
@@ -350,7 +375,7 @@
     {/if}
   {/snippet}
   {#snippet actions()}
-    <Button href={`/cards/${cardId}`}>Back to card</Button>
+    <Button href={`/cards/${cardId}`} icon="arrow-left">Back to card</Button>
   {/snippet}
   {#if live}
     <section aria-label="Now running" class="mb-4 flex flex-wrap items-baseline gap-x-6 gap-y-2 rounded-panel border border-sky-200 bg-sky-50/60 px-4 py-3 text-sm">
@@ -414,7 +439,7 @@
           <dt class="text-muted">Errors</dt>
           <dd class="font-semibold {summary.errors > 0 ? 'text-red-800' : 'text-ink'}">
             {#if summary.errors > 0}
-              <a class="underline-offset-2 hover:underline" href={`?kind=job_error`}>{count(summary.errors)}</a>
+              <a class="underline-offset-2 hover:underline" href="?kind=job_error">{count(summary.errors)}</a>
             {:else}0{/if}
           </dd>
         </div>
@@ -441,7 +466,9 @@
       </Toolbar>
       {#if shown.length === 0}
         <EmptyState title="No events match" description="Change the search or filters to see more events.">
-          <Button type="button" variant="secondary" onclick={() => setParams({ q: '', kind: '', attempt: '' })}>Clear filters</Button>
+          <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', kind: '', attempt: '' })}>
+            Clear filters
+          </Button>
         </EmptyState>
       {:else if view === 'terminal'}
         <TerminalView events={shown} {attempts} pending={pendingShown} bind:follow />

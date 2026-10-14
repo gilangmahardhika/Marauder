@@ -4,7 +4,8 @@
 
 <script lang="ts">
   import Icon from './Icon.svelte';
-  import { control, labelClass, widths, type Width } from './control';
+  import { control, describedBy, labelClass, widths, type Width } from './control';
+  import FieldError from './FieldError.svelte';
 
   let {
     label,
@@ -122,6 +123,8 @@
       aria-expanded={open}
       aria-controls={listId}
       aria-autocomplete="list"
+      aria-invalid={error ? true : undefined}
+      aria-describedby={describedBy(id, '', error)}
       aria-activedescendant={open && choices.length > 0 ? `${id}-opt-${active}` : undefined}
       {placeholder}
       class="{control} pr-9"
@@ -174,5 +177,5 @@
       </ul>
     {/if}
   </div>
-  {#if error}<p class="error text-xs">{error}</p>{/if}
+  <FieldError {id} {error} />
 </div>
