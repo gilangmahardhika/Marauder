@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
 import { toast } from '$lib/toast.svelte';
@@ -40,13 +40,15 @@ afterEach(() => {
 test('the cap and Solo approval load and save together', async () => {
   api.putWorkflow.mockImplementation((body: Record<string, unknown>) => Promise.resolve({ ...saved, ...body }));
   render(WorkflowPage);
-  const cap = (await screen.findByLabelText('Implementation cap')) as HTMLInputElement;
-  const solo = screen.getByRole('checkbox', { name: /Solo approval/ }) as HTMLInputElement;
-  await waitFor(() => expect(cap.value).toBe('2'));
-  expect(solo.checked).toBe(false);
+  const cap = within(await screen.findByRole('group', { name: 'Implementation cap' }));
+  const approval = within(screen.getByRole('group', { name: 'Solo approval' }));
+  await waitFor(() => expect(cap.getByRole('button', { name: '2' }).getAttribute('aria-pressed')).toBe('true'));
+  expect(approval.getByRole('button', { name: 'Second reviewer' }).getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText(/Up to 2 cards run at once/)).toBeTruthy();
 
-  await fireEvent.input(cap, { target: { value: '4' } });
-  await fireEvent.click(solo);
+  await fireEvent.click(cap.getByRole('button', { name: '4' }));
+  await fireEvent.click(approval.getByRole('button', { name: 'Solo' }));
+  expect(screen.getByText(/Up to 4 cards run at once/)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /save/i }));
   await waitFor(() => expect(api.putWorkflow).toHaveBeenCalledTimes(1));
   expect(api.putWorkflow.mock.calls[0][0]).toEqual({ implementationCap: 4, soloApproval: true });
@@ -56,15 +58,15 @@ test('the cap and Solo approval load and save together', async () => {
 test('a refused cap shows under its field', async () => {
   api.putWorkflow.mockRejectedValue(new api.ApiError('validation failed', { implementationCap: 'implementation cap is from 1 to 8' }));
   render(WorkflowPage);
-  const cap = await screen.findByLabelText('Implementation cap');
+  const cap = await screen.findByRole('group', { name: 'Implementation cap' });
   await fireEvent.click(screen.getByRole('button', { name: /save/i }));
   expect(await screen.findByText('implementation cap is from 1 to 8')).toBeTruthy();
-  expect(cap.getAttribute('aria-invalid')).toBe('true');
+  expect(cap.parentElement?.getAttribute('aria-invalid')).toBe('true');
 });
 
 test('a member who cannot edit sees the fields locked', async () => {
   api.getWorkflow.mockResolvedValue({ ...saved, canEdit: false });
   render(WorkflowPage);
   expect(await screen.findByText(/Only a Lead Developer, a tribe admin, or an admin/)).toBeTruthy();
-  expect(screen.getByLabelText('Implementation cap').closest('fieldset')?.disabled).toBe(true);
+  expect(screen.getByRole('group', { name: 'Implementation cap' }).closest('fieldset')?.disabled).toBe(true);
 });

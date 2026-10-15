@@ -780,7 +780,7 @@ Fields, in three fieldsets:
 | Checks | Local check, dev check, allowed executables (one per line), allowed commands (one per line, `commandExecutables`, RFC-084), sandbox engine select (`podman`, `docker`), sandbox image |
 | Release | Deploy approved cards (checkbox `deployEnabled`, default on; off gives approved cards Squash and merge, RFC-111) |
 
-The doc paths are on the Repository page, and the implementation cap and Solo approval on the Workflow page (RFC-126).
+The doc paths are on the Repository page, and the implementation cap and Solo approval on the Workflow page (RFC-126). The Workflow page shows the cap as a 1 to 8 segmented picker and Solo approval as two choice cards, "Second reviewer" and "Solo", each in one panel row with its explanation beside it.
 
 Static help text:
 
