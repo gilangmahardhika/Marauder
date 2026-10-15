@@ -1,13 +1,15 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { addRequirement, getIntake, setReviewers, streamRefine } from '$lib/api';
   import AIReviewModeField from '$lib/components/AIReviewModeField.svelte';
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
+  import { refineModels } from '$lib/llm';
   import { canSetSelfReview, reviewerChoices, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
   import { toast } from '$lib/toast.svelte';
-  import type { AIReviewMode, MCPServerMention, Reviewer } from '$lib/types';
+  import type { AIReviewMode, MCPServerMention, ModelChoice, Reviewer } from '$lib/types';
   import Button from '$lib/ui/Button.svelte';
   import Checkbox from '$lib/ui/Checkbox.svelte';
   import FormAlert from '$lib/ui/FormAlert.svelte';
@@ -24,6 +26,8 @@
   let options = $state<Reviewer[]>([]);
   let known = $state<string[]>([]);
   let servers = $state<MCPServerMention[]>([]);
+  let models = $state<ModelChoice[]>([]);
+  let implementModel = $state('');
   let failure = $state(noFailure);
   let form = $state<HTMLFormElement>();
   let busy = $state(false);
@@ -51,6 +55,13 @@
       .catch(() => {
         options = [];
       });
+  });
+
+  onMount(() => {
+    void refineModels().then((loaded) => {
+      models = loaded.models;
+      implementModel = loaded.implementModel;
+    });
   });
 
   async function submit(event: SubmitEvent) {
@@ -102,6 +113,8 @@
         bind:acceptance
         fields={failure.fields}
         {servers}
+        {models}
+        {implementModel}
         refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId: id.trim() }, onEvent, signal)}
       />
       <MultiSearchSelect

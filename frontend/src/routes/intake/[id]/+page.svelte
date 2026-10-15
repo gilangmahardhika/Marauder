@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { deleteRequirement, getIntake, streamRefine, updateRequirement } from '$lib/api';
@@ -6,10 +7,11 @@
   import RequirementForm from '$lib/components/RequirementForm.svelte';
   import ReviewersPanel from '$lib/components/ReviewersPanel.svelte';
   import { failureText, focusInvalid, formFailure, noFailure } from '$lib/forms';
+  import { refineModels } from '$lib/llm';
   import { fromLines, toLines } from '$lib/requirements';
   import { shell, showShell } from '$lib/shell.svelte';
   import { toast } from '$lib/toast.svelte';
-  import type { Intake, MCPServerMention, Requirement, Reviewer } from '$lib/types';
+  import type { Intake, MCPServerMention, ModelChoice, Requirement, Reviewer } from '$lib/types';
   import Badge from '$lib/ui/Badge.svelte';
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
@@ -22,6 +24,8 @@
   let requirement = $state<Requirement | null>(null);
   let reviewerOptions = $state<Reviewer[]>([]);
   let servers = $state<MCPServerMention[]>([]);
+  let models = $state<ModelChoice[]>([]);
+  let implementModel = $state('');
   let missing = $state(false);
   let statement = $state('');
   let acceptance = $state('');
@@ -65,6 +69,13 @@
   $effect(() => {
     if (requirementId === '' || shell.projectId === '') return;
     load();
+  });
+
+  onMount(() => {
+    void refineModels().then((loaded) => {
+      models = loaded.models;
+      implementModel = loaded.implementModel;
+    });
   });
 
   async function save(event: SubmitEvent) {
@@ -143,6 +154,8 @@
             bind:acceptance
             fields={failure.fields}
             {servers}
+            {models}
+            {implementModel}
             refine={(body, onEvent, signal) => streamRefine({ ...body, requirementId }, onEvent, signal)}
           />
           {#snippet footer()}

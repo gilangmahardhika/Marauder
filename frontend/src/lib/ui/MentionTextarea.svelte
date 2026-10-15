@@ -16,6 +16,7 @@
     rows,
     grow = false,
     labelAction,
+    cornerAction,
     servers = []
   }: {
     label: string;
@@ -27,6 +28,8 @@
     rows?: number;
     grow?: boolean;
     labelAction?: Snippet;
+    /** A control at the bottom right inside the textarea; the text keeps clear of it. */
+    cornerAction?: Snippet;
     /** The tribe's MCP servers that typing @ lists (RFC-101). */
     servers?: MCPServerMention[];
   } = $props();
@@ -118,7 +121,7 @@
       aria-controls={listId}
       aria-expanded={open}
       aria-activedescendant={open && choices.length > 0 ? `${id}-mention-${active}` : undefined}
-      class="{controlBase} w-full py-2.5 {grow ? 'resize-none overflow-hidden' : ''}"
+      class="{controlBase} w-full {cornerAction ? 'pt-2.5 pb-14' : 'py-2.5'} {grow ? 'resize-none overflow-hidden' : ''}"
       use:autogrow={{ on: grow, value }}
       bind:value
       oninput={follow}
@@ -129,6 +132,9 @@
       {onkeydown}
       onblur={close}
     ></textarea>
+    {#if cornerAction}
+      <div class="absolute right-1.5 bottom-1">{@render cornerAction()}</div>
+    {/if}
     {#if open}
       <ul
         id={listId}
@@ -136,7 +142,7 @@
         aria-label="MCP servers"
         class="absolute top-full z-30 mt-1 max-h-64 w-full max-w-sm overflow-auto rounded-panel border border-line bg-surface p-1 shadow-lg"
       >
-        {#each choices as option, index}
+        {#each choices as option, index (option.value)}
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <li
             id={`${id}-mention-${index}`}

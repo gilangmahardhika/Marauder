@@ -53,8 +53,11 @@ test('Before shows the acceptance lines as a checklist', async () => {
 test('Apply and Discard call back, and a stale field is flagged', async () => {
   const onapply = vi.fn();
   const ondiscard = vi.fn();
-  render(RefineCompare, { ...statement, stale: true, onapply, ondiscard });
+  const { rerender } = render(RefineCompare, { ...statement, onapply, ondiscard });
+  expect(screen.getByText('Nothing is saved until you press Save.')).toBeTruthy();
+  await rerender({ ...statement, stale: true, onapply, ondiscard });
   expect(screen.getByRole('status').textContent).toContain('Apply replaces those edits');
+  expect(screen.queryByText('Nothing is saved until you press Save.')).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
   expect(onapply).toHaveBeenCalledTimes(1);

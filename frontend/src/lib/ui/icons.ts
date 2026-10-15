@@ -4,6 +4,7 @@ export type IconName =
   | 'projects'
   | 'git'
   | 'spark'
+  | 'sparkles'
   | 'router'
   | 'terminal'
   | 'users'
@@ -32,6 +33,9 @@ export type IconName =
   | 'send'
   | 'pencil'
   | 'arrow-left'
+  | 'arrow-up'
+  | 'stop'
+  | 'cpu'
   | 'external'
   | 'log-in'
   | 'log-out'
@@ -52,6 +56,9 @@ export const iconPaths: Record<IconName, string[]> = {
   send: ['M21 3L10 14', 'M21 3l-7 18-4-7-7-4z'],
   pencil: ['M15.5 4.5l4 4L8 20H4v-4z', 'M13.5 6.5l4 4'],
   'arrow-left': ['M19 12H5', 'M11 6l-6 6 6 6'],
+  'arrow-up': ['M12 19V5', 'M6 11l6-6 6 6'],
+  stop: ['M8 6h8a2 2 0 012 2v8a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2z'],
+  cpu: ['M7 7h10v10H7z', 'M10 3v4', 'M14 3v4', 'M10 17v4', 'M14 17v4', 'M3 10h4', 'M3 14h4', 'M17 10h4', 'M17 14h4'],
   external: ['M14 4h6v6', 'M20 4l-9 9', 'M18 14v6H4V6h6'],
   'log-in': ['M14 4h5v16h-5', 'M3 12h11', 'M10 8l4 4-4 4'],
   'log-out': ['M10 4H5v16h5', 'M21 12H10', 'M17 8l4 4-4 4'],
@@ -76,6 +83,10 @@ export const iconPaths: Record<IconName, string[]> = {
   projects: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
   git: ['M7 5a2 2 0 110-4 2 2 0 010 4', 'M7 5v14', 'M7 12h7a3 3 0 013 3v1', 'M17 16a2 2 0 110 4 2 2 0 010-4'],
   spark: ['M12 3l1.4 5.2L19 10l-5.6 1.8L12 17l-1.4-5.2L5 10l5.6-1.8z'],
+  sparkles: [
+    'M10.5 6l1.6 4.9L17 12.5l-4.9 1.6L10.5 19l-1.6-4.9L4 12.5l4.9-1.6z',
+    'M18 3l.7 2.3L21 6l-2.3.7L18 9l-.7-2.3L15 6l2.3-.7z'
+  ],
   router: ['M5 7h5', 'M14 7h5', 'M12 7v10', 'M7 17h10'],
   terminal: ['M5 7l5 5-5 5', 'M12 17h7'],
   users: ['M9 11a3 3 0 100-6 3 3 0 000 6', 'M3.5 19a5.5 5.5 0 0111 0', 'M17 11.5a2.5 2.5 0 100-5', 'M16.5 19a4.2 4.2 0 014-3.5'],

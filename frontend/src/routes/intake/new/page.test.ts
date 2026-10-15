@@ -21,7 +21,9 @@ vi.mock('$lib/api', () => ({
   getIntake: api.getIntake,
   addRequirement: api.addRequirement,
   setReviewers: api.setReviewers,
-  streamRefine: vi.fn()
+  streamRefine: vi.fn(),
+  getLLM: vi.fn().mockResolvedValue({ families: [] }),
+  getRouter: vi.fn().mockResolvedValue({ routes: {} })
 }));
 
 import NewRequirementPage from './+page.svelte';

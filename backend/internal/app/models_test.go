@@ -101,6 +101,42 @@ func TestRoutedProviderModelOptions(t *testing.T) {
 	}
 }
 
+func TestPinnedProviderOptions(t *testing.T) {
+	var mu sync.Mutex
+	bodies := map[string][]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies[r.URL.Path] = append(bodies[r.URL.Path], string(body))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, `{"error":{"message":"overloaded","type":"server_error"}}`)
+	}))
+	defer srv.Close()
+
+	var cfg settings.Config
+	cfg.LLM.Families = []settings.Family{
+		{ID: "primary", Protocol: "openai", BaseURL: srv.URL + "/primary", Models: []settings.Model{{ID: "big", ModelOptions: settings.ModelOptions{Thinking: "enabled", Effort: "high"}}}},
+		{ID: "backup", Protocol: "openai", BaseURL: srv.URL + "/backup", Models: []settings.Model{{ID: "small"}}},
+	}
+	secrets := settings.Secrets{LLMKeys: map[string]string{"primary": "k-primary-1", "backup": "k-backup-1"}}
+
+	pinned := app.PinnedProvider(cfg, secrets, "big", settings.ModelOptions{Thinking: "disabled", Effort: "low"})
+	if _, err := pinned.Complete(context.Background(), providers.Request{User: "hi"}); !errors.Is(err, app.ErrProvider) {
+		t.Fatalf("err = %v", err)
+	}
+	primary := bodies["/primary/chat/completions"]
+	if len(primary) != 2 || len(bodies["/backup/chat/completions"]) != 0 {
+		t.Fatalf("bodies = %v", bodies)
+	}
+	for _, body := range primary {
+		if !strings.Contains(body, `"reasoning_effort":"low"`) || !strings.Contains(body, `"thinking":{"type":"disabled"}`) {
+			t.Fatalf("pinned body = %s", body)
+		}
+	}
+}
+
 func TestRateLimitWaitsThenRetries(t *testing.T) {
 	var mu sync.Mutex
 	calls := map[string]int{}

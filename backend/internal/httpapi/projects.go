@@ -586,6 +586,9 @@ func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request
 		Statement     string   `json:"statement"`
 		Acceptance    []string `json:"acceptance"`
 		Instructions  string   `json:"instructions"`
+		Model         string   `json:"model"`
+		Thinking      string   `json:"thinking"`
+		Effort        string   `json:"effort"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, 422, "validation", "body")
@@ -609,6 +612,7 @@ func (s *Server) projectRequirementRefine(w http.ResponseWriter, r *http.Request
 	}
 	err := app.RefineField(r.Context(), s.Data, s.DB, projectID, user.ID, app.RefineInput{
 		Field: body.Field, RequirementID: body.RequirementID, Statement: body.Statement, Acceptance: body.Acceptance, Instructions: body.Instructions,
+		Model: body.Model, Thinking: body.Thinking, Effort: body.Effort,
 	}, s.RefineProvider, app.RefineTools{Key: s.TokenKey, MCP: s.MCP, Secrets: s.Secrets}, emit)
 	if err == nil || r.Context().Err() != nil {
 		return

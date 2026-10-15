@@ -22,6 +22,11 @@ type Prompt struct {
 	Tools     []string
 	// ToolChoice is the request's tool choice.
 	ToolChoice string
+	// Model, Thinking, and Effort are what the request names, before a routed
+	// provider fills in a model's saved settings.
+	Model    string
+	Thinking string
+	Effort   string
 }
 
 type call struct {
@@ -142,7 +147,10 @@ func (f *Fake) cancel() {
 
 // pop records req and takes the next scripted turn of its task class.
 func (f *Fake) pop(req providers.Request) (turn, bool) {
-	prompt := Prompt{TaskClass: req.TaskClass, System: req.System, User: req.User, MaxTokens: req.MaxTokens, Turns: copyTurns(req.Turns), ToolChoice: req.ToolChoice}
+	prompt := Prompt{
+		TaskClass: req.TaskClass, System: req.System, User: req.User, MaxTokens: req.MaxTokens, Turns: copyTurns(req.Turns), ToolChoice: req.ToolChoice,
+		Model: req.Model, Thinking: req.Thinking, Effort: req.Effort,
+	}
 	for _, tool := range req.Tools {
 		prompt.Tools = append(prompt.Tools, tool.Name)
 	}

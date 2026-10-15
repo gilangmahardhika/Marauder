@@ -10,7 +10,9 @@ const api = vi.hoisted(() => ({
   getIntake: vi.fn(),
   updateRequirement: vi.fn(),
   streamRefine: vi.fn(),
-  deleteRequirement: vi.fn()
+  deleteRequirement: vi.fn(),
+  getLLM: vi.fn(),
+  getRouter: vi.fn()
 }));
 
 vi.mock('$app/stores', () => ({
@@ -32,6 +34,8 @@ vi.mock('$lib/api', () => ({
   updateRequirement: api.updateRequirement,
   streamRefine: api.streamRefine,
   deleteRequirement: api.deleteRequirement,
+  getLLM: api.getLLM,
+  getRouter: api.getRouter,
   setReviewers: vi.fn(),
   setSelfReview: vi.fn(),
   setAIReviewMode: vi.fn()
@@ -61,6 +65,10 @@ const intake = (req: Requirement): Intake => ({ requirements: [req], reviewerOpt
 beforeEach(() => {
   shell.projectId = 'proj_default';
   api.getIntake.mockResolvedValue(intake(requirement));
+  api.getLLM.mockResolvedValue({
+    families: [{ id: 'anthropic', protocol: 'anthropic', baseUrl: '', models: ['claude-a', 'claude-b'], keySet: true }]
+  });
+  api.getRouter.mockResolvedValue({ routes: { implement: { model: 'claude-a', fallback: '' } } });
 });
 
 afterEach(() => {
@@ -84,9 +92,19 @@ test('refining acceptance, Apply, and Save send the new acceptance with the stat
   await waitFor(() => expect(statement.value).toBe('Export the board.'));
 
   await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance with AI' }));
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toContain('claude-a'));
   await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
   expect(api.streamRefine).toHaveBeenCalledWith(
-    { field: 'acceptance', statement: 'Export the board.', acceptance: ['Works well.'], instructions: '', requirementId: 'REQ-005' },
+    {
+      field: 'acceptance',
+      statement: 'Export the board.',
+      acceptance: ['Works well.'],
+      instructions: '',
+      model: 'claude-a',
+      thinking: '',
+      effort: '',
+      requirementId: 'REQ-005'
+    },
     expect.any(Function),
     expect.any(AbortSignal)
   );

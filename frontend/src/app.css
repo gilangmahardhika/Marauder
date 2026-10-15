@@ -113,8 +113,14 @@
     animation: toast-in 160ms ease-out;
   }
 
+  .chip-menu {
+    animation: chip-menu-in 120ms ease-out;
+    transform-origin: top left;
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    .toast {
+    .toast,
+    .chip-menu {
       animation: none;
     }
   }
@@ -124,5 +130,12 @@
   from {
     opacity: 0;
     transform: translateY(0.5rem);
+  }
+}
+
+@keyframes chip-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.98);
   }
 }

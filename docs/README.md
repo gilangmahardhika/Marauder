@@ -59,6 +59,9 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0052-needs-answer-column.md](rfc/0052-needs-answer-column.md) | Decision `RFC-116`. A card waiting for an answer has its own board lane, Needs answer, between Waiting and Running |
 | [rfc/0053-continue-work.md](rfc/0053-continue-work.md) | Decisions `RFC-117` to `RFC-119`. A long attempt compacts its context, an unfinished attempt hands its edits, plan, and summary to the next one, and a runner starts from the control plane's card branch |
 | [rfc/0054-agent-selection.md](rfc/0054-agent-selection.md) | Decisions `RFC-120` to `RFC-122`. An admin chooses the implement agent, the built-in loop or Claude Code, and a runner runs Claude Code with the job's model key in its environment only |
+| [rfc/0055-refine-in-the-field.md](rfc/0055-refine-in-the-field.md) | Decision `RFC-123`. The refine button sits inside each text box, each refine box says what it reads, and applying a statement offers to refine the acceptance to match |
+| [rfc/0056-refine-model.md](rfc/0056-refine-model.md) | Decision `RFC-124`. A refine box chooses its model, thinking, and effort, starting on the implement route's model, and the reply still streams |
+| [rfc/0057-refine-chat.md](rfc/0057-refine-chat.md) | Decision `RFC-125`. Each refine box is a chat whose follow-up messages refine the previous answer, and Apply takes the latest |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

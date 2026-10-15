@@ -63,6 +63,13 @@ func RoutedProvider(cfg settings.Config, secrets settings.Secrets, primary, fall
 	return routedProvider{cfg: cfg, secrets: secrets, primary: primary, fallback: fallback}
 }
 
+// PinnedProvider sends each request to model only, with opts in place of the
+// model's saved thinking and effort (RFC-124). It waits on a rate limit and
+// retries once like RoutedProvider, and has no fallback.
+func PinnedProvider(cfg settings.Config, secrets settings.Secrets, model string, opts settings.ModelOptions) providers.Provider {
+	return routedProvider{cfg: cfg, secrets: secrets, primary: model, pinned: &opts}
+}
+
 const (
 	rateLimitWait    = time.Minute
 	rateLimitDefault = 10 * time.Second
@@ -73,6 +80,15 @@ type routedProvider struct {
 	secrets  settings.Secrets
 	primary  string
 	fallback string
+	pinned   *settings.ModelOptions
+}
+
+// options are the settings sent to model: the pinned ones, or its saved ones.
+func (p routedProvider) options(model string) settings.ModelOptions {
+	if p.pinned != nil {
+		return *p.pinned
+	}
+	return llm.Options(p.cfg, model)
 }
 
 func (p routedProvider) Complete(ctx context.Context, req providers.Request) (providers.Response, error) {
@@ -82,7 +98,7 @@ func (p routedProvider) Complete(ctx context.Context, req providers.Request) (pr
 		if err != nil {
 			return err
 		}
-		next := llm.WithOptions(req, llm.Options(p.cfg, model))
+		next := llm.WithOptions(req, p.options(model))
 		next.Model = model
 		resp, err = client.Complete(ctx, next)
 		var limited *providers.RateLimited
@@ -118,7 +134,7 @@ func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, o
 		if err != nil {
 			return err
 		}
-		next := llm.WithOptions(req, llm.Options(p.cfg, model))
+		next := llm.WithOptions(req, p.options(model))
 		next.Model = model
 		forward := func(text string) {
 			if !sent {
@@ -172,7 +188,7 @@ func (p routedProvider) StreamRestart(ctx context.Context, req providers.Request
 		if err != nil {
 			return err
 		}
-		next := llm.WithOptions(req, llm.Options(p.cfg, model))
+		next := llm.WithOptions(req, p.options(model))
 		next.Model = model
 		resp, err = send(client, next)
 		var limited *providers.RateLimited

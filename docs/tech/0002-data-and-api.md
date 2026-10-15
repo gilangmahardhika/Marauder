@@ -1241,9 +1241,11 @@ Allowed for a Lead Developer or an admin who is a member. Anyone else is `403`, 
 
 `PUT /api/projects/{projectId}/requirements/{id}` takes `{ "statement": "...", "acceptance": [] }` with the same rules. It changes only a manual row. A changed statement or acceptance list clears `accepted_at` and `accepted_by` (REQ-004). A row parsed from the repository or drafted by the planner is `409`. An unknown id is `404`.
 
-`POST /api/projects/{projectId}/requirements/refine` takes `{ "field": "statement", "requirementId": "", "statement": "...", "acceptance": [], "instructions": "" }` and streams the implement model's new text for that one field without saving it (RFC-086, RFC-087). `field` is `statement` or `acceptance`.
+`POST /api/projects/{projectId}/requirements/refine` takes `{ "field": "statement", "requirementId": "", "statement": "...", "acceptance": [], "instructions": "", "model": "", "thinking": "", "effort": "" }` and streams the implement model's new text for that one field without saving it (RFC-086, RFC-087). `field` is `statement` or `acceptance`.
 
-Any member who can see the project may call it. A missing or unknown `field` is `422` on `field`. `statement` and `acceptance` follow the save rules and `instructions` is at most 1,000 characters, otherwise `422` with field errors. No model on the `implement` route is `409 router_config`. These are JSON replies, sent before anything streams. A provider failure or a timeout before the first piece of text is `502 provider_error`, also JSON.
+`model`, `thinking`, and `effort` are optional (RFC-124). Empty values call the `implement` route's model, then its fallback, each with its saved `modelOptions`. A `model` other than the route's, or a non-empty `thinking` or `effort`, calls that one model with no fallback, with the given `thinking` and `effort` in place of its saved ones; `thinking` `enabled` keeps the saved budget. `thinking` and `effort` take the values of `modelOptions.*.thinking` and `modelOptions.*.effort` for the model's protocol. A model in no LLM family, or one whose family has no usable key, is `422` on `model`. A value the protocol does not take is `422` on `modelOptions`.
+
+Any member who can see the project may call it. A missing or unknown `field` is `422` on `field`. `statement` and `acceptance` follow the save rules and `instructions` is at most 1,000 characters, otherwise `422` with field errors. No `model` and no model on the `implement` route is `409 router_config`. These are JSON replies, sent before anything streams. A provider failure or a timeout before the first piece of text is `502 provider_error`, also JSON.
 
 Otherwise the reply is `200` with `Content-Type: text/event-stream` and `Cache-Control: no-store`, flushed after each event:
 

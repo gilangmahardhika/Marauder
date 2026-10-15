@@ -171,6 +171,9 @@ const refineBody = {
   statement: 'Export the board.',
   acceptance: ['Works well.'],
   instructions: '',
+  model: '',
+  thinking: '',
+  effort: '',
   requirementId: 'REQ-005'
 };
 

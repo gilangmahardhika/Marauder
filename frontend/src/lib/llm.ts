@@ -1,6 +1,7 @@
+import { getLLM, getRouter } from '$lib/api';
 import { omitEmptySecret } from '$lib/components/SecretField.svelte';
 import { matchText, type Option } from '$lib/filter';
-import type { Family, ModelOptions } from '$lib/types';
+import type { Family, ModelChoice, ModelOptions } from '$lib/types';
 
 export type OptionsDraft = {
   thinking: string;
@@ -141,6 +142,28 @@ export function cleanOptions(protocol: string, draft: OptionsDraft): ModelOption
     out.contextTokens = context;
   }
   return Object.keys(out).length ? out : null;
+}
+
+/** Every listed model with its family and protocol, to choose the model of a refine (RFC-124). */
+export function modelChoices(families: Family[]): ModelChoice[] {
+  return families.flatMap((family) =>
+    family.models.map((id) => ({ id, family: family.id, protocol: protocolOf(family) }))
+  );
+}
+
+/** The models a refine may choose and the implement route's model, or none when either load fails (RFC-124). */
+export async function refineModels(): Promise<{ models: ModelChoice[]; implementModel: string }> {
+  try {
+    const [llm, router] = await Promise.all([getLLM(), getRouter()]);
+    return { models: modelChoices(llm.families), implementModel: router.routes.implement?.model ?? '' };
+  } catch {
+    return { models: [], implementModel: '' };
+  }
+}
+
+/** Thinking or effort choices for one request, where the empty value keeps the model's saved setting. */
+export function requestChoices(choices: Choice[]): Choice[] {
+  return choices.map((choice) => (choice.value === '' ? { ...choice, label: 'Model default' } : choice));
 }
 
 export function protocolLabel(protocol: string) {

@@ -49,13 +49,17 @@ type RefineTools struct {
 }
 
 // RefineInput is the draft and the field to refine. RequirementID is empty for
-// a new requirement.
+// a new requirement. Model, Thinking, and Effort are the member's choices
+// (RFC-124); empty values use the implement route and the saved settings.
 type RefineInput struct {
 	Field         string
 	RequirementID string
 	Statement     string
 	Acceptance    []string
 	Instructions  string
+	Model         string
+	Thinking      string
+	Effort        string
 }
 
 // RefineDone is the finished text of one field. It is never saved here.
@@ -103,25 +107,46 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 		return err
 	}
 	route := cfg.Router.Routes["implement"]
-	if route.Model == "" {
+	model := route.Model
+	if in.Model != "" {
+		model = in.Model
+	}
+	if model == "" {
 		return ErrRefineRoute
 	}
+	pinned := model != route.Model || in.Thinking != "" || in.Effort != ""
+	var opts settings.ModelOptions
+	if pinned {
+		if opts, err = refineOptions(cfg, model, in.Thinking, in.Effort); err != nil {
+			return err
+		}
+	}
 	if provider == nil {
-		if _, _, _, err := llm.ForModel(cfg, secrets, route.Model); err != nil {
+		if _, _, _, err := llm.ForModel(cfg, secrets, model); err != nil {
+			if pinned {
+				return &intake.Invalid{Fields: map[string]string{"model": "This model's LLM family has no usable key."}}
+			}
 			return ErrRefineRoute
 		}
-		provider = RoutedProvider(cfg, secrets, route.Model, route.Fallback)
+		if pinned {
+			provider = PinnedProvider(cfg, secrets, model, opts)
+		} else {
+			provider = RoutedProvider(cfg, secrets, route.Model, route.Fallback)
+		}
 	}
 	system := contextpack.RefineStatementSystem
 	if in.Field == "acceptance" {
 		system = contextpack.RefineAcceptanceSystem
 	}
 	req := providers.Request{
-		Model:     route.Model,
+		Model:     model,
 		System:    system,
 		User:      contextpack.RefineUser(in.Field, in.RequirementID, draft.Statement, draft.Acceptance, in.Instructions),
 		MaxTokens: refineMaxTokens,
 		TaskClass: "refine_requirement",
+	}
+	if pinned {
+		req = llm.WithOptions(req, opts)
 	}
 
 	redact := append(modelKeys(secrets), tools.Secrets...)
@@ -132,7 +157,7 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 	redact = append(redact, MCPSecrets(conns)...)
 	conns, _, _ = ScopeMentions(conns, intake.MentionsOf(draft.Statement, draft.Acceptance))
 
-	modelID := route.Model
+	modelID := model
 	started := false
 	start := func(model string) {
 		if !started {
@@ -230,6 +255,33 @@ func RefineField(ctx context.Context, data string, db *sql.DB, projectID, actorI
 	done.ModelID = modelID
 	emit("done", done)
 	return nil
+}
+
+// refineOptions are model's saved settings with the member's thinking and
+// effort in place of the saved ones (RFC-124). An unknown model is invalid on
+// model, and a value the protocol does not take on modelOptions.
+func refineOptions(cfg settings.Config, model, thinking, effort string) (settings.ModelOptions, error) {
+	for _, family := range cfg.LLM.Families {
+		for _, m := range family.Models {
+			if m.ID != model {
+				continue
+			}
+			opts := m.ModelOptions
+			if thinking != "" {
+				opts.Thinking = thinking
+			}
+			if effort != "" {
+				opts.Effort = effort
+			}
+			opts, err := settings.CheckOptions(family.Protocol, opts)
+			var bad *settings.Invalid
+			if errors.As(err, &bad) {
+				return opts, &intake.Invalid{Fields: bad.Fields}
+			}
+			return opts, err
+		}
+	}
+	return settings.ModelOptions{}, &intake.Invalid{Fields: map[string]string{"model": "Choose a model from the LLM settings."}}
 }
 
 // refineSend sends one turn and streams its text into out.

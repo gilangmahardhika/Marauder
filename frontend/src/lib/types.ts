@@ -285,6 +285,17 @@ export type RefineField = "statement" | "acceptance";
 export type RefineRequest = RequirementDraft & {
   field: RefineField;
   instructions: string;
+  /** Empty values use the implement route and the model's saved settings (RFC-124). */
+  model: string;
+  thinking: string;
+  effort: string;
+};
+
+/** A model a refine may call, with its family and that family's protocol (RFC-124). */
+export type ModelChoice = {
+  id: string;
+  family: string;
+  protocol: string;
 };
 
 /**

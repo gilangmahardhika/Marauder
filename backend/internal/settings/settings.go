@@ -123,9 +123,9 @@ func NewModels(ids []string, options map[string]ModelOptions) ([]Model, error) {
 	return models, nil
 }
 
-// checkOptions refuses a value the protocol does not take, and drops a budget
+// CheckOptions refuses a value the protocol does not take, and drops a budget
 // that thinking does not use.
-func checkOptions(protocol string, opts ModelOptions) (ModelOptions, error) {
+func CheckOptions(protocol string, opts ModelOptions) (ModelOptions, error) {
 	bad := func(msg string) (ModelOptions, error) {
 		return opts, &Invalid{Fields: map[string]string{"modelOptions": msg}}
 	}
@@ -296,7 +296,7 @@ func SaveLLM(data string, families []Family, keys map[string]*string) (Config, e
 				return current, ErrValidation
 			}
 			seen[model.ID] = true
-			if family.Models[i].ModelOptions, err = checkOptions(family.Protocol, model.ModelOptions); err != nil {
+			if family.Models[i].ModelOptions, err = CheckOptions(family.Protocol, model.ModelOptions); err != nil {
 				return current, err
 			}
 		}

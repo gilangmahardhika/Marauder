@@ -81,7 +81,11 @@ test('each field has its own refine icon, and opening one does not open the othe
   const statementButton = screen.getByRole('button', { name: 'Refine statement with AI' });
   const acceptanceButton = screen.getByRole('button', { name: 'Refine acceptance with AI' });
   expect(statementButton.getAttribute('aria-expanded')).toBe('false');
-  expect(statementButton.className).toContain('size-11');
+  expect(statementButton.className).toContain('min-h-11');
+  expect(statementButton.textContent?.trim()).toBe('Refine with AI');
+  expect(statementButton.className).not.toMatch(/(^|\s)(aria-expanded:)?bg-accent(\s|$)/);
+  const label = statementButton.querySelector('span') as HTMLElement;
+  expect(label.className).not.toMatch(/(^|\s)(ring-1|bg-surface)(\s|$)/);
 
   await fireEvent.click(statementButton);
   expect(statementButton.getAttribute('aria-expanded')).toBe('true');
@@ -102,7 +106,15 @@ test('Apply on the statement changes only the statement', async () => {
   render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine });
   await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
-  expect(refine.mock.calls[0][0]).toEqual({ field: 'statement', statement: 'Export the board.', acceptance: ['Works well.'], instructions: '' });
+  expect(refine.mock.calls[0][0]).toEqual({
+    field: 'statement',
+    statement: 'Export the board.',
+    acceptance: ['Works well.'],
+    instructions: '',
+    model: '',
+    thinking: '',
+    effort: ''
+  });
   await screen.findByRole('region', { name: 'Refined statement' });
   expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Export the board.');
 
@@ -126,6 +138,155 @@ test('Apply on acceptance changes only the acceptance lines', async () => {
     '- The export has one row per card.\n- Each row lists the card id.'
   );
   expect((screen.getByLabelText('Statement') as HTMLTextAreaElement).value).toBe('Export the board.');
+});
+
+test('each refine box says what else it reads', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine: replying('x') });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance with AI' }));
+  const statementPanel = document.getElementById('refine-statement-panel') as HTMLElement;
+  const acceptancePanel = document.getElementById('refine-acceptance-panel') as HTMLElement;
+  expect(within(statementPanel).getByText('Reads your acceptance: 1 line')).toBeTruthy();
+  expect(within(acceptancePanel).getByText('Reads your statement: 3 words')).toBeTruthy();
+
+  await fireEvent.input(screen.getByLabelText('Acceptance'), { target: { value: '' } });
+  expect(within(statementPanel).getByText('No acceptance yet')).toBeTruthy();
+});
+
+test('each refine box keeps its own message', async () => {
+  const refine = replying('x');
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance with AI' }));
+  const [statementNote, acceptanceNote] = screen.getAllByLabelText('What to improve (optional)') as HTMLTextAreaElement[];
+  await fireEvent.input(statementNote, { target: { value: 'Say who needs it' } });
+  expect(acceptanceNote.value).toBe('');
+
+  const acceptancePanel = document.getElementById('refine-acceptance-panel') as HTMLElement;
+  await fireEvent.click(within(acceptancePanel).getByRole('button', { name: 'Refine' }));
+  expect(refine.mock.calls[0][0].instructions).toBe('');
+  expect(statementNote.value).toBe('Say who needs it');
+});
+
+test('Close refine collapses the box and the corner button', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine: replying('x') });
+  const button = screen.getByRole('button', { name: 'Refine statement with AI' });
+  await fireEvent.click(button);
+  const panel = document.getElementById('refine-statement-panel') as HTMLElement;
+  await fireEvent.click(within(panel).getByRole('button', { name: 'Close refine' }));
+  expect(document.getElementById('refine-statement-panel')).toBeNull();
+  expect(button.getAttribute('aria-expanded')).toBe('false');
+});
+
+test('applying a statement offers to refine the acceptance against it', async () => {
+  const refine = replying('Members export the board as CSV.');
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '- Works well.', refine });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  await screen.findByRole('region', { name: 'Refined statement' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  expect(screen.getByText('Statement updated.')).toBeTruthy();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance to match' }));
+  expect(screen.queryByText('Statement updated.')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Refine acceptance with AI' }).getAttribute('aria-expanded')).toBe('true');
+  expect(refine).toHaveBeenCalledTimes(2);
+  expect(refine.mock.calls[1][0]).toEqual({
+    field: 'acceptance',
+    statement: 'Members export the board as CSV.',
+    acceptance: ['Works well.'],
+    instructions: '',
+    model: '',
+    thinking: '',
+    effort: ''
+  });
+});
+
+const models = [
+  { id: 'claude-a', family: 'anthropic', protocol: 'anthropic' },
+  { id: 'gpt-b', family: 'openai', protocol: 'openai' }
+];
+
+test('without models the refine box shows no model choices', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine: replying('x') });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();
+  expect(screen.queryByRole('combobox', { name: 'Effort' })).toBeNull();
+});
+
+const text = (node: HTMLElement) => node.textContent?.replace(/\s+/g, ' ').trim();
+
+async function choose(name: string, option: string) {
+  await fireEvent.click(screen.getByRole('combobox', { name }));
+  await fireEvent.click(within(screen.getByRole('listbox', { name })).getByRole('option', { name: option }));
+}
+
+test('the refine box starts on the implement model and sends the chosen model and effort', async () => {
+  const refine = replying('x');
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine, models, implementModel: 'claude-a' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  const model = screen.getByRole('combobox', { name: 'Model' });
+  const thinking = screen.getByRole('combobox', { name: 'Thinking' });
+  expect(text(model)).toBe('claude-a');
+  expect(text(thinking)).toBe('Thinking Default');
+
+  await fireEvent.click(model);
+  const current = screen.getByRole('option', { name: /claude-a/ });
+  expect(current.getAttribute('aria-selected')).toBe('true');
+  expect(text(current)).toBe('claude-a Implement');
+  await fireEvent.click(model);
+
+  await fireEvent.click(thinking);
+  expect(within(screen.getByRole('listbox', { name: 'Thinking' })).getAllByRole('option').map(text)).toEqual([
+    'Model default',
+    'On',
+    'Off',
+    'Adaptive'
+  ]);
+  await fireEvent.click(screen.getByRole('option', { name: 'Adaptive' }));
+  expect(text(thinking)).toBe('Thinking Adaptive');
+
+  await choose('Model', 'gpt-b');
+  expect(text(model)).toBe('gpt-b');
+  expect(text(thinking)).toBe('Thinking Default');
+  await fireEvent.click(thinking);
+  expect(screen.queryByRole('option', { name: 'Adaptive' })).toBeNull();
+  await fireEvent.click(thinking);
+  await choose('Effort', 'Minimal');
+  expect(text(screen.getByRole('combobox', { name: 'Effort' }))).toBe('Effort Minimal');
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(refine.mock.calls[0][0]).toMatchObject({ model: 'gpt-b', thinking: '', effort: 'minimal' });
+});
+
+test('the model choices are shared by both refine boxes', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine: replying('x'), models, implementModel: 'claude-a' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+  await choose('Model', 'gpt-b');
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine acceptance with AI' }));
+  const [statementModel, acceptanceModel] = screen.getAllByRole('combobox', { name: 'Model' });
+  expect(text(statementModel)).toBe('gpt-b');
+  expect(text(acceptanceModel)).toBe('gpt-b');
+});
+
+test('the acceptance offer drafts when there are no lines, and goes away on dismiss or an edit', async () => {
+  render(RequirementForm, { statement: 'Export the board.', acceptance: '', refine: replying('Members export the board.') });
+  const refineStatement = async () => {
+    await fireEvent.click(screen.getByRole('button', { name: 'Refine statement with AI' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+    await screen.findByRole('region', { name: 'Refined statement' });
+    await fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  };
+
+  await refineStatement();
+  expect(screen.getByRole('button', { name: 'Draft acceptance from it' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  expect(screen.queryByText('Statement updated.')).toBeNull();
+
+  await refineStatement();
+  expect(screen.getByText('Statement updated.')).toBeTruthy();
+  await fireEvent.input(screen.getByLabelText('Statement'), { target: { value: 'Members export the board today.' } });
+  expect(screen.queryByText('Statement updated.')).toBeNull();
 });
 
 test('an edit after asking is flagged, and Preview hides the refine icons', async () => {

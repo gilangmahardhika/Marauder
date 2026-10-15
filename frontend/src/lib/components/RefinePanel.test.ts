@@ -35,7 +35,15 @@ test('deltas appear in order while streaming, then done shows the diff and Apply
   await fireEvent.input(screen.getByLabelText('What to improve (optional)'), { target: { value: ' Say who needs it ' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
   expect(fake.stream).toHaveBeenCalledWith(
-    { field: 'statement', statement: 'Export the board.', acceptance: ['Works well.'], instructions: 'Say who needs it' },
+    {
+      field: 'statement',
+      statement: 'Export the board.',
+      acceptance: ['Works well.'],
+      instructions: 'Say who needs it',
+      model: '',
+      thinking: '',
+      effort: ''
+    },
     expect.any(Function),
     expect.any(AbortSignal)
   );
@@ -94,8 +102,61 @@ test('a rejected request shows its message and an empty statement sends nothing'
   expect(stream).not.toHaveBeenCalled();
 
   await rerender({ ...props, stream, onapply: vi.fn() });
-  await fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
   await vi.waitFor(() => expect(screen.getByRole('alert').textContent).toContain('implement route'));
+});
+
+test('a follow-up refines the latest reply, and Apply takes the newest one', async () => {
+  const fake = controlled();
+  const onapply = vi.fn();
+  render(RefinePanel, { ...props, stream: fake.stream, onapply });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(screen.getByText('Refine this statement')).toBeTruthy();
+  await fake.send({ kind: 'done', text: 'Members export the board.', modelId: 'model-a' });
+  fake.state.end?.();
+  await screen.findByRole('region', { name: 'Refined statement' });
+
+  const box = screen.getByLabelText('What to improve (optional)') as HTMLTextAreaElement;
+  await fireEvent.input(box, { target: { value: 'Mention CSV' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(box.value).toBe('');
+  expect(fake.stream.mock.calls[1][0]).toMatchObject({ statement: 'Members export the board.', instructions: 'Mention CSV' });
+  expect(screen.getByText('Mention CSV')).toBeTruthy();
+  expect(screen.queryByRole('region', { name: 'Refined statement' })).toBeNull();
+  expect(screen.getByText('Members export the board.')).toBeTruthy();
+
+  await fake.send({ kind: 'done', text: 'Members export the board as CSV.', modelId: 'model-a' });
+  fake.state.end?.();
+  await fireEvent.click(await screen.findByRole('button', { name: 'Apply' }));
+  expect(onapply).toHaveBeenCalledWith('Members export the board as CSV.');
+});
+
+test('Enter sends the message and Shift+Enter does not', async () => {
+  const fake = controlled();
+  render(RefinePanel, { ...props, stream: fake.stream, onapply: vi.fn() });
+  const box = screen.getByLabelText('What to improve (optional)');
+  expect(box.getAttribute('rows')).toBe('3');
+  expect(box.className).toContain('focus-visible:outline-hidden');
+  await fireEvent.input(box, { target: { value: 'Say who needs it' } });
+  await fireEvent.keyDown(box, { key: 'Enter', shiftKey: true });
+  expect(fake.stream).not.toHaveBeenCalled();
+  await fireEvent.keyDown(box, { key: 'Enter' });
+  expect(fake.stream).toHaveBeenCalledTimes(1);
+  expect(fake.stream.mock.calls[0][0].instructions).toBe('Say who needs it');
+});
+
+test('New chat stops the reply and empties the thread', async () => {
+  const fake = controlled();
+  render(RefinePanel, { ...props, stream: fake.stream, onapply: vi.fn() });
+  expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  await fake.send({ kind: 'delta', text: 'Members ' });
+  await fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+  expect(fake.state.signal?.aborted).toBe(true);
+  expect(screen.queryByRole('listitem')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'New chat' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Refine' }));
+  expect(fake.stream.mock.calls[1][0].statement).toBe('Export the board.');
 });
 
 test('reset clears the text of a turn that called MCP tools, and tool names the lookup', async () => {
