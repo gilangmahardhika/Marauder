@@ -37,7 +37,11 @@ type Decision struct {
 type Result struct {
 	Requirements []Requirement
 	Decisions    []Decision
+	// DraftPending is true when Unnumbered is not empty. No planner drafts
+	// ids for those files yet (RFC-018 "may").
 	DraftPending bool
+	// Unnumbered are the repo-relative PRD files with no REQ- heading.
+	Unnumbered []string
 }
 
 type section struct {
@@ -58,21 +62,23 @@ func Parse(repo, prdDir, rfcDir string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	sawPRD := false
-	missingIDs := false
+	result.Unnumbered = []string{}
 	for _, path := range prdFiles {
-		sawPRD = true
 		reqs, decs, sawReq, err := parseFile(repo, path, "prd")
 		if err != nil {
 			return Result{}, err
 		}
 		if !sawReq {
-			missingIDs = true
+			rel, err := filepath.Rel(repo, path)
+			if err != nil {
+				return Result{}, err
+			}
+			result.Unnumbered = append(result.Unnumbered, filepath.ToSlash(rel))
 		}
 		result.Requirements = append(result.Requirements, reqs...)
 		result.Decisions = append(result.Decisions, decs...)
 	}
-	result.DraftPending = sawPRD && missingIDs
+	result.DraftPending = len(result.Unnumbered) > 0
 
 	rfcFiles, err := markdownFiles(rfcDir)
 	if err != nil {

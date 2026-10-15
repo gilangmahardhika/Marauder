@@ -30,7 +30,6 @@
   import SearchBox from '$lib/ui/SearchBox.svelte';
   import Segmented from '$lib/ui/Segmented.svelte';
   import ShowMore from '$lib/ui/ShowMore.svelte';
-  import Spinner from '$lib/ui/Spinner.svelte';
   import Table from '$lib/ui/Table.svelte';
   import Toolbar from '$lib/ui/Toolbar.svelte';
 
@@ -64,18 +63,11 @@
     void load(true);
   });
 
-  $effect(() => {
-    if (!intake?.draftPending) return;
-    const timer = setInterval(() => {
-      void load();
-    }, 3000);
-    return () => clearInterval(timer);
-  });
-
   const params = $derived($page.url.searchParams);
   const tab = $derived(params.get('tab') === 'decisions' ? 'decisions' : 'requirements');
   const requirements = $derived(intake?.requirements ?? []);
   const decisions = $derived(intake?.decisions ?? []);
+  const unnumbered = $derived(intake?.unnumbered ?? []);
   const filter = $derived({
     q: params.get('q') ?? '',
     status: parseStatus(params.get('status'), requirements),
@@ -156,14 +148,6 @@
   error={loadError}
   onretry={() => void load(true)}
 >
-  {#snippet summary()}
-    {#if intake?.draftPending}
-      <p class="flex items-center gap-2 text-sm text-muted" role="status">
-        <Spinner />
-        Planner is drafting requirement ids. This page refreshes on its own.
-      </p>
-    {/if}
-  {/snippet}
   {#snippet meta()}
     {#if requirements.length > 0}
       <Badge tone={counts.accepted === counts.all ? 'green' : 'default'}>
@@ -177,6 +161,24 @@
 
   <div class="flex flex-col gap-4">
     {#if intake?.planError}<Notice tone="danger">{intake.planError}</Notice>{/if}
+    {#if unnumbered.length > 0}
+      <Notice>
+        <p>
+          {unnumbered.length}
+          {unnumbered.length === 1 ? 'PRD file has' : 'PRD files have'} no REQ- headings, so ingest read no requirements from {unnumbered.length === 1
+            ? 'it'
+            : 'them'}.
+        </p>
+        <ul class="mt-2 font-mono text-xs break-all">
+          {#each unnumbered.slice(0, 5) as path (path)}<li>{path}</li>{/each}
+          {#if unnumbered.length > 5}<li class="font-sans">and {unnumbered.length - 5} more</li>{/if}
+        </ul>
+        <p class="mt-2">
+          Add a heading such as <code class="font-mono text-xs">## REQ-001 Title</code> to each requirement, add requirements by hand,
+          or change the PRD path in <a class="font-medium text-accent hover:underline" href="/settings/repository">Repository settings</a>.
+        </p>
+      </Notice>
+    {/if}
     {#if skipped.length > 0}
       <Notice>
         {skipped.join(', ')}
@@ -230,7 +232,7 @@
                 type="button"
                 variant="secondary"
                 loading={pending === 'all'}
-                disabled={busy || Boolean(intake.draftPending)}
+                disabled={busy}
                 onclick={() => void accept(acceptable, 'all')}
               >
                 Accept all shown ({acceptable.length})
@@ -329,7 +331,7 @@
           type="button"
           variant="primary"
           loading={pending === 'selected'}
-          disabled={busy || Boolean(intake?.draftPending)}
+          disabled={busy}
           onclick={() => void accept(selected, 'selected')}
         >
           Accept selected

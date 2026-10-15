@@ -161,6 +161,21 @@ func TestIntakeLinkedCards(t *testing.T) {
 	}
 }
 
+func TestIntakeUnnumbered(t *testing.T) {
+	srv, dev, _ := manualServer(t)
+	path := "/api/projects/proj_default/intake"
+	if rec := getAuth(t, srv, path, dev); !strings.Contains(rec.Body.String(), `"unnumbered":[]`) {
+		t.Fatalf("intake before ingest = %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := srv.DB.Exec(`UPDATE intake_state SET draft_pending = true, unnumbered_json = '["docs/product/PRD.md"]' WHERE project_id = 'proj_default'`); err != nil {
+		t.Fatal(err)
+	}
+	rec := getAuth(t, srv, path, dev)
+	if !strings.Contains(rec.Body.String(), `"unnumbered":["docs/product/PRD.md"]`) || !strings.Contains(rec.Body.String(), `"draftPending":true`) {
+		t.Fatalf("intake = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestStatementLimitAndLineEndings(t *testing.T) {
 	srv, dev, _ := manualServer(t)
 	path := "/api/projects/proj_default/requirements"

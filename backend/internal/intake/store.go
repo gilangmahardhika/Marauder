@@ -90,7 +90,16 @@ func Apply(ctx context.Context, db *sql.DB, projectID, actorID string, result Re
 			return nil, err
 		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE intake_state SET draft_pending = $1 WHERE project_id = $2`, result.DraftPending, projectID)
+	unnumbered := result.Unnumbered
+	if unnumbered == nil {
+		unnumbered = []string{}
+	}
+	unnumberedJSON, err := json.Marshal(unnumbered)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE intake_state SET draft_pending = $1, unnumbered_json = $2 WHERE project_id = $3`,
+		result.DraftPending, string(unnumberedJSON), projectID)
 	if err != nil {
 		return nil, err
 	}

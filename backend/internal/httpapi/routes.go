@@ -603,9 +603,16 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, error) {
 	var draft bool
 	var planError sql.NullString
-	err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error FROM intake_state WHERE project_id = $1`, projectID).Scan(&draft, &planError)
+	unnumberedJSON := "[]"
+	err := db.QueryRowContext(r.Context(), `SELECT draft_pending, plan_error, unnumbered_json FROM intake_state WHERE project_id = $1`, projectID).
+		Scan(&draft, &planError, &unnumberedJSON)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
+	}
+	var unnumbered []string
+	_ = json.Unmarshal([]byte(unnumberedJSON), &unnumbered)
+	if unnumbered == nil {
+		unnumbered = []string{}
 	}
 	user, _ := app.CurrentUser(r.Context())
 	reviewers, err := intake.Reviewers(r.Context(), db, projectID)
@@ -688,7 +695,7 @@ func intakeBody(r *http.Request, db *sql.DB, projectID string) (map[string]any, 
 		plan = planError.String
 	}
 	return map[string]any{
-		"draftPending": draft, "planError": plan, "canAccept": canAccept(user.Role),
+		"draftPending": draft, "unnumbered": unnumbered, "planError": plan, "canAccept": canAccept(user.Role),
 		"requirements": reqs, "decisions": decisions, "reviewerOptions": options,
 		"mcpServers": servers,
 	}, nil

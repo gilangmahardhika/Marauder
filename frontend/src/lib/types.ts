@@ -325,6 +325,7 @@ export type Decision = {
 
 export type Intake = {
   draftPending: boolean;
+  unnumbered: string[];
   planError: string | null;
   canAccept: boolean;
   skipped?: string[];

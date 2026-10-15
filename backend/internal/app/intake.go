@@ -12,6 +12,7 @@ type IngestResult struct {
 	Requirements int
 	Decisions    int
 	DraftPending bool
+	Unnumbered   []string
 	Skipped      []string
 }
 
@@ -43,6 +44,7 @@ func Ingest(ctx context.Context, db *sql.DB, projectID, actorID, repo, configDir
 		Requirements: len(parsed.Requirements),
 		Decisions:    len(parsed.Decisions),
 		DraftPending: parsed.DraftPending,
+		Unnumbered:   parsed.Unnumbered,
 		Skipped:      skipped,
 	}, nil
 }

@@ -372,6 +372,8 @@ INSERT INTO intake_state (id, draft_pending) VALUES (1, false);
 DROP TABLE intake_state;
 ```
 
+`00035_intake_unnumbered.sql` adds `intake_state.unnumbered_json TEXT NOT NULL DEFAULT '[]'`: the repository-relative PRD files that the last ingest read with no `REQ-` heading, in path order. Ingest writes it with `draft_pending`, which is true exactly when the list is not empty. Down drops the column.
+
 Column notes:
 
 - `content_hash` is SHA-256 hex of the statement plus the acceptance list, or of the decision statement. Intake uses it to detect edits (REQ-004).
@@ -1164,6 +1166,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 ```json
 {
   "draftPending": false,
+  "unnumbered": [],
   "planError": null,
   "canAccept": true,
   "requirements": [
@@ -1199,7 +1202,7 @@ Any member of the project's tribe may read it. A non-member, an unknown id, or a
 
 `linkedCards` lists the ids of that project's cards whose `requirementIds` name the requirement, oldest card first. It is `[]` when no card names it. A card in another project is never listed.
 
-`POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD has no `REQ-` headings, the response has `draftPending: true` and the project's worker runs the planner to draft ids (REQ-002). `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
+`POST /api/projects/{projectId}/ingest` has an empty body. It reparses that project's PRD and RFC paths and returns the intake shape. Unchanged hashes do not duplicate rows. A changed hash clears `accepted_at` for that id in that project and blocks linked cards past `backlog` with `source_changed` (REQ-004). When a PRD file has no `REQ-` headings, the response has `draftPending: true` and lists that file's repository-relative path in `unnumbered`. `unnumbered` is never null. No planner drafts ids for those files yet, as RFC-018 lets the planner draft but does not require it (REQ-002). Ingest reads no requirements from them, and acceptance of the other rows is not held back. `planError` holds the last planner failure message, redacted, until the next successful plan. A caller who is not a member is `404`. Ingest does not overwrite a manual row. When the repository defines an id that is manual in that project, the row is kept and the response adds `"skipped": ["REQ-012"]`. The field is absent when nothing was skipped.
 
 `canAccept` is true when the caller's role may accept (RFC-053). `createdBy` is the email of the user who added the row by hand or first ingested it, and `null` when no user is recorded (RFC-054). `reviewers` are the users named for that requirement. `canEditReviewers` is true when the caller is the row's creator or a Lead Developer member. `selfReview` is the row's Self review flag. `canSetSelfReview` is true when the caller is a Lead Developer or an admin (RFC-070), and the same caller may change `aiReviewMode`, which is `continue` or `manual` (RFC-072). `reviewerOptions` are the members of the project's tribe who are not disabled, with `githubLogin` empty for a member without a verified login (RFC-103). The client leaves out the row's creator.
 

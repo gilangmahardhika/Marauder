@@ -144,7 +144,7 @@ Each pass, in order:
 2. A card in `approved` whose head moved goes to `human_review`, approval cleared.
 3. Promote `backlog -> ready` when requirements are accepted, dependencies are `done`, and the card has acceptance lines or is manual.
 4. A card in `changes_requested`, or in `in_progress` with no open attempt, whose `attempts_used >= max_attempts` goes to `blocked` with `attempt_cap`. The implement and review jobs apply the same rule as they end, and a card at the cap does not list `run` and is not started (RFC-071).
-5. Start a plan job when `draftPending` is set, or when an accepted requirement has no linked card. One plan job at a time.
+5. Start a plan job when an accepted requirement has no linked card. One plan job at a time. `draftPending` does not start one, since the draft step is not built.
 6. Start a review job for each `pr_open` card.
 7. For `agent_review` cards waiting on CI: all required checks pass, or none required, then `human_review`. Every check on the pull request head counts as required (RFC-065). An empty list counts as none only `review.NoChecksWait` (2 minutes) after the card's latest `local_checks` gate (RFC-069). A required check fails, then `changes_requested` with a failure note of source `ci` naming the failed checks.
 8. Start a deploy job for a card in `approved` only when a Lead Developer member has requested deploy and that project's deploy lock is free. Reaching `approved` does not start deploy.
@@ -156,7 +156,7 @@ Every job snapshots that project's settings at start and uses that snapshot to t
 ### Plan job
 
 1. Route `plan`. No model configured: set `planError` to `router_config` and stop. Until a model provider exists, the worker plans without a model instead (RFC-062).
-2. When `draftPending`, the planner pack holds the PRD outline. `propose_requirements` writes rows with `source_kind = 'draft'` and `accepted_at` null, then clears `draftPending`.
+2. Drafting ids is not built. RFC-018 lets the planner propose them but does not require it. `draftPending` and `unnumbered` only report the PRD files that have no `REQ-` heading, and the next ingest recomputes both. A later draft step would use `propose_requirements` to write rows with `source_kind = 'draft'` and `accepted_at` null.
 3. Otherwise the pack holds accepted requirements without cards, decisions, existing card titles and dependencies, and the project's enabled skills as `SKILL <slug>: <use when>` lines (RFC-056). `create_card` takes `ref`, `title`, `requirementIds`, `decisionIds`, `dependsOn` (card ids or refs from this job), `risk`, `manual`, and `skillIds`.
 4. The harness rejects a call that names an unknown or unaccepted requirement id, an unknown decision, an unknown dependency, or a dependency cycle. It assigns the card id, copies `checks.local` and `checks.dev` from settings, sets `max_attempts` from the router budget, and inserts the card in `backlog`. A command field in the arguments is ignored and logged as rejected. The owner is the `created_by` shared by the named requirements. Requirements with different creators are rejected with `ErrOwners`, so the planner splits them. An owner in the arguments is ignored (RFC-054). Each `skillIds` entry must be a skill enabled for the project and not disabled, else `ErrSkill` and no card is stored. The card's skills are stored in `card_skills` in the same transaction as the card (RFC-056).
 5. Planner tokens are logged as `model_call` with no card id.

@@ -89,7 +89,8 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestNoDeployClass` | `Decide` rejects task class `deploy` |
 | `TestRouterConfig` | An empty `implement` model blocks the card with `router_config` |
 | `TestPlanCards` | Planner cards link only accepted ids, get checks from settings, and a dependency cycle is refused |
-| `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending`, and drafted rows are unaccepted |
+| `TestDraftIds` | A PRD without `REQ-` headings sets `draftPending` and lists the file in `unnumbered` and `unnumbered_json`. A PRD with headings keeps its ids and an empty list |
+| `TestIntakeUnnumbered` | `GET intake` returns `"unnumbered": []` before ingest and the stored paths after |
 | `TestManualRequirementAdd` | A Developer member adds with a blank id after `REQ-001` and gets `REQ-002`, unaccepted. A typed `REQ-010` is stored. A duplicate id is `409`. A bad id or empty statement is `422`. A non-member is `404` |
 | `TestStatementLimitAndLineEndings` | A 10000-character statement is `200` and 10001 is `422` on `statement`. CRLF and CR in a statement are stored as LF on add and on edit |
 | `TestAcceptanceLineMarkers` | Acceptance lines lose one leading `- `, `* `, `+ `, `1. `, `2) `, `- [ ] `, or `- [x] ` marker, keep inline markdown, and turn an inner line break into a space. A marker-only line is `422`, and a 1001-character line is `422` with "Keep each acceptance line to 1000 characters or fewer." |

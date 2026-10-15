@@ -28,6 +28,16 @@ func TestDraftIds(t *testing.T) {
 		if !result.DraftPending {
 			t.Fatal("draftPending = false")
 		}
+		if strings.Join(result.Unnumbered, ",") != "docs/prd/draft.md" {
+			t.Fatalf("unnumbered = %v", result.Unnumbered)
+		}
+		var stored string
+		if err := db.QueryRow(`SELECT unnumbered_json FROM intake_state WHERE project_id = 'proj_default'`).Scan(&stored); err != nil {
+			t.Fatal(err)
+		}
+		if stored != `["docs/prd/draft.md"]` {
+			t.Fatalf("unnumbered_json = %s", stored)
+		}
 		if accepted := countAccepted(t, db); accepted != 0 {
 			t.Fatalf("accepted requirements = %d", accepted)
 		}
@@ -53,8 +63,8 @@ func TestDraftIds(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.DraftPending {
-			t.Fatal("draftPending = true")
+		if result.DraftPending || len(result.Unnumbered) != 0 {
+			t.Fatalf("draftPending = %v, unnumbered = %v", result.DraftPending, result.Unnumbered)
 		}
 		if result.Requirements != 1 || result.Decisions != 1 {
 			t.Fatalf("ingest = %+v", result)
