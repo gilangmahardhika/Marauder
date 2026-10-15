@@ -1,5 +1,5 @@
 export const controlBase =
-  'w-full rounded-control border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/60 hover:border-line-strong disabled:bg-ground disabled:text-muted aria-invalid:border-red-400 aria-invalid:hover:border-red-500 aria-invalid:focus-visible:outline-danger';
+  'w-full rounded-control border border-line bg-surface px-3 text-sm text-ink placeholder:text-muted/60 hover:border-line-strong focus-visible:border-muted focus-visible:outline-hidden focus-visible:hover:border-muted disabled:bg-ground disabled:text-muted aria-invalid:border-red-400 aria-invalid:hover:border-red-500 aria-invalid:focus-visible:border-red-600';
 
 export const control = `${controlBase} h-11`;
 

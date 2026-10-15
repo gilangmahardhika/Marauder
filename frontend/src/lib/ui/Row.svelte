@@ -21,7 +21,7 @@
   <input
     {id}
     {placeholder}
-    class="h-11 min-w-0 flex-1 bg-transparent px-3 font-mono text-[13px] text-ink placeholder:text-muted/60 focus-visible:-outline-offset-2"
+    class="h-11 min-w-0 flex-1 bg-transparent px-3 font-mono text-[13px] text-ink placeholder:text-muted/60 focus-visible:shadow-[inset_0_-1px_0_var(--color-muted)] focus-visible:outline-hidden"
     bind:value
   />
   <button

@@ -311,7 +311,7 @@
 
   <div class="flex flex-col gap-2 p-4 {turns.length > 0 ? 'border-t border-line' : ''}">
     <FormAlert message={notice} />
-    <div class="rounded-2xl border border-line bg-surface shadow-xs transition-[border-color,box-shadow] duration-150 focus-within:border-accent/45 focus-within:ring-3 focus-within:ring-accent/10">
+    <div class="rounded-2xl border border-line bg-surface shadow-xs transition-colors duration-150 focus-within:border-muted">
       <label for={`refine-${field}-instructions`} class="sr-only">What to improve (optional)</label>
       <textarea
         id={`refine-${field}-instructions`}

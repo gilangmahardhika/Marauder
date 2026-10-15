@@ -23,6 +23,15 @@ test('a field without an error is not invalid', () => {
   expect(input.hasAttribute('aria-describedby')).toBe(false);
 });
 
+test('an input and a textarea show focus by a darker border, not an outline', () => {
+  render(Field, { label: 'Name', id: 'name' });
+  render(Field, { label: 'Notes', id: 'notes', type: 'textarea' });
+  for (const field of [screen.getByLabelText('Name'), screen.getByLabelText('Notes')]) {
+    expect(field.className).toContain('focus-visible:outline-hidden');
+    expect(field.className).toContain('focus-visible:border-muted');
+  }
+});
+
 test('a checkbox shows its error', () => {
   render(Checkbox, { id: 'admin', label: 'Admin', error: 'Only an admin can grant admin' });
   const box = screen.getByLabelText('Admin');
