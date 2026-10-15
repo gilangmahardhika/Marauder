@@ -8,6 +8,7 @@
   import Button from '$lib/ui/Button.svelte';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import Field from '$lib/ui/Field.svelte';
+  import Icon from '$lib/ui/Icon.svelte';
   import Notice from '$lib/ui/Notice.svelte';
   import Page from '$lib/ui/Page.svelte';
 
@@ -99,23 +100,34 @@
   });
 </script>
 
+{#snippet website(entry: MCPCatalogEntry, inset: boolean)}
+  {#if entry.websiteUrl}
+    <a
+      class="{inset ? '-m-3' : ''} inline-flex size-11 shrink-0 items-center justify-center rounded-control text-muted hover:text-accent"
+      href={entry.websiteUrl}
+      rel="noreferrer noopener"
+      target="_blank"
+      title="Website"
+      aria-label={`Website of ${entry.title}`}><Icon name="external" class="size-4" /></a
+    >
+  {/if}
+{/snippet}
+
 {#snippet tile(entry: MCPCatalogEntry)}
   <li class="flex flex-col rounded-control border border-line bg-surface hover:border-line-strong hover:shadow-sm">
-    <div class="flex flex-1 gap-3 p-4">
-      <span class="flex size-10 shrink-0 items-center justify-center rounded-control bg-sidebar text-sm font-semibold text-ink" aria-hidden="true"
+    <div class="flex flex-1 gap-3 p-3.5">
+      <span class="flex size-8 shrink-0 items-center justify-center rounded-control bg-sidebar text-xs font-semibold text-ink" aria-hidden="true"
         >{monogram(entry.title)}</span
       >
-      <div class="flex min-w-0 flex-col gap-1">
-        <h3 class="text-sm font-semibold text-ink">{entry.title}</h3>
-        <p class="line-clamp-2 text-sm text-muted">{entry.description}</p>
-        {#if entry.websiteUrl}
-          <a class="inline-flex min-h-11 w-fit items-center text-sm text-accent hover:underline" href={entry.websiteUrl} rel="noreferrer noopener" target="_blank"
-            >Website <span class="sr-only">of {entry.title}</span></a
-          >
-        {/if}
+      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="min-w-0 truncate text-sm font-semibold text-ink">{entry.title}</h3>
+          {@render website(entry, true)}
+        </div>
+        <p class="line-clamp-2 text-[13px] text-muted">{entry.description}</p>
       </div>
     </div>
-    <div class="flex items-center justify-between gap-2 border-t border-line px-4 py-2">
+    <div class="flex items-center justify-between gap-2 border-t border-line px-3.5 py-2">
       <span class="flex flex-wrap gap-1.5">
         {#if entry.source === 'builtin'}
           <Badge tone="sky">Built-in</Badge>
@@ -145,7 +157,7 @@
     {#if featured.length > 0}
       <section class="flex flex-col gap-3" aria-labelledby="mcp-featured">
         <h2 id="mcp-featured" class={heading}>Featured</h2>
-        <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Featured servers">
+        <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label="Featured servers">
           {#each featured as entry (entry.id)}
             {@render tile(entry)}
           {/each}
@@ -156,7 +168,7 @@
     {#if builtins.length > 0}
       <section class="flex flex-col gap-3" aria-labelledby="mcp-databases">
         <h2 id="mcp-databases" class={heading}>Databases</h2>
-        <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Database connectors">
+        <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label="Database connectors">
           {#each builtins as entry (entry.id)}
             {@render tile(entry)}
           {/each}
@@ -175,33 +187,37 @@
         <Notice tone="warning">{registryError}. The featured and built-in servers are still listed. Try again in a minute.</Notice>
       {/if}
       {#if registryBusy && registry.length === 0}
-        <ul class="flex flex-col gap-3" aria-hidden="true">
+        <ul class="divide-y divide-line overflow-hidden rounded-control border border-line bg-surface" aria-hidden="true">
           {#each [0, 1, 2] as n (n)}
-            <li class="h-20 rounded-control border border-line bg-surface motion-safe:animate-pulse"></li>
+            <li class="flex flex-col gap-2 px-4 py-3">
+              <span class="h-4 w-40 rounded bg-ground motion-safe:animate-pulse"></span>
+              <span class="h-3 w-64 max-w-full rounded bg-ground motion-safe:animate-pulse"></span>
+            </li>
           {/each}
         </ul>
       {:else if registry.length > 0}
-        <ul class="flex flex-col gap-3 {registryBusy ? 'opacity-60' : ''}" aria-label="Registry servers">
+        <ul
+          class="divide-y divide-line overflow-hidden rounded-control border border-line bg-surface {registryBusy ? 'opacity-60' : ''}"
+          aria-label="Registry servers"
+        >
           {#each registry as entry (entry.id)}
-            <li class="flex flex-col gap-3 rounded-control border border-line bg-surface p-4 sm:flex-row sm:items-start sm:justify-between">
-              <div class="flex min-w-0 flex-col gap-1.5">
-                <div class="flex flex-wrap items-center gap-2">
+            <li class="flex flex-col gap-2 px-4 py-3 hover:bg-ground/40 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div class="flex min-w-0 flex-col gap-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h3 class="text-sm font-semibold text-ink">{entry.title}</h3>
                   <Badge>{kinds[entry.transport] ?? entry.transport}</Badge>
                   {#if entry.supported && entry.note}<Badge tone="amber">No network</Badge>{/if}
+                  <span class="min-w-0 break-all font-mono text-xs text-muted">{entry.name}{entry.version ? ` ${entry.version}` : ''}</span>
                 </div>
-                <span class="break-all font-mono text-xs text-muted">{entry.name}{entry.version ? ` ${entry.version}` : ''}</span>
-                {#if entry.description}<p class="text-sm text-muted">{entry.description}</p>{/if}
+                {#if entry.description}<p class="line-clamp-2 text-[13px] text-muted">{entry.description}</p>{/if}
                 {#if !entry.supported && entry.reason}<p class="text-xs text-muted">Cannot be set up: {entry.reason}</p>{/if}
-                {#if entry.websiteUrl}
-                  <a class="inline-flex min-h-11 w-fit items-center text-sm text-accent hover:underline" href={entry.websiteUrl} rel="noreferrer noopener" target="_blank"
-                    >Website <span class="sr-only">of {entry.title}</span></a
-                  >
-                {/if}
               </div>
-              {#if entry.supported}
-                <div class="shrink-0">
-                  <Button href={setupHref(entry)}>Set up <span class="sr-only">{entry.title}</span></Button>
+              {#if entry.websiteUrl || entry.supported}
+                <div class="flex shrink-0 items-center gap-1">
+                  {@render website(entry, false)}
+                  {#if entry.supported}
+                    <Button href={setupHref(entry)}>Set up <span class="sr-only">{entry.title}</span></Button>
+                  {/if}
                 </div>
               {/if}
             </li>

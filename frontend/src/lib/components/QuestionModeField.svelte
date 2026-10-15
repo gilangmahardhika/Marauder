@@ -3,18 +3,14 @@
   import { failureText } from '$lib/forms';
   import { toast } from '$lib/toast.svelte';
   import type { Card, QuestionMode } from '$lib/types';
+  import ChoiceCards, { type Choice } from '$lib/ui/ChoiceCards.svelte';
   import { labelClass } from '$lib/ui/control';
-  import Segmented from '$lib/ui/Segmented.svelte';
 
   const label = 'When the agent has a question';
-  const modes = [
-    { value: 'manual', label: 'A person answers' },
-    { value: 'auto', label: 'Agent decides' }
+  const modes: Choice[] = [
+    { value: 'manual', label: 'A person answers', description: 'The card waits and the owner is notified.' },
+    { value: 'auto', label: 'Agent decides', description: 'The agent picks its own suggested answer and keeps going.' }
   ];
-  const hints: Record<QuestionMode, string> = {
-    manual: 'The card waits and the owner is notified.',
-    auto: 'The agent picks its own suggested answer and keeps going.'
-  };
 
   let { card = $bindable() }: { card: Card } = $props();
 
@@ -38,10 +34,9 @@
 </script>
 
 {#if canChange}
-  <div class="flex flex-col gap-1.5">
+  <div class="flex flex-col gap-2">
     <span class={labelClass}>{label}</span>
-    <Segmented {label} options={modes} value={mode} disabled={saving} onchange={(next) => void change(next)} />
-    <p class="text-xs text-muted">{hints[mode]}</p>
+    <ChoiceCards {label} id="question-mode" options={modes} value={mode} disabled={saving} onchange={(next) => void change(next)} />
   </div>
 {:else}
   <p class="text-sm text-ink">Questions: {modes.find((m) => m.value === mode)?.label}</p>

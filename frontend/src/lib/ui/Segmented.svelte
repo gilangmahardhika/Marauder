@@ -10,7 +10,7 @@
   }: { label: string; options: Option[]; value: string; disabled?: boolean; onchange: (value: string) => void } = $props();
 </script>
 
-<div class="inline-flex overflow-hidden rounded-control border border-line bg-surface" role="group" aria-label={label}>
+<div class="inline-flex w-fit max-w-full overflow-hidden rounded-control border border-line bg-surface" role="group" aria-label={label}>
   {#each options as option, index (option.value)}
     <button
       type="button"

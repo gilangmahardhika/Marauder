@@ -95,6 +95,38 @@ test('Mark all read posts all and disables itself', async () => {
   expect(rowLinks().some((link) => link.textContent?.includes('Unread'))).toBe(false);
 });
 
+test('repeats for one card and kind on a day are one row, and opening it reads them all', async () => {
+  const blocked = (id: string, age: number) => ({ ...note(id, 'Blocked', age), kind: 'blocked' });
+  api.getNotifications.mockResolvedValue({
+    notifications: [blocked('ntf_c', 0), blocked('ntf_b', 1000), blocked('ntf_a', 2000), note('ntf_r', 'Review needed', 3000)],
+    unread: 4
+  });
+  render(NotificationsPage);
+  await screen.findByRole('heading', { name: 'Today' });
+  const links = rowLinks();
+  expect(links).toHaveLength(2);
+  expect(links[0].textContent).toContain('Blocked');
+  expect(links[0].textContent).toContain('3x');
+  links[0].addEventListener('click', (event) => event.preventDefault());
+  await fireEvent.click(links[0]);
+  expect(api.readNotifications).toHaveBeenCalledWith({ ids: ['ntf_c', 'ntf_b', 'ntf_a'] });
+});
+
+test('a type in the side panel filters the list, and its chip clears it', async () => {
+  api.getNotifications.mockResolvedValue({
+    notifications: [note('ntf_r', 'Review needed', 0), { ...note('ntf_x', 'Blocked', 1000), kind: 'blocked', cardId: 'card_2' }],
+    unread: 2
+  });
+  render(NotificationsPage);
+  await screen.findByRole('heading', { name: 'Today' });
+  expect(rowLinks()).toHaveLength(2);
+  const types = screen.getByRole('group', { name: 'Filter by type' });
+  await fireEvent.click(within(types).getByRole('button', { name: /Blocked/ }));
+  expect(rowLinks().map((link) => link.textContent)).toEqual([expect.stringContaining('Blocked')]);
+  await fireEvent.click(screen.getByRole('button', { name: 'Remove filter Blocked' }));
+  expect(rowLinks()).toHaveLength(2);
+});
+
 test('a link off this site links to /, and an empty list says so', async () => {
   api.getNotifications.mockResolvedValue({
     notifications: [{ ...note('ntf_9', 'Review needed', 0), url: 'https://evil.example/x' }],
