@@ -62,6 +62,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0055-refine-in-the-field.md](rfc/0055-refine-in-the-field.md) | Decision `RFC-123`. The refine button sits inside each text box, each refine box says what it reads, and applying a statement offers to refine the acceptance to match |
 | [rfc/0056-refine-model.md](rfc/0056-refine-model.md) | Decision `RFC-124`. A refine box chooses its model, thinking, and effort, starting on the implement route's model, and the reply still streams |
 | [rfc/0057-refine-chat.md](rfc/0057-refine-chat.md) | Decision `RFC-125`. Each refine box is a chat whose follow-up messages refine the previous answer, and Apply takes the latest |
+| [rfc/0058-project-settings-split.md](rfc/0058-project-settings-split.md) | Decision `RFC-126`. The PRD and RFC paths move to the Repository settings, the implementation cap and Solo approval to a Workflow page, and Deploy keeps the dev server, checks, and deploy switch |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

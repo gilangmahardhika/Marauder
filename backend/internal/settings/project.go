@@ -74,12 +74,21 @@ type Deploy struct {
 	CommandExecutables []string `json:"commandExecutables"`
 	SandboxEngine      string   `json:"sandboxEngine"`
 	SandboxImage       string   `json:"sandboxImage"`
-	ImplementationCap  int      `json:"implementationCap"`
-	PRDPath            string   `json:"prdPath"`
-	RFCPath            string   `json:"rfcPath"`
-	SoloApproval       bool     `json:"soloApproval"`
 	// DeployEnabled is nil in a PUT that leaves the switch as it is.
 	DeployEnabled *bool `json:"deployEnabled"`
+}
+
+// Workflow is the flat shape of the project workflow route (RFC-126).
+type Workflow struct {
+	ImplementationCap int  `json:"implementationCap"`
+	SoloApproval      bool `json:"soloApproval"`
+}
+
+// DocPaths are the repo-relative folders ingest reads, carried by the
+// repository route (RFC-126).
+type DocPaths struct {
+	PRD string `json:"prdPath"`
+	RFC string `json:"rfcPath"`
 }
 
 // DeployOn reports whether approved cards deploy. When it is off, an
@@ -134,10 +143,6 @@ func DeployView(cfg ProjectConfig) Deploy {
 		CommandExecutables: cfg.Checks.CommandExecutables,
 		SandboxEngine:      cfg.Sandbox.Engine,
 		SandboxImage:       cfg.Sandbox.Image,
-		ImplementationCap:  cfg.Scheduler.ImplementationCap,
-		PRDPath:            cfg.Paths.PRD,
-		RFCPath:            cfg.Paths.RFC,
-		SoloApproval:       cfg.Approval.Solo,
 	}
 	on := DeployOn(cfg)
 	d.DeployEnabled = &on
@@ -156,16 +161,110 @@ func DeployView(cfg ProjectConfig) Deploy {
 	if d.SandboxEngine == "" {
 		d.SandboxEngine = "podman"
 	}
-	if d.ImplementationCap == 0 {
-		d.ImplementationCap = 2
-	}
-	if d.PRDPath == "" {
-		d.PRDPath = "docs/prd"
-	}
-	if d.RFCPath == "" {
-		d.RFCPath = "docs/rfc"
-	}
 	return d
+}
+
+// WorkflowView reads the scheduler and approval sections with their defaults.
+func WorkflowView(cfg ProjectConfig) Workflow {
+	w := Workflow{ImplementationCap: cfg.Scheduler.ImplementationCap, SoloApproval: cfg.Approval.Solo}
+	if w.ImplementationCap == 0 {
+		w.ImplementationCap = 2
+	}
+	return w
+}
+
+// DocPathsView reads the paths section with its defaults.
+func DocPathsView(cfg ProjectConfig) DocPaths {
+	p := DocPaths{PRD: cfg.Paths.PRD, RFC: cfg.Paths.RFC}
+	if p.PRD == "" {
+		p.PRD = "docs/prd"
+	}
+	if p.RFC == "" {
+		p.RFC = "docs/rfc"
+	}
+	return p
+}
+
+// SaveProjectWorkflow writes the implementation cap and Solo approval. A nil
+// value keeps the stored one. It returns the saved field names.
+func SaveProjectWorkflow(data, projectID string, implementationCap *int, solo *bool) (ProjectConfig, []string, error) {
+	current, _, err := LoadProject(data, projectID)
+	if err != nil {
+		return current, nil, err
+	}
+	if implementationCap != nil && (*implementationCap < 1 || *implementationCap > 8) {
+		return current, nil, &Invalid{Fields: map[string]string{"implementationCap": "implementation cap is from 1 to 8"}}
+	}
+	next := current
+	changed := []string{}
+	if implementationCap != nil {
+		next.Scheduler.ImplementationCap = *implementationCap
+		changed = append(changed, "implementationCap")
+	}
+	if solo != nil {
+		next.Approval.Solo = *solo
+		changed = append(changed, "soloApproval")
+	}
+	if err := writeProjectConfig(data, projectID, next); err != nil {
+		return current, nil, err
+	}
+	return next, changed, nil
+}
+
+// ValidateDocPaths checks the PRD and RFC paths. A nil or empty path passes;
+// empty means the default.
+func ValidateDocPaths(prd, rfc *string) map[string]string {
+	fields := map[string]string{}
+	for name, path := range map[string]*string{"prdPath": prd, "rfcPath": rfc} {
+		if path == nil || *path == "" {
+			continue
+		}
+		if !RelativeInside(*path) {
+			fields[name] = "path is relative to the repository, with no '..'"
+		}
+	}
+	return fields
+}
+
+// SaveProjectPaths writes the PRD and RFC paths. A nil path keeps the stored
+// one. It returns the saved field names.
+func SaveProjectPaths(data, projectID string, prd, rfc *string) (ProjectConfig, []string, error) {
+	current, _, err := LoadProject(data, projectID)
+	if err != nil {
+		return current, nil, err
+	}
+	if fields := ValidateDocPaths(prd, rfc); len(fields) > 0 {
+		return current, nil, &Invalid{Fields: fields}
+	}
+	next := current
+	changed := []string{}
+	if prd != nil {
+		next.Paths.PRD = *prd
+		changed = append(changed, "prdPath")
+	}
+	if rfc != nil {
+		next.Paths.RFC = *rfc
+		changed = append(changed, "rfcPath")
+	}
+	if len(changed) == 0 {
+		return current, changed, nil
+	}
+	if err := writeProjectConfig(data, projectID, next); err != nil {
+		return current, nil, err
+	}
+	return next, changed, nil
+}
+
+func writeProjectConfig(data, projectID string, cfg ProjectConfig) error {
+	dir := ProjectDir(data, projectID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	body, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	return WriteAtomic(filepath.Join(dir, "config.yaml"), body)
 }
 
 // SaveProjectDeploy validates d, then writes that project's config.yaml and,
@@ -198,29 +297,17 @@ func SaveProjectDeploy(data, projectID string, paths ProjectPaths, d Deploy, tok
 	next.Checks.CommandExecutables = d.CommandExecutables
 	next.Sandbox.Engine = d.SandboxEngine
 	next.Sandbox.Image = d.SandboxImage
-	next.Scheduler.ImplementationCap = d.ImplementationCap
-	next.Paths.PRD = d.PRDPath
-	next.Paths.RFC = d.RFCPath
-	next.Approval.Solo = d.SoloApproval
 	if d.DeployEnabled != nil {
 		on := *d.DeployEnabled
 		next.Deploy.Enabled = &on
 	}
 
 	dir := ProjectDir(data, projectID)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return current, nil, err
-	}
-	body, err := yaml.Marshal(next)
-	if err != nil {
-		return current, nil, err
-	}
-	if err := WriteAtomic(filepath.Join(dir, "config.yaml"), body); err != nil {
+	if err := writeProjectConfig(data, projectID, next); err != nil {
 		return current, nil, err
 	}
 	changed := []string{"environment", "devUrl", "devHosts", "devCommand", "rollbackCommand", "healthUrl",
-		"localCheck", "devCheck", "allowExecutables", "commandExecutables", "sandboxEngine", "sandboxImage",
-		"implementationCap", "prdPath", "rfcPath", "soloApproval"}
+		"localCheck", "devCheck", "allowExecutables", "commandExecutables", "sandboxEngine", "sandboxImage"}
 	if d.DeployEnabled != nil {
 		changed = append(changed, "deployEnabled")
 	}
@@ -300,17 +387,6 @@ func validateDeploy(d Deploy, paths ProjectPaths) map[string]string {
 	}
 	if d.SandboxImage != "" && !imagePattern.MatchString(d.SandboxImage) {
 		fields["sandboxImage"] = "pin the image by digest, name@sha256:<64 hex>"
-	}
-	if d.ImplementationCap != 0 && (d.ImplementationCap < 1 || d.ImplementationCap > 8) {
-		fields["implementationCap"] = "implementation cap is from 1 to 8"
-	}
-	for name, path := range map[string]string{"prdPath": d.PRDPath, "rfcPath": d.RFCPath} {
-		if path == "" {
-			continue
-		}
-		if !RelativeInside(path) {
-			fields[name] = "path is relative to the repository, with no '..'"
-		}
 	}
 	return fields
 }

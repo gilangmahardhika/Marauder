@@ -1633,16 +1633,19 @@ Account GitHub is `GET` and `PUT /api/me/github`, described above. `POST /api/me
   "baseBranch": "main",
   "cloned": true,
   "headSha": "0123456789abcdef0123456789abcdef01234567",
+  "prdPath": "docs/prd",
+  "rfcPath": "docs/rfc",
   "canEdit": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/repository` accepts `repo` and `baseBranch`. `host` and `org` come from the company account and are read only here. When either one changes, the server runs the same GitHub check as `POST /api/projects`, with the same `422` and `502` answers. A save that changes neither makes no GitHub call. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
+`PUT /api/projects/{projectId}/settings/repository` accepts `repo`, `baseBranch`, and optional `prdPath` and `rfcPath`. `host` and `org` come from the company account and are read only here. When either one changes, the server runs the same GitHub check as `POST /api/projects`, with the same `422` and `502` answers. A save that changes neither makes no GitHub call. A `PUT` without a path keeps the stored one, and an empty path means the default. The paths are checked before the repository is saved, so a bad path saves nothing (RFC-126). A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`. A save appends `config_changed` with section `repository`.
 
 | Field | Rule |
 | --- | --- |
 | `repo` | `^[A-Za-z0-9._-]+$`, not named by another project |
 | `baseBranch` | Valid by `git check-ref-format --branch`, and not `orch/*` |
+| `prdPath`, `rfcPath` | Relative, no `..`, inside the project's repo, not under `.git` or `.orchestrator`. Ingest reads requirements and decisions from them |
 
 `POST /api/projects/{projectId}/sync` clones the repository into `<data>/projects/<id>/repo` when it is missing, otherwise fetches `baseBranch`, then returns the repository object. The token is passed through askpass and the child environment. A missing company token is `422`. A failed git call is `502` with a redacted message. Lead Developer, Senior Developer, and Developer members may sync, and so may anyone who may save the project's settings (RFC-059).
 
@@ -1878,14 +1881,11 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
   "commandExecutables": [],
   "sandboxEngine": "podman",
   "sandboxImage": "",
-  "implementationCap": 2,
-  "prdPath": "docs/prd",
-  "rfcPath": "docs/rfc",
-  "soloApproval": false
+  "deployEnabled": true
 }
 ```
 
-`PUT /api/projects/{projectId}/settings/deploy` accepts those fields plus optional `deployToken` and `clear`. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
+`PUT /api/projects/{projectId}/settings/deploy` accepts those fields plus optional `deployToken` and `clear`. It leaves the doc paths, the implementation cap, and Solo approval as they are (RFC-126). A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`.
 
 | Field | Rule when non-empty |
 | --- | --- |
@@ -1898,12 +1898,26 @@ The coding rules, stacks, and integration skills are one company catalog (RFC-05
 | `commandExecutables` | Bare names, `^[A-Za-z0-9._+-]+$`, and none of the shells and wrappers in 0006 (RFC-084). Empty turns `run_command` off |
 | `sandboxEngine` | `podman` or `docker` |
 | `sandboxImage` | Contains `@sha256:` followed by 64 hex chars |
-| `implementationCap` | Integer from 1 to 8 |
-| `prdPath`, `rfcPath` | Relative, no `..`, inside the project's repo |
-| `soloApproval` | Boolean. Lets the card owner and the company bot login approve (RFC-067) |
 | `deployEnabled` | Boolean, default `true`. When `false`, an approved card lists `merge` instead of `deploy`, and the deploy route is refused. A `PUT` without it keeps the stored value (RFC-111) |
 
 Empty deploy fields may be saved. A deploy then blocks with `deploy_config` and runs no command. A non-empty `devCheck` with an empty `devUrl` is also `deploy_config` at deploy time. Changing `localCheck` or `devCheck` applies the rule in 0006 to existing cards.
+
+`GET /api/projects/{projectId}/settings/workflow` (RFC-126)
+
+```json
+{
+  "implementationCap": 2,
+  "soloApproval": false,
+  "canEdit": true
+}
+```
+
+`PUT /api/projects/{projectId}/settings/workflow` accepts `implementationCap` and `soloApproval` and returns the GET body. A `PUT` without a field keeps the stored value. A Lead Developer member, a tribe admin of the project's tribe, or a company admin may save (RFC-059). Another member is `403`. A save appends `config_changed` with section `workflow` and the fields it sent.
+
+| Field | Rule |
+| --- | --- |
+| `implementationCap` | Integer from 1 to 8. Plan and implement jobs of the project that run at once |
+| `soloApproval` | Boolean. Lets the card owner and the company bot login approve (RFC-067) |
 
 ## Files on disk
 
@@ -1989,7 +2003,7 @@ approval:
   solo: false
 ```
 
-The deploy settings route flattens `deploy`, `checks`, `sandbox`, `scheduler`, `paths`, and `approval` into one object, as shown above. Service `secrets.json`:
+The deploy settings route flattens `deploy`, `checks`, and `sandbox` into one object, as shown above. The repository route carries `paths`, and the workflow route carries `scheduler` and `approval` (RFC-126). Each route writes only its own keys. Service `secrets.json`:
 
 ```json
 {

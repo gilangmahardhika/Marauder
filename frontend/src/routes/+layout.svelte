@@ -77,6 +77,7 @@
       label: `Project · ${project.name}`,
       items: [
         { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' },
+        { href: '/settings/workflow', label: 'Workflow', icon: 'cpu' },
         { href: '/settings/repository', label: 'Repository', icon: 'git' },
         { href: '/settings/conventions', label: 'Conventions', icon: 'rules' },
         { href: '/settings/links', label: 'Linked projects', icon: 'link' }

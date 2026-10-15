@@ -60,11 +60,69 @@ func TestDeployEnabledDefault(t *testing.T) {
 	if cfg, _, _ = settings.LoadProject(dir, "proj_a"); settings.DeployOn(cfg) {
 		t.Fatal("deploy stayed on after saving false")
 	}
-	if _, _, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{SoloApproval: true}, nil, false); err != nil {
+	if _, _, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{SandboxEngine: "docker"}, nil, false); err != nil {
 		t.Fatal(err)
 	}
 	if cfg, _, _ = settings.LoadProject(dir, "proj_a"); settings.DeployOn(cfg) {
 		t.Fatal("a save without deployEnabled turned deploy back on")
+	}
+}
+
+func TestSettingsSectionsKeepEachOther(t *testing.T) {
+	dir := t.TempDir()
+	paths := settings.ProjectPaths{Data: dir}
+	limit, solo := 5, true
+	if _, _, err := settings.SaveProjectWorkflow(dir, "proj_a", &limit, &solo); err != nil {
+		t.Fatal(err)
+	}
+	prd, rfc := "specs/prd", "specs/rfc"
+	if _, _, err := settings.SaveProjectPaths(dir, "proj_a", &prd, &rfc); err != nil {
+		t.Fatal(err)
+	}
+	off := false
+	if _, _, err := settings.SaveProjectDeploy(dir, "proj_a", paths, settings.Deploy{SandboxEngine: "docker", DeployEnabled: &off}, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := settings.LoadProject(dir, "proj_a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := settings.WorkflowView(cfg); w.ImplementationCap != 5 || !w.SoloApproval {
+		t.Fatalf("deploy save reset the workflow: %+v", w)
+	}
+	if p := settings.DocPathsView(cfg); p.PRD != prd || p.RFC != rfc {
+		t.Fatalf("deploy save reset the paths: %+v", p)
+	}
+
+	limit = 3
+	_, changed, err := settings.SaveProjectWorkflow(dir, "proj_a", &limit, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(changed, " ") != "implementationCap" {
+		t.Fatalf("changed = %v", changed)
+	}
+	cfg, _, _ = settings.LoadProject(dir, "proj_a")
+	if settings.DeployOn(cfg) || cfg.Paths.PRD != prd || !cfg.Approval.Solo || cfg.Sandbox.Engine != "docker" {
+		t.Fatalf("workflow save reset another section: %+v", cfg)
+	}
+
+	prd = "docs/requirements"
+	if _, _, err := settings.SaveProjectPaths(dir, "proj_a", &prd, nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, _ = settings.LoadProject(dir, "proj_a")
+	if w := settings.WorkflowView(cfg); w.ImplementationCap != 3 || !w.SoloApproval || cfg.Paths.RFC != rfc || cfg.Paths.PRD != prd {
+		t.Fatalf("paths save reset another section: %+v", cfg)
+	}
+
+	tooMany := 9
+	if _, _, err := settings.SaveProjectWorkflow(dir, "proj_a", &tooMany, nil); !errors.Is(err, settings.ErrValidation) {
+		t.Fatalf("cap 9 err = %v", err)
+	}
+	outside := "../secrets"
+	if _, _, err := settings.SaveProjectPaths(dir, "proj_a", &outside, nil); !errors.Is(err, settings.ErrValidation) {
+		t.Fatalf("outside path err = %v", err)
 	}
 }
 

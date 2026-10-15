@@ -487,6 +487,9 @@ These sit in the suite in [0005-verification.md](0005-verification.md).
 | `TestProjectDeploySettingsIsolated` | Deploy settings saved on one project are not returned for another |
 | `TestProjectDeployTokenNeverReturned` | The project deploy route returns `deployTokenSet` and no token, and the token is in that project's `secrets.json` |
 | `TestDeployLeadOnly` | A Developer member who saves deploy settings is `403` |
+| `TestSettingsSectionsKeepEachOther` | A deploy save keeps the cap, the doc paths, and Solo approval; a workflow save keeps the doc paths and `deploy.enabled`; a paths save keeps the cap and Solo approval (RFC-126) |
+| `TestWorkflowSettings` | The workflow route defaults to cap 2 and Solo approval off, saves both for a Lead Developer, is `422` on a cap of 9 and `403` for a Developer member, and the deploy route returns neither field (RFC-126) |
+| `TestRepositoryDocPaths` | The repository route saves and returns `prdPath` and `rfcPath`, a bad path is `422` and leaves the repository unchanged, and a save without paths keeps them (RFC-126) |
 | `TestProjectLinkSameTribeOnly` | A link to a project in another tribe is `422` |
 | `TestProjectLinkNoSelf` | A link from a project to itself is `422` |
 | `TestProjectLinkOutsiderMisses` | A non-member reading links is `404` |

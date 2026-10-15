@@ -315,8 +315,11 @@ func (f *recipientsFixture) recipients(t *testing.T, from, to, actor string) str
 
 func (f *recipientsFixture) setDeploy(t *testing.T, on, solo bool) {
 	t.Helper()
-	d := settings.Deploy{DeployEnabled: &on, SoloApproval: solo}
+	d := settings.Deploy{DeployEnabled: &on}
 	if _, _, err := settings.SaveProjectDeploy(f.data, "proj_default", settings.ProjectPaths{Data: f.data}, d, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := settings.SaveProjectWorkflow(f.data, "proj_default", nil, &solo); err != nil {
 		t.Fatal(err)
 	}
 }

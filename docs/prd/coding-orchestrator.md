@@ -703,13 +703,14 @@ A Lead Developer member, a tribe admin of the project's tribe, or a company admi
 | --- | --- | --- |
 | Account GitHub | Host, login, token | That user |
 | Company GitHub | Host, organization, token. The bot login comes from the test | Admin |
-| Project repository | Repo in the company organization, base branch | Lead Developer member, tribe admin, or admin |
+| Project repository | Repo in the company organization, base branch, PRD and RFC paths | Lead Developer member, tribe admin, or admin |
 | Linked projects | Projects in the same tribe, shared paths per link | Lead Developer member, tribe admin, or admin |
 | Tribe conventions | Stacks and skills for every project of the tribe, company rules switched off (REQ-092) | Tribe admin or admin |
 | Project conventions | Each stack, skill, and rule switched on or off over the tribe (REQ-092) | Lead Developer member, tribe admin, or admin |
 | LLM | Families, each with protocol, base URL, model ids, and an API key. One list for the company | Admin |
 | Router | Model and fallback per task class, review independence, budgets. One router for the company | Admin |
-| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, implementation cap, doc paths | Lead Developer member, tribe admin, or admin |
+| Deploy | Dev URL, dev hosts, deploy and rollback commands, health URL, deploy token, check commands, allowed executables, sandbox engine and image, deploy on or off | Lead Developer member, tribe admin, or admin |
+| Workflow | Implementation cap, Solo approval (RFC-126) | Lead Developer member, tribe admin, or admin |
 
 No response contains a secret value. A response says whether each secret is set. Saving with an empty secret field keeps the stored value. Clearing a secret is a separate explicit action. A saved change applies to the next job of that project and never to an attempt in flight. The company bot login cannot approve unless the project turns on Solo approval (REQ-070) or the card's requirements all have Self review (REQ-073). A settings change writes an event that names the section and the fields, never the values.
 
@@ -1021,7 +1022,7 @@ An admin's Test connection on an LLM family sends one short request to its first
 
 ### REQ-070 Solo approval
 
-A team of one has no second person to approve, and its one GitHub account is often also the company bot. A project's Deploy settings have a Solo approval switch, off by default. While it is on, the card owner may approve their own card, and a member whose GitHub login equals the company bot login may approve, request changes, and reject. Every other approval rule stays: the job role, tribe membership, a saved GitHub login, and the current head SHA. An approval by the owner or by the bot login is stored as not independent (RFC-067).
+A team of one has no second person to approve, and its one GitHub account is often also the company bot. A project's Workflow settings have a Solo approval switch, off by default (RFC-126). While it is on, the card owner may approve their own card, and a member whose GitHub login equals the company bot login may approve, request changes, and reject. Every other approval rule stays: the job role, tribe membership, a saved GitHub login, and the current head SHA. An approval by the owner or by the bot login is stored as not independent (RFC-067).
 
 #### Acceptance
 

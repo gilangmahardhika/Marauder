@@ -120,6 +120,7 @@ frontend/
   src/routes/settings/repository/+page.svelte
   src/routes/settings/links/+page.svelte
   src/routes/settings/deploy/+page.svelte
+  src/routes/settings/workflow/+page.svelte
   src/routes/settings/conventions/+page.svelte
   src/lib/api.ts
   src/lib/session.ts
@@ -226,6 +227,7 @@ frontend/
   src/lib/pager.svelte.test.ts
   src/routes/cards/[id]/trace/page.test.ts
   src/routes/settings/deploy/page.test.ts
+  src/routes/settings/workflow/page.test.ts
   src/lib/components/IntakeActions.test.ts
   src/lib/components/ReviewersPanel.test.ts
   src/lib/components/Markdown.test.ts
@@ -302,12 +304,13 @@ frontend/
 | `/tribes/[id]/conventions` | The tribe's stacks, skills, and rules switched off (RFC-104) |
 | `/projects` | Projects of the active tribe |
 | `/projects/new` | Create a project |
-| `/settings/repository` | Project repository, base branch, and Sync |
+| `/settings/repository` | Project repository, base branch, PRD and RFC paths, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
 | `/settings/deploy` | Deploy and checks for the project |
+| `/settings/workflow` | Implementation cap and Solo approval for the project (RFC-126) |
 | `/settings/conventions` | The project's stacks, skills, and rules over its tribe (RFC-104) |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Deploy, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Members and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Deploy, Workflow, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Members and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the notification bell. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
 
@@ -602,7 +605,7 @@ ANSI color codes and control characters are stripped before `cleanText`, with no
 
 The submit button shows a spinner while the PUT is in flight. On `422`, paint `fields` under the matching inputs, show the message in `FormAlert`, focus the first invalid input, and keep what the operator typed.
 
-The four project settings pages (Repository, Linked projects, Deploy, Conventions) read `canEdit` from their GET body (RFC-059). When it is false, the fields sit in a disabled `fieldset`, or the pickers get `disabled`, and `SaveBar` gets `disabled`. Its note reads "Only a Lead Developer, a tribe admin, or an admin can change these settings." When it is true, the note names no role. The client never decides `canEdit` from the role itself.
+The five project settings pages (Repository, Linked projects, Deploy, Workflow, Conventions) read `canEdit` from their GET body (RFC-059). When it is false, the fields sit in a disabled `fieldset`, or the pickers get `disabled`, and `SaveBar` gets `disabled`. Its note reads "Only a Lead Developer, a tribe admin, or an admin can change these settings." When it is true, the note names no role. The client never decides `canEdit` from the role itself.
 
 ### Account
 
@@ -676,7 +679,7 @@ The page body is `src/lib/components/UsageDashboard.svelte` (RFC-090), with prop
 
 ### Repository
 
-`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. The repository is a `SearchSelect` of `GET /api/settings/github/repos` with no free-text fallback, as on New project. When the list loads empty, the picker's error line says the company token sees no repositories in the organization, and an admin gets a "Check Company GitHub" link to `/admin/github`. New project shows the same line and link. "Sync" calls `POST /api/projects/{id}/sync`. It is enabled when `canEdit` is true or the caller is a Developer, Senior Developer, or Lead Developer, matching the server.
+`src/routes/settings/repository/+page.svelte`. GET and PUT `/api/projects/{id}/settings/repository`. Shows the company host and organization as text, the repository and base branch as fields, and whether the clone exists with its head SHA. The repository is a `SearchSelect` of `GET /api/settings/github/repos` with no free-text fallback, as on New project. When the list loads empty, the picker's error line says the company token sees no repositories in the organization, and an admin gets a "Check Company GitHub" link to `/admin/github`. New project shows the same line and link. "Sync" calls `POST /api/projects/{id}/sync`. It is enabled when `canEdit` is true or the caller is a Developer, Senior Developer, or Lead Developer, matching the server. A Docs panel has PRD path and RFC path as monospace fields, hinted "Ingest reads requirements from this folder of the repository" and "Ingest reads decisions from this folder of the repository", saved with the repository by the same Save (RFC-126).
 
 ### Linked projects
 
@@ -775,7 +778,9 @@ Fields, in three fieldsets:
 | --- | --- |
 | Dev server | Dev URL, dev hosts (one per line), deploy command, rollback command, health URL, deploy token |
 | Checks | Local check, dev check, allowed executables (one per line), allowed commands (one per line, `commandExecutables`, RFC-084), sandbox engine select (`podman`, `docker`), sandbox image |
-| Board | Implementation cap (number, default 2), PRD path, RFC path, Deploy approved cards (checkbox `deployEnabled`, default on; off gives approved cards Squash and merge, RFC-111), Solo approval (checkbox, default off, RFC-067) |
+| Release | Deploy approved cards (checkbox `deployEnabled`, default on; off gives approved cards Squash and merge, RFC-111) |
+
+The doc paths are on the Repository page, and the implementation cap and Solo approval on the Workflow page (RFC-126).
 
 Static help text:
 
@@ -935,6 +940,8 @@ npm run build
 | `llm` model options | `toDraft`, `fromDraft`, and `keepKey` keep `modelOptions`. `fromDraft` drops a model's empty settings, the settings of a removed model, and a budget unless thinking is `enabled` on anthropic (RFC-079) |
 | `FamilyForm` model options | Adaptive is offered on anthropic only, the budget field shows only for On on anthropic, and the effort list follows the protocol |
 | Deploy settings allowed commands | Allowed commands load one per line, save as `commandExecutables` with blank lines dropped, and a refused name shows its field error |
+| Workflow settings | The page loads `implementationCap` and `soloApproval`, saves both with `putWorkflow`, and shows a `422` on the cap under its field (RFC-126) |
+| Repository doc paths | The Docs panel loads `prdPath` and `rfcPath` and saves them with the repository (RFC-126) |
 | `FamilyForm` history budget | Every model row has a History budget field on either protocol. `toDraft` and `fromDraft` round-trip `historyBudgetKiB` and drop an empty one |
 | `FamilyForm` context window | Every model row has a Context window field on either protocol. `toDraft` and `fromDraft` round-trip `contextTokens` and drop an empty one (RFC-117) |
 | Agent page | The Claude Code panel shows only for Claude Code; a family without a key is disabled; `422` field errors show under their controls (RFC-120) |

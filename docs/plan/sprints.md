@@ -1321,3 +1321,16 @@ Packages: frontend `lib/notifications.svelte.ts`, `lib/components/NotificationBe
 - `/notifications` with All and Unread, day groups, and Mark all read.
 
 Done when: the `NotificationBell` and Notifications page Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 98: Board settings leave the Deploy page
+
+Goal: The PRD and RFC paths are saved with the repository, the implementation cap and Solo approval on a Workflow page, and each settings route writes only its own keys (RFC-126, REQ-065).
+
+Packages: `internal/settings`, `internal/app`, `internal/httpapi`, `internal/cli`, frontend `routes/settings/deploy`, `routes/settings/repository`, `routes/settings/workflow`, `routes/+layout.svelte`, `lib/api.ts`, `lib/types.ts`.
+
+- `settings.SaveProjectPaths`, `settings.SaveProjectWorkflow`, and a `SaveProjectDeploy` that leaves `paths`, `scheduler`, and `approval` alone.
+- The repository route carries `prdPath` and `rfcPath`, and `GET`/`PUT /api/projects/{id}/settings/workflow` carries the cap and Solo approval.
+- `orchestrator ingest` reads the project's `config.yaml`.
+- The Deploy page loses the Board panel, the Repository page gains a Docs panel, and the Workflow page and its sidebar link.
+
+Done when: `TestSettingsSectionsKeepEachOther`, `TestWorkflowSettings`, `TestRepositoryDocPaths`, `TestSoloOwnerApproves`, the Workflow page, Repository doc paths, deploy page, and layout Vitest cases, `npm run check`, and the rest of the suite.

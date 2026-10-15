@@ -124,20 +124,27 @@ func (s *Server) projectRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPut {
+		if !canEdit {
+			writeErr(w, 403, "forbidden", "forbidden")
+			return
+		}
 		user, _ := app.CurrentUser(r.Context())
 		var body struct {
-			Repo       string `json:"repo"`
-			BaseBranch string `json:"baseBranch"`
+			Repo       string  `json:"repo"`
+			BaseBranch string  `json:"baseBranch"`
+			PRDPath    *string `json:"prdPath"`
+			RFCPath    *string `json:"rfcPath"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, 422, "validation", "body")
 			return
 		}
-		if _, _, err := app.SaveRepository(r.Context(), s.DB, user, projectID, body.Repo, body.BaseBranch, s.Data, app.GitHubRepoCheck(s.DB, s.TokenKey, s.gh())); err != nil {
+		fields, err := app.SaveRepositorySettings(r.Context(), s.DB, user, projectID, body.Repo, body.BaseBranch, body.PRDPath, body.RFCPath, s.Data, app.GitHubRepoCheck(s.DB, s.TokenKey, s.gh()))
+		if err != nil {
 			writeRepoErr(w, err)
 			return
 		}
-		s.configChanged(r, projectID, "repository", []string{"repo", "baseBranch"})
+		s.configChanged(r, projectID, "repository", fields)
 	}
 	view, err := app.RepositoryView(r.Context(), s.DB, s.Data, projectID, s.Tools)
 	if err != nil {
@@ -277,7 +284,46 @@ func deployBody(d settings.Deploy, tokenSet bool) map[string]any {
 		"devCommand": d.DevCommand, "rollbackCommand": d.RollbackCommand, "healthUrl": d.HealthURL,
 		"deployTokenSet": tokenSet, "localCheck": d.LocalCheck, "devCheck": d.DevCheck,
 		"allowExecutables": d.AllowExecutables, "commandExecutables": d.CommandExecutables, "sandboxEngine": d.SandboxEngine, "sandboxImage": d.SandboxImage,
-		"implementationCap": d.ImplementationCap, "prdPath": d.PRDPath, "rfcPath": d.RFCPath,
-		"soloApproval": d.SoloApproval, "deployEnabled": d.DeployEnabled == nil || *d.DeployEnabled,
+		"deployEnabled": d.DeployEnabled == nil || *d.DeployEnabled,
 	}
+}
+
+func (s *Server) projectWorkflow(w http.ResponseWriter, r *http.Request) {
+	projectID, canEdit, ok := s.settingsProject(w, r)
+	if !ok {
+		return
+	}
+	if s.Data == "" {
+		writeErr(w, 500, "internal", "settings")
+		return
+	}
+	if r.Method == http.MethodPut {
+		if !canEdit {
+			writeErr(w, 403, "forbidden", "forbidden")
+			return
+		}
+		var body struct {
+			ImplementationCap *int  `json:"implementationCap"`
+			SoloApproval      *bool `json:"soloApproval"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		_, fields, err := settings.SaveProjectWorkflow(s.Data, projectID, body.ImplementationCap, body.SoloApproval)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		s.configChanged(r, projectID, "workflow", fields)
+	}
+	cfg, _, err := settings.LoadProject(s.Data, projectID)
+	if err != nil {
+		writeErr(w, 500, "internal", "settings")
+		return
+	}
+	view := settings.WorkflowView(cfg)
+	writeJSON(w, 200, map[string]any{
+		"implementationCap": view.ImplementationCap, "soloApproval": view.SoloApproval, "canEdit": canEdit,
+	})
 }

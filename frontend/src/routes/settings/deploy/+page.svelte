@@ -26,11 +26,7 @@
     'commandExecutables',
     'sandboxEngine',
     'sandboxImage',
-    'implementationCap',
-    'prdPath',
-    'rfcPath',
-    'deployEnabled',
-    'soloApproval'
+    'deployEnabled'
   ];
 
   let devUrl = $state('');
@@ -47,10 +43,6 @@
   let commands = $state('');
   let sandboxEngine = $state('podman');
   let sandboxImage = $state('');
-  let implementationCap = $state(2);
-  let prdPath = $state('docs/prd');
-  let rfcPath = $state('docs/rfc');
-  let soloApproval = $state(false);
   let deployEnabled = $state(true);
   let loading = $state('Loading deploy settings');
   let loadError = $state('');
@@ -82,10 +74,6 @@
         commands = body.commandExecutables.join('\n');
         sandboxEngine = body.sandboxEngine;
         sandboxImage = body.sandboxImage;
-        implementationCap = body.implementationCap || 2;
-        prdPath = body.prdPath;
-        rfcPath = body.rfcPath;
-        soloApproval = body.soloApproval;
         deployEnabled = body.deployEnabled;
         canEdit = body.canEdit;
       })
@@ -126,10 +114,6 @@
         commandExecutables: lines(commands),
         sandboxEngine,
         sandboxImage,
-        implementationCap,
-        prdPath,
-        rfcPath,
-        soloApproval,
         deployEnabled,
         ...omitEmptySecret('deployToken', token, clear)
       });
@@ -149,7 +133,7 @@
 
 <Page
   title="Deploy"
-  description="How this project reaches its dev server, which checks gate a card, and where intake reads its docs. Other projects keep their own deploy settings."
+  description="How this project reaches its dev server, which checks gate a card, and what happens to an approved card. Other projects keep their own deploy settings."
   {loading}
   error={loadError}
   onretry={load}
@@ -223,33 +207,13 @@
           bind:value={sandboxImage}
         />
       </Panel>
-      <Panel title="Board">
-        <div class="grid gap-5 sm:grid-cols-2">
-          <Field
-            label="Implementation cap"
-            id="cap"
-            type="number"
-            width="sm"
-            hint="Plan and implement jobs at once, 1 to 8"
-            error={failure.fields.implementationCap}
-            bind:value={implementationCap}
-          />
-          <Field label="PRD path" id="prd" width="full" mono error={failure.fields.prdPath} bind:value={prdPath} />
-          <Field label="RFC path" id="rfc" width="full" mono error={failure.fields.rfcPath} bind:value={rfcPath} />
-        </div>
+      <Panel title="Release">
         <Checkbox
           id="deploy-enabled"
           label="Deploy approved cards"
           hint="When off, an approved card gets Squash and merge instead of Deploy. The merge runs on GitHub with the GitHub account of the person who presses it."
           error={failure.fields.deployEnabled}
           bind:checked={deployEnabled}
-        />
-        <Checkbox
-          id="solo"
-          label="Solo approval"
-          hint="The card owner, and a person whose GitHub login is the company bot, may approve. The approval is recorded as not independent. Leave off when a second person can review."
-          error={failure.fields.soloApproval}
-          bind:checked={soloApproval}
         />
       </Panel>
     </fieldset>

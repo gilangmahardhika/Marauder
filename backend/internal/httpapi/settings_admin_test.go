@@ -19,6 +19,7 @@ func settingsSaves(repo string) []settingsSave {
 		{"repository", map[string]string{"repo": repo, "baseBranch": "main"}},
 		{"links", map[string]any{"links": []any{}}},
 		{"deploy", map[string]any{"environment": "dev", "sandboxEngine": "docker"}},
+		{"workflow", map[string]any{"implementationCap": 3}},
 		{"conventions", map[string]any{"manualStackIds": []string{}, "skillIds": []string{}}},
 	}
 }

@@ -55,6 +55,7 @@ import type {
   TribeMember,
   TribeRecord,
   UsageResponse,
+  WorkflowSettings,
 } from "$lib/types";
 
 const base = apiOrigin;
@@ -728,7 +729,12 @@ export function getRepository() {
   return request<Repository>(`${projectPrefix()}/settings/repository`);
 }
 
-export function putRepository(body: { repo: string; baseBranch: string }) {
+export function putRepository(body: {
+  repo: string;
+  baseBranch: string;
+  prdPath?: string;
+  rfcPath?: string;
+}) {
   return request<Repository>(`${projectPrefix()}/settings/repository`, {
     method: "PUT",
     body: JSON.stringify(body),
@@ -836,6 +842,20 @@ export function getDeploy() {
 
 export function putDeploy(body: Record<string, unknown>) {
   return request<DeploySettings>(`${projectPrefix()}/settings/deploy`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function getWorkflow() {
+  return request<WorkflowSettings>(`${projectPrefix()}/settings/workflow`);
+}
+
+export function putWorkflow(body: {
+  implementationCap: number;
+  soloApproval: boolean;
+}) {
+  return request<WorkflowSettings>(`${projectPrefix()}/settings/workflow`, {
     method: "PUT",
     body: JSON.stringify(body),
   });

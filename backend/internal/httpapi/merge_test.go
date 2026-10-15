@@ -57,8 +57,11 @@ func mergeServer(t *testing.T, withToken bool) (*httpapi.Server, *mergeGH, board
 
 func setDeploy(t *testing.T, srv *httpapi.Server, on, solo bool) {
 	t.Helper()
-	d := settings.Deploy{DeployEnabled: &on, SoloApproval: solo}
+	d := settings.Deploy{DeployEnabled: &on}
 	if _, _, err := settings.SaveProjectDeploy(srv.Data, "proj_default", settings.ProjectPaths{Data: srv.Data}, d, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := settings.SaveProjectWorkflow(srv.Data, "proj_default", nil, &solo); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -1299,3 +1299,13 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `/notifications` with All and Unread, day groups, and Mark all read.
 - [x] `NotificationBell` and Notifications page Vitest
 - [x] `npm run check` and the full Vitest suite pass
+
+## Sprint 98: Board settings leave the Deploy page
+
+- [x] `settings.SaveProjectPaths`, `settings.SaveProjectWorkflow`, and a narrower `SaveProjectDeploy`.
+- [x] Repository route doc paths and the workflow route.
+- [x] `orchestrator ingest` reads the project's `config.yaml`.
+- [x] Deploy page without the Board panel, Repository Docs panel, Workflow page, and sidebar link.
+- [x] `TestSettingsSectionsKeepEachOther`, `TestWorkflowSettings`, `TestRepositoryDocPaths`, `TestSoloOwnerApproves`
+- [x] Workflow page, Repository doc paths, deploy page, and layout Vitest
+- [x] `npm run check` and the full Vitest and backend suites pass

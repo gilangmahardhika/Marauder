@@ -24,7 +24,31 @@ type Repository struct {
 	BaseBranch string `json:"baseBranch"`
 	Cloned     bool   `json:"cloned"`
 	HeadSHA    any    `json:"headSha"`
+	PRDPath    string `json:"prdPath"`
+	RFCPath    string `json:"rfcPath"`
 	CanEdit    bool   `json:"canEdit"`
+}
+
+// SaveRepositorySettings saves the repository and base branch, then the PRD
+// and RFC paths in the project's config.yaml (RFC-126). The paths are checked
+// first, so a bad path saves nothing. A nil path keeps the stored one. It
+// returns the saved field names.
+func SaveRepositorySettings(ctx context.Context, db *sql.DB, actor User, projectID, repo, base string, prd, rfc *string, data string, check RepoCheck) ([]string, error) {
+	if fields := settings.ValidateDocPaths(prd, rfc); len(fields) > 0 {
+		return nil, &identity.Validation{Fields: fields}
+	}
+	if _, _, err := tenancy.SaveRepository(ctx, db, actor, projectID, repo, base, data, check); err != nil {
+		return nil, err
+	}
+	changed := []string{"repo", "baseBranch"}
+	if data == "" {
+		return changed, nil
+	}
+	_, paths, err := settings.SaveProjectPaths(data, projectID, prd, rfc)
+	if err != nil {
+		return nil, err
+	}
+	return append(changed, paths...), nil
 }
 
 // Tools are the binaries and the runner used for git and gh calls.
@@ -70,6 +94,14 @@ func RepositoryView(ctx context.Context, db *sql.DB, data, projectID string, too
 		return Repository{}, err
 	}
 	view := Repository{Host: acct.Host, Org: acct.Org, Repo: project.Repo, BaseBranch: project.BaseBranch}
+	var cfg settings.ProjectConfig
+	if data != "" {
+		if cfg, _, err = settings.LoadProject(data, projectID); err != nil {
+			return Repository{}, err
+		}
+	}
+	docs := settings.DocPathsView(cfg)
+	view.PRDPath, view.RFCPath = docs.PRD, docs.RFC
 	if project.RepoPath == "" || tools.Git == "" {
 		return view, nil
 	}

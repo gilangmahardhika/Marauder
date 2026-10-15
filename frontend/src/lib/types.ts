@@ -406,6 +406,8 @@ export type Repository = {
   baseBranch: string;
   cloned: boolean;
   headSha: string | null;
+  prdPath: string;
+  rfcPath: string;
   canEdit: boolean;
 };
 
@@ -551,11 +553,13 @@ export type DeploySettings = {
   commandExecutables: string[];
   sandboxEngine: string;
   sandboxImage: string;
-  implementationCap: number;
-  prdPath: string;
-  rfcPath: string;
-  soloApproval: boolean;
   deployEnabled: boolean;
+};
+
+export type WorkflowSettings = {
+  implementationCap: number;
+  soloApproval: boolean;
+  canEdit: boolean;
 };
 
 export type RuleCategory =

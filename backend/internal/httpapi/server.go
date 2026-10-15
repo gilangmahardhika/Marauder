@@ -111,6 +111,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/projects/{projectId}/settings/links", s.projectLinks)
 	mux.HandleFunc("GET /api/projects/{projectId}/settings/deploy", s.projectDeploy)
 	mux.HandleFunc("PUT /api/projects/{projectId}/settings/deploy", s.projectDeploy)
+	mux.HandleFunc("GET /api/projects/{projectId}/settings/workflow", s.projectWorkflow)
+	mux.HandleFunc("PUT /api/projects/{projectId}/settings/workflow", s.projectWorkflow)
 	mux.HandleFunc("GET /api/projects/{projectId}/settings/conventions", s.projectConventions)
 	mux.HandleFunc("PUT /api/projects/{projectId}/settings/conventions", s.projectConventions)
 	mux.HandleFunc("GET /api/conventions", s.conventionsCatalog)

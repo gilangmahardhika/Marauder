@@ -15,13 +15,15 @@
   import SaveBar from '$lib/ui/SaveBar.svelte';
   import SearchSelect from '$lib/ui/SearchSelect.svelte';
 
-  const shown = ['repo', 'baseBranch'];
+  const shown = ['repo', 'baseBranch', 'prdPath', 'rfcPath'];
 
   let view = $state<Repository | null>(null);
   let repos = $state<CompanyRepo[] | null>(null);
   let reposError = $state('');
   let repo = $state('');
   let baseBranch = $state('main');
+  let prdPath = $state('docs/prd');
+  let rfcPath = $state('docs/rfc');
   let loading = $state('Loading repository');
   let loadError = $state('');
   let failure = $state(noFailure);
@@ -69,6 +71,8 @@
     view = next;
     repo = next.repo;
     baseBranch = next.baseBranch || 'main';
+    prdPath = next.prdPath;
+    rfcPath = next.rfcPath;
   }
 
   function load() {
@@ -114,7 +118,7 @@
     busy = true;
     failure = noFailure;
     try {
-      show(await putRepository({ repo, baseBranch }));
+      show(await putRepository({ repo, baseBranch, prdPath, rfcPath }));
       toast.success('Repository saved');
     } catch (error) {
       failure = formFailure(error, shown);
@@ -180,6 +184,28 @@
             error={failure.fields.baseBranch}
             hint="Card branches start here, and Sync resets the clone to it. It must exist on GitHub."
             bind:value={baseBranch}
+          />
+        </fieldset>
+      </Panel>
+      <Panel title="Docs" hint="Folders in the repository, relative to its root.">
+        <fieldset class="grid min-w-0 gap-5 sm:grid-cols-2" disabled={locked}>
+          <Field
+            label="PRD path"
+            id="prd"
+            width="full"
+            mono
+            hint="Ingest reads requirements from this folder of the repository."
+            error={failure.fields.prdPath}
+            bind:value={prdPath}
+          />
+          <Field
+            label="RFC path"
+            id="rfc"
+            width="full"
+            mono
+            hint="Ingest reads decisions from this folder of the repository."
+            error={failure.fields.rfcPath}
+            bind:value={rfcPath}
           />
         </fieldset>
       </Panel>

@@ -17,6 +17,7 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/runner"
+	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/tenancy"
 )
 
@@ -71,7 +72,8 @@ func Execute(opts Options) int {
 		Use: "ingest",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return withBoard(opts, repo, data, func(ctx context.Context, db *sql.DB, paths resolvedPaths) error {
-				result, err := app.Ingest(ctx, db, projectOr(project), "", paths.Repo, paths.Data)
+				id := projectOr(project)
+				result, err := app.Ingest(ctx, db, id, "", paths.Repo, settings.ProjectDir(paths.Data, id))
 				if err != nil {
 					return err
 				}

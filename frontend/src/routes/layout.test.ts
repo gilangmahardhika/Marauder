@@ -154,6 +154,8 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
   expect(sections().querySelector('a[href="/projects"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/tribes/tribe_a/conventions"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/settings/conventions"]')).not.toBeNull();
+  const projectLinks = [...sections().querySelectorAll('a[href^="/settings/"]')].map((link) => link.textContent?.trim());
+  expect(projectLinks).toEqual(['Deploy', 'Workflow', 'Repository', 'Conventions', 'Linked projects']);
   expect(sections().querySelector('a[href="/tribes/tribe_a/mcp"]')).toBeNull();
   expect(sections().querySelector('a[href="/tribes/tribe_a"]')).toBeNull();
   expect(sections().querySelector('a[href="/tribes"]')).toBeNull();
@@ -167,6 +169,7 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
     'Board',
     'Intake',
     'Deploy',
+    'Workflow',
     'Repository',
     'Conventions',
     'Linked projects',

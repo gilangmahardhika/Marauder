@@ -26,6 +26,8 @@ const view: Repository = {
   baseBranch: 'main',
   cloned: true,
   headSha: 'abc123',
+  prdPath: 'docs/prd',
+  rfcPath: 'docs/rfc',
   canEdit: true
 };
 
@@ -50,6 +52,35 @@ test('a sync without the company token says why in an error toast', async () => 
   await waitFor(() =>
     expect(toast.items.map((item) => [item.tone, item.text])).toEqual([['error', 'an admin must save the company GitHub token']])
   );
+});
+
+test('the Docs panel loads the doc paths and saves them with the repository', async () => {
+  api.putRepository.mockImplementation((body: Record<string, unknown>) => Promise.resolve({ ...view, ...body }));
+  render(RepositoryPage);
+  const prd = (await screen.findByLabelText('PRD path')) as HTMLInputElement;
+  await waitFor(() => expect(prd.value).toBe('docs/prd'));
+  expect((screen.getByLabelText('RFC path') as HTMLInputElement).value).toBe('docs/rfc');
+
+  await fireEvent.input(prd, { target: { value: 'specs/prd' } });
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(api.putRepository).toHaveBeenCalledTimes(1));
+  expect(api.putRepository.mock.calls[0][0]).toEqual({
+    repo: 'acme/shop',
+    baseBranch: 'main',
+    prdPath: 'specs/prd',
+    rfcPath: 'docs/rfc'
+  });
+});
+
+test('a bad doc path shows under its field', async () => {
+  api.putRepository.mockRejectedValue(
+    Object.assign(new Error('validation failed'), { fields: { prdPath: "path is relative to the repository, with no '..'" } })
+  );
+  render(RepositoryPage);
+  const prd = await screen.findByLabelText('PRD path');
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByText("path is relative to the repository, with no '..'")).toBeTruthy();
+  expect(prd.getAttribute('aria-invalid')).toBe('true');
 });
 
 test('a save error with no input shows in the form alert', async () => {

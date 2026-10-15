@@ -39,10 +39,6 @@ const saved: DeploySettings = {
   commandExecutables: ['go', 'gofmt'],
   sandboxEngine: 'podman',
   sandboxImage: '',
-  implementationCap: 2,
-  prdPath: 'docs/prd',
-  rfcPath: 'docs/rfc',
-  soloApproval: false,
   deployEnabled: true
 };
 
@@ -83,7 +79,13 @@ test('the deploy switch loads from and saves deployEnabled', async () => {
   await fireEvent.click(box);
   await fireEvent.click(screen.getByRole('button', { name: /save/i }));
   await waitFor(() => expect(api.putDeploy).toHaveBeenCalledTimes(1));
-  expect((api.putDeploy.mock.calls[0][0] as Record<string, unknown>).deployEnabled).toBe(false);
+  const body = api.putDeploy.mock.calls[0][0] as Record<string, unknown>;
+  expect(body.deployEnabled).toBe(false);
+  expect(body).not.toHaveProperty('implementationCap');
+  expect(body).not.toHaveProperty('prdPath');
+  expect(body).not.toHaveProperty('soloApproval');
+  expect(screen.queryByLabelText('PRD path')).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: /Solo approval/ })).toBeNull();
 });
 
 test('a refused command shows the field error', async () => {

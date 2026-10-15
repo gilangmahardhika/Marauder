@@ -50,7 +50,7 @@ func TestProjectDeploySettingsIsolated(t *testing.T) {
 	f := newDeployFixture(t)
 	saved := putJSON(t, f.srv, "/api/projects/"+f.projectA+"/settings/deploy", f.lead, map[string]any{
 		"environment": "dev", "devHosts": []string{"dev.example.com"}, "devUrl": "https://dev.example.com",
-		"sandboxEngine": "docker", "implementationCap": 3,
+		"sandboxEngine": "docker",
 	})
 	if saved.Code != 200 || !strings.Contains(saved.Body.String(), `"sandboxEngine":"docker"`) {
 		t.Fatalf("put = %d %s", saved.Code, saved.Body.String())
@@ -60,7 +60,7 @@ func TestProjectDeploySettingsIsolated(t *testing.T) {
 		t.Fatalf("get B = %d %s", other.Code, other.Body.String())
 	}
 	body := other.Body.String()
-	if !strings.Contains(body, `"sandboxEngine":"podman"`) || !strings.Contains(body, `"devUrl":""`) || !strings.Contains(body, `"implementationCap":2`) {
+	if !strings.Contains(body, `"sandboxEngine":"podman"`) || !strings.Contains(body, `"devUrl":""`) {
 		t.Fatalf("project B saw A's deploy: %s", body)
 	}
 	again := getAuth(t, f.srv, "/api/projects/"+f.projectA+"/settings/deploy", f.lead)

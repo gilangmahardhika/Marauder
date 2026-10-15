@@ -251,7 +251,7 @@ func TestSoloOwnerApproves(t *testing.T) {
 	}
 
 	adminToken := loginToken(t, srv, "admin@example.com", "password-long-0")
-	saved := putJSON(t, srv, "/api/projects/proj_default/settings/deploy", adminToken, map[string]any{"environment": "dev", "soloApproval": true})
+	saved := putJSON(t, srv, "/api/projects/proj_default/settings/workflow", adminToken, map[string]any{"soloApproval": true})
 	if saved.Code != 200 || !strings.Contains(saved.Body.String(), `"soloApproval":true`) {
 		t.Fatalf("save solo = %d %s", saved.Code, saved.Body.String())
 	}
