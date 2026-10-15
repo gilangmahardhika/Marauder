@@ -1291,3 +1291,11 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] Words for `agent_run`.
 - [x] Agent page, runners agents, and `trace` agent words Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 97: Notification list and page
+
+- [x] Shared `inbox` state and `NotificationRow`.
+- [x] The bell panel with at most 8 rows and "Open all notifications".
+- [x] `/notifications` with All and Unread, day groups, and Mark all read.
+- [x] `NotificationBell` and Notifications page Vitest
+- [x] `npm run check` and the full Vitest suite pass

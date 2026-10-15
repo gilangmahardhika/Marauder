@@ -1309,3 +1309,15 @@ Packages: frontend `routes/admin/agent`, `routes/admin/runners`, `lib/api.ts`, `
 - Words for `agent_run`.
 
 Done when: the Agent page, the runners agents, and the `trace` agent words Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 97: Notification list and page
+
+Goal: The bell shows the newest 8 notifications in a clearer list and links to a page with the newest 50 (RFC-113).
+
+Packages: frontend `lib/notifications.svelte.ts`, `lib/components/NotificationBell.svelte`, `lib/components/NotificationRow.svelte`, `lib/format.ts`, `routes/notifications`.
+
+- The shared `inbox` state, and `NotificationRow` with the kind icon, relative time, and unread tint.
+- The bell panel with "N new", at most 8 rows, and "Open all notifications".
+- `/notifications` with All and Unread, day groups, and Mark all read.
+
+Done when: the `NotificationBell` and Notifications page Vitest cases, `npm run check`, and the rest of the suite.
