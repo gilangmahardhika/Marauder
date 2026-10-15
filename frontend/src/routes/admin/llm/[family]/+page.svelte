@@ -13,11 +13,12 @@
   import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
   import Panel from '$lib/ui/Panel.svelte';
+  import SaveBar from '$lib/ui/SaveBar.svelte';
 
   let family = $state<FamilyDraft | null>(null);
   let failure = $state(noFailure);
   let form = $state<HTMLFormElement>();
-  let result = $state('');
+  let result = $state<{ ok: boolean; text: string } | null>(null);
   let confirming = $state(false);
   let loading = $state('Loading family');
   let loadError = $state('');
@@ -81,7 +82,7 @@
     testing = true;
     try {
       const outcome = await testLLM(familyId);
-      result = outcome.ok ? 'Connected' : (outcome.message ?? 'failed');
+      result = outcome.ok ? { ok: true, text: 'Connected' } : { ok: false, text: outcome.message ?? 'Connection failed' };
     } catch (error) {
       toast.error(failureText(error));
     } finally {
@@ -115,22 +116,27 @@
   {#if family}
     <div class="flex flex-col gap-6">
       <form onsubmit={save} bind:this={form} novalidate>
-        <Panel title="Family">
+        <div class="flex flex-col gap-6">
           <FormAlert message={failure.message} extra={failure.extra} />
-          <FamilyForm bind:family={family!} idLocked fields={failure.fields} />
-          {#snippet footer()}
-            {#if result}<span class="mr-auto text-sm text-muted">{result}</span>{/if}
-            <Button
-              type="button"
-              variant="secondary"
-              icon="zap"
-              loading={testing}
-              disabled={busy}
-              onclick={() => void test()}>Test connection</Button
-            >
-            <Button variant="primary" type="submit" icon="save" loading={saving} disabled={busy}>Save</Button>
-          {/snippet}
-        </Panel>
+          <FamilyForm bind:family={family!} idLocked fields={failure.fields}>
+            {#snippet endpointActions()}
+              {#if result}
+                <span class="max-w-64" role="status">
+                  <Badge tone={result.ok ? 'green' : 'red'}>{result.text}</Badge>
+                </span>
+              {/if}
+              <Button
+                type="button"
+                variant="secondary"
+                icon="zap"
+                loading={testing}
+                disabled={busy}
+                onclick={() => void test()}>Test connection</Button
+              >
+            {/snippet}
+          </FamilyForm>
+        </div>
+        <SaveBar busy={saving} disabled={busy} />
       </form>
       <Panel title="Delete family" hint="Routes that use its models stop resolving.">
         {#if confirming}

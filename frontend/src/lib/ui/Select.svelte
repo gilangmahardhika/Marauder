@@ -7,6 +7,7 @@
     label,
     id,
     value = $bindable(''),
+    hint = '',
     error = '',
     width = 'md',
     children
@@ -14,6 +15,7 @@
     label: string;
     id: string;
     value?: string;
+    hint?: string;
     error?: string;
     width?: Width;
     children: Snippet;
@@ -22,11 +24,12 @@
 
 <div class="flex w-full flex-col gap-1.5 {widths[width]}">
   <label for={id} class={labelClass}>{label}</label>
+  {#if hint}<p id="{id}-hint" class="text-xs text-muted">{hint}</p>{/if}
   <select
     {id}
     class={control}
     aria-invalid={error ? true : undefined}
-    aria-describedby={describedBy(id, '', error)}
+    aria-describedby={describedBy(id, hint, error)}
     bind:value
   >
     {@render children()}

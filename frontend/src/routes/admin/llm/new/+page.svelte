@@ -9,7 +9,7 @@
   import Button from '$lib/ui/Button.svelte';
   import FormAlert from '$lib/ui/FormAlert.svelte';
   import Page from '$lib/ui/Page.svelte';
-  import Panel from '$lib/ui/Panel.svelte';
+  import SaveBar from '$lib/ui/SaveBar.svelte';
 
   let family = $state(blankFamily());
   let busy = $state(false);
@@ -46,14 +46,14 @@
 </script>
 
 <Page title="New LLM family" description="One provider endpoint and its key. Add every model id it serves.">
+  {#snippet actions()}
+    <Button href="/admin/llm" icon="arrow-left">All families</Button>
+  {/snippet}
   <form onsubmit={submit} bind:this={form} novalidate>
-    <Panel title="Family">
+    <div class="flex flex-col gap-6">
       <FormAlert message={failure.message} extra={failure.extra} />
       <FamilyForm bind:family fields={failure.fields} />
-      {#snippet footer()}
-        <Button variant="ghost" href="/admin/llm">Cancel</Button>
-        <Button variant="primary" type="submit" icon="plus" loading={busy}>Create family</Button>
-      {/snippet}
-    </Panel>
+    </div>
+    <SaveBar {busy} label="Create family" icon="plus" />
   </form>
 </Page>

@@ -9,11 +9,12 @@
 </script>
 
 <script lang="ts">
+  import { tick, type Snippet } from 'svelte';
   import SecretField from '$lib/components/SecretField.svelte';
   import { blankOptions, effortChoices, thinkingChoices, usesBudget, type OptionsDraft } from '$lib/llm';
   import Button from '$lib/ui/Button.svelte';
   import Field from '$lib/ui/Field.svelte';
-  import FieldGroup from '$lib/ui/FieldGroup.svelte';
+  import Panel from '$lib/ui/Panel.svelte';
   import Select from '$lib/ui/Select.svelte';
 
   type Control = 'thinking' | 'budget' | 'effort' | 'history' | 'context';
@@ -21,8 +22,17 @@
   let {
     family = $bindable(),
     idLocked = false,
-    fields = {}
-  }: { family: FamilyDraft; idLocked?: boolean; fields?: Record<string, string> } = $props();
+    fields = {},
+    endpointActions
+  }: {
+    family: FamilyDraft;
+    idLocked?: boolean;
+    fields?: Record<string, string>;
+    /** Controls in the Endpoint panel header, such as a connection test. */
+    endpointActions?: Snippet;
+  } = $props();
+
+  const subhead = 'text-[11px] font-semibold uppercase tracking-wider text-muted';
 
   const thinking = $derived(thinkingChoices(family.protocol));
   const efforts = $derived(effortChoices(family.protocol));
@@ -66,9 +76,11 @@
     return optionsError?.row === index && optionsError.control === control ? optionsError.message : '';
   }
 
-  function addModel() {
+  async function addModel() {
     family.models = [...family.models, ''];
     family.options = [...family.options, blankOptions()];
+    await tick();
+    document.getElementById(`model-${family.models.length - 1}`)?.focus();
   }
 
   function removeModel(index: number) {
@@ -77,29 +89,52 @@
   }
 </script>
 
-<div class="grid gap-5 sm:grid-cols-2">
-  <Field
-    label="Id"
-    id="family-id"
-    width="full"
-    mono
-    disabled={idLocked}
-    hint={idLocked ? 'The id keys the saved API key, so it cannot change.' : 'For example anthropic or openai-eu.'}
-    error={fields.id}
-    bind:value={family.id}
-  />
-  <Select label="Protocol" id="family-protocol" width="full" error={fields.protocol} bind:value={family.protocol}>
-    <option value="anthropic">Anthropic</option>
-    <option value="openai">OpenAI</option>
-  </Select>
-</div>
-<Field label="Base URL" id="family-url" width="lg" mono placeholder="https://" error={fields.baseUrl} bind:value={family.baseUrl} />
-<FieldGroup label="Models" hint="One model id per row, with the thinking and effort every request to it sends. The history budget is how much earlier tool output an implement attempt sends back, from 4 to 512 KiB.">
-  {#if family.models.length > 0}
-    <div class="max-w-field-lg overflow-hidden rounded-control border border-line bg-surface">
+<Panel title="Endpoint" hint="Where requests go and the key they carry." actions={endpointActions}>
+  <div class="grid items-start gap-5 sm:grid-cols-2">
+    <Field
+      label="Id"
+      id="family-id"
+      width="full"
+      mono
+      disabled={idLocked}
+      hint={idLocked ? 'The id keys the saved API key, so it cannot change.' : 'For example anthropic or openai-eu.'}
+      error={fields.id}
+      bind:value={family.id}
+    />
+    <Select
+      label="Protocol"
+      id="family-protocol"
+      width="full"
+      hint="Sets the thinking and effort choices below."
+      error={fields.protocol}
+      bind:value={family.protocol}
+    >
+      <option value="anthropic">Anthropic</option>
+      <option value="openai">OpenAI</option>
+    </Select>
+    <Field label="Base URL" id="family-url" width="full" mono placeholder="https://" error={fields.baseUrl} bind:value={family.baseUrl} />
+    <SecretField
+      label="API key"
+      name="apiKey"
+      width="full"
+      saved={family.keySet}
+      error={fields.apiKey}
+      bind:value={family.key}
+      bind:clear={family.clear}
+    />
+  </div>
+</Panel>
+
+<Panel title="Models" hint="Every model id this endpoint serves, with the settings each request to it sends.">
+  {#if family.models.length === 0}
+    <p class="rounded-control border border-dashed border-line-strong px-4 py-6 text-center text-sm text-muted">
+      No models yet. Add each model id this endpoint serves.
+    </p>
+  {:else}
+    <div class="flex flex-col gap-4">
       {#each family.models as model, index (index)}
-        <div class="border-b border-line last:border-b-0">
-          <div class="p-3">
+        <div class="overflow-hidden rounded-control border border-line">
+          <div class="p-4">
             <Field
               label={`Model ${index + 1}`}
               id={`model-${index}`}
@@ -123,69 +158,81 @@
             <div
               role="group"
               aria-label={`Settings for ${model || `model ${index + 1}`}`}
-              class="grid gap-3 border-t border-line bg-ground/40 px-3 py-3 sm:grid-cols-3"
+              class="flex flex-col gap-5 border-t border-line bg-ground/40 p-4"
             >
-              <Select
-                label="Thinking"
-                id={`model-${index}-thinking`}
-                width="full"
-                error={optionError(index, 'thinking')}
-                bind:value={family.options[index].thinking}
-              >
-                {#each thinking as choice (choice.value)}
-                  <option value={choice.value}>{choice.label}</option>
-                {/each}
-              </Select>
-              {#if usesBudget(family.protocol, family.options[index].thinking)}
-                <Field
-                  label="Budget"
-                  id={`model-${index}-budget`}
-                  type="number"
-                  width="full"
-                  mono
-                  placeholder="8192"
-                  error={optionError(index, 'budget')}
-                  bind:value={family.options[index].thinkingBudget}
-                />
-              {/if}
-              <Select
-                label="Effort"
-                id={`model-${index}-effort`}
-                width="full"
-                error={optionError(index, 'effort')}
-                bind:value={family.options[index].effort}
-              >
-                {#each efforts as choice (choice.value)}
-                  <option value={choice.value}>{choice.label}</option>
-                {/each}
-              </Select>
-              <Field
-                label="History budget (KiB)"
-                id={`model-${index}-history`}
-                type="number"
-                width="full"
-                mono
-                placeholder="16"
-                error={optionError(index, 'history')}
-                bind:value={family.options[index].historyBudgetKiB}
-              />
-              <Field
-                label="Context window (tokens)"
-                id={`model-${index}-context`}
-                type="number"
-                width="full"
-                mono
-                placeholder="128000"
-                hint="The agent compacts its work at 75% of this."
-                error={optionError(index, 'context')}
-                bind:value={family.options[index].contextTokens}
-              />
+              <div class="flex flex-col gap-3">
+                <h3 class={subhead}>Reasoning</h3>
+                <div class="grid items-start gap-4 sm:grid-cols-3">
+                  <Select
+                    label="Thinking"
+                    id={`model-${index}-thinking`}
+                    width="full"
+                    error={optionError(index, 'thinking')}
+                    bind:value={family.options[index].thinking}
+                  >
+                    {#each thinking as choice (choice.value)}
+                      <option value={choice.value}>{choice.label}</option>
+                    {/each}
+                  </Select>
+                  {#if usesBudget(family.protocol, family.options[index].thinking)}
+                    <Field
+                      label="Budget"
+                      id={`model-${index}-budget`}
+                      type="number"
+                      width="full"
+                      mono
+                      placeholder="8192"
+                      error={optionError(index, 'budget')}
+                      bind:value={family.options[index].thinkingBudget}
+                    />
+                  {/if}
+                  <Select
+                    label="Effort"
+                    id={`model-${index}-effort`}
+                    width="full"
+                    error={optionError(index, 'effort')}
+                    bind:value={family.options[index].effort}
+                  >
+                    {#each efforts as choice (choice.value)}
+                      <option value={choice.value}>{choice.label}</option>
+                    {/each}
+                  </Select>
+                </div>
+              </div>
+              <div class="flex flex-col gap-3">
+                <h3 class={subhead}>Limits</h3>
+                <div class="grid items-start gap-4 sm:grid-cols-2">
+                  <Field
+                    label="History budget (KiB)"
+                    id={`model-${index}-history`}
+                    type="number"
+                    width="full"
+                    mono
+                    placeholder="16"
+                    hint="Earlier tool output an implement attempt resends, 4 to 512 KiB."
+                    error={optionError(index, 'history')}
+                    bind:value={family.options[index].historyBudgetKiB}
+                  />
+                  <Field
+                    label="Context window (tokens)"
+                    id={`model-${index}-context`}
+                    type="number"
+                    width="full"
+                    mono
+                    placeholder="128000"
+                    hint="The agent compacts its work at 75% of this."
+                    error={optionError(index, 'context')}
+                    bind:value={family.options[index].contextTokens}
+                  />
+                </div>
+              </div>
             </div>
           {/if}
         </div>
       {/each}
     </div>
   {/if}
-  <Button type="button" variant="ghost" icon="plus" onclick={addModel}>Add model</Button>
-</FieldGroup>
-<SecretField label="API key" name="apiKey" saved={family.keySet} error={fields.apiKey} bind:value={family.key} bind:clear={family.clear} />
+  <div>
+    <Button type="button" icon="plus" onclick={addModel}>Add model</Button>
+  </div>
+</Panel>
