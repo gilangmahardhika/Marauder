@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
@@ -76,6 +76,13 @@ test('PRD files with no REQ- headings show a notice, no spinner, and Accept stay
 
   await vi.advanceTimersByTimeAsync(10_000);
   expect(api.getIntake).toHaveBeenCalledTimes(1);
+});
+
+test('dismiss hides the unnumbered PRD notice', async () => {
+  render(IntakePage);
+  expect(await screen.findByText(/7 PRD files have no REQ- headings/)).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+  expect(screen.queryByText(/no REQ- headings/)).toBeNull();
 });
 
 test('no notice when every PRD file has REQ- headings', async () => {

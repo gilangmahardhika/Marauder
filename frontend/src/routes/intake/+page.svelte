@@ -39,6 +39,8 @@
   let loadError = $state('');
   let pending = $state<'' | 'ingest' | 'all' | 'selected'>('');
   let selected = $state<string[]>([]);
+  /** Fingerprint of the unnumbered list last dismissed; empty until the user closes the notice. */
+  let unnumberedDismissedFor = $state('');
 
   const busy = $derived(pending !== '');
 
@@ -68,6 +70,8 @@
   const requirements = $derived(intake?.requirements ?? []);
   const decisions = $derived(intake?.decisions ?? []);
   const unnumbered = $derived(intake?.unnumbered ?? []);
+  const unnumberedKey = $derived(unnumbered.join('\0'));
+  const showUnnumbered = $derived(unnumbered.length > 0 && unnumberedDismissedFor !== unnumberedKey);
   const filter = $derived({
     q: params.get('q') ?? '',
     status: parseStatus(params.get('status'), requirements),
@@ -161,8 +165,8 @@
 
   <div class="flex flex-col gap-4">
     {#if intake?.planError}<Notice tone="danger">{intake.planError}</Notice>{/if}
-    {#if unnumbered.length > 0}
-      <Notice>
+    {#if showUnnumbered}
+      <Notice ondismiss={() => (unnumberedDismissedFor = unnumberedKey)}>
         <p>
           {unnumbered.length}
           {unnumbered.length === 1 ? 'PRD file has' : 'PRD files have'} no REQ- headings, so ingest read no requirements from {unnumbered.length === 1
