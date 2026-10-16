@@ -117,6 +117,8 @@ test('streams while live: merges stored events, shows the reply as it is written
   expect(api.streamTrace.mock.calls[0][0]).toBe('card_1');
   expect(streams[0].since).toBe(first.ts);
   expect(screen.getByText('Live').parentElement?.getAttribute('title')).toBe('This page shows output as it arrives');
+  expect(screen.getByTestId('trace-toolbar').className).toContain('sticky');
+  expect(screen.getByLabelText('Follow latest')).toBeTruthy();
   const log = screen.getByRole('log', { name: 'Terminal output, oldest first' });
 
   const stream = streams[0];
@@ -129,6 +131,9 @@ test('streams while live: merges stored events, shows the reply as it is written
   expect(log.textContent).toContain('Waiting for the model…');
   expect(log.getAttribute('aria-busy')).toBe('true');
   expect(screen.getByRole('region', { name: 'Now running' }).textContent).toContain('The model is writing…');
+
+  await send(stream, { kind: 'thinking', attemptId: 'att_1', turn: 1, text: 'Building the foundation.' });
+  expect(screen.getByTestId('pending-thinking').textContent).toContain('Building the foundation.');
 
   await send(stream, { kind: 'delta', attemptId: 'att_1', turn: 1, text: 'Now I ' }, { kind: 'delta', attemptId: 'att_1', turn: 1, text: 'edit it.' });
   expect(log.textContent).toContain('Now I edit it.');

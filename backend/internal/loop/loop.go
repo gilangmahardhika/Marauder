@@ -613,10 +613,13 @@ func modelCallPayload(role, taskClass, modelID string, resp providers.Response, 
 	return payload
 }
 
-// toolArgs are the arguments a person needs to follow a tool call. File text
-// is never kept: edit_file records its size only.
-func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[string]any {
+// toolArgs are the arguments a person needs to follow a tool call. Ordinary
+// values use ArgCap. edit_file and replace_in_file also keep capped old/new
+// snippets for the Trace UI (RFC-132). editOld is the file content before an
+// edit_file write, or empty when the file is new or unknown.
+func toolArgs(call providers.ToolCall, localCheck string, secrets []string, editOld string) map[string]any {
 	clip := func(s string) string { return trace.Clip(s, secrets, trace.ArgCap) }
+	diff := func(s string) string { return trace.Clip(s, secrets, trace.DiffCap) }
 	args := map[string]any{}
 	setInt := func(key string) {
 		if n := intArg(call.Args, key); n != 0 {
@@ -657,6 +660,8 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 		args["path"] = clip(strArg(call.Args, "path"))
 		args["oldBytes"] = len(strArg(call.Args, "old"))
 		args["newBytes"] = len(strArg(call.Args, "new"))
+		args["old"] = diff(strArg(call.Args, "old"))
+		args["new"] = diff(strArg(call.Args, "new"))
 		if boolArg(call.Args, "replaceAll") {
 			args["replaceAll"] = true
 		}
@@ -670,6 +675,10 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 		args["path"] = clip(strArg(call.Args, "path"))
 		args["bytes"] = len(text)
 		args["lines"] = countLines(text)
+		args["new"] = diff(text)
+		if editOld != "" {
+			args["old"] = diff(editOld)
+		}
 	case "commit":
 		args["message"] = clip(strArg(call.Args, "message"))
 	case "todo_write":

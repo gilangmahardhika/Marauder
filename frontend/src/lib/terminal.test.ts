@@ -62,6 +62,29 @@ test('the new file tools and run_command show their targets', () => {
   expect(failed.tone).toBe('error');
 });
 
+test('edit_file and replace_in_file with old/new build a terminal edit card', () => {
+  const edit = terminalEntry(
+    event('tool_call', {
+      name: 'edit_file',
+      ok: true,
+      summary: 'wrote src/a.ts',
+      args: { path: 'src/a.ts', bytes: 12, lines: 1, old: 'hello\n', new: 'hello world\n' }
+    })
+  );
+  expect(edit.edit).toEqual({ path: 'src/a.ts', old: 'hello\n', new: 'hello world\n', name: 'edit_file' });
+  expect(edit.body).toBe('');
+  const replace = terminalEntry(
+    event('tool_call', {
+      name: 'replace_in_file',
+      ok: true,
+      summary: 'replaced 1 occurrence in a.ts',
+      args: { path: 'a.ts', oldBytes: 5, newBytes: 3, old: 'hello', new: 'hi' }
+    })
+  );
+  expect(replace.edit).toEqual({ path: 'a.ts', old: 'hello', new: 'hi', name: 'replace_in_file' });
+  expect(replace.body).toBe('');
+});
+
 test('a failed or refused tool uses the error tone', () => {
   expect(terminalEntry(event('tool_call', { name: 'read_file', ok: false, summary: 'no such file', args: { path: 'x' } })).tone).toBe('error');
   const refused = terminalEntry(event('tool_call', { name: 'edit_file', ok: false, rejected: true, summary: 'outside the worktree', args: { path: '../x' } }));

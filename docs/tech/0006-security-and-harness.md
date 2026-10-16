@@ -395,7 +395,7 @@ These run in the worker, not only in tests. A failed assertion appends `assertio
 | Child output | 1 MiB |
 | `job_error.message` | 8 KiB, head and tail kept |
 | `model_call.text` | 4 KiB, head and tail kept (RFC-074) |
-| Each `tool_call.args` string | 1 KiB, head and tail kept (RFC-074) |
+| Each `tool_call.args` string | 1 KiB, head and tail kept (RFC-074); `old`/`new` on `edit_file` and `replace_in_file` use 8 KiB (`DiffCap`, RFC-132) |
 | Trace stream | While `live` and the tab is visible: database read every 1 s and after each model call, ping every 15 s, 10 min per connection, 16 viewers per card and 64 in all, 256 frames buffered per viewer, 64 KiB of live text per turn (RFC-088) |
 | Trace poll | Only while the stream is down: every 3 s, every 1 s in the terminal view; `since` reads 10 s back; the stream is tried again after 5 s |
 | Model reply | 8,192 tokens, unless the request sets its own |

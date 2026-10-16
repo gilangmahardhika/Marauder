@@ -168,11 +168,13 @@ func scanListed(rows *sql.Rows, err error) ([]Listed, error) {
 	return events, rows.Err()
 }
 
-// TextCap is the most bytes of a model reply kept in model_call.text, and
-// ArgCap the most bytes of each value in tool_call.args.
+// TextCap is the most bytes of a model reply kept in model_call.text.
+// ArgCap is the most bytes of each ordinary tool_call.args value.
+// DiffCap is the most bytes of each edit snippet (old/new) kept for the Trace UI (RFC-132).
 const (
 	TextCap = 4 << 10
 	ArgCap  = 1 << 10
+	DiffCap = 8 << 10
 )
 
 // Clip makes text safe for one payload field: NUL bytes are dropped, invalid

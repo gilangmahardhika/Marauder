@@ -103,9 +103,6 @@ func TestToolCallArgs(t *testing.T) {
 	args := map[string]map[string]any{}
 	for _, call := range payloads(t, f, "tool_call") {
 		name, _ := call["name"].(string)
-		if raw, err := json.Marshal(call); err != nil || strings.Contains(string(raw), "FILE-BODY") {
-			t.Fatalf("tool_call stored file text: %s", raw)
-		}
 		if got, ok := call["args"].(map[string]any); ok && args[name] == nil {
 			args[name] = got
 		}
@@ -127,6 +124,31 @@ func TestToolCallArgs(t *testing.T) {
 				t.Fatalf("%s args = %v, want %s = %v", name, args[name], key, value)
 			}
 		}
+	}
+	// RFC-132: capped edit snippets for the Trace UI.
+	edit := args["edit_file"]
+	if edit["new"] != "FILE-BODY one\nFILE-BODY two\n" {
+		t.Fatalf("edit_file new = %v", edit["new"])
+	}
+	if old, _ := edit["old"].(string); old == "" {
+		t.Fatalf("edit_file old missing for an existing file: %v", edit)
+	}
+	rep := args["replace_in_file"]
+	if rep["old"] != "FILE-BODY two" || rep["new"] != "FILE-BODY 2" {
+		t.Fatalf("replace_in_file snippets = %v", rep)
+	}
+	var newFile map[string]any
+	for _, call := range payloads(t, f, "tool_call") {
+		got, _ := call["args"].(map[string]any)
+		if call["name"] == "edit_file" && got["path"] == "extra.txt" {
+			newFile = got
+		}
+	}
+	if newFile["new"] != "x\n" {
+		t.Fatalf("new-file edit_file = %v", newFile)
+	}
+	if _, hasOld := newFile["old"]; hasOld {
+		t.Fatalf("new file should not store old: %v", newFile)
 	}
 }
 

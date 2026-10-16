@@ -1,16 +1,33 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
+  import TerminalEditCard from '$lib/components/TerminalEditCard.svelte';
   import { clock, count } from '$lib/format';
-  import { clipLines, foldLines, pageEvents, pendingEntry, terminalLines, type PendingReply, type TerminalTone } from '$lib/terminal';
+  import {
+    clipLines,
+    foldLines,
+    pageEvents,
+    pendingEntry,
+    terminalLines,
+    type PendingReply,
+    type PendingThinking,
+    type TerminalTone
+  } from '$lib/terminal';
   import type { TraceAttempt, TraceEvent } from '$lib/types';
 
   let {
     events,
     attempts = [],
     pending = null,
+    thinking = null,
     follow = $bindable(true)
-  }: { events: TraceEvent[]; attempts?: TraceAttempt[]; pending?: PendingReply | null; follow?: boolean } = $props();
+  }: {
+    events: TraceEvent[];
+    attempts?: TraceAttempt[];
+    pending?: PendingReply | null;
+    thinking?: PendingThinking | null;
+    follow?: boolean;
+  } = $props();
 
   let limit = $state(pageEvents);
   let box = $state<HTMLDivElement | null>(null);
@@ -51,6 +68,7 @@
   $effect(() => {
     void entries.length;
     void writing?.body.length;
+    void thinking?.text.length;
     if (follow) void toBottom();
   });
 </script>
@@ -63,7 +81,7 @@
     {onscroll}
     role="log"
     aria-label="Terminal output, oldest first"
-    aria-busy={writing ? 'true' : undefined}
+    aria-busy={writing || thinking ? 'true' : undefined}
     tabindex="0"
     class="scrollbar-dark max-h-[75vh] overflow-auto rounded-panel bg-ink px-4 py-3 font-mono text-xs leading-5 text-ground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
   >
@@ -81,7 +99,9 @@
       <div class="grid grid-cols-[auto_1fr] gap-x-3">
         <time class="text-stone-400 select-none" datetime={entry.ts}>{clock(entry.ts)}</time>
         <p class="m-0 break-words whitespace-pre-wrap {tones[entry.tone]}">{entry.head}</p>
-        {#if clipped.shown}
+        {#if entry.edit}
+          <div class="col-start-2 mb-1"><TerminalEditCard edit={entry.edit} /></div>
+        {:else if clipped.shown}
           <pre class="col-start-2 m-0 mb-1 font-mono break-words whitespace-pre-wrap text-stone-300">{clipped.shown}</pre>
         {/if}
         {#if clipped.hidden > 0}
@@ -95,6 +115,13 @@
         {/if}
       </div>
     {/each}
+    {#if thinking?.text}
+      <div class="grid grid-cols-[auto_1fr] gap-x-3" data-testid="pending-thinking">
+        <time class="text-stone-400 select-none" datetime={thinking.since}>{clock(thinking.since)}</time>
+        <p class="m-0 text-stone-500">thinking</p>
+        <pre class="col-start-2 m-0 mb-1 font-mono break-words whitespace-pre-wrap text-stone-400">{thinking.text}</pre>
+      </div>
+    {/if}
     {#if writing}
       <div class="grid grid-cols-[auto_1fr] gap-x-3" data-testid="pending-reply">
         <time class="text-stone-400 select-none" datetime={writing.ts}>{clock(writing.ts)}</time>

@@ -8,7 +8,7 @@
   import { count, day, duration, stamp, tokens } from '$lib/format';
   import { failureText } from '$lib/forms';
   import { pager } from '$lib/pager.svelte';
-  import type { PendingReply } from '$lib/terminal';
+  import type { PendingReply, PendingThinking } from '$lib/terminal';
   import { setParams } from '$lib/params';
   import { shell, showShell } from '$lib/shell.svelte';
   import { cardTone, statusLabel } from '$lib/status';
@@ -52,6 +52,8 @@
   let list = $state<HTMLOListElement | null>(null);
   /** The reply the model is writing, from the trace stream; the stored model call replaces it. */
   let pending = $state<PendingReply | null>(null);
+  /** Live thinking for the current turn (RFC-132); never stored. */
+  let pendingThinking = $state<PendingThinking | null>(null);
   /** Set when the stream failed; the page polls until the retry. */
   let streamFailed = $state(false);
   /** Bumped to open the stream again. */
@@ -144,6 +146,15 @@
       ? pending
       : null
   );
+  const thinkingShown = $derived(
+    pendingThinking &&
+      view === 'terminal' &&
+      (filter.kind === '' || filter.kind === 'model_call') &&
+      (filter.attempt === '' || filter.attempt === pendingThinking.attemptId) &&
+      (filter.q.trim() === '' || pendingThinking.text.toLowerCase().includes(filter.q.trim().toLowerCase()))
+      ? pendingThinking
+      : null
+  );
   const latestWords = $derived(latest ? describe(latest) : null);
 
   function age(ts: string) {
@@ -228,6 +239,7 @@
 
   function clearPending() {
     pending = null;
+    pendingThinking = null;
     queued = '';
   }
 
@@ -251,6 +263,7 @@
         return false;
       case 'turn':
         flushText();
+        pendingThinking = null;
         pending = { attemptId: event.attemptId, turn: event.turn, role: event.role, modelId: event.modelId ?? '', text: '', since: new Date().toISOString() };
         return false;
       case 'delta':
@@ -260,14 +273,28 @@
         }
         return false;
       case 'thinking':
-        // Thinking is streamed to the API/runner logs; the reply text stays on delta.
+        if (event.text) {
+          const since = pendingThinking?.since ?? new Date().toISOString();
+          const prev =
+            pendingThinking && pendingThinking.attemptId === event.attemptId && pendingThinking.turn === event.turn
+              ? pendingThinking.text
+              : '';
+          pendingThinking = {
+            attemptId: event.attemptId,
+            turn: event.turn,
+            text: prev + event.text,
+            since
+          };
+        }
         return false;
       case 'reset':
         queued = '';
         if (pending) pending = { ...pending, text: '' };
+        pendingThinking = null;
         return false;
       case 'turn_end':
         flushText();
+        pendingThinking = null;
         return false;
       case 'done':
         if (event.reconnect) streamKey += 1;
@@ -453,20 +480,25 @@
           <dd class="text-ink"><time datetime={summary.last} title={summary.last}>{stamp(summary.last)}</time></dd>
         </div>
       </dl>
-      <Toolbar>
-        <Segmented label="View" options={views} value={view} onchange={(next) => setParams({ view: next === 'terminal' ? 'terminal' : '' })} />
-        <SearchBox label="Search events" value={filter.q} placeholder="Search events, tools, files, or errors" />
-        <FilterSelect label="Kind" options={kinds} value={filter.kind} onchange={(kind) => setParams({ kind })} />
-        {#if attemptChoices.length > 2}
-          <FilterSelect label="Attempt" options={attemptChoices} value={filter.attempt} onchange={(attempt) => setParams({ attempt })} />
-        {/if}
-        {#if live}
-          <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
-            <input type="checkbox" class="size-4 accent-accent" bind:checked={follow} />
-            Follow latest
-          </label>
-        {/if}
-      </Toolbar>
+      <div
+        class="sticky top-12 z-[5] -mx-1 border-b border-line bg-ground px-1 py-3"
+        data-testid="trace-toolbar"
+      >
+        <Toolbar>
+          <Segmented label="View" options={views} value={view} onchange={(next) => setParams({ view: next === 'terminal' ? 'terminal' : '' })} />
+          <SearchBox label="Search events" value={filter.q} placeholder="Search events, tools, files, or errors" />
+          <FilterSelect label="Kind" options={kinds} value={filter.kind} onchange={(kind) => setParams({ kind })} />
+          {#if attemptChoices.length > 2}
+            <FilterSelect label="Attempt" options={attemptChoices} value={filter.attempt} onchange={(attempt) => setParams({ attempt })} />
+          {/if}
+          {#if live}
+            <label class="flex min-h-11 items-center gap-2 text-sm text-ink">
+              <input type="checkbox" class="size-4 accent-accent" bind:checked={follow} />
+              Follow latest
+            </label>
+          {/if}
+        </Toolbar>
+      </div>
       {#if shown.length === 0}
         <EmptyState title="No events match" description="Change the search or filters to see more events.">
           <Button type="button" variant="secondary" icon="close" onclick={() => setParams({ q: '', kind: '', attempt: '' })}>
@@ -474,7 +506,7 @@
           </Button>
         </EmptyState>
       {:else if view === 'terminal'}
-        <TerminalView events={shown} {attempts} pending={pendingShown} bind:follow />
+        <TerminalView events={shown} {attempts} pending={pendingShown} thinking={thinkingShown} bind:follow />
       {:else}
         <ol bind:this={list} class="flex flex-col gap-2" aria-label="Events, oldest first">
           {#each sections as section (section.key)}

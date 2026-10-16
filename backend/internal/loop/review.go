@@ -168,7 +168,7 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 				summary, rejected = "not in profile", true
 			}
 			payload := map[string]any{"name": call.Name, "ok": !rejected, "rejected": rejected, "summary": summary}
-			if args := toolArgs(call, "", in.Secrets); len(args) > 0 {
+			if args := toolArgs(call, "", in.Secrets, ""); len(args) > 0 {
 				payload["args"] = args
 			}
 			if err := reviewEvent(ctx, in, "tool_call", payload); err != nil {

@@ -4,8 +4,21 @@ import type { TraceAttempt, TraceEvent } from './types';
 
 export type TerminalTone = 'model' | 'tool' | 'ok' | 'error' | 'transition' | 'muted';
 
+/** Capped edit snippets from a tool_call for a terminal edit card (RFC-132). */
+export type TerminalEdit = { path: string; old: string; new: string; name: string };
+
 /** One event as terminal output: a one-line head and the text under it. */
-export type TerminalEntry = { id: string; ts: string; tone: TerminalTone; head: string; body: string };
+export type TerminalEntry = {
+  id: string;
+  ts: string;
+  tone: TerminalTone;
+  head: string;
+  body: string;
+  edit?: TerminalEdit;
+};
+
+/** Live thinking text for the current turn (shown only, never stored). */
+export type PendingThinking = { attemptId: string; turn: number; text: string; since: string };
 
 /** Output past this many lines is folded until a person asks for all of it. */
 export const foldLines = 200;
@@ -41,14 +54,25 @@ function argText(name: string, args: Record<string, unknown>) {
   return target(name, args);
 }
 
+function editFromArgs(name: string, args: Record<string, unknown>): TerminalEdit | undefined {
+  if (name !== 'edit_file' && name !== 'replace_in_file') return undefined;
+  const path = str(args.path);
+  const next = str(args.new);
+  const prev = str(args.old);
+  if (!path || (next === '' && prev === '')) return undefined;
+  return { path, old: prev, new: next, name };
+}
+
 function toolEntry(event: TraceEvent, p: Record<string, unknown>): TerminalEntry {
   const name = str(p.name);
   const args = record(p.args);
   const summary = str(p.summary);
   const failed = p.ok === false || p.rejected === true;
   const check = name === 'run_local_check' || name === 'run_command';
+  const edit = !failed ? editFromArgs(name, args) : undefined;
   let body = summary;
-  if (name === 'edit_file') body = summary + (args.lines === undefined ? '' : ` (${num(args.lines)} lines)`);
+  if (edit) body = '';
+  else if (name === 'edit_file') body = summary + (args.lines === undefined ? '' : ` (${num(args.lines)} lines)`);
   else if (name === 'comment_pr' || name === 'verdict') body = [summary, str(args.body)].filter(Boolean).join('\n');
   else if (name === 'conventions_context' || name === 'linked_context') body = describe(event).text || summary;
   const tone: TerminalTone = failed ? 'error' : check ? (/^exit 0\b/.test(summary) ? 'ok' : 'error') : 'tool';
@@ -57,7 +81,8 @@ function toolEntry(event: TraceEvent, p: Record<string, unknown>): TerminalEntry
     ts: event.ts,
     tone,
     head: words(`$ ${name}`, argText(name, args), p.rejected === true ? '(refused)' : ''),
-    body: clean(body)
+    body: clean(body),
+    edit
   };
 }
 

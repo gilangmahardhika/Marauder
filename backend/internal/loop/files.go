@@ -138,6 +138,24 @@ func replaceInFile(root, requested, old, replacement string, all bool) (string, 
 	return fmt.Sprintf("replaced %d occurrences in %s", n, requested), nil
 }
 
+// peekFileText returns the current contents of a regular file under root, or
+// ("", false) when the path is missing or not a regular file.
+func peekFileText(root, requested string) (string, bool) {
+	full, err := runtime.SafePath(root, requested)
+	if err != nil {
+		return "", false
+	}
+	info, err := os.Lstat(full)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	body, err := os.ReadFile(full)
+	if err != nil {
+		return "", false
+	}
+	return string(body), true
+}
+
 // editFile writes the whole file. It refuses a history placeholder and empty
 // text over a file that is not empty, which are how a model loses a file.
 func editFile(root, requested, text string) error {

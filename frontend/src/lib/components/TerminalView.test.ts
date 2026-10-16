@@ -81,3 +81,44 @@ test('shows the reply being written as the last entry, with a caret, and marks t
   expect(screen.queryByTestId('pending-reply')).toBeNull();
   expect(log.getAttribute('aria-busy')).toBeNull();
 });
+
+test('renders an edit card for tool_call args with old and new', () => {
+  render(TerminalView, {
+    props: {
+      events: [
+        {
+          id: 'e1',
+          seq: 1,
+          ts: '2026-10-12T10:00:01Z',
+          attemptId: '',
+          kind: 'tool_call',
+          payload: {
+            name: 'edit_file',
+            ok: true,
+            summary: 'wrote src/a.ts',
+            args: { path: 'src/a.ts', bytes: 20, lines: 2, old: 'const x = 1;\n', new: 'const x = 2;\n' }
+          }
+        }
+      ]
+    }
+  });
+  expect(screen.getByTestId('terminal-edit-card').textContent).toContain('src/a.ts');
+  expect(screen.getByTestId('terminal-edit-card').textContent).toContain('const x = 2;');
+});
+
+test('shows live thinking above the reply being written', () => {
+  render(TerminalView, {
+    props: {
+      events: [tool(1)],
+      thinking: {
+        attemptId: 'att_1',
+        turn: 1,
+        text: 'Building the foundation first.',
+        since: '2026-10-12T10:00:05Z'
+      }
+    }
+  });
+  const row = screen.getByTestId('pending-thinking');
+  expect(row.textContent).toContain('thinking');
+  expect(row.textContent).toContain('Building the foundation first.');
+});

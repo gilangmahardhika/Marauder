@@ -90,6 +90,8 @@ type callResult struct {
 	summary  string
 	rejected bool
 	err      error
+	// editOld is the worktree file text before an edit_file write (RFC-132).
+	editOld string
 }
 
 // readMark is where a read's result sits in the history and the hash of its text.
@@ -325,7 +327,7 @@ func (s *session) loop(ctx context.Context) error {
 				"name": call.Name, "ok": callErr == nil && !rejected && !strings.HasPrefix(summary, providers.ErrorPrefix),
 				"rejected": rejected, "summary": summary,
 			}
-			if args := toolArgs(call, s.card.LocalCheck, s.in.Secrets); len(args) > 0 {
+			if args := toolArgs(call, s.card.LocalCheck, s.in.Secrets, res.editOld); len(args) > 0 {
 				payload["args"] = args
 			}
 			if IsMCP(call.Name) && !rejected {
@@ -405,6 +407,11 @@ func (s *session) runCalls(ctx context.Context, calls []providers.ToolCall) []ca
 	concurrent := func(call providers.ToolCall) bool { return readOnly[call.Name] && call.BadArgs == "" }
 	for i := 0; i < len(calls); {
 		if !concurrent(calls[i]) {
+			if calls[i].Name == "edit_file" {
+				if prev, ok := peekFileText(s.wt.Path, strArg(calls[i].Args, "path")); ok {
+					out[i].editOld = prev
+				}
+			}
 			out[i].summary, out[i].rejected, out[i].err = s.dispatch(ctx, calls[i])
 			if out[i].err != nil || s.stop == "question" || s.stop == "plan" {
 				return out[:i+1]
