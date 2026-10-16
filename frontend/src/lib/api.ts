@@ -31,6 +31,7 @@ import type {
   ProjectLink,
   ProjectLinks,
   ProjectRecord,
+  ProjectSummary,
   QuestionMode,
   Repository,
   RefineEvent,
@@ -54,6 +55,7 @@ import type {
   TribeLayer,
   TribeMember,
   TribeRecord,
+  TribeSummary,
   UsageResponse,
   WorkflowSettings,
 } from "$lib/types";
@@ -378,6 +380,16 @@ export function getTribeUsage(id: string, from: string, to: string) {
 export function getMyUsage(from: string, to: string) {
   const query = new URLSearchParams({ from, to });
   return request<UsageResponse>(`/api/me/usage?${query}`);
+}
+
+export function getProjectSummary(from: string, to: string) {
+  const query = new URLSearchParams({ from, to });
+  return request<ProjectSummary>(`${projectPrefix()}/summary?${query}`);
+}
+
+export function getTribeSummary(id: string, from: string, to: string) {
+  const query = new URLSearchParams({ from, to });
+  return request<TribeSummary>(`/api/tribes/${encodeURIComponent(id)}/summary?${query}`);
 }
 
 export function createUser(body: {

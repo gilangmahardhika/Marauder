@@ -771,6 +771,8 @@ Every route under `/api/tribes/{id}/` below allows an admin or a tribe admin of 
 
 `GET /api/tribes/{id}/usage?from=&to=` is `GET /api/usage` for the projects whose tribe is `{id}` (RFC-090). It follows the rule above: an admin or a tribe admin of that tribe, else `403`, and a missing tribe is `404`, both before the dates.
 
+`GET /api/tribes/{id}/summary?from=&to=` returns a tribe overview (RFC-127): the same range rules as usage, board group counts and attention rolled up across the tribe's projects, a `projects` list with each project's groups and attention, range totals (done, won't fix, rework, budget stops, answer sources, median answer hours), and `mcp` (`changed`, `toolErrors`, `missingMentions`) from events in the range. Authz matches the other manage routes: admin or tribe admin, else `403`; missing tribe `404`, both before the dates. No reply text or secrets.
+
 `GET /api/tribes/{id}/members` lists members. `tribeAdmin` is the per-tribe flag. `admin` is the company flag.
 
 ```json
@@ -1049,6 +1051,8 @@ No route returns `summary`, `todos_json`, or `patch`. The pending handoff of a c
 ## Board and intake
 
 Routes in this section include `/api/projects/{projectId}/`. A non-member is `404` before the handler reads the card.
+
+`GET /api/projects/{projectId}/summary?from=&to=` returns a project overview (RFC-127). Membership (`SeeProject`) is required; a non-member or unknown project is `404`. The range follows the usage day rules (default last 30 UTC days, max 366). The body has `from`, `to`, `groups` (counts by board group: waiting, question, running, review, shipping, finished, stopped, closed), `attention` (`readyCount`, `waitingAnswer`, `humanReview`, `blocked` as `{reason,count}[]`, `openRuns`, `locked`, `implementationCap`, `openQuestions`), `aging` (up to ten open cards oldest by `updatedAt`: `cardId`, `title`, `status`, `updatedAt`), and `range` (`done`, `wontFix`, `rework`, `budgetStops` as `{cap,count}[]`, `answerSources` with person/suggestion/auto, `medianAnswerHours` or null). No reply text or secrets.
 
 `GET /api/projects/{projectId}/cards`
 

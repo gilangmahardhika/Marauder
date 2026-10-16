@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { shell } from '$lib/shell.svelte';
@@ -59,6 +59,9 @@ test('reads the route tribe and titles the page with its name', async () => {
   expect((Date.parse(to) - Date.parse(from)) / 86_400_000).toBe(29);
   await waitFor(() => expect(shell.title).toBe('Token usage: Gadget tribe'));
   expect(screen.getByRole('link', { name: 'Back to tribe' }).getAttribute('href')).toBe('/tribes/tribe_gadget');
-  expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
   expect(await screen.findByRole('table', { name: 'Token usage by model' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+  expect(within(screen.getByRole('listbox', { name: 'Group by' })).getByRole('option', { name: 'User' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('combobox', { name: 'Add filter' }));
+  expect(within(screen.getByRole('listbox', { name: 'Add filter' })).getByRole('option', { name: 'User' })).toBeTruthy();
 });

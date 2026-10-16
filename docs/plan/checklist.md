@@ -1309,3 +1309,12 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestSettingsSectionsKeepEachOther`, `TestWorkflowSettings`, `TestRepositoryDocPaths`, `TestSoloOwnerApproves`
 - [x] Workflow page, Repository doc paths, deploy page, and layout Vitest
 - [x] `npm run check` and the full Vitest and backend suites pass
+
+## Sprint 99: Tribe and project dashboards
+
+- [x] `board` summary aggregates and `app.ProjectSummary` / `app.TribeSummary`
+- [x] `GET /api/projects/{id}/summary` and `GET /api/tribes/{id}/summary`
+- [x] `/overview` and `/tribes/[id]/overview` with `SummaryDashboard`
+- [x] `TestProjectSummaryMember`, `TestProjectSummaryOutsider404`, `TestTribeSummaryManageOnly`, `TestSummaryRange`
+- [x] Overview, tribe overview, and layout Vitest
+- [x] RFC-127, REQ-100, tech/0002, tech/0004, tech/0005, tech/0006

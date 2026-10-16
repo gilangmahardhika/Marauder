@@ -111,6 +111,10 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestUsageFamily` | Each model takes its family and protocol from `config.yaml`; a model no family lists has neither and groups as "Unknown family" |
 | `TestModelCallTaskClass` | After an implement job and a review, every implementer `model_call` carries `taskClass` `implement` and every reviewer one `review` |
 | `TestUsageAdminOnly` | `/api/usage` without a bearer is `401`, for a Lead Developer who is not an admin is `403` even with a bad range, and for an admin is `200` with the call's model, task, and tokens and without its reply text |
+| `TestProjectSummaryMember` | A project member's `/api/projects/{id}/summary` returns group counts and attention that match seeded cards, including `readyCount` and blocked reasons (RFC-127) |
+| `TestProjectSummaryOutsider404` | A non-member and an unknown project are `404` on the project summary |
+| `TestTribeSummaryManageOnly` | A tribe admin gets the tribe rollup; a plain member is `403` even with a bad range; a company admin on a missing tribe is `404` |
+| `TestSummaryRange` | Default range is 30 days ending today; a bad `from` is `422`; range totals count `done` and `changes_requested` transitions and `budget_stop` events; the tribe summary includes MCP `changed` |
 | `TestUsageRange` | No dates read the 30 days ending today with `rows: []`. `from` after `to`, 367 days, and a bad `from` are `422` on `from`; a bad `to` is `422` on `to`. 366 days is `200` |
 | `TestUsageTribeScope` | With Gadget in its own tribe, the Gadget tribe reads only Gadget, including a Gadget card's event stored with `proj_default`; the default tribe reads only Default; the company view puts every card call in its card's project; an unknown tribe reads nothing (RFC-090) |
 | `TestUsageSelfScope` | Ben's scope has only his rows: his card's call and two refines, in projects of both tribes. Ana's calls and the card with no owner are left out; an unknown user reads nothing |

@@ -1334,3 +1334,14 @@ Packages: `internal/settings`, `internal/app`, `internal/httpapi`, `internal/cli
 - The Deploy page loses the Board panel, the Repository page gains a Docs panel, and the Workflow page and its sidebar link.
 
 Done when: `TestSettingsSectionsKeepEachOther`, `TestWorkflowSettings`, `TestRepositoryDocPaths`, `TestSoloOwnerApproves`, the Workflow page, Repository doc paths, deploy page, and layout Vitest cases, `npm run check`, and the rest of the suite.
+
+## Sprint 99: Tribe and project dashboards
+
+Goal: A project member and a tribe admin see overview summaries of WIP, attention, and range insights (RFC-127, REQ-100).
+
+Packages: `internal/board`, `internal/app`, `internal/httpapi`, frontend `routes/overview`, `routes/tribes/[id]/overview`, `lib/components/SummaryDashboard.svelte`, `lib/api.ts`, `lib/types.ts`.
+
+- `GET /api/projects/{id}/summary` and `GET /api/tribes/{id}/summary` with snapshot, attention, aging (project), range totals, and tribe MCP health.
+- `/overview` and `/tribes/[id]/overview` pages with range control and CSS bars; Project and Tribe nav Overview links.
+
+Done when: `TestProjectSummaryMember`, `TestProjectSummaryOutsider404`, `TestTribeSummaryManageOnly`, `TestSummaryRange`, overview and tribe overview Vitest, layout Overview links, `npm run check`, and the rest of the suite.

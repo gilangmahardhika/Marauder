@@ -92,6 +92,8 @@ frontend/
   src/routes/account/+page.svelte
   src/routes/admin/usage/+page.svelte
   src/routes/tribes/[id]/usage/+page.svelte
+  src/routes/tribes/[id]/overview/+page.svelte
+  src/routes/overview/+page.svelte
   src/routes/account/usage/+page.svelte
   src/routes/admin/users/+page.svelte
   src/routes/admin/users/new/+page.svelte
@@ -244,6 +246,8 @@ frontend/
   src/routes/login/page.test.ts
   src/routes/projects/page.test.ts
   src/routes/projects/new/page.test.ts
+  src/routes/overview/page.test.ts
+  src/routes/tribes/[id]/overview/page.test.ts
   src/lib/components/SecretField.test.ts
   src/lib/ui/SearchSelect.test.ts
   src/lib/ui/MultiSearchSelect.test.ts
@@ -296,6 +300,7 @@ frontend/
 | `/tribes` | Tribes |
 | `/tribes/new` | Create a tribe |
 | `/tribes/[id]` | Tribe members |
+| `/tribes/[id]/overview` | Tribe WIP and range overview (RFC-127) |
 | `/tribes/[id]/usage` | Token usage of the tribe's projects (RFC-090) |
 | `/tribes/[id]/mcp` | The tribe's MCP servers (RFC-092) |
 | `/tribes/[id]/mcp/catalog` | Add a server from the catalog (RFC-096) |
@@ -304,13 +309,14 @@ frontend/
 | `/tribes/[id]/conventions` | The tribe's stacks, skills, and rules switched off (RFC-104) |
 | `/projects` | Projects of the active tribe |
 | `/projects/new` | Create a project |
+| `/overview` | Project WIP and range overview (RFC-127) |
 | `/settings/repository` | Project repository, base branch, PRD and RFC paths, and Sync |
 | `/settings/links` | Linked projects and their shared paths |
 | `/settings/deploy` | Deploy and checks for the project |
 | `/settings/workflow` | Implementation cap and Solo approval for the project (RFC-126) |
 | `/settings/conventions` | The project's stacks, skills, and rules over its tribe (RFC-104) |
 
-`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Deploy, Workflow, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Members and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
+`+layout.svelte` renders the Marauder shell on every page except `/login` and `/choose-tribe`. The product name in the shell is Marauder. The sidebar groups run from daily work outward, in this order: Workspace (Board, Intake), "Project · {project name}" (Overview, Deploy, Workflow, Repository, Conventions, Linked projects), "Tribe · {tribe name}" (Projects, Overview, Members, MCP servers, Conventions), Admin (Users, Tribes, Runners, Token usage), and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills) (REQ-091). The Tribe links are `/projects`, `/tribes/{tribe}/overview`, `/tribes/{tribe}`, `/tribes/{tribe}/mcp`, and `/tribes/{tribe}/conventions`; Overview, Members, and MCP servers show only when `canManageTribe(tribe)`, and Members is current only on `/tribes/{tribe}` itself. With no stored tribe the group is "Tribe" with Projects only. The Project group shows only when a project is selected. The mobile menu shows the same group headings. LLM APIs, Router, Conventions, and Skills are company settings (RFC-052, RFC-055), so they do not wait for a selected project. The Admin and Company setup groups render when `GET /api/me` has `admin: true`. Those links are not a card permission check. A `403` or `404` from the API is still shown.
 
 The sidebar shows the selected tribe's name with a "Switch tribe" link to `/choose-tribe`, then a project `SearchSelect` bound to `orchestrator.project`. Options come from `GET /api/projects`, only those whose `tribeId` is the selected tribe, each with its repository name as the detail line, and the search matches name or repository. Choosing a different project stores the id and reloads the board. A stored project outside the selected tribe is replaced by the tribe's first project, or cleared when the tribe has none. A stored tribe that `GET /api/tribes` no longer returns is cleared and the browser goes to `/choose-tribe`. The signed-in user menu shows the caller's name (or email when unnamed) and initials from it, links to Account and My token usage, and signs out with `DELETE /api/session`. Below 1024px the same links open from a menu button. The top bar shows the current tribe and project as `Tribe / Project`, and the notification bell. With no project in the tribe, the board shows "This tribe has no projects yet." with a link to Projects. The page title and page actions sit in the body, in the `Page` header.
 
@@ -654,14 +660,18 @@ Website links open in a new tab with `rel="noreferrer noopener"`. When every sec
 
 Values typed in a secret field are never shown again or logged.
 
+### Project and tribe overview
+
+`src/lib/components/SummaryDashboard.svelte` (RFC-127) loads a summary for a UTC range (`?range=` 7/30/90, default 30) and shows totals, pipeline bars by board group, attention (including blocked reasons), range insights (done, rework, budget stops, answer sources), and optionally a projects table and MCP health. `/overview` calls `getProjectSummary` for the selected project and lists aging cards with links to `/cards/{id}`. `/tribes/[id]/overview` calls `getTribeSummary`, shows projects and MCP health, and links to Token usage. A tribe admin's members page also links to Overview.
+
 ### Token usage
 
 `src/routes/admin/usage/+page.svelte` (RFC-089) calls `getUsage(from, to)` for the range and does the rest in the browser with the pure functions in `src/lib/usage.ts`. Every choice lives in the URL through `setParams`, and a default value leaves its parameter out:
 
 - **Range**: a `Segmented` for 7, 30 (the default), or 90 days (`?range=`). `rangeWindow` turns it into UTC days ending today, and a change reads the route again.
-- **Group by**: a `Segmented` for LLM, Model (the default), Project, User, Task, Source, or Card (`?by=`).
-- **Filters**: a `FilterSelect` each for LLM, Model, Project, User, Task, Source, and Card (`?llm= &model= &project= &user= &task= &source= &card=`), and "Clear filters" while any is set. The value is the family, model, project, user, or card id, `intake` or `card` for Source, or `-` for a call with none ("Unknown family", "No owner", and "Intake" for a refine under Card) (RFC-091). Grouped by card, each name cell has the card id as its `title`, since titles can repeat. `usageOptions` lists each value with its total tokens, counting the rows the other filters keep, largest first.
-- **Totals**: a strip in the Trace page style with total tokens, input, output, cached input, calls, and cache share (cached over input plus cached, since providers count cached input apart). Total is input plus output.
+- **Group by**: a `ChipSelect` for LLM, Model (the default), Project, User, Task, Source, or Card (`?by=`).
+- **Filters**: not a permanent row. "Add filter" is a `ChipSelect` of dimensions that are not already open; picking one opens that dimension's `FilterSelect`. A dimension already set in the URL (`?llm= &model= &project= &user= &task= &source= &card=`) opens its select on load. "Clear filters" shows while any filter is set or open and clears the URL params and the open set. The value is the family, model, project, user, or card id, `intake` or `card` for Source, or `-` for a call with none ("Unknown family", "No owner", and "Intake" for a refine under Card) (RFC-091). Grouped by card, each name cell has the card id as its `title`, since titles can repeat. `usageOptions` lists each value with its total tokens, counting the rows the other filters keep, largest first.
+- **Totals**: a strip with each metric as a muted label above a bold value (total tokens, input, output, cached input, calls, and cache share). Cache share is cached over input plus cached, since providers count cached input apart. Total is input plus output.
 - **Tokens per day**: one CSS bar per day of the range, a day with no calls included, each with a `title`. The bars are `aria-hidden` and a visually hidden table gives the same numbers. No chart library.
 - **Table**: the groups with calls, input, output, cached, total, and share of the filtered total as a bar and a percent. The name and number headers are 44px buttons with `aria-sort`; a first click sorts numbers largest first and names A to Z, and a second click reverses (`?sort= &dir=`, default total, largest first). `ShowMore` after 50 groups.
 
@@ -917,14 +927,17 @@ npm run build
 | `OwnerFilter` | Clicking an avatar adds its owner and clicking again removes it. Owners past the limit are in the "+n" checklist |
 | `status` labels | Every card status has a label in words, `wont_fix` reads "Won't fix", and `waiting_answer` reads "Needs answer". An unknown code reads in sentence case. Reasons such as `owner_github` and `attempt_cap` have labels, and free text is kept as is |
 | `usage` lib | Groups by LLM, model, project, user, and task, with "Unknown family" and "No owner". Filters use `-` for a missing value. Options count the rows the other filters keep and keep a chosen value with none. Groups sort by any column either way, ties by name. Daily totals fill every day of the range. The summary's cache share is cached over all input read. `rangeWindow` ends today in UTC |
-| Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and the Model choices, and picking one sets `model`. `?by=user` regroups and Group by sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
+| Token usage page | With a mocked `getUsage` and URL: the 30-day range loads, the totals, a hidden day table, and models by total render with `aria-sort`. `?llm=-` narrows every total and opens the LLM filter; Add filter opens Model, and picking one sets `model`. `?by=user` regroups and the Group by ChipSelect sets `by`. `?sort=name&dir=desc` reverses names, and header buttons set `sort` and `dir`. 7 days sets `range`. An empty range shows the empty state |
 | `usage` source and card | Source groups Card and Intake; Card groups by id with refines as "Intake" and falls back to the id without a title. `source=intake` and `card=-` keep only refines, and card options list each card once, largest first (RFC-091) |
-| Admin usage by card | `?by=card` lists Ana card, Intake, and Loose card with the card id as each title, Group by offers Source and Card, `?source=intake` narrows the total to the refine, and Clear filters drops `source` |
+| Admin usage by card | `?by=card` lists Ana card, Intake, and Loose card with the card id as each title, the Group by ChipSelect offers Source and Card, `?source=intake` opens the Source filter and narrows the total to the refine, and Clear filters drops `source` |
 | `usage` dimension choices | `dimensionOptionsFor` keeps the allowed dimensions in the usual order |
 | Tribe usage page | It reads `getTribeUsage` with the route's tribe id and 30 days, titles the page and the shell "Token usage: Gadget tribe", links back to the tribe, and offers the User filter |
-| Account usage page | It reads `getMyUsage`, has no User filter, and Group by offers LLM, Model, Project, Task, Source, and Card. `?by=user&user=...` is ignored: models group and every row counts |
+| Account usage page | It reads `getMyUsage`, has no User in Group by or Add filter, and Group by offers LLM, Model, Project, Task, Source, and Card. `?by=user&user=...` is ignored: models group and every row counts |
 | User menu | Opening the menu shows "My token usage" linking to `/account/usage` for a member who is not an admin |
 | Nav admin items | For an admin the last groups are Admin (Users, Tribes, Runners, Token usage) and Company setup (Company GitHub, LLM APIs, Router, Conventions, Skills). Neither group shows to a member who is not an admin |
+| Project overview | `/overview` loads `getProjectSummary` for 30 days, titles "Overview: {project}", shows Ready to run and blocked reasons, and links aging cards to `/cards/{id}` (RFC-127) |
+| Tribe overview | `/tribes/[id]/overview` loads `getTribeSummary`, shows the projects table and MCP health, and links back to the tribe and to Token usage |
+| Layout Overview links | With a project selected the Project group starts with Overview; a tribe manager also gets Overview under Tribe |
 | `people` display name | `displayName` is the name, then the login, then the email. `describePerson` adds the login or email in parentheses. User search matches the name |
 | `people` filters | Role, access, and email search narrow users, ignoring case. Each access option counts its users |
 | `conventions` filters | Rules filter by text, category, Global, or one stack. A stack is found by a marker file |

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/svelte';
+import { fireEvent, render, screen, within } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { UsageRow } from '$lib/types';
@@ -63,8 +63,19 @@ test('reads my usage and offers Source and Card but no User filter or grouping',
   expect(api.getMyUsage).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('heading', { name: 'My token usage' })).toBeTruthy();
   expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
-  const groupBy = within(screen.getByRole('group', { name: 'Group by' }));
-  expect(groupBy.getAllByRole('button').map((button) => button.textContent?.trim())).toEqual(['LLM', 'Model', 'Project', 'Task', 'Source', 'Card']);
+  await fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+  expect(
+    within(screen.getByRole('listbox', { name: 'Group by' }))
+      .getAllByRole('option')
+      .map((option) => option.textContent?.trim())
+  ).toEqual(['LLM', 'Model', 'Project', 'Task', 'Source', 'Card']);
+  await fireEvent.click(screen.getByRole('combobox', { name: 'Add filter' }));
+  expect(screen.queryByRole('option', { name: 'User' })).toBeNull();
+  expect(
+    within(screen.getByRole('listbox', { name: 'Add filter' }))
+      .getAllByRole('option')
+      .map((option) => option.textContent?.trim())
+  ).toEqual(['LLM', 'Model', 'Project', 'Task', 'Source', 'Card']);
 });
 
 test('a User grouping or filter in the URL is ignored', async () => {

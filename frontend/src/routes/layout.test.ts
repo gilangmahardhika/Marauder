@@ -154,10 +154,12 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
   expect(sections().querySelector('a[href="/projects"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/tribes/tribe_a/conventions"]')).not.toBeNull();
   expect(sections().querySelector('a[href="/settings/conventions"]')).not.toBeNull();
+  expect(sections().querySelector('a[href="/overview"]')?.textContent?.trim()).toBe('Overview');
   const projectLinks = [...sections().querySelectorAll('a[href^="/settings/"]')].map((link) => link.textContent?.trim());
   expect(projectLinks).toEqual(['Deploy', 'Workflow', 'Repository', 'Conventions', 'Linked projects']);
   expect(sections().querySelector('a[href="/tribes/tribe_a/mcp"]')).toBeNull();
   expect(sections().querySelector('a[href="/tribes/tribe_a"]')).toBeNull();
+  expect(sections().querySelector('a[href="/tribes/tribe_a/overview"]')).toBeNull();
   expect(sections().querySelector('a[href="/tribes"]')).toBeNull();
   member.unmount();
 
@@ -168,17 +170,20 @@ test('the sidebar names the tribe and project sections and shows tribe pages to 
   expect(tribeLinks).toEqual([
     'Board',
     'Intake',
+    'Overview',
     'Deploy',
     'Workflow',
     'Repository',
     'Conventions',
     'Linked projects',
     'Projects',
+    'Overview',
     'Members',
     'MCP servers',
     'Conventions'
   ]);
   expect(sections().querySelector('a[href="/tribes/tribe_a"]')?.textContent?.trim()).toBe('Members');
+  expect(sections().querySelector('a[href="/tribes/tribe_a/overview"]')?.textContent?.trim()).toBe('Overview');
 });
 
 test('Members is current only on the tribe page itself', async () => {

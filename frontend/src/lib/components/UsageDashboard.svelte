@@ -29,6 +29,7 @@
     type UsageFilter
   } from '$lib/usage';
   import Button from '$lib/ui/Button.svelte';
+  import ChipSelect from '$lib/ui/ChipSelect.svelte';
   import { td, th, tr } from '$lib/ui/control';
   import EmptyState from '$lib/ui/EmptyState.svelte';
   import FilterSelect from '$lib/ui/FilterSelect.svelte';
@@ -56,6 +57,8 @@
   let loading = $state('Loading token usage');
   let loadError = $state('');
   let attempt = $state(0);
+  let opened = $state<Dimension[]>([]);
+  let addFilterValue = $state('');
 
   showShell(() => ({ title }));
 
@@ -78,6 +81,13 @@
   const paging = pager(() => `${range}|${by}|${sort}|${dir}|${dimensionValues.map((key) => filter[key]).join('|')}`);
 
   const groupOptions = $derived(dimensionOptionsFor(dimensions));
+  const groupByOptions = $derived(groupOptions.map(({ value, label }) => ({ value, label })));
+  const shownFilters = $derived(groupOptions.filter((item) => filter[item.value] !== '' || opened.includes(item.value)));
+  const addFilterOptions = $derived(
+    groupOptions
+      .filter((item) => !shownFilters.some((shown) => shown.value === item.value))
+      .map(({ value, label }) => ({ value, label }))
+  );
   const columns: { key: SortKey; label: string }[] = [
     { key: 'calls', label: 'Calls' },
     { key: 'input', label: 'Input' },
@@ -87,6 +97,11 @@
   ];
   const groupLabel = $derived(groupOptions.find((option) => option.value === by)?.label ?? 'Model');
   const sortTh = th.replace('h-10 ', '');
+
+  function clearFilters() {
+    opened = [];
+    setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' });
+  }
 
   function sortBy(key: SortKey) {
     const first: SortDir = key === 'name' ? 'asc' : 'desc';
@@ -140,63 +155,79 @@
   <div class="flex flex-col gap-4">
     <Toolbar>
       <Segmented label="Range" options={rangeOptions} value={range} onchange={(next) => setParams({ range: next === '30' ? '' : next })} />
-      <Segmented label="Group by" options={groupOptions} value={by} onchange={(next) => setParams({ by: next === 'model' ? '' : next })} />
-    </Toolbar>
-    {#if report && rows.length === 0}
-      <EmptyState title="No model calls in this range" description="Calls show here after a job, review, or refine talks to a model." />
-    {:else if report}
-      <Toolbar>
-        {#each groupOptions as item (item.value)}
+      <ChipSelect
+        label="Group by"
+        id="usage-group-by"
+        prefix="Group by"
+        display={groupLabel}
+        value={by}
+        options={groupByOptions}
+        onchange={(next) => setParams({ by: next === 'model' ? '' : next })}
+      />
+      {#if report && rows.length > 0}
+        {#each shownFilters as item (item.value)}
           <FilterSelect
             label={item.label}
             options={usageOptions(rows, filter, item.value)}
             value={filter[item.value]}
-            onchange={(value) => setParams({ [item.value]: value })}
+            onchange={(value) => {
+              if (value === '') opened = opened.filter((dim) => dim !== item.value);
+              setParams({ [item.value]: value });
+            }}
           />
         {/each}
-        {#if filtered}
-          <Button
-            type="button"
-            variant="secondary"
-            icon="close"
-            onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button
-          >
+        {#if addFilterOptions.length > 0}
+          <ChipSelect
+            label="Add filter"
+            id="usage-add-filter"
+            display="Add filter"
+            bind:value={addFilterValue}
+            options={addFilterOptions}
+            onchange={(dim) => {
+              opened = [...opened, dim as Dimension];
+              addFilterValue = '';
+            }}
+          />
         {/if}
-      </Toolbar>
+        {#if filtered || opened.length > 0}
+          <Button type="button" variant="secondary" icon="close" onclick={clearFilters}>Clear filters</Button>
+        {/if}
+      {/if}
+    </Toolbar>
+    {#if report && rows.length === 0}
+      <EmptyState title="No model calls in this range" description="Calls show here after a job, review, or refine talks to a model." />
+    {:else if report}
       {#if shown.length === 0}
         <EmptyState title="No calls match" description="Change the filters to see more calls.">
-          <Button
-            type="button"
-            variant="secondary"
-            icon="close"
-            onclick={() => setParams({ llm: '', model: '', project: '', user: '', task: '', source: '', card: '' })}>Clear filters</Button
-          >
+          <Button type="button" variant="secondary" icon="close" onclick={clearFilters}>Clear filters</Button>
         </EmptyState>
       {:else}
-        <dl class="flex flex-wrap gap-x-6 gap-y-2 rounded-panel border border-line bg-surface px-4 py-3 text-sm" aria-label="Totals">
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Total tokens</dt>
-            <dd class="font-semibold text-ink" title={count(summary.total)}>{tokens(summary.total)}</dd>
+        <dl class="flex flex-wrap gap-x-6 gap-y-3 rounded-panel border border-line bg-surface px-4 py-3" aria-label="Totals">
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Total tokens</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink" title={count(summary.total)}>{tokens(summary.total)}</dd>
           </div>
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Input</dt>
-            <dd class="font-semibold text-ink" title={count(summary.inputTokens)}>{tokens(summary.inputTokens)}</dd>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Input</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink" title={count(summary.inputTokens)}>{tokens(summary.inputTokens)}</dd>
           </div>
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Output</dt>
-            <dd class="font-semibold text-ink" title={count(summary.outputTokens)}>{tokens(summary.outputTokens)}</dd>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Output</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink" title={count(summary.outputTokens)}>{tokens(summary.outputTokens)}</dd>
           </div>
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Cached input</dt>
-            <dd class="font-semibold text-ink" title={count(summary.cachedInputTokens)}>{tokens(summary.cachedInputTokens)}</dd>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Cached input</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink" title={count(summary.cachedInputTokens)}>
+              {tokens(summary.cachedInputTokens)}
+            </dd>
           </div>
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Calls</dt>
-            <dd class="font-semibold text-ink">{count(summary.calls)}</dd>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Calls</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink">{count(summary.calls)}</dd>
           </div>
-          <div class="flex items-baseline gap-1.5">
-            <dt class="text-muted">Cache share</dt>
-            <dd class="font-semibold text-ink">{percent(summary.cacheShare)}</dd>
+          <div class="flex flex-col gap-0.5">
+            <dt class="text-xs text-muted">Cache share</dt>
+            <dd class="text-sm font-semibold tabular-nums text-ink">{percent(summary.cacheShare)}</dd>
           </div>
         </dl>
 

@@ -63,6 +63,7 @@
     const manages = canManageTribe(tribe.id);
     const items: NavItem[] = [{ href: '/projects', label: 'Projects', icon: 'projects' }];
     if (manages) {
+      items.push({ href: `/tribes/${tribe.id}/overview`, label: 'Overview', icon: 'chart' });
       items.push({ href: `/tribes/${tribe.id}`, label: 'Members', icon: 'users', exact: true });
       items.push({ href: `/tribes/${tribe.id}/mcp`, label: 'MCP servers', icon: 'mcp' });
     }
@@ -76,6 +77,7 @@
     return {
       label: `Project · ${project.name}`,
       items: [
+        { href: '/overview', label: 'Overview', icon: 'chart' },
         { href: '/settings/deploy', label: 'Deploy', icon: 'terminal' },
         { href: '/settings/workflow', label: 'Workflow', icon: 'cpu' },
         { href: '/settings/repository', label: 'Repository', icon: 'git' },

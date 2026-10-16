@@ -697,6 +697,86 @@ export type UsageRow = {
 /** `from` and `to` are inclusive YYYY-MM-DD days in UTC. */
 export type UsageResponse = { from: string; to: string; rows: UsageRow[] };
 
+/** Board group counts on a project or tribe summary (RFC-127). */
+export type SummaryGroups = {
+  waiting: number;
+  question: number;
+  running: number;
+  review: number;
+  shipping: number;
+  finished: number;
+  stopped: number;
+  closed: number;
+};
+
+export type SummaryReasonCount = { reason: string; count: number };
+export type SummaryCapCount = { cap: string; count: number };
+
+export type SummaryAttention = {
+  readyCount: number;
+  waitingAnswer: number;
+  humanReview: number;
+  blocked: SummaryReasonCount[];
+  openRuns: number;
+  locked: number;
+  implementationCap: number;
+  openQuestions: number;
+};
+
+export type SummaryAgingCard = {
+  cardId: string;
+  title: string;
+  status: string;
+  updatedAt: string;
+};
+
+export type SummaryAnswerSources = {
+  person: number;
+  suggestion: number;
+  auto: number;
+};
+
+export type SummaryRange = {
+  done: number;
+  wontFix: number;
+  rework: number;
+  budgetStops: SummaryCapCount[];
+  answerSources: SummaryAnswerSources;
+  medianAnswerHours: number | null;
+};
+
+export type SummaryMCP = {
+  changed: number;
+  toolErrors: number;
+  missingMentions: number;
+};
+
+export type ProjectSummary = {
+  from: string;
+  to: string;
+  groups: SummaryGroups;
+  attention: SummaryAttention;
+  aging: SummaryAgingCard[];
+  range: SummaryRange;
+};
+
+export type TribeProjectSummary = {
+  projectId: string;
+  projectName: string;
+  groups: SummaryGroups;
+  attention: SummaryAttention;
+};
+
+export type TribeSummary = {
+  from: string;
+  to: string;
+  groups: SummaryGroups;
+  attention: SummaryAttention;
+  range: SummaryRange;
+  projects: TribeProjectSummary[];
+  mcp: SummaryMCP;
+};
+
 /** One allowlisted tool of a tribe MCP server. `description` is the admin's text (RFC-092). */
 export type MCPTool = {
   name: string;

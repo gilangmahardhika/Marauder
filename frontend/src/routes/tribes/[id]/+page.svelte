@@ -162,6 +162,7 @@
   onretry={() => $page.params.id && load($page.params.id)}
 >
   {#snippet actions()}
+    <Button href={`/tribes/${$page.params.id}/overview`} icon="chart">Overview</Button>
     <Button href={`/tribes/${$page.params.id}/usage`}>Token usage</Button>
     <Button href={`/tribes/${$page.params.id}/mcp`}>MCP servers</Button>
     <Button href="/tribes" icon="arrow-left">All tribes</Button>

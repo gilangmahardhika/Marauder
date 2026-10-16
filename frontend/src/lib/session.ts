@@ -31,9 +31,9 @@ export const session = {
   }
 };
 
-const projectRoutes = ['/intake', '/cards', '/settings'];
+const projectRoutes = ['/intake', '/cards', '/settings', '/overview'];
 
-/** Board, intake, card, and project settings pages work inside one tribe's project. */
+/** Board, intake, card, overview, and project settings pages work inside one tribe's project. */
 export function needsTribe(path: string): boolean {
   return path === '/' || projectRoutes.some((route) => path === route || path.startsWith(`${route}/`));
 }

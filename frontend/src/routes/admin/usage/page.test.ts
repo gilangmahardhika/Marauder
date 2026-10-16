@@ -69,6 +69,11 @@ async function groupNames(name: string) {
     .map((tr) => within(tr).getAllByRole('cell')[0].textContent?.trim());
 }
 
+async function pickChip(label: string, option: string) {
+  await fireEvent.click(screen.getByRole('combobox', { name: label }));
+  await fireEvent.click(screen.getByRole('option', { name: option }));
+}
+
 beforeEach(() => {
   route.search = '';
   api.getUsage.mockResolvedValue({ from: '2026-10-01', to: '2026-10-03', rows });
@@ -98,6 +103,9 @@ test('a filter from the URL changes every total, and picking one sets the param'
   render(UsagePage);
   expect(await groupNames('Token usage by model')).toEqual(['retired']);
   expect(within(screen.getByLabelText('Totals')).getByText('Total tokens').nextElementSibling?.textContent).toBe('8');
+  expect(screen.getByRole('combobox', { name: 'LLM' })).toBeTruthy();
+  expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();
+  await pickChip('Add filter', 'Model');
   const model = screen.getByRole('combobox', { name: 'Model' });
   expect(within(model).getAllByRole('option').map((option) => option.textContent)).toEqual(['All models', 'retired · 8']);
   await fireEvent.change(model, { target: { value: 'retired' } });
@@ -110,9 +118,9 @@ test('groups by another dimension through the URL', async () => {
   route.search = '?by=user';
   render(UsagePage);
   expect(await groupNames('Token usage by user')).toEqual(['Ana', 'ben@example.com', 'No owner']);
-  await fireEvent.click(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: 'Task' }));
+  await pickChip('Group by', 'Task');
   expect(lastParams().get('by')).toBe('task');
-  await fireEvent.click(within(screen.getByRole('group', { name: 'Group by' })).getByRole('button', { name: 'Model' }));
+  await pickChip('Group by', 'Model');
   expect(lastParams().has('by')).toBe(false);
 });
 
@@ -157,15 +165,17 @@ test('groups by card and filters by source', async () => {
   const table = screen.getByRole('table', { name: 'Token usage by card' });
   const cells = within(table).getAllByRole('row').slice(1).map((tr) => within(tr).getAllByRole('cell')[0]);
   expect(cells.map((cell) => cell.getAttribute('title'))).toEqual(['card_ana', null, 'card_loose']);
-  const groupBy = within(screen.getByRole('group', { name: 'Group by' }));
-  expect(groupBy.getByRole('button', { name: 'Source' })).toBeTruthy();
-  expect(groupBy.getByRole('button', { name: 'Card' })).toBeTruthy();
+  await fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
+  const groupBy = screen.getByRole('listbox', { name: 'Group by' });
+  expect(within(groupBy).getByRole('option', { name: 'Source' })).toBeTruthy();
+  expect(within(groupBy).getByRole('option', { name: 'Card' })).toBeTruthy();
   unmount();
 
   route.search = '?source=intake';
   render(UsagePage);
   expect(await groupNames('Token usage by model')).toEqual(['claude-a']);
   expect(within(screen.getByLabelText('Totals')).getByText('Total tokens').nextElementSibling?.textContent).toBe('44');
+  expect(screen.getByRole('combobox', { name: 'Source' })).toBeTruthy();
   await fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
   expect(lastParams().has('source')).toBe(false);
 });

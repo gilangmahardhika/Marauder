@@ -142,6 +142,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-097 | The implementer asks the team questions, and each card chooses whether a person or the agent answers |
 | REQ-098 | A new attempt continues the card's unfinished work, and a long attempt compacts its context instead of overflowing it |
 | REQ-099 | An admin chooses the implement agent: the built-in loop or Claude Code |
+| REQ-100 | A member sees a project overview, and a tribe admin sees a tribe overview of WIP and insights |
 
 ## Requirements
 
@@ -1369,6 +1370,17 @@ A company admin chooses which agent writes the code of an implement job: the bui
 - Claude Code tokens count toward the card's token cap; reaching it stops the process and blocks the card with `token_cap`.
 - The model key never appears in an API response, an event, a log, or a file on the runner.
 - While the agent is Claude Code, a runner without `claude` gets no job, and the Runners page says so.
+
+### REQ-100 Project and tribe overview
+
+A project member opens an Overview page that summarizes that project's board: cards by board group, attention counts (ready to run, needs answer, human review, blocked by reason, open runs versus the implementation cap), the oldest open cards, and totals for a date range (done, won't fix, rework, budget stops, answer sources, median answer time). A company admin or a tribe admin opens a tribe Overview that rolls the same figures up across every project of that tribe and adds MCP health counts. Neither page returns reply text or secrets. Token spend stays on the existing usage pages (RFC-127).
+
+#### Acceptance
+
+- `GET /api/projects/{id}/summary` returns group and attention counts for a member; a non-member gets `404`.
+- `GET /api/tribes/{id}/summary` returns the rollup and MCP health for a company admin or tribe admin of that tribe; a plain member gets `403`; a missing tribe gets `404`.
+- The range defaults to the last 30 UTC days and follows the usage day rules; a bad day is `422`.
+- `/overview` shows the selected project's summary; `/tribes/{id}/overview` shows the tribe summary; both link to token usage where the caller may open it.
 
 ## Non-goals
 
