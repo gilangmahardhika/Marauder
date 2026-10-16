@@ -49,6 +49,14 @@ test('lists tribes with project counts, and picking one stores it with its first
   expect(goto).toHaveBeenCalledWith('/');
 });
 
+test('a decorative illustration sits above the heading and is hidden from screen readers', () => {
+  const { container } = render(ChooseTribePage);
+  const art = container.querySelector('svg[viewBox="0 0 400 220"]');
+  expect(art?.getAttribute('aria-hidden')).toBe('true');
+  const heading = screen.getByRole('heading', { level: 1, name: 'Choose a tribe' });
+  expect(art!.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 test('a tribe with no project stores an empty project', async () => {
   session.setProject('proj_a1');
   render(ChooseTribePage);

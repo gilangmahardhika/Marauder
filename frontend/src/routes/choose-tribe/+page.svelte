@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import { closeSession, getMe, getProjects, getTribes } from '$lib/api';
+  import TribeIllustration from '$lib/components/TribeIllustration.svelte';
   import { failureText } from '$lib/forms';
   import { session } from '$lib/session';
   import { showShell } from '$lib/shell.svelte';
@@ -72,6 +73,7 @@
       <span class="flex size-7 items-center justify-center rounded-control bg-accent text-xs font-semibold text-surface">M</span>
       <span class="font-semibold">Marauder</span>
     </div>
+    <TribeIllustration class="mb-6 h-auto max-h-52 w-full" />
     <h1 class="text-xl font-semibold">Choose a tribe</h1>
     <p class="mt-1 text-sm text-muted">The board and the project switcher show this tribe's projects.</p>
 
