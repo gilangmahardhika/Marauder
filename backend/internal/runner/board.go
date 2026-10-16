@@ -78,6 +78,11 @@ func (b *Board) LatestNote(ctx context.Context, cardID string) (string, error) {
 	return reply.Text, err
 }
 
+func (b *Board) LatestReviewNote(ctx context.Context, cardID string) (string, error) {
+	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "latest_review_note"})
+	return reply.Text, err
+}
+
 func (b *Board) Instructions(ctx context.Context, cardID string) (string, error) {
 	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "instructions"})
 	return reply.Text, err
@@ -162,6 +167,26 @@ func (b *Board) AskQuestions(ctx context.Context, attemptID, cardID string, firs
 func (b *Board) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
 	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "answers"})
 	return reply.Questions, err
+}
+
+func (b *Board) SubmitPlan(ctx context.Context, attemptID, cardID, title string, steps []board.PlanStep) error {
+	title = trace.Redact(title, b.Secrets)
+	sent := make([]board.PlanStep, len(steps))
+	for i, step := range steps {
+		step.Text = trace.Redact(step.Text, b.Secrets)
+		step.Detail = trace.Redact(step.Detail, b.Secrets)
+		sent[i] = step
+	}
+	_, err := b.op(ctx, runnerapi.BoardOp{Op: "submit_plan", PlanTitle: title, PlanSteps: sent})
+	return err
+}
+
+func (b *Board) ApprovedPlan(ctx context.Context, cardID string) (board.Plan, bool, error) {
+	reply, err := b.op(ctx, runnerapi.BoardOp{Op: "approved_plan"})
+	if err != nil || reply.Plan == nil {
+		return board.Plan{}, false, err
+	}
+	return *reply.Plan, true, nil
 }
 
 // SaveHandoff sends the attempt's handoff with its summary redacted; the

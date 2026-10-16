@@ -121,12 +121,17 @@ func (p routedProvider) Complete(ctx context.Context, req providers.Request) (pr
 // and the fallback apply only until the first text reaches onText; after that
 // an error ends the request (RFC-087).
 func (p routedProvider) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
-	return p.streamFrom(ctx, req, nil, onText)
+	return p.streamFrom(ctx, req, nil, onText, nil)
+}
+
+// StreamWithThinking is Stream that also forwards thinking deltas.
+func (p routedProvider) StreamWithThinking(ctx context.Context, req providers.Request, onText, onThinking func(string)) (providers.Response, error) {
+	return p.streamFrom(ctx, req, nil, onText, onThinking)
 }
 
 // streamFrom is Stream that also calls onStart with the answering model, once,
 // right before its first text.
-func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, onStart func(model string), onText func(string)) (providers.Response, error) {
+func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, onStart func(model string), onText, onThinking func(string)) (providers.Response, error) {
 	var resp providers.Response
 	sent := false
 	err := router.Call(p.primary, p.fallback, func(model string) error {
@@ -145,13 +150,13 @@ func (p routedProvider) streamFrom(ctx context.Context, req providers.Request, o
 			}
 			onText(text)
 		}
-		resp, err = stream(ctx, client, next, forward)
+		resp, err = stream(ctx, client, next, forward, onThinking)
 		var limited *providers.RateLimited
 		if !sent && errors.As(err, &limited) {
 			if werr := sleepCtx(ctx, rateWait(limited.Wait)); werr != nil {
 				return werr
 			}
-			resp, err = stream(ctx, client, next, forward)
+			resp, err = stream(ctx, client, next, forward, onThinking)
 		}
 		resp.Model = model
 		if err != nil && sent {
@@ -181,7 +186,7 @@ func (p routedProvider) StreamRestart(ctx context.Context, req providers.Request
 		return stream(ctx, client, next, func(text string) {
 			sent = true
 			onText(text)
-		})
+		}, nil)
 	}
 	err := router.Call(p.primary, p.fallback, func(model string) error {
 		client, _, _, err := llm.ForModel(p.cfg, p.secrets, model)
@@ -228,13 +233,25 @@ func providerErr(err error) error {
 
 // stream sends req through the client's Stream, or through Complete as one
 // piece of text for a client that cannot stream.
-func stream(ctx context.Context, client providers.Provider, req providers.Request, onText func(string)) (providers.Response, error) {
+func stream(ctx context.Context, client providers.Provider, req providers.Request, onText, onThinking func(string)) (providers.Response, error) {
+	if s, ok := client.(providers.ThinkingStreamer); ok {
+		return s.StreamWithThinking(ctx, req, onText, onThinking)
+	}
 	if s, ok := client.(providers.Streamer); ok {
 		return s.Stream(ctx, req, onText)
 	}
 	resp, err := client.Complete(ctx, req)
-	if err == nil && resp.Text != "" {
-		onText(resp.Text)
+	if err == nil {
+		if resp.Text != "" {
+			onText(resp.Text)
+		}
+		if onThinking != nil {
+			for _, r := range resp.Reasoning {
+				if r.Text != "" {
+					onThinking(r.Text)
+				}
+			}
+		}
 	}
 	return resp, err
 }

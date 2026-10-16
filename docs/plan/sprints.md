@@ -1345,3 +1345,39 @@ Packages: `internal/board`, `internal/app`, `internal/httpapi`, frontend `routes
 - `/overview` and `/tribes/[id]/overview` pages with range control and CSS bars; Project and Tribe nav Overview links.
 
 Done when: `TestProjectSummaryMember`, `TestProjectSummaryOutsider404`, `TestTribeSummaryManageOnly`, `TestSummaryRange`, overview and tribe overview Vitest, layout Overview links, `npm run check`, and the rest of the suite.
+
+## Sprint 100: Plan before coding
+
+Goal: A Required card parks with a structured plan on Needs answer; Off skips the gate (RFC-128, RFC-129, REQ-101).
+
+Packages: `internal/board`, `internal/loop`, `internal/app`, `internal/contextpack`, `internal/httpapi`, `internal/notify`, `internal/runner`.
+
+- Migration `00036_execution_planning.sql`: `plan_mode`, outcome `plan`, `card_plans`.
+- `submit_plan`, planning-phase tool gate, outcome `plan` park (local and runner), Claude Code forced to harness loop while planning.
+- `SetPlanMode`, `SavePlan`, `AcceptPlan`, `SkipPlan`, APPROVED PLAN in the pack, plan notification.
+- Routes `plan-mode`, `plan`, `plan/accept`, `plan/skip`; actions `plan_mode`, `accept_plan`, `skip_plan`.
+
+Done when: `TestSubmitPlanParksCard`, `TestPlanModeOffSkipsGate`, `TestWriteToolsBlockedUntilPlanAccepted`, `TestAcceptPlanQueuesRun`, `TestPlanStepValidation`, `TestPackIncludesApprovedPlan`, `TestPlanModeRights`, `TestRunnerPlanOutcome`, `TestSkipPlanWhenOff`, `go run ./cmd/fixture` with `planning`.
+
+## Sprint 101: Plan chat
+
+Goal: On Needs answer the person chats about the open plan and can apply a revision (RFC-130).
+
+Packages: `internal/app`, `internal/httpapi`.
+
+- `POST .../plan/chat` streams prose or a step revision with the implement route (or chosen model).
+- Field errors and `router_config` as JSON before the stream.
+
+Done when: `TestPlanChatStreams`, `TestPlanChatFieldErrors`.
+
+## Sprint 102: Plan on the card page
+
+Goal: The card page edits and accepts the plan, sets plan mode, and chats (RFC-129, RFC-130).
+
+Packages: frontend `PlanModeField`, `CardPlan`, card page, `api.ts`, `types.ts`, notify/trace words.
+
+- Plan mode field beside question mode.
+- `CardPlan` checklist with reorder, edit, add, remove, Accept, Skip when Off, and plan chat with Apply.
+- Words for `plan_accepted`, `plan_skipped`, `plan_mode_changed`, and plan notify.
+
+Done when: PlanModeField, CardPlan, and card page Vitest, `npm run check`, and the rest of the suite.

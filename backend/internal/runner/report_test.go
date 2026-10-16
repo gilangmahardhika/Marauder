@@ -287,6 +287,28 @@ func TestRunnerQuestionOutcome(t *testing.T) {
 	})
 }
 
+func TestRunnerPlanOutcome(t *testing.T) {
+	h := newHarness(t, `{"implement":[{"tool":"submit_plan","title":"Ship CSV","steps":[{"text":"Find the handler"},{"text":"Write the export"}]}]}`, "true")
+	if _, err := h.db.Exec(`UPDATE cards SET plan_mode = 'required' WHERE id = $1`, h.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	c := h.register(t, "agent-1")
+	r, _ := h.worker(t, c)
+	if err := r.RunJob(context.Background(), claim(t, c).LeaseID); err != nil {
+		t.Fatal(err)
+	}
+	card := h.status(t)
+	if card.Status != "waiting_answer" || card.AttemptsUsed != 0 {
+		t.Fatalf("card = %s used %d, want waiting_answer used 0", card.Status, card.AttemptsUsed)
+	}
+	if n := count(t, h, `SELECT count(*) FROM attempts WHERE card_id = $1 AND outcome = 'plan'`, card.ID); n != 1 {
+		t.Fatalf("plan attempts = %d", n)
+	}
+	if n := count(t, h, `SELECT count(*) FROM card_plans WHERE card_id = $1 AND status = 'open'`, card.ID); n != 1 {
+		t.Fatalf("open plans = %d", n)
+	}
+}
+
 func TestRunnerLeaseScope(t *testing.T) {
 	h := newHarness(t, commitScript, "true")
 	ctx := context.Background()

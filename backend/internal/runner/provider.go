@@ -16,6 +16,7 @@ import (
 type Provider struct {
 	Client *Client
 	Board  *Board
+	Logf   func(string, ...any)
 
 	mu   sync.Mutex
 	turn int
@@ -31,7 +32,22 @@ func (p *Provider) Complete(ctx context.Context, req providers.Request) (provide
 	p.turn++
 	p.mu.Unlock()
 	reply, err := p.Client.Model(ctx, p.Board.LeaseID, runnerapi.ModelCall{AttemptID: attemptID, Turn: turn, Request: req})
+	if err == nil {
+		p.logThinking(reply.Response.Reasoning)
+	}
 	return reply.Response, err
+}
+
+func (p *Provider) logThinking(reasoning []providers.Reasoning) {
+	if p.Logf == nil {
+		return
+	}
+	for _, r := range reasoning {
+		if r.Kind == "redacted_thinking" || r.Text == "" {
+			continue
+		}
+		p.Logf("thinking: %s", r.Text)
+	}
 }
 
 // MCPProxy is the loop.ExtraTools of a leased attempt. The control plane

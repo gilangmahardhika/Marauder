@@ -174,7 +174,14 @@
                   <option value={item.id} disabled={!item.keySet}>{item.keySet ? item.id : `${item.id} (No API key)`}</option>
                 {/each}
               </Select>
-              <Select label="Model" id="model" width="full" error={failure.fields['claudeCode.model']} bind:value={model}>
+              <Select
+                label="Model"
+                id="model"
+                width="full"
+                hint="Passed to claude --model. Use a Claude Code alias or Anthropic model id from the family (for example sonnet or claude-sonnet-4-5), not a Cursor chat model slug."
+                error={failure.fields['claudeCode.model']}
+                bind:value={model}
+              >
                 <option value="">Choose a model</option>
                 {#each models as item (item)}<option value={item}>{item}</option>{/each}
               </Select>

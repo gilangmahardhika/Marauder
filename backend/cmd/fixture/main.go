@@ -153,6 +153,9 @@ func run() error {
 	if err := questions(ctx, db, g); err != nil {
 		return err
 	}
+	if err := planning(ctx, db, g); err != nil {
+		return err
+	}
 	if err := continueWork(ctx, db, g); err != nil {
 		return err
 	}
@@ -672,6 +675,70 @@ func questions(ctx context.Context, db *sql.DB, g runtime.Git) error {
 	user := next.Prompts()[0].User
 	if !strings.Contains(user, contextpack.AnswersHeading) || !strings.Contains(user, "answer: CSV\nsource: suggestion") {
 		return errors.New("questions: the next pack lacks the answer")
+	}
+	return nil
+}
+
+// planning parks a Required card on submit_plan, accepts the plan, and checks
+// that the next attempt's pack carries the approved plan (RFC-128, RFC-129).
+func planning(ctx context.Context, db *sql.DB, g runtime.Git) error {
+	card, err := board.InsertCard(ctx, db, board.Card{
+		Title: "Plan the export", Status: "backlog", LocalCheck: "check.sh", PlanMode: "required",
+	})
+	if err != nil {
+		return err
+	}
+	for _, to := range []string{"ready", "in_progress"} {
+		if card, err = walk(ctx, db, card, to, machine.Evidence{}); err != nil {
+			return fmt.Errorf("planning: %w", err)
+		}
+	}
+	defer removeWorktree(g, card.ID)
+	plan, err := fake.Load([]byte(`{"implement":[{"tool":"submit_plan","title":"Add CSV export","steps":[
+		{"text":"Find the orders handler"},{"text":"Write the CSV export"}]}]}`))
+	if err != nil {
+		return err
+	}
+	in := loop.Input{DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement", MaxTurns: 3,
+		Provider: plan, Allow: []string{"true", "false"}, Planning: true}
+	result, err := app.RunImplementer(ctx, in)
+	if err != nil {
+		return fmt.Errorf("planning: %w", err)
+	}
+	if result.Outcome != "plan" {
+		return fmt.Errorf("planning: attempt ended %q, want plan", result.Outcome)
+	}
+	if card, err = board.GetCard(ctx, db, card.ID); err != nil {
+		return err
+	}
+	if card, err = walk(ctx, db, card, "waiting_answer", machine.Evidence{AttemptID: result.AttemptID}); err != nil {
+		return fmt.Errorf("planning: %w", err)
+	}
+	dev, err := identity.Insert(ctx, db, "planner@example.com", "password-long-1", "developer", false)
+	if err != nil {
+		return err
+	}
+	card, err = app.AcceptPlan(ctx, db, app.User{ID: dev.ID, Role: "developer"}, card.ProjectID, card.ID, "", nil, true)
+	if err != nil {
+		return fmt.Errorf("planning: %w", err)
+	}
+	if card.Status != "ready" {
+		return fmt.Errorf("planning: accepted card is %s", card.Status)
+	}
+	if card, err = walk(ctx, db, card, "in_progress", machine.Evidence{}); err != nil {
+		return fmt.Errorf("planning: %w", err)
+	}
+	next, err := fake.Load([]byte(`{"implement":[{"text":"done"}]}`))
+	if err != nil {
+		return err
+	}
+	in.Provider, in.Planning = next, false
+	if _, err := app.RunImplementer(ctx, in); err != nil {
+		return fmt.Errorf("planning: %w", err)
+	}
+	user := next.Prompts()[0].User
+	if !strings.Contains(user, contextpack.PlanHeading) || !strings.Contains(user, "Add CSV export") {
+		return errors.New("planning: the next pack lacks the approved plan")
 	}
 	return nil
 }

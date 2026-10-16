@@ -23,11 +23,12 @@
   /** Only people and the reviewer model write prose. Check output stays plain text. */
   const prose = new Set(['review', 'approver', 'instructions']);
 
-  /** The notes the next attempt reads stay open: the newest failure note and the current instructions. */
+  /** Notes the next attempt reads stay open: newest AI review, newest other note, and current instructions (RFC-131). */
   const read = $derived(
     notes.filter(
       (note) =>
-        note === notes.find((n) => n.source !== 'instructions') ||
+        note === notes.find((n) => n.source === 'review') ||
+        note === notes.find((n) => n.source !== 'instructions' && n.source !== 'review') ||
         (note === notes.find((n) => n.source === 'instructions') && note.note !== '')
     )
   );
@@ -55,7 +56,7 @@
 {/snippet}
 
 {#if open.length > 0}
-  <Panel title="Notes" hint="Newest first. The next attempt gets the newest note and the current instructions.">
+  <Panel title="Notes" hint="Newest first. The next attempt gets the newest AI review note and the newest other note, plus instructions.">
     {#each open as note, index (index)}
       <div class={index > 0 ? 'border-t border-line pt-5' : ''}>{@render entry(note)}</div>
     {/each}

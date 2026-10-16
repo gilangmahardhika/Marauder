@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/contextpack"
@@ -21,6 +22,7 @@ type Board interface {
 	Requirements(ctx context.Context, projectID string, ids []string) ([]string, error)
 	Decisions(ctx context.Context, projectID string, ids []string) ([]string, error)
 	LatestNote(ctx context.Context, cardID string) (string, error)
+	LatestReviewNote(ctx context.Context, cardID string) (string, error)
 	Instructions(ctx context.Context, cardID string) (string, error)
 	Conventions(ctx context.Context, projectID, cardID string) ([]contextpack.Convention, []map[string]any, error)
 	NextAttempt(ctx context.Context, cardID string) (int, string, error)
@@ -36,6 +38,11 @@ type Board interface {
 	AskQuestions(ctx context.Context, attemptID, cardID string, first int, questions []board.Question, auto bool) error
 	// Answers lists the card's answered questions, oldest first.
 	Answers(ctx context.Context, cardID string) ([]board.Question, error)
+	// SubmitPlan stores an open plan for the card, replacing any earlier open
+	// plan (RFC-128).
+	SubmitPlan(ctx context.Context, attemptID, cardID, title string, steps []board.PlanStep) error
+	// ApprovedPlan returns the card's latest accepted plan, if any.
+	ApprovedPlan(ctx context.Context, cardID string) (board.Plan, bool, error)
 	// SaveHandoff stores what an attempt without a commit leaves the next
 	// one; PendingHandoff reads the card's latest attempt's handoff while it
 	// is unused, and MarkHandoffApplied uses it up (RFC-118).
@@ -75,6 +82,10 @@ func (b DBBoard) Decisions(ctx context.Context, projectID string, ids []string) 
 
 func (b DBBoard) LatestNote(ctx context.Context, cardID string) (string, error) {
 	return latestNote(ctx, b.DB, cardID)
+}
+
+func (b DBBoard) LatestReviewNote(ctx context.Context, cardID string) (string, error) {
+	return latestReviewNote(ctx, b.DB, cardID)
 }
 
 func (b DBBoard) Instructions(ctx context.Context, cardID string) (string, error) {
@@ -119,6 +130,19 @@ func (b DBBoard) AskQuestions(ctx context.Context, attemptID, cardID string, fir
 
 func (b DBBoard) Answers(ctx context.Context, cardID string) ([]board.Question, error) {
 	return board.AnsweredQuestions(ctx, b.DB, cardID)
+}
+
+func (b DBBoard) SubmitPlan(ctx context.Context, attemptID, cardID, title string, steps []board.PlanStep) error {
+	_, err := board.InsertOpenPlan(ctx, b.DB, cardID, attemptID, title, steps)
+	return err
+}
+
+func (b DBBoard) ApprovedPlan(ctx context.Context, cardID string) (board.Plan, bool, error) {
+	plan, err := board.AcceptedPlan(ctx, b.DB, cardID)
+	if errors.Is(err, board.ErrNotFound) {
+		return board.Plan{}, false, nil
+	}
+	return plan, err == nil, err
 }
 
 func (b DBBoard) SaveHandoff(ctx context.Context, h board.Handoff) error {

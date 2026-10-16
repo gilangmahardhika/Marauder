@@ -32,10 +32,12 @@ import type {
   ProjectLinks,
   ProjectRecord,
   ProjectSummary,
+  PlanMode,
   QuestionMode,
   Repository,
   RefineEvent,
   RefineRequest,
+  PlanChatEvent,
   RequirementDraft,
   RouterSettings,
   RuleInput,
@@ -650,6 +652,62 @@ export function setQuestionMode(id: string, questionMode: QuestionMode) {
     method: "PUT",
     body: JSON.stringify({ questionMode }),
   });
+}
+
+export function setPlanMode(id: string, planMode: PlanMode) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/plan-mode`, {
+    method: "PUT",
+    body: JSON.stringify({ planMode }),
+  });
+}
+
+export function saveCardPlan(
+  id: string,
+  body: { title: string; steps: { id?: string; text: string; detail?: string }[] },
+) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/plan`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export function acceptCardPlan(
+  id: string,
+  body: { title: string; steps: { id?: string; text: string; detail?: string }[] },
+) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/plan/accept`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function skipCardPlan(id: string) {
+  return request<Card>(`${projectPrefix()}/cards/${id}/plan/skip`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+/** Streams plan chat as server-sent events (RFC-130). */
+export async function streamPlanChat(
+  id: string,
+  body: {
+    message: string;
+    title: string;
+    steps: { id?: string; text: string; detail?: string }[];
+    model?: string;
+    thinking?: string;
+    effort?: string;
+  },
+  onEvent: (event: PlanChatEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await send(`${projectPrefix()}/cards/${id}/plan/chat`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    signal,
+  });
+  await readStream(response, onEvent);
 }
 
 export function deployCard(id: string) {

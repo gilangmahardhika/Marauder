@@ -30,7 +30,17 @@ var (
 	ErrStop = errors.New("claude code stopped by the harness")
 	// ErrMissing means no claude binary was found.
 	ErrMissing = errors.New("claude code is not installed")
+	// ErrUnknownModel means Claude Code rejected --model (id missing or
+	// inaccessible). The implement job blocks with agent_config.
+	ErrUnknownModel = errors.New("claude code rejected the selected model")
 )
+
+// UnknownModel reports whether text looks like Claude Code's unknown-model
+// message ("There's an issue with the selected model … may not exist").
+func UnknownModel(text string) bool {
+	s := strings.ToLower(text)
+	return strings.Contains(s, "selected model") && strings.Contains(s, "may not exist")
+}
 
 // Spec is one Claude Code run. Auth is apiKey or bearer, already resolved.
 type Spec struct {

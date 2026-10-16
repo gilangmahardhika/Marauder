@@ -3,12 +3,15 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"orchestrator/backend/internal/claudecode"
 )
 
 const claudeKey = "sk-claude-test-key-0123456789"
@@ -257,6 +260,26 @@ exit 3`)
 	s.saveHandoff(context.Background(), "error", "main")
 	if len(b.saved) != 1 || b.saved[0].SummarySource != "harness" {
 		t.Fatalf("handoff = %+v", b.saved)
+	}
+}
+
+func TestClaudeCodeUnknownModel(t *testing.T) {
+	msg := "There's an issue with the selected model (claude-sonnet-5-5). It may not exist or you may not have access to it. Run --model to pick a different model."
+	stream := streamLines(map[string]any{
+		"type": "result", "subtype": "success", "is_error": true, "result": msg, "num_turns": 1,
+	})
+	bin, _ := fakeClaude(t, stream, "")
+	s, _ := claudeSession(t, bin)
+	s.in.Model = "claude-sonnet-5-5"
+	err := s.claude(context.Background())
+	if err == nil || !errors.Is(err, claudecode.ErrUnknownModel) {
+		t.Fatalf("err = %v, want ErrUnknownModel", err)
+	}
+	if !strings.Contains(err.Error(), "claude-sonnet-5-5") || !strings.Contains(err.Error(), "Agent page") {
+		t.Fatalf("err = %v", err)
+	}
+	if s.committed {
+		t.Fatal("an unknown model committed")
 	}
 }
 

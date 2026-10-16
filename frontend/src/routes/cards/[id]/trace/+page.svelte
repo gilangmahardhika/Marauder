@@ -259,6 +259,9 @@
           scheduleFlush();
         }
         return false;
+      case 'thinking':
+        // Thinking is streamed to the API/runner logs; the reply text stays on delta.
+        return false;
       case 'reset':
         queued = '';
         if (pending) pending = { ...pending, text: '' };

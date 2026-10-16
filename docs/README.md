@@ -4,7 +4,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 
 | Document | Role |
 | --- | --- |
-| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-100`, acceptance checks, non-goals |
+| [prd/coding-orchestrator.md](prd/coding-orchestrator.md) | Requirements `REQ-001` to `REQ-101`, acceptance checks, non-goals |
 | [rfc/0001-v1-architecture.md](rfc/0001-v1-architecture.md) | Decisions `RFC-001` to `RFC-023` |
 | [rfc/0002-hardening.md](rfc/0002-hardening.md) | Decisions `RFC-024` to `RFC-034` |
 | [rfc/0003-review-corrections.md](rfc/0003-review-corrections.md) | Decisions `RFC-035` to `RFC-043`, including the ones that supersede earlier ids |
@@ -64,6 +64,8 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0057-refine-chat.md](rfc/0057-refine-chat.md) | Decision `RFC-125`. Each refine box is a chat whose follow-up messages refine the previous answer, and Apply takes the latest |
 | [rfc/0058-project-settings-split.md](rfc/0058-project-settings-split.md) | Decision `RFC-126`. The PRD and RFC paths move to the Repository settings, the implementation cap and Solo approval to a Workflow page, and Deploy keeps the dev server, checks, and deploy switch |
 | [rfc/0059-tribe-project-dashboards.md](rfc/0059-tribe-project-dashboards.md) | Decision `RFC-127`. Project and tribe overview summaries of board WIP, attention, range insights, and tribe MCP health |
+| [rfc/0060-execution-planning.md](rfc/0060-execution-planning.md) | Decisions `RFC-128` to `RFC-130`. Plan before coding, structured accept on Needs answer, and plan chat |
+| [rfc/0061-ai-review-note-in-pack.md](rfc/0061-ai-review-note-in-pack.md) | Decision `RFC-131`. The newest AI review note stays in the implement pack even when a newer check or approver note exists |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

@@ -58,6 +58,8 @@ type Card struct {
 	UpdatedAt      string
 	// QuestionMode is manual or auto: who answers the agent's questions (RFC-115).
 	QuestionMode string
+	// PlanMode is required or off: whether the card must plan before coding (RFC-128).
+	PlanMode string
 }
 
 type StatusWrite struct {
@@ -160,6 +162,14 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 	if card.ProjectID == "" {
 		card.ProjectID = "proj_default"
 	}
+	if card.QuestionMode == "" {
+		card.QuestionMode = "manual"
+	}
+	if card.PlanMode == "" {
+		// Callers that want the product default pass "required". Tests leave
+		// this empty so existing implement fixtures keep writing without a plan.
+		card.PlanMode = "off"
+	}
 	reqJSON, err := json.Marshal(card.RequirementIDs)
 	if err != nil {
 		return Card{}, err
@@ -172,16 +182,18 @@ func InsertCard(ctx context.Context, q DBTX, card Card) (Card, error) {
 		INSERT INTO cards (
 			id, title, requirement_ids_json, decision_ids_json, depends_on_json,
 			risk, service, status, manual, local_check, dev_check,
-			attempts_used, max_attempts, environment, created_at, updated_at, project_id, owner_id
+			attempts_used, max_attempts, environment, created_at, updated_at, project_id, owner_id,
+			question_mode, plan_mode
 		) VALUES (
 			$1, $2, $3, '[]', $4,
 			$5, 'default', $6, $7, $8, $9,
-			$10, $11, 'dev', $12, $13, $14, $15
+			$10, $11, 'dev', $12, $13, $14, $15,
+			$16, $17
 		)`,
 		card.ID, card.Title, string(reqJSON), string(depJSON), card.Risk, card.Status, card.Manual,
 		nullString(card.LocalCheck), nullString(card.DevCheck),
 		card.AttemptsUsed, card.MaxAttempts, card.CreatedAt, card.UpdatedAt, card.ProjectID,
-		nullString(card.OwnerID),
+		nullString(card.OwnerID), card.QuestionMode, card.PlanMode,
 	)
 	if err != nil {
 		return Card{}, err
@@ -200,14 +212,14 @@ func GetCard(ctx context.Context, q DBTX, id string) (Card, error) {
 			COALESCE(blocked_reason, ''), COALESCE(failure_reason, ''),
 			COALESCE(local_check, ''), COALESCE(dev_check, ''),
 			requirement_ids_json, depends_on_json, created_at, updated_at, COALESCE(owner_id, ''),
-			question_mode
+			question_mode, plan_mode
 		FROM cards WHERE id = $1`, id).Scan(
 		&card.ID, &card.ProjectID, &card.Title, &card.Status, &card.Risk, &card.Manual,
 		&card.AttemptsUsed, &card.MaxAttempts, &card.Branch, &card.WorktreePath,
 		&card.WorktreeGitDir, &card.PRURL, &card.HeadSHA, &card.ApprovedSHA,
 		&card.DeployedSHA, &card.BlockedReason, &card.FailureReason,
 		&card.LocalCheck, &card.DevCheck, &reqJSON, &depJSON, &card.CreatedAt, &card.UpdatedAt,
-		&card.OwnerID, &card.QuestionMode,
+		&card.OwnerID, &card.QuestionMode, &card.PlanMode,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound

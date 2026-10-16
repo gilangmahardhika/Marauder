@@ -95,6 +95,7 @@ function card(questions: CardQuestion[], actions = ['answer', 'question_mode']):
     selfReview: false,
     aiReviewMode: 'continue',
     questionMode: 'manual',
+    planMode: 'off',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

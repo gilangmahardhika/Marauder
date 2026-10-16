@@ -34,6 +34,7 @@ function card(id: string, partial: Partial<Card> = {}): Card {
     selfReview: false,
     aiReviewMode: 'continue',
     questionMode: 'manual',
+    planMode: 'off',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

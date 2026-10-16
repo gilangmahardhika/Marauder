@@ -110,7 +110,7 @@ func Review(ctx context.Context, in ReviewInput) (ReviewResult, error) {
 		resp, endTurn, err := complete(ctx, in.Provider, providers.Request{
 			Model: in.Model, System: system, User: user, Turns: turns,
 			Tools: ReviewerTools(), TaskClass: "review", MaxTokens: ReviewMaxTokens,
-		}, in.Live, in.Card.ID, live.Frame{AttemptID: in.AttemptID, Turn: turn, Role: "reviewer"}, in.Secrets)
+		}, in.Live, in.Card.ID, live.Frame{AttemptID: in.AttemptID, Turn: turn, Role: "reviewer"}, in.Secrets, nil)
 		if err != nil {
 			return result, err
 		}

@@ -154,6 +154,22 @@ func ImplementerTools() []providers.Tool {
 			}, "questions"),
 		},
 		{
+			Name: "submit_plan",
+			Description: "Submit a structured execution plan for the person to accept before you edit files. " +
+				"Use it when this attempt is a planning phase: explore with read tools, then submit a title and an ordered checklist of steps. " +
+				"The attempt ends after this call; the next attempt starts with the approved plan. Not available after commit.",
+			Parameters: object(map[string]any{
+				"title": str("Short plan title, at most 200 characters"),
+				"steps": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": maxPlanSteps, "description": "Ordered steps, most important first",
+					"items": object(map[string]any{
+						"text":   str("What to do in this step, at most 500 characters"),
+						"detail": str("Optional detail, at most 1000 characters"),
+					}, "text"),
+				},
+			}, "title", "steps"),
+		},
+		{
 			Name:        "commit",
 			Description: "Commit every change in the worktree. Call it once the work is done and the local check passes.",
 			Parameters:  object(map[string]any{"message": str("Subject of at most 72 characters in the imperative mood, a blank line, then what changed and why")}, "message"),
@@ -235,9 +251,16 @@ type Input struct {
 	// earlier attempts that ended with a question (RFC-114).
 	QuestionMode   string
 	QuestionRounds int
+	// Planning is true when planMode is required and the card has no
+	// accepted plan: write tools are refused and submit_plan parks the
+	// card (RFC-128). Claude Code is not used for a planning attempt.
+	Planning bool
 	// ClaudeCode, when set, runs the Claude Code CLI in place of the tool
 	// loop, with Model and MaxTurns (RFC-121).
 	ClaudeCode *ClaudeCode
+	// Logf, when set, receives thinking text as the model streams it (and
+	// Claude Code assistant lines), for the runner or process log.
+	Logf func(string, ...any)
 }
 
 // ClaudeCode is how an attempt runs the Claude Code CLI. Binary is an
@@ -367,6 +390,10 @@ func Run(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	reviewNote, err := b.LatestReviewNote(ctx, card.ID)
+	if err != nil {
+		return Result{}, err
+	}
 	instructions, err := b.Instructions(ctx, card.ID)
 	if err != nil {
 		return Result{}, err
@@ -380,6 +407,16 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		if q.Answer != nil {
 			answers = append(answers, contextpack.Answer{Question: q.Question, Answer: AnswerText(*q.Answer), Source: q.AnswerSource})
 		}
+	}
+	var approved *contextpack.Plan
+	if plan, ok, err := b.ApprovedPlan(ctx, card.ID); err != nil {
+		return Result{}, err
+	} else if ok {
+		steps := make([]contextpack.PlanStep, 0, len(plan.Steps))
+		for _, step := range plan.Steps {
+			steps = append(steps, contextpack.PlanStep{Text: step.Text, Detail: step.Detail})
+		}
+		approved = &contextpack.Plan{Title: plan.Title, Steps: steps}
 	}
 	convs, convItems, err := b.Conventions(ctx, card.ProjectID, card.ID)
 	if err != nil {
@@ -397,9 +434,11 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		Decisions:    decisions,
 		PathMap:      paths,
 		RepoFiles:    repoFiles,
+		ReviewNote:   reviewNote,
 		FailureNote:  note,
 		Instructions: instructions,
 		Answers:      answers,
+		Plan:         approved,
 		WorkSoFar:    workSoFar,
 		Linked:       linked,
 		Conventions:  convs,
@@ -467,7 +506,7 @@ func Run(ctx context.Context, in Input) (Result, error) {
 		}
 	}
 	drive := session.loop
-	if in.ClaudeCode != nil {
+	if in.ClaudeCode != nil && !in.Planning {
 		drive = session.claude
 	}
 	if err := drive(ctx); err != nil {
@@ -481,6 +520,13 @@ func Run(ctx context.Context, in Input) (Result, error) {
 			return Result{}, err
 		}
 		return Result{AttemptID: attemptID, Outcome: "question", Status: card.Status}, nil
+	}
+	if session.stop == "plan" {
+		session.saveHandoff(ctx, "plan", base)
+		if err := b.FinishAttempt(ctx, attemptID, "plan", ""); err != nil {
+			return Result{}, err
+		}
+		return Result{AttemptID: attemptID, Outcome: "plan", Status: card.Status}, nil
 	}
 	if session.stop == "" {
 		if err := session.autoCommit(ctx); err != nil {
@@ -642,6 +688,10 @@ func toolArgs(call providers.ToolCall, localCheck string, secrets []string) map[
 	case "ask_user":
 		questions, _ := call.Args["questions"].([]any)
 		args["count"] = len(questions)
+	case "submit_plan":
+		args["title"] = clip(strArg(call.Args, "title"))
+		steps, _ := call.Args["steps"].([]any)
+		args["steps"] = len(steps)
 	case "comment_pr", "verdict":
 		args["body"] = clip(strArg(call.Args, "body"))
 	default:

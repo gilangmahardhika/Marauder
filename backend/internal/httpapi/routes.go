@@ -549,9 +549,16 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 			if rights.Change {
 				actions = append(actions, "context")
 				if card.Status == "waiting_answer" {
-					actions = append(actions, "answer")
+					if open, err := board.OpenPlan(r.Context(), s.DB, card.ProjectID, card.ID); err == nil && open.ID != "" {
+						actions = append(actions, "accept_plan")
+						if card.PlanMode == "off" {
+							actions = append(actions, "skip_plan")
+						}
+					} else {
+						actions = append(actions, "answer")
+					}
 				}
-				actions = append(actions, "question_mode")
+				actions = append(actions, "question_mode", "plan_mode")
 			}
 			if rights.AttachMCP {
 				actions = append(actions, "attach-mcp")
@@ -593,8 +600,8 @@ func (s *Server) cardJSON(r *http.Request, card board.Card, reviewers []intake.R
 		"branch": nullString(card.Branch), "prUrl": nullString(card.PRURL),
 		"headSha": nullString(card.HeadSHA), "reviewedSha": reviewedSHA, "reviewIndependent": reviewIndependent,
 		"reviewVerdict": reviewVerdict, "selfReview": selfReview, "aiReviewMode": reviewMode,
-		"questionMode": card.QuestionMode,
-		"approvedSha":  nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
+		"questionMode": card.QuestionMode, "planMode": card.PlanMode,
+		"approvedSha": nullString(card.ApprovedSHA), "deployedSha": nullString(card.DeployedSHA),
 		"environment": "dev", "failureReason": nullString(card.FailureReason),
 		"blockedReason": nullString(card.BlockedReason), "updatedAt": card.UpdatedAt,
 	}

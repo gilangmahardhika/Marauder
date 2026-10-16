@@ -333,7 +333,7 @@ func (s *session) loop(ctx context.Context) error {
 					payload[key] = value
 				}
 			}
-			if call.Name == "ask_user" && s.askEvent != nil {
+			if (call.Name == "ask_user" || call.Name == "submit_plan") && s.askEvent != nil {
 				for key, value := range s.askEvent {
 					payload[key] = value
 				}
@@ -349,7 +349,7 @@ func (s *session) loop(ctx context.Context) error {
 			done.Results = append(done.Results, summary)
 		}
 		s.turns = append(s.turns, done)
-		if s.stop == "question" {
+		if s.stop == "question" || s.stop == "plan" {
 			return nil
 		}
 	}
@@ -363,7 +363,7 @@ func (s *session) request(ctx context.Context, turn int) (providers.Response, fu
 	return complete(ctx, s.in.Provider, providers.Request{
 		Model: s.in.Model, System: s.system, User: s.user, Turns: turns,
 		Tools: s.profile(), TaskClass: s.in.TaskClass,
-	}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets)
+	}, s.in.Live, s.card.ID, live.Frame{AttemptID: s.attemptID, Turn: turn, Role: "implementer"}, s.in.Secrets, s.in.Logf)
 }
 
 // overTokens reports whether the card has used its token cap (RFC-081).
@@ -406,7 +406,7 @@ func (s *session) runCalls(ctx context.Context, calls []providers.ToolCall) []ca
 	for i := 0; i < len(calls); {
 		if !concurrent(calls[i]) {
 			out[i].summary, out[i].rejected, out[i].err = s.dispatch(ctx, calls[i])
-			if out[i].err != nil || s.stop == "question" {
+			if out[i].err != nil || s.stop == "question" || s.stop == "plan" {
 				return out[:i+1]
 			}
 			i++
@@ -455,6 +455,9 @@ func (s *session) dispatch(ctx context.Context, call providers.ToolCall) (string
 }
 
 func (s *session) run(ctx context.Context, call providers.ToolCall) (string, error) {
+	if err := s.planningBlocked(call.Name); err != nil {
+		return "", err
+	}
 	args := call.Args
 	switch call.Name {
 	case "list_files":
@@ -506,6 +509,8 @@ func (s *session) run(ctx context.Context, call providers.ToolCall) (string, err
 		return s.runCommand(ctx, args)
 	case "ask_user":
 		return s.askUser(ctx, args)
+	case "submit_plan":
+		return s.submitPlan(ctx, args)
 	case "commit":
 		message := commitMessage(strArg(args, "message"), s.card.ID, s.attemptID, s.in.Model)
 		if err := s.in.Git.Commit(ctx, s.wt, message); err != nil {

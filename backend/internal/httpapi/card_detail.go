@@ -88,6 +88,25 @@ func (s *Server) cardDetail(r *http.Request, card board.Card) map[string]any {
 		questions = []map[string]any{}
 	}
 	body["questions"] = questions
+	if plan, err := board.CardPlanForDisplay(r.Context(), s.DB, card.ProjectID, card.ID); err == nil {
+		var acceptedBy any
+		if plan.AcceptedBy != "" {
+			if found, ok, err := app.OwnerOf(r.Context(), s.DB, plan.AcceptedBy); err == nil && ok {
+				acceptedBy = map[string]any{"id": found.ID, "name": found.Name, "email": found.Email}
+			}
+		}
+		steps := make([]map[string]any, 0, len(plan.Steps))
+		for _, step := range plan.Steps {
+			steps = append(steps, map[string]any{"id": step.ID, "text": step.Text, "detail": step.Detail})
+		}
+		body["plan"] = map[string]any{
+			"id": plan.ID, "attemptN": plan.AttemptN, "title": plan.Title, "steps": steps,
+			"status": plan.Status, "acceptedBy": acceptedBy, "acceptedAt": nullString(plan.AcceptedAt),
+			"createdAt": plan.CreatedAt,
+		}
+	} else {
+		body["plan"] = nil
+	}
 	return body
 }
 

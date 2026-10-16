@@ -40,6 +40,9 @@ var kinds = map[string]struct{}{
 	"review_failed":         {},
 	"questions_answered":    {},
 	"question_mode_changed": {},
+	"plan_accepted":         {},
+	"plan_skipped":          {},
+	"plan_mode_changed":     {},
 }
 
 type queryer interface {

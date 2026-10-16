@@ -115,7 +115,11 @@ func Recipients(ctx context.Context, db *sql.DB, data string, ev Event, card boa
 		case "changes_requested":
 			add(owner, "changes_requested", "Changes requested", true)
 		case "waiting_answer":
-			add(owner, "question", "Agent has a question", true)
+			kind, title := "question", "Agent has a question"
+			if _, err := board.OpenPlan(ctx, db, card.ProjectID, card.ID); err == nil {
+				kind, title = "plan", "Agent has a plan"
+			}
+			add(owner, kind, title, true)
 		case "blocked":
 			if t.From == "wont_fix" {
 				add(owner, "reopened", "Reopened", false)

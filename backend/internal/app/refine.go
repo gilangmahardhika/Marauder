@@ -73,7 +73,7 @@ type RefineDone struct {
 // modelStreamer is a provider that also names the model that answers, right
 // before its first text.
 type modelStreamer interface {
-	streamFrom(ctx context.Context, req providers.Request, onStart func(model string), onText func(string)) (providers.Response, error)
+	streamFrom(ctx context.Context, req providers.Request, onStart func(model string), onText, onThinking func(string)) (providers.Response, error)
 }
 
 // RefineField asks the implement route's model to rewrite one field of a draft
@@ -288,7 +288,7 @@ func refineOptions(cfg settings.Config, model, thinking, effort string) (setting
 func refineSend(ctx context.Context, provider providers.Provider, req providers.Request, start func(string), out *trace.StreamRedactor, modelID *string) (providers.Response, error) {
 	switch p := provider.(type) {
 	case modelStreamer:
-		return p.streamFrom(ctx, req, start, out.Write)
+		return p.streamFrom(ctx, req, start, out.Write, nil)
 	case providers.Streamer:
 		return p.Stream(ctx, req, func(text string) {
 			start(*modelID)

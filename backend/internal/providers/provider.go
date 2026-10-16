@@ -109,6 +109,12 @@ type Streamer interface {
 	Stream(ctx context.Context, req Request, onText func(string)) (Response, error)
 }
 
+// ThinkingStreamer is a Streamer that can also hand back thinking text as it
+// arrives. onThinking may be nil.
+type ThinkingStreamer interface {
+	StreamWithThinking(ctx context.Context, req Request, onText, onThinking func(string)) (Response, error)
+}
+
 // RestartStreamer is a Streamer that may send a reply again after text was
 // sent, such as a retry or a fallback after a failed stream. It calls onRestart
 // before the text of the new reply, so the caller drops what it already got.

@@ -70,6 +70,7 @@ const card: Card = {
   selfReview: false,
   aiReviewMode: 'continue',
   questionMode: 'manual',
+    planMode: 'off',
   approvedSha: null,
   deployedSha: null,
   environment: 'dev',

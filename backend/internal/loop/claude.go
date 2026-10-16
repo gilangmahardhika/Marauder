@@ -88,6 +88,14 @@ func (s *session) claude(ctx context.Context) error {
 		if detail == "" {
 			detail = s.stderrTail(out.Stderr)
 		}
+		if claudecode.UnknownModel(detail) || claudecode.UnknownModel(out.Result.Text) || claudecode.UnknownModel(out.Stderr) {
+			model := strings.TrimSpace(s.in.Model)
+			msg := detail
+			if model != "" {
+				msg = fmt.Sprintf("Claude Code rejected model %q; pick a Claude Code–accepted id on the Agent page, then unblock the card", model)
+			}
+			return fmt.Errorf("%w: %s", claudecode.ErrUnknownModel, msg)
+		}
 		return fmt.Errorf("claude code ended with %s: %s", out.Result.Subtype, detail)
 	}
 	return s.claudeCommit(ctx)
@@ -101,6 +109,9 @@ func (s *session) stderrTail(stderr string) string {
 // line its tokens and a model_call event, then a tool_call event per tool and
 // the todo list. It stops the process when the card reaches its token cap.
 func (s *session) claudeMessage(ctx context.Context, m claudecode.Message) error {
+	if text := strings.TrimSpace(m.Text); text != "" && s.in.Logf != nil {
+		s.in.Logf("claude: %s", trace.Redact(text, s.in.Secrets))
+	}
 	if !m.Repeat {
 		input := m.Usage.Input + m.Usage.CacheWrite
 		if err := s.in.board().AddAttemptTokens(ctx, s.attemptID, input, m.Usage.Output, m.Usage.CacheRead); err != nil {

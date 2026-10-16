@@ -10,6 +10,8 @@ import (
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
 	"orchestrator/backend/internal/board/boardtest"
+	"orchestrator/backend/internal/contextpack"
+	"orchestrator/backend/internal/providers/fake"
 )
 
 const (
@@ -96,6 +98,32 @@ func TestReviewContinueQueuesRetry(t *testing.T) {
 		comments := f.calls.body("comment")
 		if len(comments) != 1 || !strings.Contains(comments[0], "went back to the implementer") {
 			t.Fatalf("comments = %q", comments)
+		}
+		// A newer check note must not hide the review body on the queued retry (RFC-131).
+		if err := board.InsertFailureNote(context.Background(), f.db, card.ID, "att_check", "local_check", "exit 1: stale"); err != nil {
+			t.Fatal(err)
+		}
+		provider, err := fake.Load([]byte(commitScript))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := app.ImplementCard(context.Background(), f.db, app.JobDeps{
+			Data: f.data, Key: tokenKey, Provider: provider,
+			Tools: app.Tools{Git: lookGit(t), GH: "/usr/bin/gh", Exec: f.calls.run},
+		}, "proj_default", card.ID); err != nil {
+			t.Fatal(err)
+		}
+		prompts := provider.Prompts()
+		if len(prompts) == 0 {
+			t.Fatal("no model call on the retry")
+		}
+		user := prompts[0].User
+		want := contextpack.ReviewHeading + "\nSay done instead of job.\n" + contextpack.ReviewEnd
+		if !strings.Contains(user, want) {
+			t.Fatalf("retry prompt lacks the review block:\n%s", user)
+		}
+		if !strings.Contains(user, "exit 1: stale") {
+			t.Fatalf("retry prompt lacks the newer check note:\n%s", user)
 		}
 	})
 	t.Run("at the cap", func(t *testing.T) {

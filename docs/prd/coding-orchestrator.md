@@ -143,6 +143,7 @@ The operator can stop the process in the middle and start it again without a sec
 | REQ-098 | A new attempt continues the card's unfinished work, and a long attempt compacts its context instead of overflowing it |
 | REQ-099 | An admin chooses the implement agent: the built-in loop or Claude Code |
 | REQ-100 | A member sees a project overview, and a tribe admin sees a tribe overview of WIP and insights |
+| REQ-101 | The implementer submits a structured plan before coding when the card requires it, and a person accepts or edits the plan on Needs answer |
 
 ## Requirements
 
@@ -1082,7 +1083,7 @@ A Lead Developer or an admin sets each requirement's AI review mode: Continue, t
 
 ### REQ-075 A person writes instructions that later attempts of a card read
 
-Before the next attempt of a card starts, a person who may run it can write instructions: in the box that Run opens on the card page, or in the card's Instructions panel, also while the card is queued. Every later attempt reads the newest instructions next to the newest failure note, such as the AI review's, until a person writes new ones or clears them (RFC-073).
+Before the next attempt of a card starts, a person who may run it can write instructions: in the box that Run opens on the card page, or in the card's Instructions panel, also while the card is queued. Every later attempt reads the newest instructions next to the newest other failure note and, when one exists, the newest AI review note, until a person writes new instructions or clears them (RFC-073, RFC-131).
 
 #### Acceptance
 
@@ -1382,6 +1383,19 @@ A project member opens an Overview page that summarizes that project's board: ca
 - The range defaults to the last 30 UTC days and follows the usage day rules; a bad day is `422`.
 - `/overview` shows the selected project's summary; `/tribes/{id}/overview` shows the tribe summary; both link to token usage where the caller may open it.
 
+### REQ-101 Execution planning
+
+When a card's plan mode is Required (the default), the implementer's attempt may only explore and submit a structured step plan until a person accepts one. The attempt ends without using an attempt count, the card waits on Needs answer, and the owner is notified. The person edits, reorders, adds, or removes steps, may chat with the model about the plan, then accepts. The next attempt reads the approved plan and may edit files. Plan mode Off skips the gate. Turning Off while parked does not silently accept; the person Accepts or Skips (RFC-128, RFC-129, RFC-130).
+
+#### Acceptance
+
+- A Required card with no accepted plan parks on `waiting_answer` after `submit_plan`, keeps its attempt count, and notifies its owner with kind `plan`.
+- Write tools and `commit` return a tool error during the planning phase and do not change files.
+- Accepting the plan (with optional edits) moves the card to `ready`, queues a run, and the next attempt's pack carries the approved plan.
+- A person who may run the card changes plan mode; another role gets `403`; the change applies from the next attempt.
+- Plan chat streams a reply or a step revision; Apply updates the editor only; Accept is a separate action.
+- With Plan mode Off, or after an accepted plan exists, the attempt runs with the full implementer tool list.
+
 ## Non-goals
 
 - NG-001 Production deploy, and any credential that can reach production.
@@ -1421,7 +1435,7 @@ A member runs `ingest` from the CLI or the Intake page, or adds requirements by 
 
 ### Reviewer requests changes
 
-The reviewer verdict is `request_changes`. The card returns to `changes_requested`. The next attempt is a new conversation with the review body in the failure note. The branch and the pull request stay the same. Approval is empty.
+The reviewer verdict is `request_changes`. The card returns to `changes_requested`. The next attempt is a new conversation with the review body in the AI review feedback block of the pack (and still visible if a later check note is newer). The branch and the pull request stay the same. Approval is empty.
 
 ### Approver requests changes, or the branch moves
 

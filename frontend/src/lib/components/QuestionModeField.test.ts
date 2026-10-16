@@ -42,6 +42,7 @@ function card(questionMode: QuestionMode, actions: string[]): Card {
     selfReview: false,
     aiReviewMode: 'continue',
     questionMode,
+    planMode: 'off',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

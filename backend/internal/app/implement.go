@@ -329,10 +329,43 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		if err != nil {
 			return card, err
 		}
+		planning, err := PlanningPhase(ctx, db, card)
+		if err != nil {
+			return card, err
+		}
+		// Planning uses the harness tool loop even when the company agent is
+		// Claude Code (RFC-128). Resolve a routed provider when prepare only
+		// set Claude Code.
+		claude := p.claude
+		if planning {
+			claude = nil
+			if provider == nil {
+				_, secrets, loadErr := settings.Load(deps.Data)
+				if loadErr != nil {
+					return card, loadErr
+				}
+				impl := cfg.Router.Routes[class]
+				model := impl.Model
+				if model == "" {
+					model = route.Model
+				}
+				if deps.Provider != nil && model != "" {
+					provider = deps.Provider
+					route.Model = model
+				} else if _, _, _, err := llm.ForModel(cfg, secrets, model); model != "" && err == nil {
+					provider = RoutedProvider(cfg, secrets, model, impl.Fallback)
+					route.Model = model
+				}
+				if provider == nil {
+					_ = jobError(ctx, db, card, "", "planning needs an implement route model; fix it on the Router page, then unblock the card", redact)
+					return BlockCard(ctx, db, card, "router_config", redact)
+				}
+			}
+		}
 		result, err := loop.Run(attemptCtx, loop.Input{
-			QuestionMode: card.QuestionMode, QuestionRounds: rounds,
+			QuestionMode: card.QuestionMode, QuestionRounds: rounds, Planning: planning,
 			DB: db, Git: git, BaseBranch: project.BaseBranch, CardID: card.ID,
-			Model: route.Model, TaskClass: class, MaxTurns: p.maxTurns, ClaudeCode: p.claude,
+			Model: route.Model, TaskClass: class, MaxTurns: p.maxTurns, ClaudeCode: claude,
 			Provider: provider, Secrets: redact, Live: deps.Live, Allow: projectCfg.Checks.AllowExecutables,
 			Commands: projectCfg.Checks.CommandExecutables,
 			Engine:   engine, Image: projectCfg.Sandbox.Image,
@@ -344,7 +377,7 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 			return stopAttempt(ctx, db, card.ID, err, attemptCtx, redact)
 		}
 		switch result.Outcome {
-		case "question":
+		case "question", "plan":
 			card, err = board.GetCard(ctx, db, card.ID)
 			if err != nil {
 				return card, err
@@ -500,6 +533,8 @@ func stopAttempt(ctx context.Context, db *sql.DB, cardID string, cause error, at
 		return BlockCard(ctx, db, card, "wall_cap", redact)
 	case errors.Is(cause, ErrProvider):
 		return BlockCard(ctx, db, card, "provider_error", redact)
+	case errors.Is(cause, claudecode.ErrUnknownModel):
+		return BlockCard(ctx, db, card, "agent_config", redact)
 	default:
 		return card, errors.New(trace.Redact(cause.Error(), redact))
 	}

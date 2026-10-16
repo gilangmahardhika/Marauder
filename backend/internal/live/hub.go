@@ -11,11 +11,12 @@ import (
 // Frame kinds a loop publishes, and Resync, which ends a viewer that fell
 // behind.
 const (
-	Turn    = "turn"
-	Delta   = "delta"
-	Reset   = "reset"
-	TurnEnd = "turn_end"
-	Resync  = "resync"
+	Turn     = "turn"
+	Delta    = "delta"
+	Thinking = "thinking"
+	Reset    = "reset"
+	TurnEnd  = "turn_end"
+	Resync   = "resync"
 )
 
 const (
@@ -154,6 +155,10 @@ func (h *Hub) Publish(cardID string, f Frame) {
 			f.Text = f.Text[:room]
 		}
 		c.text = append(c.text, f.Text...)
+	case Thinking:
+		if c.turn == nil || c.turn.AttemptID != f.AttemptID || c.turn.Turn != f.Turn {
+			return
+		}
 	case Reset:
 		c.text = nil
 	case TurnEnd:

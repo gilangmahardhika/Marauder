@@ -107,3 +107,24 @@ func TestImplementClaudeCodeWithoutKeyBlocks(t *testing.T) {
 		t.Fatal("claude ran without a key")
 	}
 }
+
+func TestImplementClaudeCodeUnknownModelBlocks(t *testing.T) {
+	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	script := `#!/bin/sh
+if [ "$1" = "--version" ]; then echo "1.0.0 (Claude Code)"; exit 0; fi
+printf '%s\n' "$@" > "` + dir + `/args"
+cat > /dev/null
+printf '%s\n' '{"type":"result","subtype":"success","is_error":true,"result":"There'\''s an issue with the selected model (deepseek-chat). It may not exist or you may not have access to it. Run --model to pick a different model.","num_turns":1}'
+`
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	claudeAgent(t, f.data, bin, claudeKey)
+	card := f.run(t, `{"implement":[]}`)
+	blockedWith(t, card, "agent_config", 0)
+	if _, err := os.Stat(filepath.Join(dir, "args")); err != nil {
+		t.Fatal("claude did not run")
+	}
+}

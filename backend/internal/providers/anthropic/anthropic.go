@@ -54,8 +54,14 @@ func (c *Client) Complete(ctx context.Context, req providers.Request) (providers
 
 // Stream sends req as a streaming request and calls onText with each piece of
 // reply text as it arrives. The returned Response is the whole reply, as
-// Complete would return it.
+// Complete would return it. Thinking deltas are ignored here; use
+// StreamWithThinking when the caller wants them.
 func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(string)) (providers.Response, error) {
+	return c.StreamWithThinking(ctx, req, onText, nil)
+}
+
+// StreamWithThinking is Stream plus onThinking for each thinking_delta piece.
+func (c *Client) StreamWithThinking(ctx context.Context, req providers.Request, onText, onThinking func(string)) (providers.Response, error) {
 	if err := providers.CheckTools(req.Tools); err != nil {
 		return providers.Response{}, err
 	}
@@ -69,8 +75,16 @@ func (c *Client) Stream(ctx context.Context, req providers.Request, onText func(
 			return providers.Response{}, c.wrap(err)
 		}
 		if event.Type == "content_block_delta" {
-			if delta := event.AsContentBlockDelta().Delta; delta.Type == "text_delta" && delta.Text != "" {
-				onText(delta.Text)
+			delta := event.AsContentBlockDelta().Delta
+			switch delta.Type {
+			case "text_delta":
+				if delta.Text != "" && onText != nil {
+					onText(delta.Text)
+				}
+			case "thinking_delta":
+				if delta.Thinking != "" && onThinking != nil {
+					onThinking(delta.Thinking)
+				}
 			}
 		}
 	}

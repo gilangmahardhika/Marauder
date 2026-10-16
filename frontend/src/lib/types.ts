@@ -18,7 +18,7 @@ export type Card = {
   requirements?: CardRequirement[];
   rules?: CardRule[];
   notes?: CardNote[];
-  /** Single card only. What every later attempt reads with the newest note (RFC-073). */
+  /** Single card only. What every later attempt reads with the newest notes (RFC-073, RFC-131). */
   instructions?: string | null;
   /** Single card only. The rules, skills, and MCP servers the next attempt carries (RFC-105). */
   context?: CardContext;
@@ -53,6 +53,10 @@ export type Card = {
   aiReviewMode: AIReviewMode;
   /** Whether a person or the agent answers the agent's questions (RFC-115). */
   questionMode: QuestionMode;
+  /** Whether the card must plan before coding (RFC-128). */
+  planMode: PlanMode;
+  /** Single card only. Open or latest accepted plan (RFC-129). */
+  plan?: CardPlan | null;
   approvedSha: string | null;
   deployedSha: string | null;
   environment: string;
@@ -62,6 +66,22 @@ export type Card = {
 };
 
 export type QuestionMode = "manual" | "auto";
+
+export type PlanMode = "required" | "off";
+
+export type PlanStep = { id: string; text: string; detail: string };
+
+/** Open or accepted execution plan on a card (RFC-129). */
+export type CardPlan = {
+  id: string;
+  attemptN: number;
+  title: string;
+  steps: PlanStep[];
+  status: "open" | "accepted";
+  acceptedBy: { id: string; name: string; email: string } | null;
+  acceptedAt: string | null;
+  createdAt: string;
+};
 
 export type QuestionAnswer = { selected: string[]; text: string };
 
@@ -218,7 +238,7 @@ export type TraceResponse = {
 
 /**
  * One frame of the trace stream (RFC-088). `trace` carries stored events since the last frame; `turn`, `delta`,
- * `reset`, and `turn_end` carry the model's reply while it is written, which is never stored. `done` ends the stream:
+ * `thinking`, `reset`, and `turn_end` carry the model's reply while it is written, which is never stored. `done` ends the stream:
  * `live: false` when the card stopped working, `reconnect: true` when the page should connect again. `resync` means the
  * server dropped a viewer that fell behind.
  */
@@ -232,6 +252,7 @@ export type TraceStreamEvent =
       modelId?: string;
     }
   | { kind: "delta"; attemptId: string; turn: number; text?: string }
+  | { kind: "thinking"; attemptId: string; turn: number; text?: string }
   | { kind: "reset"; attemptId: string; turn: number }
   | { kind: "turn_end"; attemptId: string; turn: number }
   | { kind: "done"; live?: boolean; reconnect?: boolean }
@@ -308,6 +329,16 @@ export type RefineEvent =
   | { kind: "reset" }
   | { kind: "tool"; server: string; tool: string }
   | { kind: "done"; text: string; acceptance?: string[]; modelId: string }
+  | { kind: "error"; code: string; message: string };
+
+export type PlanChatEvent =
+  | { kind: "start"; modelId: string }
+  | { kind: "delta"; text: string }
+  | {
+      kind: "done";
+      modelId: string;
+      revision?: { title: string; steps: { text: string; detail: string }[] };
+    }
   | { kind: "error"; code: string; message: string };
 
 /** Streams one refine. It resolves when the stream ends and rejects with ApiError for an error before the stream, or when signal aborts. */

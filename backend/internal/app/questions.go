@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -57,6 +58,11 @@ func AnswerQuestions(ctx context.Context, db *sql.DB, actor User, projectID, car
 	}
 	if card.Status != "waiting_answer" {
 		return card, board.ErrConflict
+	}
+	if _, err := board.OpenPlan(ctx, tx, projectID, cardID); err == nil {
+		return card, board.ErrConflict
+	} else if !errors.Is(err, board.ErrNotFound) {
+		return card, err
 	}
 	open, err := board.OpenQuestions(ctx, tx, projectID, cardID)
 	if err != nil {

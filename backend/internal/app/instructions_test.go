@@ -166,10 +166,21 @@ func TestRunWithInstructions(t *testing.T) {
 // instructions saves, and returns the first prompt the model saw.
 func firstPrompt(t *testing.T, saves ...string) fake.Prompt {
 	t.Helper()
+	return firstPromptWithNotes(t, nil, saves...)
+}
+
+// firstPromptWithNotes is firstPrompt with extra failure notes written after the review note.
+func firstPromptWithNotes(t *testing.T, extra []struct{ source, note string }, saves ...string) fake.Prompt {
+	t.Helper()
 	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
 	ctx := context.Background()
 	if err := board.InsertFailureNote(ctx, f.db, f.card.ID, "att_review", "review", "Rename the greeting."); err != nil {
 		t.Fatal(err)
+	}
+	for i, n := range extra {
+		if err := board.InsertFailureNote(ctx, f.db, f.card.ID, "att_extra", n.source, n.note); err != nil {
+			t.Fatalf("extra note %d: %v", i, err)
+		}
 	}
 	for _, text := range saves {
 		if _, err := app.SetInstructions(ctx, f.db, "proj_default", f.card.ID, "", text); err != nil {
@@ -197,11 +208,29 @@ func TestAttemptReadsInstructionsAndNote(t *testing.T) {
 	t.Run("instructions and note", func(t *testing.T) {
 		prompt := firstPrompt(t, "Keep the file under ten lines.")
 		block := contextpack.InstructionsHeading + "\nKeep the file under ten lines.\n" + contextpack.InstructionsEnd
-		if !strings.Contains(prompt.User, "Rename the greeting.") || !strings.Contains(prompt.User, block) {
-			t.Fatalf("prompt lacks the note or the instructions:\n%s", prompt.User)
+		review := contextpack.ReviewHeading + "\nRename the greeting.\n" + contextpack.ReviewEnd
+		if !strings.Contains(prompt.User, review) || !strings.Contains(prompt.User, block) {
+			t.Fatalf("prompt lacks the review block or the instructions:\n%s", prompt.User)
 		}
-		if !strings.Contains(prompt.System, contextpack.InstructionsHeading) {
-			t.Fatalf("system does not explain the block:\n%s", prompt.System)
+		if !strings.Contains(prompt.System, contextpack.InstructionsHeading) || !strings.Contains(prompt.System, contextpack.ReviewHeading) {
+			t.Fatalf("system does not explain the blocks:\n%s", prompt.System)
+		}
+	})
+	t.Run("review survives newer local_check", func(t *testing.T) {
+		prompt := firstPromptWithNotes(t, []struct{ source, note string }{
+			{source: "local_check", note: "exit 1: tests failed"},
+		}, "Keep the file under ten lines.")
+		review := contextpack.ReviewHeading + "\nRename the greeting.\n" + contextpack.ReviewEnd
+		if !strings.Contains(prompt.User, review) {
+			t.Fatalf("newer local_check hid the review note:\n%s", prompt.User)
+		}
+		if !strings.Contains(prompt.User, "exit 1: tests failed") {
+			t.Fatalf("prompt lacks the local_check note:\n%s", prompt.User)
+		}
+		heading := strings.Index(prompt.User, contextpack.ReviewHeading)
+		check := strings.Index(prompt.User, "exit 1: tests failed")
+		if heading < 0 || check < heading {
+			t.Fatalf("review block should come before the check note:\n%s", prompt.User)
 		}
 	})
 	t.Run("cleared", func(t *testing.T) {

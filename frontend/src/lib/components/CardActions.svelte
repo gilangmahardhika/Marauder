@@ -111,6 +111,16 @@
     }
   }
 
+  /** Newest AI review note on the card, or "" when none (notes are newest-first). */
+  function latestReviewNote() {
+    return card.notes?.find((n) => n.source === 'review')?.note ?? '';
+  }
+
+  function openChanges() {
+    if (reason === '') reason = latestReviewNote();
+    asking = true;
+  }
+
   async function sendChanges() {
     if (await act('request_changes', 'Changes requested', () => requestChanges(card.id, reason), 'changes')) {
       asking = false;
@@ -228,7 +238,7 @@
       </Button>
     {/if}
     {#if actions.includes('request_changes') && !asking}
-      <Button type="button" icon="message" disabled={busy} onclick={() => (asking = true)}>Request changes</Button>
+      <Button type="button" icon="message" disabled={busy} onclick={openChanges}>Request changes</Button>
     {/if}
     {#if menuItems.length > 0}
       <Menu label="More actions" block={false} items={menuItems} />
@@ -311,7 +321,7 @@
         width="full"
         rows={4}
         grow
-        hint="Optional. The next attempt gets this note. Markdown works."
+        hint="Optional. Prefills from the newest AI review when one exists. The next attempt gets this note and the AI review feedback. Markdown works."
         error={failures.changes.fields.reason}
         bind:value={reason}
       />

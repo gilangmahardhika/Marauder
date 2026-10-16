@@ -21,18 +21,16 @@ test('no notes render nothing', () => {
   expect(container.textContent?.trim()).toBe('');
 });
 
-test('the newest review note renders markdown and earlier notes wait behind a button', async () => {
+test('the newest review note and the newest other note both stay open', () => {
   render(CardNotes, { notes: [review, check] });
   expect(screen.getByRole('heading', { name: 'Notes' })).toBeTruthy();
   expect(screen.getByText('AI review')).toBeTruthy();
   expect(screen.getByText('· attempt 2')).toBeTruthy();
   expect(screen.getByText('lint').tagName).toBe('STRONG');
   expect(screen.getByText('.nvmrc').tagName).toBe('CODE');
-  expect(screen.queryByText('Local check')).toBeNull();
-
-  await fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier note' }));
   expect(screen.getByText('Local check')).toBeTruthy();
   expect(screen.getByText('**not bold** in check output').tagName).toBe('PRE');
+  expect(screen.queryByRole('button', { name: /Show .* earlier/ })).toBeNull();
 });
 
 test('instructions render markdown and a blank one reads as cleared', async () => {
@@ -48,7 +46,7 @@ test('instructions render markdown and a blank one reads as cleared', async () =
   expect(screen.getByText('lint').tagName).toBe('STRONG');
 });
 
-test('the current instructions and the newest other note both stay open', async () => {
+test('instructions, AI review, and the newest other note all stay open', () => {
   render(CardNotes, {
     notes: [
       { source: 'instructions', note: 'Use a self-hosted runner.', createdAt: '2026-10-12T08:00:00Z', attemptN: 0 },
@@ -58,9 +56,8 @@ test('the current instructions and the newest other note both stay open', async 
   });
   expect(screen.getByText('Use a self-hosted runner.')).toBeTruthy();
   expect(screen.getByText('AI review')).toBeTruthy();
-  expect(screen.queryByText('Local check')).toBeNull();
-  await fireEvent.click(screen.getByRole('button', { name: 'Show 1 earlier note' }));
   expect(screen.getByText('Local check')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Show .* earlier/ })).toBeNull();
 });
 
 test('an approver note has no attempt number', () => {

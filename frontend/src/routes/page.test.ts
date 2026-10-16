@@ -78,6 +78,7 @@ function card(id: string, title: string, status: string, group: string): Card {
     selfReview: false,
     aiReviewMode: 'continue',
     questionMode: 'manual',
+    planMode: 'off',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',

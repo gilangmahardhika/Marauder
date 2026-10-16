@@ -175,7 +175,8 @@ func (j *job) run(ctx context.Context) error {
 // claudeCode is the attempt's Claude Code engine when the job names it, and
 // an error when this runner has no Claude Code binary.
 func (j *job) claudeCode() (*loop.ClaudeCode, error) {
-	if j.ctx.Agent != claudecode.Agent {
+	// Planning attempts always use the harness tool loop (RFC-128).
+	if j.ctx.Planning || j.ctx.Agent != claudecode.Agent {
 		return nil, nil
 	}
 	cc := j.ctx.ClaudeCode
@@ -261,16 +262,23 @@ func (j *job) attempt(ctx context.Context, claude *loop.ClaudeCode) (runnerapi.R
 	result, err := loop.Run(attemptCtx, loop.Input{
 		Git: j.git, BaseBranch: j.base(), CardID: j.ctx.CardID,
 		Model: j.ctx.Model, TaskClass: j.ctx.TaskClass, MaxTurns: j.ctx.MaxTurns,
-		Provider: &Provider{Client: j.r.Client, Board: b}, Secrets: j.secrets,
+		Provider: &Provider{Client: j.r.Client, Board: b, Logf: j.r.logf}, Secrets: j.secrets,
 		Allow: j.ctx.AllowExecutables, Commands: j.ctx.CommandExecutables,
 		Engine: j.engine, Image: j.ctx.SandboxImage, Exec: j.r.Tools.Exec,
 		HistoryBudget: j.ctx.HistoryBudget, MaxTokensPerCard: j.ctx.MaxTokensPerCard, ContextTokens: j.ctx.ContextTokens,
 		Extra: extra, MCP: scope, Board: b, Fixture: j.ctx.Fixture,
-		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds, ClaudeCode: claude,
+		QuestionMode: j.ctx.QuestionMode, QuestionRounds: j.ctx.QuestionRounds, Planning: j.ctx.Planning,
+		ClaudeCode: claude, Logf: j.r.logf,
 	})
 	if err != nil {
 		if ctx.Err() != nil {
 			return runnerapi.ReportReply{}, ctx.Err()
+		}
+		if errors.Is(err, claudecode.ErrUnknownModel) {
+			_, rerr := j.report(ctx, runnerapi.Report{
+				Fact: runnerapi.FactBlocked, Reason: "agent_config", Message: err.Error(),
+			})
+			return runnerapi.ReportReply{}, rerr
 		}
 		cause := "other"
 		switch {

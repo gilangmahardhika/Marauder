@@ -46,6 +46,7 @@ function card(partial: Partial<Card>): Card {
     selfReview: false,
     aiReviewMode: 'continue',
     questionMode: 'manual',
+    planMode: 'off',
     approvedSha: null,
     deployedSha: null,
     environment: 'dev',
@@ -229,6 +230,49 @@ test('request changes asks for a reason and sends it', async () => {
     'http://127.0.0.1:8787/api/projects/proj_widget/cards/card_0123456789ab/request-changes'
   ]);
   expect(JSON.parse(calls[1].body)).toEqual({ reason: 'Use lint.' });
+});
+
+test('request changes prefills from the newest AI review note and sends it', async () => {
+  session.set('stored-bearer');
+  session.setProject('proj_widget');
+  const calls: { url: string; body: string }[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init: RequestInit) => {
+      calls.push({ url, body: String(init.body ?? '') });
+      return new Response(JSON.stringify(card({ status: 'changes_requested', group: 'running', actions: [] })), {
+        status: 200
+      });
+    })
+  );
+  render(CardActions, {
+    card: card({
+      status: 'human_review',
+      group: 'review',
+      actions: ['approve', 'request_changes'],
+      reviewVerdict: 'request_changes',
+      notes: [
+        {
+          source: 'review',
+          note: 'Say done instead of job.',
+          createdAt: '2026-10-16T08:00:00Z',
+          attemptN: 1
+        },
+        {
+          source: 'local_check',
+          note: 'exit 0',
+          createdAt: '2026-10-16T07:00:00Z',
+          attemptN: 1
+        }
+      ]
+    })
+  });
+  await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
+  const box = screen.getByLabelText('What should change?') as HTMLTextAreaElement;
+  expect(box.value).toBe('Say done instead of job.');
+  await fireEvent.click(screen.getByRole('button', { name: 'Request changes' }));
+  await vi.waitFor(() => expect(screen.queryByLabelText('What should change?')).toBeNull());
+  expect(JSON.parse(calls[0].body)).toEqual({ reason: 'Say done instead of job.' });
 });
 
 test('run opens a box prefilled with the instructions and sends only changed text', async () => {

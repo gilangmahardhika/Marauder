@@ -209,6 +209,33 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 		}
 		resume = &runnerapi.Resume{AttemptID: attempt.ID, SHA: attempt.CommitSHA}
 	}
+	planning, err := PlanningPhase(ctx, db, card)
+	if err != nil {
+		return runnerapi.Job{}, err
+	}
+	// Planning uses the harness tool loop (RFC-128). Claude Code preflight
+	// leaves provider nil; model calls need a routed provider or they panic.
+	if planning && p.provider == nil {
+		cfg, secrets, err := settings.Load(deps.Data)
+		if err != nil {
+			return runnerapi.Job{}, err
+		}
+		route := cfg.Router.Routes[p.class]
+		model, fallback := route.Model, route.Fallback
+		if model == "" {
+			model, fallback = p.model, p.fallback
+		}
+		if deps.Provider != nil && model != "" {
+			p.provider, p.model, p.fallback = deps.Provider, model, fallback
+		} else if _, _, _, err := llm.ForModel(cfg, secrets, model); model != "" && err == nil {
+			p.provider = RoutedProvider(cfg, secrets, model, fallback)
+			p.model, p.fallback = model, fallback
+		} else {
+			_ = jobError(ctx, db, card, "", "planning needs an implement route model; fix it on the Router page, then unblock the card", p.redact)
+			card, err = BlockCard(ctx, db, card, "router_config", p.redact)
+			return doneJob(card), err
+		}
+	}
 	if err := board.SetLeaseRoute(ctx, db, lease.ID, p.model, p.fallback, p.class); err != nil {
 		return runnerapi.Job{}, err
 	}
@@ -231,8 +258,13 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	if err != nil {
 		return runnerapi.Job{}, err
 	}
+	// Planning uses the built-in tool loop (RFC-128). Omit Claude Code settings
+	// and agent so the runner does not require a Claude Code binary for plan.
 	var claude *runnerapi.ClaudeCodeJob
-	if cc := p.claude; cc != nil {
+	agent := p.cfg.AgentKind()
+	if planning {
+		agent = settings.AgentBuiltin
+	} else if cc := p.claude; cc != nil {
 		claude = &runnerapi.ClaudeCodeJob{
 			BaseURL: cc.BaseURL, APIKey: cc.APIKey, Auth: cc.Auth, Model: p.model, SmallModel: cc.SmallModel,
 			MaxTurns: p.maxTurns, AllowWeb: cc.AllowWeb, Instructions: cc.Instructions,
@@ -244,13 +276,13 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	}
 	return runnerapi.Job{
 		CardBundle:   cardBundle,
-		QuestionMode: card.QuestionMode, QuestionRounds: rounds,
+		QuestionMode: card.QuestionMode, QuestionRounds: rounds, Planning: planning,
 		CardID: card.ID, ProjectID: card.ProjectID, Title: card.Title, Status: card.Status,
 		BaseBranch: base, CloneURL: p.acct.CloneURL(p.project.Repo), CloneToken: p.companyToken,
 		Author:          runnerapi.Author{Name: p.owner.Author.Name, Email: p.owner.Author.Email},
 		PublishedBranch: card.PRURL != "", Fixture: p.fixture,
 		Model: p.model, TaskClass: p.class, MaxTurns: p.maxTurns,
-		Agent: p.cfg.AgentKind(), ClaudeCode: claude,
+		Agent: agent, ClaudeCode: claude,
 		HistoryBudget:    llmHistory(p.cfg, p.model),
 		ContextTokens:    llm.Options(p.cfg, p.model).ContextWindow(),
 		MaxTokensPerCard: tokenCap, WallMinutes: budgets.MaxWallMinutesPerAttempt,
@@ -354,7 +386,7 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		if err := needAttempt(); err != nil {
 			return reply, err
 		}
-		if !slices.Contains([]string{"", "error", "no_change", "budget", "no_commit", "question"}, op.Outcome) {
+		if !slices.Contains([]string{"", "error", "no_change", "budget", "no_commit", "question", "plan"}, op.Outcome) {
 			return reply, fmt.Errorf("%w: outcome %q", ErrRunnerOp, op.Outcome)
 		}
 		err = board.FinishAttempt(ctx, db, lease.AttemptID, op.Outcome, op.CommitSHA)
@@ -401,6 +433,8 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		reply.Lines, err = dbBoard.Decisions(ctx, card.ProjectID, card.RequirementIDs)
 	case "latest_note":
 		reply.Text, err = dbBoard.LatestNote(ctx, card.ID)
+	case "latest_review_note":
+		reply.Text, err = dbBoard.LatestReviewNote(ctx, card.ID)
 	case "instructions":
 		reply.Text, err = dbBoard.Instructions(ctx, card.ID)
 	case "answers":
@@ -430,6 +464,35 @@ func remoteBoardOp(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJo
 		}
 		err = board.InsertQuestions(ctx, db, card.ID, lease.AttemptID, op.First, questions, op.Auto)
 		return reply, err
+	case "submit_plan":
+		if err := needAttempt(); err != nil {
+			return reply, err
+		}
+		title, steps, err := loop.NormalizePlan(op.PlanTitle, op.PlanSteps)
+		if err != nil {
+			return reply, fmt.Errorf("%w: submit_plan: %v", ErrRunnerOp, err)
+		}
+		job, err := jobs.get(ctx, db, deps, lease)
+		if err != nil {
+			return reply, err
+		}
+		title = trace.Redact(title, job.p.redact)
+		for i := range steps {
+			steps[i].Text = trace.Redact(steps[i].Text, job.p.redact)
+			steps[i].Detail = trace.Redact(steps[i].Detail, job.p.redact)
+		}
+		_, err = board.InsertOpenPlan(ctx, db, card.ID, lease.AttemptID, title, steps)
+		return reply, err
+	case "approved_plan":
+		plan, err := board.AcceptedPlan(ctx, db, card.ID)
+		if errors.Is(err, board.ErrNotFound) {
+			return reply, nil
+		}
+		if err != nil {
+			return reply, err
+		}
+		reply.Plan = &plan
+		return reply, nil
 	case "save_handoff":
 		if err := needAttempt(); err != nil {
 			return reply, err
@@ -541,6 +604,9 @@ func RemoteModel(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	}
 	if used >= tokenCap {
 		return providers.Response{}, fmt.Errorf("%w: the card has used its token cap", ErrRunnerOp)
+	}
+	if job.p.provider == nil {
+		return providers.Response{}, fmt.Errorf("%w: the lease has no model provider", ErrRunnerOp)
 	}
 	req := call.Request
 	req.Model, req.TaskClass = lease.ModelID, lease.TaskClass
@@ -793,7 +859,7 @@ func ReportRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJob
 				return runnerapi.ReportReply{}, fmt.Errorf("%w: budget reason %q", ErrRunnerOp, rep.Reason)
 			}
 			return done(BlockCard(ctx, db, card, rep.Reason, p.redact))
-		case "question":
+		case "question", "plan":
 			if err := needLeaseAttempt(lease); err != nil {
 				return runnerapi.ReportReply{}, err
 			}

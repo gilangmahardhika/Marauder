@@ -132,7 +132,7 @@ func boardTodos(items []todoItem) []board.Todo {
 
 // modelSummaryStops are the endings after which the model can still write
 // its own handoff summary; after the others the harness writes it (RFC-118).
-var modelSummaryStops = map[string]bool{"turn_cap": true, "no_commit": true, "question": true}
+var modelSummaryStops = map[string]bool{"turn_cap": true, "no_commit": true, "question": true, "plan": true}
 
 // saveHandoff stores what this attempt leaves the card's next one: a summary,
 // the todo list, and a patch of the uncommitted work. It runs on its own

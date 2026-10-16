@@ -27,7 +27,19 @@ func statements(ctx context.Context, db *sql.DB, projectID string, ids []string)
 func latestNote(ctx context.Context, db *sql.DB, cardID string) (string, error) {
 	var note string
 	err := db.QueryRowContext(ctx, `
-		SELECT note FROM failure_notes WHERE card_id = $1 AND source <> 'instructions'
+		SELECT note FROM failure_notes
+		WHERE card_id = $1 AND source <> 'instructions' AND source <> 'review'
+		ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&note)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return note, err
+}
+
+func latestReviewNote(ctx context.Context, db *sql.DB, cardID string) (string, error) {
+	var note string
+	err := db.QueryRowContext(ctx, `
+		SELECT note FROM failure_notes WHERE card_id = $1 AND source = 'review'
 		ORDER BY created_at DESC LIMIT 1`, cardID).Scan(&note)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -129,6 +141,7 @@ func CreateCard(ctx context.Context, in CreateInput) (board.Card, error) {
 		LocalCheck:     in.Settings.LocalCheck,
 		DevCheck:       in.Settings.DevCheck,
 		MaxAttempts:    in.Settings.MaxAttempts,
+		PlanMode:       "required",
 	})
 	if err != nil {
 		return board.Card{}, err

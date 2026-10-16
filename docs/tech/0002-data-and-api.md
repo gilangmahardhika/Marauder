@@ -80,7 +80,7 @@ After the table, every card that is not `done` or `wont_fix` also lists `instruc
 | Reason | Set when | `unblockTo` |
 | --- | --- | --- |
 | `turn_cap`, `token_cap`, `wall_cap`, `context_full` | A budget stopped the attempt | `ready` |
-| `agent_config` | The agent is Claude Code and its model family has no key or is gone, or `claude` is not found on this server (RFC-121) | `ready` |
+| `agent_config` | The agent is Claude Code and its model family has no key or is gone, `claude` is not found on this server, or Claude Code rejected the configured `--model` id (RFC-121) | `ready` |
 | `attempt_cap` | `attemptsUsed` reached `maxAttempts` | `ready` |
 | `provider_error` | Primary and fallback both failed in the implement job | `ready` |
 | `review_parse` | Two reviewer replies had no parseable verdict. Since RFC-069 the review job records a `failed` verdict instead; older cards may still carry it | `ready` |
@@ -906,6 +906,7 @@ A project object is:
   "selfReview": false,
   "aiReviewMode": "continue",
   "questionMode": "manual",
+  "planMode": "required",
   "approvedSha": null,
   "deployedSha": null,
   "environment": "dev",
@@ -915,7 +916,7 @@ A project object is:
 }
 ```
 
-`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `aiReviewMode` is `manual` when any requirement the card lists has that mode in the card's project, and `continue` otherwise (RFC-072). `questionMode` is the card's answer mode, `manual` or `auto` (RFC-115). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
+`reviewedSha`, `reviewIndependent`, and `reviewVerdict` come from the latest attempt with a review verdict. `reviewVerdict` is `recommend_approve`, `request_changes`, `failed` when the AI review gave no verdict and the checks decided (RFC-069), or `null` before a review. `reviewIndependent` is `null` for a failed review. `selfReview` is true when the card lists at least one requirement and every one of them has Self review on in the card's project (RFC-070). `aiReviewMode` is `manual` when any requirement the card lists has that mode in the card's project, and `continue` otherwise (RFC-072). `questionMode` is the card's answer mode, `manual` or `auto` (RFC-115). `planMode` is `required` or `off` (RFC-128). `headSha` is the value from the last refresh, not a live call. `owner` is `null` when the card has no owner. `githubLogin` is the owner's verified login, or `null`. `reviewers` lists the enabled tribe members named as reviewers on the card's requirements in the same project, without the owner, sorted by email, `[]` when there are none. A reviewer's `githubLogin` is `""` when it is not verified. `name` on the owner and each reviewer is `""` when the user has no name (RFC-058). The board reads every card's reviewers in one query. `skills` lists the card's skills with their `useWhen` text, `[]` when it has none (RFC-056). `queued` is true while the card has an open card-scoped `runs` row. `waitingOn` lists the `dependsOn` ids whose card is not `done`, `[]` when there are none (RFC-061).
 
 `GET /api/projects/{projectId}/cards/{id}` and every card action that returns one card add two fields that the board list leaves out:
 
@@ -961,7 +962,7 @@ ALTER TABLE attempts ADD COLUMN pr_body TEXT;
 
 `Publish` writes both after the pull request is created or edited, redacted with the publish secrets. A failed write does not fail the publish.
 
-The single card also carries `questions`, every `card_questions` row of the card, open ones first and then answered ones, each group oldest first (RFC-114). The board list does not return it.
+The single card also carries `questions`, every `card_questions` row of the card, open ones first and then answered ones, each group oldest first (RFC-114). It also carries `plan`: the open plan when one exists, else the latest accepted plan, or `null` (RFC-129). The board list does not return `questions` or full `plan` steps.
 
 ```json
 {
@@ -1014,6 +1015,49 @@ CREATE TABLE card_questions (
   UNIQUE (attempt_id, position)
 );
 CREATE INDEX card_questions_card ON card_questions (project_id, card_id);
+```
+
+`00036_execution_planning.sql` adds plan mode, outcome `plan`, and plans (RFC-128, RFC-129):
+
+```sql
+-- attempts_outcome_check gains 'plan'
+ALTER TABLE cards ADD COLUMN plan_mode TEXT NOT NULL DEFAULT 'required'
+  CHECK (plan_mode IN ('required', 'off'));
+
+CREATE TABLE card_plans (
+  id TEXT PRIMARY KEY,               -- pln_ + 12 hex
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+  attempt_id TEXT NOT NULL REFERENCES attempts(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  steps_json TEXT NOT NULL,          -- [{"id","text","detail"}]
+  status TEXT NOT NULL CHECK (status IN ('open', 'accepted')),
+  accepted_by TEXT REFERENCES users(id),
+  accepted_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX card_plans_card ON card_plans (project_id, card_id);
+CREATE UNIQUE INDEX card_plans_one_open ON card_plans (card_id) WHERE status = 'open';
+```
+
+A plan in the card JSON:
+
+```json
+{
+  "plan": {
+    "id": "pln_a1b2c3d4e5f6",
+    "attemptN": 1,
+    "title": "Add CSV export",
+    "steps": [
+      { "id": "stp_01", "text": "Find the orders list handler", "detail": "" },
+      { "id": "stp_02", "text": "Add a CSV writer and a button", "detail": "Reuse existing auth" }
+    ],
+    "status": "open",
+    "acceptedBy": null,
+    "acceptedAt": null,
+    "createdAt": "2026-10-16T05:00:00Z"
+  }
+}
 ```
 
 `00033_attempt_handoffs.sql` keeps what an unfinished attempt hands to the card's next attempt (RFC-118):
@@ -1324,6 +1368,43 @@ The server turns CRLF into LF and trims outer whitespace. Blank text clears the 
 ```
 
 The caller needs `question_mode` in the card's `actions`, else `403`. A value other than `manual` or `auto` is `422` on `questionMode`. A `done` or `wont_fix` card is `409`. An unchanged mode writes nothing; a change appends `question_mode_changed`. An attempt that already started keeps the mode it started with.
+
+`PUT /api/projects/{projectId}/cards/{id}/plan-mode` sets whether the card must plan before coding (RFC-128).
+
+```json
+{ "planMode": "off" }
+```
+
+The caller needs `plan_mode` in the card's `actions`, else `403`. A value other than `required` or `off` is `422` on `planMode`. A `done` or `wont_fix` card is `409`. A change appends `plan_mode_changed`. An attempt that already started keeps the mode it started with.
+
+`PUT /api/projects/{projectId}/cards/{id}/plan` updates the open plan's title and steps without changing status (RFC-129).
+
+```json
+{
+  "title": "Add CSV export",
+  "steps": [{ "id": "stp_01", "text": "Find the handler", "detail": "" }]
+}
+```
+
+The caller needs `accept_plan`. Not `waiting_answer` or no open plan is `409`. Validation matches `submit_plan`: title 1–200 characters, 1–30 steps, each text 1–500, detail at most 1,000. Missing step `id` values are assigned. A failed field is `422`.
+
+`POST /api/projects/{projectId}/cards/{id}/plan/accept` accepts the body (or the stored open plan when steps are omitted) and returns the card (RFC-129). One transaction updates the plan to `accepted`, moves `waiting_answer -> ready`, inserts a card-scoped run, and appends `plan_accepted`.
+
+`POST /api/projects/{projectId}/cards/{id}/plan/skip` discards the open plan when `planMode` is `off`, status is `waiting_answer`, and there are no open questions, then moves to `ready`, queues a run, and appends `plan_skipped` (RFC-128). Otherwise `409`.
+
+`POST /api/projects/{projectId}/cards/{id}/plan/chat` streams a plan chat reply (RFC-130).
+
+```json
+{
+  "message": "Make step 2 mention the existing auth middleware",
+  "title": "Add CSV export",
+  "steps": [{ "text": "Find the handler", "detail": "" }],
+  "model": "claude-sonnet-4-5",
+  "modelOptions": { "thinking": "medium" }
+}
+```
+
+The caller needs `accept_plan`. Empty `message` with no revision intent still runs. Field errors and `router_config` are JSON before the stream. The stream may end with a revision object `{ "revision": { "title", "steps" } }`.
 
 `POST /api/projects/{projectId}/cards/{id}/approve`
 

@@ -1318,3 +1318,26 @@ Status board for [sprints.md](sprints.md). This file tracks progress. It does no
 - [x] `TestProjectSummaryMember`, `TestProjectSummaryOutsider404`, `TestTribeSummaryManageOnly`, `TestSummaryRange`
 - [x] Overview, tribe overview, and layout Vitest
 - [x] RFC-127, REQ-100, tech/0002, tech/0004, tech/0005, tech/0006
+
+## Sprint 100: Plan before coding
+
+- [x] Migration `00036_execution_planning.sql`
+- [x] `submit_plan`, planning-phase tool gate, outcome `plan` park
+- [x] `SetPlanMode`, `SavePlan`, `AcceptPlan`, `SkipPlan`, pack, notify
+- [x] Routes and actions for plan mode and accept
+- [x] `TestSubmitPlanParksCard`, `TestPlanModeOffSkipsGate`, `TestWriteToolsBlockedUntilPlanAccepted`
+- [x] `TestAcceptPlanQueuesRun`, `TestPlanStepValidation`, `TestPackIncludesApprovedPlan`
+- [x] `TestPlanModeRights`, `TestRunnerPlanOutcome`, `TestSkipPlanWhenOff`
+- [x] Fixture `planning`
+
+## Sprint 101: Plan chat
+
+- [x] `POST .../plan/chat` stream
+- [x] `TestPlanChatStreams`, `TestPlanChatFieldErrors`
+
+## Sprint 102: Plan on the card page
+
+- [x] `PlanModeField` and `CardPlan`
+- [x] Card page placement, api/types, notify/trace words
+- [x] PlanModeField, CardPlan, card page Vitest
+- [x] `npm run check` and the full suites

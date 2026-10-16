@@ -12,6 +12,7 @@ import (
 
 	"orchestrator/backend/internal/app"
 	"orchestrator/backend/internal/board"
+	"orchestrator/backend/internal/identity"
 	"orchestrator/backend/internal/intake"
 	"orchestrator/backend/internal/runtime"
 	"orchestrator/backend/internal/settings"
@@ -300,6 +301,14 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 		s.cardQuestionMode(w, r, user, projectID, id)
 		return
 	}
+	if action == "plan-mode" {
+		s.cardPlanMode(w, r, user, projectID, id)
+		return
+	}
+	if action == "plan" || strings.HasPrefix(action, "plan/") {
+		s.cardPlan(w, r, user, projectID, id)
+		return
+	}
 	if action == "merge" {
 		s.mergeCard(w, r, user, id)
 		return
@@ -446,6 +455,131 @@ func (s *Server) cardQuestionMode(w http.ResponseWriter, r *http.Request, user a
 		return
 	}
 	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
+// cardPlanMode handles PUT .../cards/{id}/plan-mode (RFC-128).
+func (s *Server) cardPlanMode(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	if r.Method != http.MethodPut {
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+		return
+	}
+	var body struct {
+		PlanMode string `json:"planMode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	next, err := app.SetPlanMode(r.Context(), s.DB, user, projectID, id, body.PlanMode)
+	if err != nil {
+		writeAppErr(w, err)
+		return
+	}
+	writeJSON(w, 200, s.cardDetail(r, next))
+}
+
+// cardPlan handles PUT/POST .../cards/{id}/plan and .../plan/accept|skip|chat.
+func (s *Server) cardPlan(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/projects/"+projectID+"/cards/"+id+"/plan")
+	rest = strings.Trim(rest, "/")
+	switch {
+	case rest == "" && r.Method == http.MethodPut:
+		var body struct {
+			Title string           `json:"title"`
+			Steps []board.PlanStep `json:"steps"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 422, "validation", "body")
+			return
+		}
+		next, err := app.SavePlan(r.Context(), s.DB, user, projectID, id, body.Title, body.Steps)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+	case rest == "accept" && r.Method == http.MethodPost:
+		var body struct {
+			Title string           `json:"title"`
+			Steps []board.PlanStep `json:"steps"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		useStored := body.Title == "" && len(body.Steps) == 0
+		next, err := app.AcceptPlan(r.Context(), s.DB, user, projectID, id, body.Title, body.Steps, useStored)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+	case rest == "skip" && r.Method == http.MethodPost:
+		next, err := app.SkipPlan(r.Context(), s.DB, user, projectID, id)
+		if err != nil {
+			writeAppErr(w, err)
+			return
+		}
+		writeJSON(w, 200, s.cardDetail(r, next))
+	case rest == "chat" && r.Method == http.MethodPost:
+		s.cardPlanChat(w, r, user, projectID, id)
+	default:
+		writeErr(w, 405, "method_not_allowed", "method not allowed")
+	}
+}
+
+func (s *Server) cardPlanChat(w http.ResponseWriter, r *http.Request, user app.User, projectID, id string) {
+	var body struct {
+		Message  string           `json:"message"`
+		Title    string           `json:"title"`
+		Steps    []board.PlanStep `json:"steps"`
+		Model    string           `json:"model"`
+		Thinking string           `json:"thinking"`
+		Effort   string           `json:"effort"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 422, "validation", "body")
+		return
+	}
+	flusher, _ := w.(http.Flusher)
+	streaming := false
+	emit := func(kind string, payload any) {
+		if !streaming {
+			streaming = true
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Header().Set("Cache-Control", "no-store")
+			w.WriteHeader(200)
+		}
+		data, _ := json.Marshal(payload)
+		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", kind, data)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+	err := app.PlanChat(r.Context(), s.Data, s.DB, user, projectID, id, app.PlanChatInput{
+		Message: body.Message, Title: body.Title, Steps: body.Steps,
+		Model: body.Model, Thinking: body.Thinking, Effort: body.Effort,
+	}, s.RefineProvider, emit)
+	if err == nil || r.Context().Err() != nil {
+		return
+	}
+	var invalid *settings.Invalid
+	failed := errors.Is(err, app.ErrRefineProposal) || errors.Is(err, app.ErrRefineProvider)
+	switch {
+	case streaming && failed:
+		emit("error", map[string]string{"code": "provider_error", "message": err.Error()})
+	case streaming:
+		emit("error", map[string]string{"code": "internal", "message": "plan chat"})
+	case errors.As(err, &invalid):
+		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
+	case errors.Is(err, app.ErrRefineRoute):
+		writeErr(w, 409, "router_config", err.Error())
+	case errors.Is(err, board.ErrConflict):
+		writeErr(w, 409, "conflict", "conflict")
+	case errors.Is(err, identity.ErrForbidden):
+		writeErr(w, 403, "forbidden", "forbidden")
+	case failed:
+		writeErr(w, 502, "provider_error", err.Error())
+	default:
+		writeErr(w, 500, "internal", "plan chat")
+	}
 }
 
 func (s *Server) projectIntake(w http.ResponseWriter, r *http.Request) {
