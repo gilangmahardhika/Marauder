@@ -67,6 +67,7 @@ This folder specifies the AI Coding Orchestrator v1. Read it in the order below.
 | [rfc/0060-execution-planning.md](rfc/0060-execution-planning.md) | Decisions `RFC-128` to `RFC-130`. Plan before coding, structured accept on Needs answer, and plan chat |
 | [rfc/0061-ai-review-note-in-pack.md](rfc/0061-ai-review-note-in-pack.md) | Decision `RFC-131`. The newest AI review note stays in the implement pack even when a newer check or approver note exists |
 | [rfc/0062-terminal-edit-and-thinking.md](rfc/0062-terminal-edit-and-thinking.md) | Decision `RFC-132`. Capped edit `old`/`new` on Trace tool calls, and live thinking on the terminal view |
+| [rfc/0063-plan-route-for-planning.md](rfc/0063-plan-route-for-planning.md) | Decision `RFC-133`. Execution planning and plan chat use the Router `plan` route; execute uses implement |
 | [tech/0001-implementation.md](tech/0001-implementation.md) | Stack, processes, open source tools, build order |
 | [tech/0002-data-and-api.md](tech/0002-data-and-api.md) | PostgreSQL schema, JSON API, settings shape. The contract both processes implement |
 | [tech/0003-backend.md](tech/0003-backend.md) | Go packages, worker, jobs, CLI |

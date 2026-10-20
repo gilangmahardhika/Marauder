@@ -333,34 +333,21 @@ func ImplementCard(ctx context.Context, db *sql.DB, deps JobDeps, projectID, car
 		if err != nil {
 			return card, err
 		}
-		// Planning uses the harness tool loop even when the company agent is
-		// Claude Code (RFC-128). Resolve a routed provider when prepare only
-		// set Claude Code.
+		// Planning uses the harness tool loop and the plan route (RFC-128, RFC-133).
 		claude := p.claude
 		if planning {
 			claude = nil
-			if provider == nil {
-				_, secrets, loadErr := settings.Load(deps.Data)
-				if loadErr != nil {
-					return card, loadErr
-				}
-				impl := cfg.Router.Routes[class]
-				model := impl.Model
-				if model == "" {
-					model = route.Model
-				}
-				if deps.Provider != nil && model != "" {
-					provider = deps.Provider
-					route.Model = model
-				} else if _, _, _, err := llm.ForModel(cfg, secrets, model); model != "" && err == nil {
-					provider = RoutedProvider(cfg, secrets, model, impl.Fallback)
-					route.Model = model
-				}
-				if provider == nil {
-					_ = jobError(ctx, db, card, "", "planning needs an implement route model; fix it on the Router page, then unblock the card", redact)
-					return BlockCard(ctx, db, card, "router_config", redact)
-				}
+			class = "plan"
+			_, secrets, loadErr := settings.Load(deps.Data)
+			if loadErr != nil {
+				return card, loadErr
 			}
+			model, _, prov, ok := planRouteProvider(cfg, secrets, deps.Provider)
+			if !ok {
+				_ = jobError(ctx, db, card, "", "planning needs a plan route model; fix it on the Router page, then unblock the card", redact)
+				return BlockCard(ctx, db, card, "router_config", redact)
+			}
+			provider, route.Model = prov, model
 		}
 		result, err := loop.Run(attemptCtx, loop.Input{
 			QuestionMode: card.QuestionMode, QuestionRounds: rounds, Planning: planning,

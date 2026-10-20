@@ -1365,7 +1365,7 @@ Goal: On Needs answer the person chats about the open plan and can apply a revis
 
 Packages: `internal/app`, `internal/httpapi`.
 
-- `POST .../plan/chat` streams prose or a step revision with the implement route (or chosen model).
+- `POST .../plan/chat` streams prose or a step revision with the plan route (or chosen model) (RFC-133).
 - Field errors and `router_config` as JSON before the stream.
 
 Done when: `TestPlanChatStreams`, `TestPlanChatFieldErrors`.

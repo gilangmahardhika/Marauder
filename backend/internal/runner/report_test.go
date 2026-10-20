@@ -288,7 +288,7 @@ func TestRunnerQuestionOutcome(t *testing.T) {
 }
 
 func TestRunnerPlanOutcome(t *testing.T) {
-	h := newHarness(t, `{"implement":[{"tool":"submit_plan","title":"Ship CSV","steps":[{"text":"Find the handler"},{"text":"Write the export"}]}]}`, "true")
+	h := newHarness(t, `{"plan":[{"tool":"submit_plan","title":"Ship CSV","steps":[{"text":"Find the handler"},{"text":"Write the export"}]}]}`, "true")
 	if _, err := h.db.Exec(`UPDATE cards SET plan_mode = 'required' WHERE id = $1`, h.card.ID); err != nil {
 		t.Fatal(err)
 	}

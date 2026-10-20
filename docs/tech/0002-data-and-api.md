@@ -172,7 +172,7 @@ CREATE TABLE attempts (
   card_id TEXT NOT NULL REFERENCES cards(id),
   n INTEGER NOT NULL,
   parent_attempt_id TEXT,
-  task_class TEXT NOT NULL CHECK (task_class IN ('implement', 'implement_hard')),
+  task_class TEXT NOT NULL CHECK (task_class IN ('implement', 'implement_hard', 'plan')),
   model_id TEXT,
   fallback_model_id TEXT,
   prompt_hash TEXT,
@@ -1040,6 +1040,12 @@ CREATE INDEX card_plans_card ON card_plans (project_id, card_id);
 CREATE UNIQUE INDEX card_plans_one_open ON card_plans (card_id) WHERE status = 'open';
 ```
 
+`00037_plan_task_class.sql` allows attempt `task_class` `plan` for planning-phase attempts (RFC-133):
+
+```sql
+-- attempts_task_class_check gains 'plan'
+```
+
 A plan in the card JSON:
 
 ```json
@@ -1392,7 +1398,7 @@ The caller needs `accept_plan`. Not `waiting_answer` or no open plan is `409`. V
 
 `POST /api/projects/{projectId}/cards/{id}/plan/skip` discards the open plan when `planMode` is `off`, status is `waiting_answer`, and there are no open questions, then moves to `ready`, queues a run, and appends `plan_skipped` (RFC-128). Otherwise `409`.
 
-`POST /api/projects/{projectId}/cards/{id}/plan/chat` streams a plan chat reply (RFC-130).
+`POST /api/projects/{projectId}/cards/{id}/plan/chat` streams a plan chat reply. The default model is the Router `plan` route (RFC-130, RFC-133).
 
 ```json
 {

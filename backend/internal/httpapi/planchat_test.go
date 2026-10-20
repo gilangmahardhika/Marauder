@@ -23,7 +23,7 @@ func parkPlan(t *testing.T, f contextFixture) {
 	if _, err := f.srv.DB.Exec(`UPDATE cards SET status = 'waiting_answer', plan_mode = 'required' WHERE id = $1`, f.card); err != nil {
 		t.Fatal(err)
 	}
-	attempt := board.Attempt{ID: "att_" + f.card[5:], CardID: f.card, N: 1, TaskClass: "implement", ModelID: "fake-model", MaxTurns: 6}
+	attempt := board.Attempt{ID: "att_" + f.card[5:], CardID: f.card, N: 1, TaskClass: "plan", ModelID: "fake-model", MaxTurns: 6}
 	if err := board.InsertAttempt(ctx, f.srv.DB, attempt); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,8 @@ func planChatServer(t *testing.T, script string) (contextFixture, *fake.Fake) {
 	t.Helper()
 	f := newContextFixture(t)
 	f.srv.Data = t.TempDir()
-	if err := os.WriteFile(filepath.Join(f.srv.Data, "config.yaml"), []byte(refineRouter), 0o600); err != nil {
+	planChatRouter := "router:\n  routes:\n    plan:\n      model: fake-model\n    implement:\n      model: other-model\n"
+	if err := os.WriteFile(filepath.Join(f.srv.Data, "config.yaml"), []byte(planChatRouter), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(f.srv.Data, "secrets.json"), []byte(`{"llmKeys":{"anthropic":"`+refineKey+`"}}`), 0o600); err != nil {
@@ -100,8 +101,8 @@ func TestPlanChatStreams(t *testing.T) {
 		t.Fatalf("revision steps = %+v", steps)
 	}
 	prompts := provider.Prompts()
-	if len(prompts) != 1 || prompts[0].TaskClass != "plan_chat" {
-		t.Fatalf("prompts = %+v", prompts)
+	if len(prompts) != 1 || prompts[0].TaskClass != "plan_chat" || prompts[0].Model != "fake-model" {
+		t.Fatalf("prompts = %+v, want plan route fake-model", prompts)
 	}
 }
 

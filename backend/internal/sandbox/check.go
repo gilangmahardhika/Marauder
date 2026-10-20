@@ -118,7 +118,7 @@ func hardening() []string {
 		"--memory=2g",
 		"--cpus=2",
 		"--read-only",
-		"--tmpfs", "/tmp:rw,nosuid,size=256m",
+		"--tmpfs", "/tmp:rw,nosuid,size=1g",
 		"--user", "65532:65532",
 		"--env", "CI=1",
 		"--env", "PATH=/usr/local/bin:/usr/bin:/bin",

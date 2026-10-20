@@ -90,7 +90,7 @@ Today the agent **loop** runs inside the harness process as a goroutine. Podman 
 --pids-limit=256
 --memory=2g
 --cpus=2
---read-only + tmpfs /tmp 256m
+--read-only + tmpfs /tmp 1g
 --cap-drop=ALL --security-opt=no-new-privileges
 user 65532:65532
 image must include @sha256:<64 hex>

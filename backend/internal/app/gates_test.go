@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"orchestrator/backend/internal/app"
@@ -118,6 +120,29 @@ func TestUnblockDestinations(t *testing.T) {
 	dest, ok := app.UnblockTo(context.Background(), db, card)
 	if !ok || dest != "ready" {
 		t.Fatalf("turn_cap -> %s", dest)
+	}
+}
+
+func TestDeployBlocksIncompleteConfig(t *testing.T) {
+	db := boardtest.Open(t)
+	card := gateCard(t, db, "human_review", shaA)
+	if _, err := app.Approve(context.Background(), db, card.ID, shaA, gateCfg()); err != nil {
+		t.Fatal(err)
+	}
+	data := dataDir(t)
+	dir := filepath.Join(data, "projects", card.ProjectID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("deploy:\n  enabled: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next, err := app.Deploy(context.Background(), db, data, card.ID, "user_1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Status != "blocked" || next.BlockedReason != "deploy_config" {
+		t.Fatalf("card = %+v", next)
 	}
 }
 

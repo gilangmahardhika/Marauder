@@ -409,8 +409,10 @@ Transport failure is a script entry `{ "error": "transport" }`. The router test 
 | `TestPlanModeRights` | A Developer sets `off` and a `plan_mode_changed` event is appended; a Product Owner is `403`; a `done` card is `409` (RFC-128) |
 | `TestRunnerPlanOutcome` | A runner's report with outcome `plan` moves its lease card to `waiting_answer` without counting the attempt (RFC-128) |
 | `TestSkipPlanWhenOff` | With `planMode` `off` and an open plan, skip discards the plan, moves to `ready`, and queues a run (RFC-128) |
-| `TestPlanChatStreams` | Plan chat streams text and may end with a revision whose steps match the validation caps (RFC-130) |
+| `TestPlanChatStreams` | Plan chat streams text and may end with a revision whose steps match the validation caps; the default request uses the plan route model (RFC-130, RFC-133) |
 | `TestPlanChatFieldErrors` | An empty title with steps, or no open plan, is JSON `422`/`409` before any stream (RFC-130) |
+| `TestPlanningUsesPlanRoute` | A planning attempt uses the plan route model and task class `plan`; after accept the next attempt uses the implement route (RFC-133) |
+| `TestPlanningMissingPlanRouteBlocks` | With no plan route model, a Required planning run blocks with `router_config` (RFC-133) |
 | `TestCompactOnContextLimit` | A reply whose input tokens reach 75% of `contextTokens` is followed by one no-tool summary call; the next request has no earlier turns, its user message ends with `WORK SO FAR` and the summary, the todo list is kept, and a `context_compacted` event is appended (RFC-117) |
 | `TestCompactOnOverflowError` | A model call that returns `providers.ErrContextFull` compacts and sends the turn again, and the attempt goes on to commit (RFC-117) |
 | `TestCompactCap` | A fourth compaction ends the attempt with outcome `budget` and reason `context_full`, and a handoff is saved (RFC-117) |

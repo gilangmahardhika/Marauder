@@ -1385,11 +1385,12 @@ A project member opens an Overview page that summarizes that project's board: ca
 
 ### REQ-101 Execution planning
 
-When a card's plan mode is Required (the default), the implementer's attempt may only explore and submit a structured step plan until a person accepts one. The attempt ends without using an attempt count, the card waits on Needs answer, and the owner is notified. The person edits, reorders, adds, or removes steps, may chat with the model about the plan, then accepts. The next attempt reads the approved plan and may edit files. Plan mode Off skips the gate. Turning Off while parked does not silently accept; the person Accepts or Skips (RFC-128, RFC-129, RFC-130).
+When a card's plan mode is Required (the default), the implementer's attempt may only explore and submit a structured step plan until a person accepts one. The attempt ends without using an attempt count, the card waits on Needs answer, and the owner is notified. The person edits, reorders, adds, or removes steps, may chat with the model about the plan, then accepts. The next attempt reads the approved plan and may edit files. Plan mode Off skips the gate. Turning Off while parked does not silently accept; the person Accepts or Skips (RFC-128, RFC-129, RFC-130, RFC-133).
 
 #### Acceptance
 
 - A Required card with no accepted plan parks on `waiting_answer` after `submit_plan`, keeps its attempt count, and notifies its owner with kind `plan`.
+- The planning-phase attempt and plan chat (by default) use the Router `plan` route; after accept, the execute attempt uses `implement` / `implement_hard` (RFC-133).
 - Write tools and `commit` return a tool error during the planning phase and do not change files.
 - Accepting the plan (with optional edits) moves the card to `ready`, queues a run, and the next attempt's pack carries the approved plan.
 - A person who may run the card changes plan mode; another role gets `403`; the change applies from the next attempt.

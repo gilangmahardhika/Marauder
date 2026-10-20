@@ -213,7 +213,7 @@ podman run --rm
   --memory=2g
   --cpus=2
   --read-only
-  --tmpfs /tmp:rw,nosuid,size=256m
+  --tmpfs /tmp:rw,nosuid,size=1g
   --mount type=bind,src=<export>,dst=/work,relabel=private
   --workdir /work
   --user 65532:65532

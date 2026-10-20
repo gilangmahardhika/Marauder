@@ -38,7 +38,7 @@ const (
 	databaseURL  = "postgres://board:board-password@db.internal/board"
 	prURL        = "https://github.com/acme/widget/pull/7"
 
-	routerConfig  = "jobs:\n  executor: runners\nrouter:\n  routes:\n    implement:\n      model: fake-model\n    implement_hard:\n      model: fake-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
+	routerConfig  = "jobs:\n  executor: runners\nrouter:\n  routes:\n    plan:\n      model: fake-model\n    implement:\n      model: fake-model\n    implement_hard:\n      model: fake-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
 	projectConfig = "checks:\n  allowExecutables: [\"true\", \"false\"]\n"
 	commitScript  = `{"implement":[{"tool":"edit_file","path":"hello.txt","text":"job\n","say":"editing hello"},{"tool":"commit","message":"Job commit"}],
 		"implement_hard":[{"tool":"edit_file","path":"hello.txt","text":"job again\n"},{"tool":"commit","message":"Job commit"}]}`

@@ -213,28 +213,19 @@ func StartRemote(ctx context.Context, db *sql.DB, deps JobDeps, jobs *RemoteJobs
 	if err != nil {
 		return runnerapi.Job{}, err
 	}
-	// Planning uses the harness tool loop (RFC-128). Claude Code preflight
-	// leaves provider nil; model calls need a routed provider or they panic.
-	if planning && p.provider == nil {
+	// Planning uses the harness tool loop and the plan route (RFC-128, RFC-133).
+	if planning {
 		cfg, secrets, err := settings.Load(deps.Data)
 		if err != nil {
 			return runnerapi.Job{}, err
 		}
-		route := cfg.Router.Routes[p.class]
-		model, fallback := route.Model, route.Fallback
-		if model == "" {
-			model, fallback = p.model, p.fallback
-		}
-		if deps.Provider != nil && model != "" {
-			p.provider, p.model, p.fallback = deps.Provider, model, fallback
-		} else if _, _, _, err := llm.ForModel(cfg, secrets, model); model != "" && err == nil {
-			p.provider = RoutedProvider(cfg, secrets, model, fallback)
-			p.model, p.fallback = model, fallback
-		} else {
-			_ = jobError(ctx, db, card, "", "planning needs an implement route model; fix it on the Router page, then unblock the card", p.redact)
+		model, fallback, provider, ok := planRouteProvider(cfg, secrets, deps.Provider)
+		if !ok {
+			_ = jobError(ctx, db, card, "", "planning needs a plan route model; fix it on the Router page, then unblock the card", p.redact)
 			card, err = BlockCard(ctx, db, card, "router_config", p.redact)
 			return doneJob(card), err
 		}
+		p.class, p.model, p.fallback, p.provider = "plan", model, fallback, provider
 	}
 	if err := board.SetLeaseRoute(ctx, db, lease.ID, p.model, p.fallback, p.class); err != nil {
 		return runnerapi.Job{}, err

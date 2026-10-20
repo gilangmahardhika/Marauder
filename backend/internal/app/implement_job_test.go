@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	routerConfig = "router:\n  routes:\n    implement:\n      model: fake-model\n    implement_hard:\n      model: fake-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
+	routerConfig = "router:\n  routes:\n    plan:\n      model: fake-model\n    implement:\n      model: fake-model\n    implement_hard:\n      model: fake-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
 	commitScript = `{"implement":[{"tool":"edit_file","path":"hello.txt","text":"job\n"},{"tool":"commit","message":"Job commit"}],
 		"implement_hard":[{"tool":"edit_file","path":"hello.txt","text":"job again\n"},{"tool":"commit","message":"Job commit"}]}`
 )

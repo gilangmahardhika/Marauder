@@ -694,12 +694,12 @@ func planning(ctx context.Context, db *sql.DB, g runtime.Git) error {
 		}
 	}
 	defer removeWorktree(g, card.ID)
-	plan, err := fake.Load([]byte(`{"implement":[{"tool":"submit_plan","title":"Add CSV export","steps":[
+	plan, err := fake.Load([]byte(`{"plan":[{"tool":"submit_plan","title":"Add CSV export","steps":[
 		{"text":"Find the orders handler"},{"text":"Write the CSV export"}]}]}`))
 	if err != nil {
 		return err
 	}
-	in := loop.Input{DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "implement", MaxTurns: 3,
+	in := loop.Input{DB: db, Git: g, CardID: card.ID, Model: "author", TaskClass: "plan", MaxTurns: 3,
 		Provider: plan, Allow: []string{"true", "false"}, Planning: true}
 	result, err := app.RunImplementer(ctx, in)
 	if err != nil {

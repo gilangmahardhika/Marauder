@@ -161,12 +161,35 @@ func Reject(ctx context.Context, db *sql.DB, cardID string, cfg GateConfig) (boa
 	return transition(ctx, db, card, "blocked", machine.Evidence{Reason: "rejected", Approver: cfg.Operator, ActorID: cfg.ActorID})
 }
 
-func Deploy(ctx context.Context, db *sql.DB, cardID, actorID string) (board.Card, error) {
+func Deploy(ctx context.Context, db *sql.DB, data, cardID, actorID string) (board.Card, error) {
 	card, err := board.GetCard(ctx, db, cardID)
 	if err != nil {
 		return board.Card{}, err
 	}
+	if data != "" {
+		cfg, _, err := settings.LoadProject(data, card.ProjectID)
+		if err != nil {
+			return card, err
+		}
+		if !deployConfigured(cfg) {
+			return transition(ctx, db, card, "blocked", machine.Evidence{Reason: "deploy_config", ActorID: actorID})
+		}
+	}
 	return transition(ctx, db, card, "deploying_dev", machine.Evidence{SHA: card.ApprovedSHA, ActorID: actorID})
+}
+
+// deployConfigured reports whether the project's deploy snapshot has the
+// fields the deploy job needs. Empty fields block with deploy_config and
+// do not start deploying_dev (tech/0003).
+func deployConfigured(cfg settings.ProjectConfig) bool {
+	d := cfg.Deploy
+	if d.DevCommand == "" || d.RollbackCommand == "" || d.HealthURL == "" || len(d.DevHosts) == 0 {
+		return false
+	}
+	if cfg.Checks.Dev != "" && d.DevURL == "" {
+		return false
+	}
+	return true
 }
 
 func HeadMoved(ctx context.Context, db *sql.DB, cardID, head string) (board.Card, error) {

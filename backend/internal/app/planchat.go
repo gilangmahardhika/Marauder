@@ -75,13 +75,13 @@ func PlanChat(ctx context.Context, data string, db *sql.DB, actor User, projectI
 	if err != nil {
 		return err
 	}
-	route := cfg.Router.Routes["implement"]
+	route := cfg.Router.Routes["plan"]
 	model := route.Model
 	if in.Model != "" {
 		model = in.Model
 	}
 	if model == "" {
-		return ErrRefineRoute
+		return ErrPlanRoute
 	}
 	pinned := model != route.Model || in.Thinking != "" || in.Effort != ""
 	var opts settings.ModelOptions
@@ -95,7 +95,7 @@ func PlanChat(ctx context.Context, data string, db *sql.DB, actor User, projectI
 			if pinned {
 				return &settings.Invalid{Fields: map[string]string{"model": "This model's LLM family has no usable key."}}
 			}
-			return ErrRefineRoute
+			return ErrPlanRoute
 		}
 		if pinned {
 			provider = PinnedProvider(cfg, secrets, model, opts)

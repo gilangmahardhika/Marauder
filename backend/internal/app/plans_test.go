@@ -11,12 +11,14 @@ import (
 	"orchestrator/backend/internal/identity"
 )
 
-const planScript = `{"implement":[
+const planScript = `{"plan":[
 	{"tool":"list_files","path":"."},
 	{"tool":"submit_plan","title":"Add CSV export","steps":[
 		{"text":"Find the orders list handler","detail":""},
 		{"text":"Add a CSV writer and a button","detail":"Reuse auth"}]},
 	{"tool":"edit_file","path":"hello.txt","text":"too late\n"}]}`
+
+const planRouteConfig = "router:\n  routes:\n    plan:\n      model: plan-model\n    implement:\n      model: impl-model\n    implement_hard:\n      model: impl-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
 
 func TestSubmitPlanParksCard(t *testing.T) {
 	f := newJobFixture(t, "true", 3, routerConfig, fixtureProject)
@@ -29,6 +31,8 @@ func TestSubmitPlanParksCard(t *testing.T) {
 	}
 	if prompts := provider.Prompts(); len(prompts) < 2 {
 		t.Fatalf("model calls = %d", len(prompts))
+	} else if prompts[0].TaskClass != "plan" {
+		t.Fatalf("task class = %q, want plan", prompts[0].TaskClass)
 	}
 	var outcome string
 	if err := f.db.QueryRow(`SELECT outcome FROM attempts WHERE card_id = $1`, card.ID).Scan(&outcome); err != nil || outcome != "plan" {
@@ -109,6 +113,40 @@ func TestPlanModeRights(t *testing.T) {
 		if err != identity.ErrForbidden {
 			t.Fatalf("outsider = %v", err)
 		}
+	}
+}
+
+func TestPlanningUsesPlanRoute(t *testing.T) {
+	f := newJobFixture(t, "true", 3, planRouteConfig, fixtureProject)
+	if _, err := f.db.Exec(`UPDATE cards SET plan_mode = 'required' WHERE id = $1`, f.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, planner := f.runWith(t, planScript)
+	if prompts := planner.Prompts(); len(prompts) == 0 || prompts[0].Model != "plan-model" || prompts[0].TaskClass != "plan" {
+		t.Fatalf("planning prompts = %+v, want plan-model / plan", prompts)
+	}
+	var class, model string
+	if err := f.db.QueryRow(`SELECT task_class, model_id FROM attempts WHERE card_id = $1`, f.card.ID).Scan(&class, &model); err != nil || class != "plan" || model != "plan-model" {
+		t.Fatalf("attempt = %s %s, %v", class, model, err)
+	}
+	if _, err := app.AcceptPlan(context.Background(), f.db, questionAnswerer(f), "proj_default", f.card.ID, "", nil, true); err != nil {
+		t.Fatal(err)
+	}
+	_, implementer := f.runWith(t, commitScript)
+	if prompts := implementer.Prompts(); len(prompts) == 0 || prompts[0].Model != "impl-model" || prompts[0].TaskClass != "implement" {
+		t.Fatalf("execute prompts = %+v, want impl-model / implement", prompts)
+	}
+}
+
+func TestPlanningMissingPlanRouteBlocks(t *testing.T) {
+	noPlan := "router:\n  routes:\n    implement:\n      model: fake-model\n    implement_hard:\n      model: fake-model\n  budgets:\n    maxAttempts: 3\n    maxModelTurnsPerAttempt: 6\n"
+	f := newJobFixture(t, "true", 3, noPlan, fixtureProject)
+	if _, err := f.db.Exec(`UPDATE cards SET plan_mode = 'required' WHERE id = $1`, f.card.ID); err != nil {
+		t.Fatal(err)
+	}
+	card := f.run(t, planScript)
+	if card.Status != "blocked" || card.BlockedReason != "router_config" {
+		t.Fatalf("card = %s %s, want blocked router_config", card.Status, card.BlockedReason)
 	}
 }
 

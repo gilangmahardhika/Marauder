@@ -11,11 +11,16 @@ import (
 	"orchestrator/backend/internal/identity"
 	"orchestrator/backend/internal/loop"
 	"orchestrator/backend/internal/machine"
+	"orchestrator/backend/internal/providers"
+	"orchestrator/backend/internal/providers/llm"
 	"orchestrator/backend/internal/settings"
 	"orchestrator/backend/internal/trace"
 )
 
 var planModes = []string{"required", "off"}
+
+// ErrPlanRoute means the plan route has no usable model (RFC-133).
+var ErrPlanRoute = errors.New("set a model for the plan route in Router settings")
 
 // SetPlanMode stores whether the card must plan before coding (RFC-128).
 func SetPlanMode(ctx context.Context, db *sql.DB, actor User, projectID, cardID, mode string) (board.Card, error) {
@@ -221,4 +226,22 @@ func PlanningPhase(ctx context.Context, q board.DBTX, card board.Card) (bool, er
 		return false, err
 	}
 	return !ok, nil
+}
+
+// planRouteProvider resolves router.routes.plan for a planning attempt or plan
+// chat (RFC-133). When injected is set (tests), it is returned unchanged and
+// only the route's model id is taken.
+func planRouteProvider(cfg settings.Config, secrets settings.Secrets, injected providers.Provider) (model, fallback string, provider providers.Provider, ok bool) {
+	route := cfg.Router.Routes["plan"]
+	model, fallback = route.Model, route.Fallback
+	if model == "" {
+		return "", "", nil, false
+	}
+	if injected != nil {
+		return model, fallback, injected, true
+	}
+	if _, _, _, err := llm.ForModel(cfg, secrets, model); err != nil {
+		return "", "", nil, false
+	}
+	return model, fallback, RoutedProvider(cfg, secrets, model, fallback), true
 }

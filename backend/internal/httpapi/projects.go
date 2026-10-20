@@ -326,7 +326,7 @@ func (s *Server) projectCard(w http.ResponseWriter, r *http.Request) {
 			writeAppErr(w, app.ErrDeployOff)
 			return
 		}
-		next, err := app.Deploy(r.Context(), s.DB, id, user.ID)
+		next, err := app.Deploy(r.Context(), s.DB, s.Data, id, user.ID)
 		if err != nil {
 			writeAppErr(w, err)
 			return
@@ -569,7 +569,7 @@ func (s *Server) cardPlanChat(w http.ResponseWriter, r *http.Request, user app.U
 		emit("error", map[string]string{"code": "internal", "message": "plan chat"})
 	case errors.As(err, &invalid):
 		writeFields(w, 422, "validation", invalid.Error(), invalid.Fields)
-	case errors.Is(err, app.ErrRefineRoute):
+	case errors.Is(err, app.ErrRefineRoute), errors.Is(err, app.ErrPlanRoute):
 		writeErr(w, 409, "router_config", err.Error())
 	case errors.Is(err, board.ErrConflict):
 		writeErr(w, 409, "conflict", "conflict")
